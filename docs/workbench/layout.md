@@ -33,6 +33,7 @@ Because a UDF can be called as either File or Tile, Workbench must explicitly kn
 Note that the "Auto" setting is specific and applicable only to the Workbench UI. UDFs called via `fused-py` or HTTP requests run as Tile only if a parameter specifies the Tile geometry. Read how [here](/python-sdk/overview/#run-a-udf).
 
 :::
+
 #### Toolbar
 
 The toolbar atop the editor is where buttons to configure, save, duplicate, download, and delete UDFs are located. Clicking “Download” saves the present state of the UDF code and module locally as a `.zip` file that can be loaded with the Python SDK or shared with others so they can import into their workbench.

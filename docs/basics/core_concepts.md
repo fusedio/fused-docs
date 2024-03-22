@@ -2,7 +2,7 @@
 id: core-concepts
 title: Core Concepts
 tags: [Core Concepts]
-sidebar_position: 0
+sidebar_position: 2
 ---
 
 
@@ -25,11 +25,10 @@ def udf(bbox, table_path="s3://fused-asset/infra/building_msft_us"):
     from utils import table_to_tile
     df=table_to_tile(bbox, table=table_path)
     return df
-
 ```
 
-:::note
-To visualize the output of a UDF on Workbench, the function should return a Raster or Vector object. Workbench will render the UDF's returned data as a map layer.
+:::tip
+To visualize the output of a UDF on Workbench, the function should return a Raster or Vector object. Workbench will render the UDF's returned data as a map layer. Read more about return types [here](/docs/basics/core-concepts#return-types).
 :::
 #### Syntax to keep in mind
 
@@ -206,66 +205,6 @@ def udf(url='https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_C
 
     return gpd.read_file(out_path)
 ```
-
-## Tile vs. File UDFs
-
-Fused can selectively load only the data for chunks of data. This means that when UDFs run, Fused remotely runs the code over calculated chunks of data and returns the output. When this is done in parallel for multilpe tile sections of the map, the results can be stitched together.
-
-This creates realtime development experience and enables running workflow on datasets of any size. The best part is that Fused handles data partitions, caching, and parallelization behind the scenes, so developers can focus on their code.
-
-To optimize execution, Fused gives the user the choice of how to process a UDF: like a single `File`, or like a set of `Tile` responses. Read how specify how to specify each mode in the [Run a UDF](/python-sdk/overview/#run-a-udf) section.
-
-> 🔧 A UDF can run in one or in multiple processes. As a single process, Fused runs code and returns data as a batch. With multiple processes, Fused strategically parallelizes the execution of the UDF across multiple gridded sections of the map - called Tiles. These two approaches of execution are called `File` and `Tile`. File, because the single process handles data as if from a single file; and Tile, because the data for each tile is allocated to a process.
-
-#### Which one should I choose?
-
-As a rule of thumb: Tile UDFs are the go-to choice for datasets that encompass broad geographies (like satellite imagery) - think National or global scale datasets. On the other hand, File UDFs are great for localized datasets, such as a watershed raster or project area vector.
-
-Read-on to understand the nuances between the two kinds of UDF.
-
-#### Tile
-
-[Web maps](https://en.wikipedia.org/wiki/Tiled_web_map) consist of dozens of seamlessly joined individually-requested tiles of either image or vector format. Each time the user pans, tiles within the viewport are kept displayed, while new tiles are fetched. Fused runs UDF code over the subset of data that falls within each Tile boundary. To accomplish this, the `bbox` parameter makes Tile UDFs spatially “aware” to fetch only the data within its tile's bounds. In other words, even if a UDF processes a global dataset, Fused loads and runs code in parallel for each tile.
-
-The `fused.run` function of the `python-sdk` can call a UDF and return data for a specific Tile. This example runs the [Overture Maps UDF](https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example) for a tile specified with `x`, `y`, and `z` tile grid coordinates.
-
-```python
-import fused
-
-udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example")
-fused.run(udf=udf, x=2622, y=6333, z=14)
-```
-
-The animation below illustrates tiles sequentially appearing on the map.
-
-![Alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/gifs/tiling_sentinel.gif)
-
-> 💡 In technical terms, the `bbox` object is a 1-row geodataframe with the geometry of the tile perimeter and a spatial [index](https://deck.gl/docs/api-reference/geo-layers/tile-layer#indexing-system) defined by X, Y, and Z integers. It's possible to see its specifics by printing `bbox` to the console, or simply navigating to the “Request Details” tab.
-
-![Alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/image-3.png)
-
-As a user pans the map, Fused runs code over each tile in the viewport and automatically passes the`bbox` parameter with values that correspond to each tile. In a UDF, the `bbox` parameter, for example, can be used to:
-
-- Query external APIs to retrieve data for only the relevant tile bounds.
-- Tell a UDF where on the map to place the raster it returns (more on this below).
-
-#### File
-
-If Tile UDFs process and fuse multiple chunks of data, File UDFs process data as a single chunk. The word *File* connotes that a single process handles data as if it came from a single file.
-
-This is handy for datasets confined to a localized geography or those that cannot be queried by a spatial component. UDFs of this kind are ran in a single process, and don’t use the `bbox`parameter.
-
-For example, the map created with the [Isochrone UDF](https://github.com/fusedio/udfs/tree/main/public/Get_Isochrone) below shows a curve of equal travel time to different locations around NYC. The UDF fetches data with a single API call to OSM and returns data for a localized area - which aligns with the File execution model.
-
-```python
-import fused
-
-udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/Get_Isochrone")
-gdf = fused.run(udf=udf)
-gdf
-```
-
-![Alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/map_isochrone.png)
 
 ## Return types
 

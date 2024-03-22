@@ -39,7 +39,7 @@ CREDENTIALS.credentials.access_token
 ```
 
 
-:::note
+:::danger
 
 Note that the "private" token can access all UDFs and should be kept private. The recommended approach is instead to use "shared" tokens with tightly scoped permissions, as detailed below.
 

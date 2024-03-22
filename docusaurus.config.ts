@@ -7,20 +7,26 @@ const config: Config = {
   tagline: 'Code to map. Instantly.',
   favicon: 'img/favicon.png',
 
+
+  url: 'https://fused-docs.github.io',
+  trailingSlash: false,
+
   // Set the production url of your site here
   // url: 'https://docs.fused.io',
-  url: 'http://localhost:3000',
+  // url: 'http://localhost:3000',
+  // url: "http://host.docker.internal:3000",
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: '/',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'fusedlabs', // Usually your GitHub org/user name.
-  projectName: 'docs', // Usually your repo name.
+  organizationName: 'fusedio', // Usually your GitHub org/user name.
+  projectName: 'fused-docs', // Usually your repo name.
 
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
+  
 
   // Even if you don't use internationalization, you can use this field to set
   // useful metadata like html lang. For example, if your site is Chinese, you
@@ -40,6 +46,15 @@ const config: Config = {
           // Remove this to remove the "edit this page" links.
           editUrl:
             'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/',
+            // include: ['**/*.md', '**/*.mdx', '**/fused/**/_*.', '**/_*/**'],
+            include: ['**/*.md', '**/*.mdx', 'reference/fused/**'],
+            exclude: [
+              // '**/_*.{js,jsx,ts,tsx,md,mdx}',
+              // '**/_*/**',
+              '**/*.test.{js,jsx,ts,tsx}',
+              '**/__tests__/**',
+            ],
+  
         },
         blog: {
           showReadingTime: true,
@@ -158,13 +173,13 @@ const config: Config = {
       contextualSearch: true,
 
       // Optional: Specify domains where the navigation should occur through window.location instead on history.push. Useful when our Algolia config crawls multiple documentation sites and we want to navigate with window.location.href to them.
-      externalUrlRegex: 'external\\.com|domain\\.com',
+      // externalUrlRegex: 'external\\.com|domain\\.com',
 
       // Optional: Replace parts of the item URLs from Algolia. Useful when using the same search index for multiple deployments using a different baseUrl. You can use regexp or string in the `from` param. For example: localhost:3000 vs myCompany.com/docs
-      replaceSearchResultPathname: {
-        from: '/docs/', // or as RegExp: /\/docs\//
-        to: '/',
-      },
+      // replaceSearchResultPathname: {
+      //   from: '/docs/', // or as RegExp: /\/docs\//
+      //   to: '/',
+      // },
 
       // Optional: Algolia search parameters
       searchParameters: {},
