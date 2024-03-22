@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkfused_docs=self.webpackChunkfused_docs||[]).push([[7041],{2092:s=>{s.exports=JSON.parse('{"label":"Quickstart","permalink":"/docs/tags/quickstart","allTagsPath":"/docs/tags","count":1,"items":[{"id":"basics/quickstart","title":"Quickstart","description":"testh start","permalink":"/docs/basics/quickstart"}],"unlisted":false}')}}]);
