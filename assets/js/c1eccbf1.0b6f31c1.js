@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkfused_docs=self.webpackChunkfused_docs||[]).push([[8971],{9854:e=>{e.exports=JSON.parse('{"title":"2Tutorial overview2","slug":"/category/tutorial","permalink":"/docs/category/tutorial","navigation":{"previous":{"title":"Overview","permalink":"/docs/hosted-api/overview"},"next":{"title":"index","permalink":"/docs/knowledge-base/load-data/"}}}')}}]);

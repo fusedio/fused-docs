@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkfused_docs=self.webpackChunkfused_docs||[]).push([[5594],{2418:s=>{s.exports=JSON.parse('{"label":"Core Concepts","permalink":"/docs/tags/core-concepts","allTagsPath":"/docs/tags","count":1,"items":[{"id":"basics/core-concepts","title":"Core Concepts","description":"@fused.udf","permalink":"/docs/basics/core-concepts"}],"unlisted":false}')}}]);

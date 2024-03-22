@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkfused_docs=self.webpackChunkfused_docs||[]).push([[8282],{9487:e=>{e.exports=JSON.parse('{"label":"Changelog","permalink":"/docs/tags/changelog","allTagsPath":"/docs/tags","count":1,"items":[{"id":"knowledge-base/changelog","title":"Changelog","description":"v1.4.1 (2024-03-19)","permalink":"/docs/knowledge-base/changelog"}],"unlisted":false}')}}]);
