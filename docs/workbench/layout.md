@@ -23,14 +23,14 @@ The UDF Editor is where developers author UDFs. They can write Python to explore
 
 A UDF can set to render its outputs on Workbench as a Tile or File - or autodetect between the two based on parameters. The choice depends on the nature of data the UDF will return. New UDFs are set to autodetect by default, and the kind can be changed in the top-right dropdown of the code editor.
 
-You can read more about the difference between the two types of outputs in the [core concepts section](/core_concepts/#tile-vs-file-udfs).
+<!-- You can read more about the difference between the two types of outputs in the [core concepts section](/core_concepts/#tile-vs-file-udfs). -->
 
 <!-- ![alt text](image.png) -->
 
 :::note
 Because a UDF can be called as either File or Tile, Workbench must explicitly know how to render their output. When a UDF is configured as "Auto", Workbench automatically handles the output as Tile if it statically checks that the types `fused.types.TileXYZ`, `fused.types.TileGDF`, or `fused.types.Bbox` are used in the UDF. Otherwise, it assumes File.
 
-Note that the "Auto" setting is specific and applicable only to the Workbench UI. UDFs called via `fused-py` or HTTP requests run as Tile only if a parameter specifies the Tile geometry. Read how [here](/python-sdk/overview/#run-a-udf).
+Note that the "Auto" setting is specific and applicable only to the Workbench UI. UDFs called via `fused-py` or HTTP requests run as Tile only if a parameter specifies the Tile geometry. 
 
 :::
 

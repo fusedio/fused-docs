@@ -1,5 +1,5 @@
 ---
-id: hosted-api-overview
+id: overview
 title: Overview
 tags: [Overview, Hosted API]
 sidebar_position: 0

@@ -15,7 +15,7 @@ User Defined Functions (UDFs) are building blocks of geospatial operations that 
 
 To write a UDF, decorate a Python function with `@fused.udf` - this tells Fused to give the function special treatment. Encapsulate the business logic within the function and return the data object to visualize.
 
-To illustrate, this UDF is a function called `udf` that returns a dataframe. Notice how its import statements are placed within the function declaration. The `bbox` argument gives the data spatial awareness, which you can read more about in the [Tile vs. File](/core_concepts/#tile-vs-file-udfs) section below.
+<!-- To illustrate, this UDF is a function called `udf` that returns a dataframe. Notice how its import statements are placed within the function declaration. The `bbox` argument gives the data spatial awareness, which you can read more about in the [Tile vs. File](/core_concepts/#tile-vs-file-udfs) section below. -->
 
 
 ```python

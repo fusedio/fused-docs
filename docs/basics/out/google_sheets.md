@@ -27,7 +27,7 @@ def udf(bbox=None):
 
 ## Step 2: Create a URL for the UDF
 
-Now, [create a signed Tile HTTP endpoint](/hosted-api/overview/#tile-url-endpoints) for the UDF.
+Now, [create a signed Tile HTTP endpoint](/docs/hosted-api/hosted-api-overview#tile-http-endpoints) for the UDF.
 
 The generated URL should look like this:
 

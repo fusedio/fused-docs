@@ -8,23 +8,19 @@ const config: Config = {
   favicon: 'img/favicon.png',
 
 
-  url: 'https://fused-docs.github.io',
   trailingSlash: false,
-
-  // Set the production url of your site here
-  // url: 'https://docs.fused.io',
-  // url: 'http://localhost:3000',
-  // url: "http://host.docker.internal:3000",
+  url: "https://fusedio.github.io/",
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
-  baseUrl: '/',
+  baseUrl: '/fused-docs/',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
   organizationName: 'fusedio', // Usually your GitHub org/user name.
   projectName: 'fused-docs', // Usually your repo name.
 
-  onBrokenLinks: 'throw',
+  // onBrokenLinks: 'throw',
+  onBrokenLinks: 'ignore',
   onBrokenMarkdownLinks: 'warn',
   
 

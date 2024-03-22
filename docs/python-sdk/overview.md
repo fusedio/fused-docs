@@ -1,5 +1,5 @@
 ---
-id: python-sdk-overview
+id: overview
 title: Overview
 tags: [Overview, Python SDK]
 sidebar_position: 0
@@ -59,7 +59,7 @@ Similarly, as a bash oneliner.
 python -c "import fused; gdf = fused.load('https://github.com/fusedio/udfs/tree/main/public/DuckDB_NYC_Example').run_local(); print(gdf);"
 ```
 
-The following ["API Reference"](/python-sdk/api/top-level-functions/) sections show how to write, manage, and run UDFs, as well as the different utility functions designed to make your life easiy.
+<!-- The following ["API Reference"](/python-sdk/api/top-level-functions/) sections show how to write, manage, and run UDFs, as well as the different utility functions designed to make your life easiy. -->
 
 The main thing to remember at this point is that UDFs are simply Python functions decorated with `@fused.udf`.
 
@@ -190,9 +190,9 @@ fused.run(udf=udf, bbox=gdf)
 
 
 
-:::note
-The `fused.run` convenience function wraps [run_tile](python-sdk/api/core/#fused.core.run_tile) and [run_file](python-sdk/api/core/#fused.core.run_file) functions, which can optionally be used.
-:::
+<!-- :::note
+The `fused.run` convenience function wraps [run_tile](/python-sdk/api/core/#fused.core.run_tile) and [run_file](/python-sdk/api/core/#fused.core.run_file) functions, which can optionally be used.
+::: -->
 
 
 
@@ -268,4 +268,4 @@ def udf(my_param: int, my_dict: Dict):
 
 This feature is under active development. Presently supported types are `int`, `float`, `bool`, `list`, `dict`, `List`, `Dict`, `Iterable`, `uuid.UUID`, `Optional[]`, and `gpd.GeoDataFrame` from a geojson. `Union` is not supported. Parameters that are not annotated are handled as string.
 
-Fused also exposes special types to specify whether the output should be handled as [`Tile` or `File`](core_concepts/#tile-vs-file-udfs). These are `fused.types.TileXYZ` and `fused.types.TileGDF` respectively. The `bbox` parameter is typed as `fused.types.Bbox`.
+<!-- Fused also exposes special types to specify whether the output in Workbench should be handled as [`Tile` or `File`](core_concepts/#tile-vs-file-udfs). These are `fused.types.TileXYZ` and `fused.types.TileGDF` respectively. The `bbox` parameter is typed as `fused.types.Bbox`. -->

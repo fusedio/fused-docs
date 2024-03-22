@@ -1,5 +1,5 @@
 ---
-id: top-level-overview
+id: overview
 title: Overview
 tags: [Overview, Getting started]
 sidebar_position: 0
@@ -14,7 +14,7 @@ sidebar_position: 0
 
 ## Ecosystem
 
-Build any scale workflows with the [Fused Python SDK](python-sdk/overview.md) and [Workbench webapp](workbench/overview.md), and integrate them into your stack with the [Fused Hosted API](hosted-api/overview.md).
+Build any scale workflows with the [Fused Python SDK](/docs/python-sdk/overview) and [Workbench webapp](/docs/workbench/python-sdk-overview), and integrate them into your stack with the [Fused Hosted API](hosted-api/overview.md).
 
 
 ![alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/ecosystem_diagram.png)
@@ -34,10 +34,10 @@ def my_function():
 
 Keep these fundamentals in mind as you work with UDFs.
 
-- [@fused.udf](core_concepts/#fusedudf): The UDF decorator prepares the UDF to be deployed as a serverless function that can be invoked through HTTP requests.
+<!-- - [@fused.udf](core_concepts/#fusedudf): The UDF decorator prepares the UDF to be deployed as a serverless function that can be invoked through HTTP requests.
 - [@fused.cache](core_concepts/#caching): UDFs can import from any Python library or custom helper modules, and cache the output of helper functions with the cache decorator.
 - [Tile or File](core_concepts/#tile-vs-file-udfs): There's two types of UDF: `Tile` loads data as a collection of tiles at various zoom levels that make up a complete map, and `File` loads a single output object.
-- [Return types](core_concepts/#return-types): UDFs can return any serializable data object. Note that for the output to render on a map, it should be a raster or vector type.
+- [Return types](core_concepts/#return-types): UDFs can return any serializable data object. Note that for the output to render on a map, it should be a raster or vector type. -->
 
 
 ## Connect with the community
