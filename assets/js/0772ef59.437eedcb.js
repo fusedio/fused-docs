@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkfused_docs=self.webpackChunkfused_docs||[]).push([[9908],{3908:e=>{e.exports=JSON.parse('{"label":"Changelog","permalink":"/tags/changelog","allTagsPath":"/tags","count":1,"items":[{"id":"python-sdk/changelog","title":"Changelog","description":"v1.4.1 (2024-03-19)","permalink":"/python-sdk/changelog"}],"unlisted":false}')}}]);
