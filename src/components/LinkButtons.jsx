@@ -13,7 +13,7 @@ const LinkButtons = ({githubUrl, colabUrl}) => {
     <div className="link-buttons">
       <Link to={githubUrl}>Open in GitHub</Link>
       <div></div>
-      <Link to={colabUrl}>Run in Google Colab</Link>
+      <Link to={colabUrl}><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open in Colab"/></Link>
     </div>
   );
 };
