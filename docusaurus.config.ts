@@ -33,16 +33,17 @@ const config: Config = {
     locales: ['en'],
   },
 
+  // Currently set to docs only mode. Change to enable blog and main site. https://docusaurus.io/docs/docs-introduction#docs-only-mode
   presets: [
     [
       'classic',
       {
         docs: {
+          routeBasePath: '/',
           sidebarPath: './sidebars.ts',
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
-          editUrl:
-            'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/',
+          // editUrl: 'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/',
             // include: ['**/*.md', '**/*.mdx', '**/fused/**/_*.', '**/_*/**'],
             include: ['**/*.md', '**/*.mdx', 'reference/fused/**'],
             exclude: [
@@ -53,13 +54,7 @@ const config: Config = {
             ],
   
         },
-        blog: {
-          showReadingTime: true,
-          // Please change this to your repo.
-          // Remove this to remove the "edit this page" links.
-          editUrl:
-            'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/',
-        },
+        blog: false,
         theme: {
           customCss: './src/css/custom.css',
         },
