@@ -188,7 +188,7 @@ const config: Config = {
       id: 'announcement',
       content:
         '⭐ If you like Fused, give us a star on <a target="_blank" rel="noopener noreferrer" href="https://github.com/fusedio/udfs/">GitHub</a>! ⭐',
-      backgroundColor: '#f023c0',
+      backgroundColor: '#991199',
       textColor: '#ffffff',
       isCloseable: false,
     },

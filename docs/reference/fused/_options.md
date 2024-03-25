@@ -170,3 +170,11 @@ by specifying the option name in the form &quot;parent.child&quot;.
     set_option('request_timeout', 120)
     ```
 
+#### \_env
+
+```python
+def _env(environment_name: str)
+```
+
+Set the environment.
+

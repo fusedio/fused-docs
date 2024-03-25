@@ -348,6 +348,14 @@ Construct a JobConfig
 
   A combined job config.
 
+#### \_whoami
+
+```python
+def _whoami()
+```
+
+Returns information on the currently logged in user
+
 #### plot
 
 ```python

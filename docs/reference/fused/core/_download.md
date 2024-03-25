@@ -103,3 +103,16 @@ May be called from multiple processes with the same inputs to get the same resul
 
   The string of the local path.
 
+#### \_run\_once
+
+```python
+def _run_once(signal_name: str, fn: Callable) -> None
+```
+
+Run a function once, waiting for another process to run it if in progress.
+
+**Arguments**:
+
+- `signal_key` - A relative key for signalling done status. Files are written using `create_path` and this key to deduplicate runs.
+- `fn` - A function that will be run once.
+

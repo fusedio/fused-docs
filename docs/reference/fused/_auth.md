@@ -36,6 +36,15 @@ def credentials() -> Credentials
 
 Retrieve valid credentials, initializing them or authenticating from scratch if needed.
 
+#### \_authorization\_header
+
+```python
+@property
+def _authorization_header()
+```
+
+Access the Authorization HTTP header of these credentials.
+
 #### CREDENTIALS
 
 Global credentials.

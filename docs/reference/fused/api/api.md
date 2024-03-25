@@ -382,6 +382,22 @@ Visualize multiple datasets
 
   The url to the visualization page.
 
+#### \_whoami
+
+```python
+def _whoami() -> Any
+```
+
+Returns information on the currently logged in user
+
+#### \_list\_realtime\_instances
+
+```python
+def _list_realtime_instances(*, whose: str = "self") -> List[Any]
+```
+
+Returns information about available realtime instances
+
 #### open\_table
 
 ```python
@@ -457,6 +473,32 @@ def upload(path: str, data: Union[bytes, BinaryIO]) -> None
 ```
 
 Upload a binary blob to a cloud location
+
+#### \_upload\_tmp
+
+```python
+def _upload_tmp(extension: str, data: Union[bytes, BinaryIO]) -> str
+```
+
+Upload a binary blob to a temporary cloud location, and return the new URL
+
+#### \_replace\_df\_input
+
+```python
+def _replace_df_input(
+    input: Union[str, List[str], Path,
+                 gpd.GeoDataFrame]) -> Union[str, List[str]]
+```
+
+If the input is a DataFrame, upload it and return a URL to it. Otherwise return input unchanged.
+
+#### \_health
+
+```python
+def _health() -> bool
+```
+
+Check the health of the API backend
 
 #### auth\_token
 
