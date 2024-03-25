@@ -1,0 +1,137 @@
+---
+title: Ingest your own data
+sidebar_label: Ingest
+path: basics/tutorials/ingest/ingest
+nb_path: basics/tutorials/ingest.ipynb
+github: https://github.com/fusedio/notebooks/blob/main/public/ingest.ipynb
+colab: https://githubtocolab.com/fusedio/notebooks/blob/main/public/ingest.ipynb
+---
+
+import LinkButtons from "../../../../src/components/LinkButtons.jsx";
+import CellOutput from "../../../../src/components/CellOutput.jsx";
+import {BokehFigure, PlotlyFigure} from "../../../../src/components/Plotting.jsx";
+
+<LinkButtons
+  githubUrl="https://github.com/fusedio/notebooks/blob/main/public/ingest.ipynb"
+  colabUrl="https://githubtocolab.com/fusedio/notebooks/blob/main/public/ingest.ipynb"
+/>
+
+# How-to: Ingestion
+
+This example notebook shows how to use Fused to ingest data into an S3 bucket.
+
+## Ingest data
+
+Fused delivers speed advantages thanks to spatial partitioning. Geospatial operations
+between two or more datasets are usually for spatially overlapping or neighboring areas
+\- and usually for localized areas of interest. Breaking down datasets across geographic
+chunks loads only the relevant data for each operation.
+
+The [`fused.ingest()`](/python-sdk/api/top-level-functions/#fused.ingest) method loads
+data into an S3 bucket and automatically geo partitions it.
+
+Datasets ingested with Fused are spatially partitioned collections of Parquet files.
+Each file has one or more chunks, which are a further level of spatial partitioning.
+
+Columns in a dataset are grouped into tables. An ingested dataset contains a `main`
+table with the original input columns and a `fused` table containing spatial metadata.
+
+The `ingest()` method has many configuration options, which the API documentation
+explains. The following sections cover a few different ingestion use cases.
+
+Pro tip: While Fused is generally used to ingest files, it's also possible to pass the
+`GeoDataFrame` directly to `fused.ingest()`.
+
+### Default ingestion
+
+By default ingestion tries to create a certain number of files (`target_num_files=20`).
+The number of rows per file and chunk are chosen to meet this target. Note that 20 files
+is only a target and the actual number of files generated can vary.
+
+```python
+import fused
+
+
+job = fused.ingest(
+    input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
+    output=f"fd://census/dc_tract",
+)
+job_id = job.run_remote(overwrite=True)
+```
+
+While the job is running, follow its logs.
+
+```python
+job_id.tail_logs()
+```
+
+### Row-based ingestion
+
+Our basic ingestion is row-based, where the user set the maximum number of rows per each
+chunk and file.
+
+```python
+job = fused.ingest(
+    input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
+    explode_geometries=True,
+    partitioning_method="rows",
+    partitioning_maximum_per_file=100,
+    partitioning_maximum_per_chunk=10,
+)
+job_id = job.run_remote(overwrite=True)
+```
+
+### Area-based ingestion
+
+Fused also supports area-based ingestion, where the number of rows in each partition is
+determined by the sum of their area.
+
+```python
+job = fused.ingest(
+    input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
+    output=f"fd://census/dc_tract_area",
+    explode_geometries=True,
+    partitioning_method="area",
+    partitioning_maximum_per_file=None,
+    partitioning_maximum_per_chunk=None,
+)
+job_id = job.run_remote(overwrite=True)
+```
+
+### Geometry subdivision
+
+It's also possible to subdivide geometries in the ingestion process.
+
+```python
+job = fused.ingest(
+    input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
+    output=f"fd://census/dc_tract_geometry",
+    explode_geometries=True,
+    partitioning_method="area",
+    partitioning_maximum_per_file=None,
+    partitioning_maximum_per_chunk=None,
+    subdivide_start=0.001,
+    subdivide_stop=0.0001,
+    subdivide_method="area",
+)
+job_id = job.run_remote(overwrite=True)
+```
+
+Once ingestion completes,
+[`fused.open_table`](/python-sdk/api/experimental/#fused._experimental.open_table)
+returns the corresponding [`Table`](/python-sdk/api/experimental/#fused.models.Table)
+object.
+
+The notebook _repr_ provides insight into the Table structure.
+
+- Each table has one or more _files_, which are spatially partitioned.
+- Each file has one or more _chunks_, which are again spatially partitioned within the
+  file.
+
+Optionally, tables can be part of a `Dataset`, which consists of one or more _tables_.
+
+```python
+census_tracts = fused.open_table(f"fd://census/dc_tract")
+census_tracts
+```
+

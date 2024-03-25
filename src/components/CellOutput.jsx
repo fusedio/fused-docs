@@ -12,7 +12,7 @@ const CellOutput = (props) => {
   return (
     <div
       style={{
-        backgroundColor: 'lightgray',
+        backgroundColor: 'var(--ifm-background-surface-color)',
         marginBottom: 'var(--ifm-leading)',
         borderRadius: 'var(--ifm-global-radius)',
         boxShadow: 'var(--ifm-global-shadow-lw)',
@@ -20,7 +20,7 @@ const CellOutput = (props) => {
         padding: '10px',
         font: 'var(--ifm-code-font-size) / var(--ifm-pre-line-height) var(--ifm-font-family-monospace)',
       }}>
-      <span style={{color: 'red'}}>Out: </span>
+      <span style={{color: 'var(--ifm-color-primary)'}}>Out: </span>
       <pre style={{margin: '0px', backgroundColor: 'inherit'}}>
         {props.children.split('\n').map((line) => {
           return (
