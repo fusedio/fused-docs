@@ -41,10 +41,6 @@ const config: Config = {
         docs: {
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
-          // Please change this to your repo.
-          // Remove this to remove the "edit this page" links.
-          // editUrl: 'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/',
-            // include: ['**/*.md', '**/*.mdx', '**/fused/**/_*.', '**/_*/**'],
             include: ['**/*.md', '**/*.mdx', 'reference/fused/**'],
             exclude: [
               // '**/_*.{js,jsx,ts,tsx,md,mdx}',
@@ -52,7 +48,6 @@ const config: Config = {
               '**/*.test.{js,jsx,ts,tsx}',
               '**/__tests__/**',
             ],
-  
         },
         blog: false,
         theme: {
@@ -108,12 +103,13 @@ const config: Config = {
         src: 'img/logo-black-bg-transparent.svg',
       },
       items: [
-        {
-          type: 'docSidebar',
-          sidebarId: 'tutorialSidebar',
-          position: 'left',
-          label: 'Docs',
-        },
+        // Show "Docs" in top navbar
+        // {
+        //   type: 'docSidebar',
+        //   sidebarId: 'tutorialSidebar',
+        //   position: 'left',
+        //   label: 'Docs',
+        // },
         // {to: '/blog', label: 'Blog', position: 'left'},
         {
           href: 'https://github.com/fusedio/udfs',
