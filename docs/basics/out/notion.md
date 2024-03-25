@@ -1,9 +1,4 @@
----
-search:
-  boost: 10
----
-
-# Notion integration
+# Notion
 
 Embed responsive maps into your Notion pages to significantly enhance the utility and interactivity of your documentation, project plans, internal apps, or any other type of content you manage within Notion.
 

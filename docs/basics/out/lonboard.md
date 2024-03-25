@@ -1,9 +1,4 @@
----
-search:
-  boost: 10
----
-
-# Lonboard integration
+# Lonboard
 
 [Lonboard](https://developmentseed.org/lonboard/latest/) is a Python library to create fast and interactive geospatial visualizations in Jupyter Notebooks.
 

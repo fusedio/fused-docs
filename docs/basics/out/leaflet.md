@@ -1,9 +1,4 @@
----
-search:
-  boost: 10
----
-
-# Leaflet integration
+# Leaflet
 
 Fused can be used to display responsive Tile maps in Jupyter Notebooks with the `ipyleaflet` library.
 

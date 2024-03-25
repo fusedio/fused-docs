@@ -1,8 +1,4 @@
----
-search:
-  boost: 10
----
-# Microsoft Excel integration
+# Excel
 
 Microsoft Excel can import data from a given URL in `.csv` format. You can use this to load data from a UDF into an Excel sheet.
 

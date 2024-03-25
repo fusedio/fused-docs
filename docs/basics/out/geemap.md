@@ -1,4 +1,4 @@
-# Geemap integration
+# Geemap
 
 [Geemap](https://geemap.org/) is a Python package to visually analyze geospatial data with Google Earth Engine (GEE).
 

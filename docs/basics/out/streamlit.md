@@ -1,8 +1,4 @@
----
-search:
-  boost: 10
----
-# Streamlit integration
+# Streamlit
 
 Streamlit is an open source Python app builder to turn data scripts into shareable web apps.
 

@@ -1,8 +1,4 @@
----
-search:
-  boost: 10
----
-# Google Sheets integration
+# Google Sheets
 
 The Google Sheets `importData` command imports data at from a given url in `.csv` format. You can use it to load data from a UDF into a cell.
 
