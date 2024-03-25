@@ -7,13 +7,18 @@
 
 import React from 'react';
 import Link from '@docusaurus/Link';
+import TagGitHub from '@site/src/components/TagGitHub'
+
 
 const LinkButtons = ({githubUrl, colabUrl}) => {
   return (
     <div className="link-buttons">
-      <Link to={githubUrl}>Open in GitHub</Link>
-      <div></div>
+      <br></br>
       <Link to={colabUrl}><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open in Colab"/></Link>
+      
+      <div></div>
+      
+      <Link to={githubUrl}><TagGitHub color="#444444">Open in GitHub</TagGitHub></Link>
     </div>
   );
 };

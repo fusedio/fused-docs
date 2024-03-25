@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function BadgeGH({children, color})  {
+export default function TagGitHub({children, color})  {
     return(
     <span
         style={{
