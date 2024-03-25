@@ -14,6 +14,7 @@ const config: Config = {
   // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: '/fused-docs/',
 
+
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
   organizationName: 'fusedio', // Usually your GitHub org/user name.
@@ -156,35 +157,31 @@ const config: Config = {
       isCloseable: false,
     },
 
-    algolia: {
-      // The application ID provided by Algolia
-      appId: 'JNTLW5AVDA',
-
-      // Public API key: it is safe to commit it
-      apiKey: '6ce1dd49f199420095a7d356058a2e49',
-
-      indexName: 'fused',
-
-      // Optional: see doc section below
-      contextualSearch: true,
-
-      // Optional: Specify domains where the navigation should occur through window.location instead on history.push. Useful when our Algolia config crawls multiple documentation sites and we want to navigate with window.location.href to them.
-      // externalUrlRegex: 'external\\.com|domain\\.com',
-
-      // Optional: Replace parts of the item URLs from Algolia. Useful when using the same search index for multiple deployments using a different baseUrl. You can use regexp or string in the `from` param. For example: localhost:3000 vs myCompany.com/docs
-      // replaceSearchResultPathname: {
-      //   from: '/docs/', // or as RegExp: /\/docs\//
-      //   to: '/',
-      // },
-
-      // Optional: Algolia search parameters
-      searchParameters: {},
-
-      // Optional: path for search page that enabled by default (`false` to disable it)
-      searchPagePath: 'search',
-
-      //... other Algolia params
-    },
+    themes: ['docusaurus-theme-search-typesense'],
+    themeConfig: {
+      typesense: {
+        // Replace this with the name of your index/collection.
+        // It should match the "index_name" entry in the scraper's "config.json" file.
+        typesenseCollectionName: 'docusaurus-2',
+  
+        typesenseServerConfig: {
+          nodes: [
+            {
+              host: 'o4svizatly9q58nkp-1.a1.typesense.net',
+              port: 443,
+              protocol: 'https',
+            },
+          ],
+          apiKey: '5xjdcw9HHu92ZkibK6t7uB2ou7bjxZPA', // Search-only API key
+        },
+  
+        // Optional: Typesense search parameters: https://typesense.org/docs/0.24.0/api/search.html#search-parameters
+        typesenseSearchParameters: {},
+  
+        // Optional
+        contextualSearch: true,
+      },
+    }
 
 
   } satisfies Preset.ThemeConfig,
