@@ -9,7 +9,8 @@ const config: Config = {
 
 
   trailingSlash: false,
-  url: "https://fusedio.github.io/",
+  // url: "https://fusedio.github.io/",
+  url: "https://docs.fused.io",
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
   // baseUrl: '/fused-docs/', // needed for GitHub pages

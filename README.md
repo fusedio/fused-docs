@@ -28,10 +28,14 @@ docker run -it --env-file=.env -e "CONFIG=$(cat config.json | jq -r tostring)" t
 
 This deploys to [fusedio.github.io/fused-docs](https://fusedio.github.io/fused-docs/) which is a "staging" site.
 
+NOTE: For GitHub pages set `baseUrl: '/fused-docs/'` in `docusaurus.config.ts`.
+
 ```
 npx docusaurus deploy   
 ```
 
 ### b) To "production"
+
+NOTE: For prod set `baseUrl: '/'` in `docusaurus.config.ts`.
 
 The "production" site is [docs.fused.io](https://docs.fused.io/), and the deploy workflow runs with GitHub Actions on merges to main.
