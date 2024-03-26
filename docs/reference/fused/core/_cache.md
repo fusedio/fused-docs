@@ -34,21 +34,25 @@ keyword arguments.
 **Examples**:
 
   
-  # Use the `@cache` decorator to cache the return value of a function in a custom path.
+  Use the `@cache` decorator to cache the return value of a function in a custom path.
   
-  @cache(path=&quot;/tmp/custom_path/&quot;)
-  def expensive_function():
-  # Function implementation goes here
-  return result
+    ```py
+    @cache(path="/tmp/custom_path/")
+    def expensive_function():
+        # Function implementation goes here
+        return result
+    ```
   
-  # If the output of a cached function changes, for example if remote data is modified,
-  # it can be reset by running the function with the `reset` keyword argument. Afterward,
-  # the argument can be
+  If the output of a cached function changes, for example if remote data is modified,
+  it can be reset by running the function with the `reset` keyword argument. Afterward,
+  the argument can be cleared.
   
-  @cache(path=&quot;/tmp/custom_path/&quot;, reset=True)
-  def expensive_function():
-  # Function implementation goes here
-  return result
+    ```py
+    @cache(path="/tmp/custom_path/", reset=True)
+    def expensive_function():
+        # Function implementation goes here
+        return result
+    ```
 
 #### cache\_call
 
@@ -118,5 +122,5 @@ implementation of `_cache_async`.
   return data
   
   # Usage
-  result = await cache_call_async(fetch_data, &#x27;example_param&#x27;)
+  result = await cache_call_async(fetch_data, 'example_param')
 

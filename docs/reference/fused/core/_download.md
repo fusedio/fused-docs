@@ -13,7 +13,7 @@ Get an fsspec filesystem for the given protocol.
 
 **Arguments**:
 
-- `protocol` - Protocol part of the URL, such as &quot;s3&quot; or &quot;gs&quot;.
+- `protocol` - Protocol part of the URL, such as "s3" or "gs".
 - `storage_options` - Additional arguments to pass to the storage backend.
   
 
@@ -36,7 +36,7 @@ This is useful for UDFs that temporarily store indermediate results as files, su
 **Arguments**:
 
 - `file_path` - The file path to locate.
-- `mkdir` - If True, create the directory if it doesn&#x27;t already exist. Defaults to True.
+- `mkdir` - If True, create the directory if it doesn't already exist. Defaults to True.
   
 
 **Returns**:
@@ -74,14 +74,15 @@ Fused addresses the latency of downloading files with the download utility funct
 
 **Examples**:
 
-  
-  @fused.udf
-  def geodataframe_from_geojson():
-  import geopandas as gpd
-  url = &quot;s3://sample_bucket/my_geojson.zip&quot;
-  path = fused.core.download(url, &quot;tmp/my_geojson.zip&quot;)
-  gdf = gpd.read_file(path)
-  return gdf
+    ```python
+    @fused.udf
+    def geodataframe_from_geojson():
+        import geopandas as gpd
+        url = "s3://sample_bucket/my_geojson.zip"
+        path = fused.core.download(url, "tmp/my_geojson.zip")
+        gdf = gpd.read_file(path)
+        return gdf
+    ```
 
 #### download\_folder
 

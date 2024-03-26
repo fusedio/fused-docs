@@ -15,8 +15,8 @@ from the server.
 **Methods**:
 
   __init__(self, cache_key: Any = None): Initializes the _Public instance with an optional cache key.
-  __getattribute__(self, key: str) -&gt; Union[Any, AttrDict]: Attempts to access class attributes, falling back to fetching the attribute&#x27;s configuration from a server if not found.
-  __getitem__(self, key: str) -&gt; AttrDict: Fetches the configuration for the given key from a server and returns a utility object for execution.
+  __getattribute__(self, key: str) -> Union[Any, AttrDict]: Attempts to access class attributes, falling back to fetching the attribute's configuration from a server if not found.
+  __getitem__(self, key: str) -> AttrDict: Fetches the configuration for the given key from a server and returns a utility object for execution.
 
 #### \_\_init\_\_
 
@@ -32,7 +32,7 @@ Initializes the _Public instance with an optional cache key.
 
 #### utils
 
-A module to access utility functions located in the UDF called &quot;common&quot;.
+A module to access utility functions located in the UDF called "common".
 
 They can be imported by other UDFs with `common = fused.public.common`. They contain common operations such as:
 - read_shape_zip
@@ -46,26 +46,29 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
 **Examples**:
 
   
-  # This example shows how to access the `geo_buffer` function from the `common` UDF.
-  import fused
-  import geopandas as gpd
+  This example shows how to access the `geo_buffer` function from the `common` UDF.
+    ```python
+    import fused
+    import geopandas as gpd
+
+    gdf = gpd.read_file('https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_COLUMBIA/11/tl_rd22_11_bg.zip')
+    gdf_buffered = fused.public.common.geo_buffer(gdf, 10)
+    ```
   
-  gdf = gpd.read_file(&#x27;https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_COLUMBIA/11/tl_rd22_11_bg.zip&#x27;)
-  gdf_buffered = fused.public.common.geo_buffer(gdf, 10)
+  This example shows how to load a table with `table_to_tile`, which efficiently loads a table by filtering and adjusting based on the provided bounding box (bbox) and zoom level.
+    ```python
+    table_path = "s3://fused-asset/infra/census_bg_us"
+    gdf = fused.public.common.table_to_tile(
+        bbox, table_path, use_columns=["GEOID", "geometry"], min_zoom=12
+    )
+    ```
   
-  
-  # This example shows how to load a table with `table_to_tile`, which efficiently loads a table by filtering and adjusting based on the provided bounding box (bbox) and zoom level.
-  table_path = &quot;s3://fused-asset/infra/census_bg_us&quot;
-  gdf = fused.public.common.table_to_tile(
-  bbox, table_path, use_columns=[&quot;GEOID&quot;, &quot;geometry&quot;], min_zoom=12
-  )
-  
-  
-  # This example shows how to use `rasterize_geometry` to place an input geometry within an image array.
-  geom_masks = [
-  rasterize_geometry(geom, arr.shape[-2:], transform) for geom in gdf.geometry
-  ]
-  
+  This example shows how to use `rasterize_geometry` to place an input geometry within an image array.
+    ```python
+    geom_masks = [
+        rasterize_geometry(geom, arr.shape[-2:], transform) for geom in gdf.geometry
+    ]
+    ```
   
   Public UDFs are listed at https://github.com/fusedio/udfs/tree/main/public
 

@@ -120,7 +120,7 @@ Execute an operation
 
 **Arguments**:
 
-- `instance_type` - The AWS EC2 instance type to use for the job. Acceptable strings are &quot;m5.large&quot;, &quot;m5.xlarge&quot;, &quot;m5.2xlarge&quot;, &quot;m5.4xlarge&quot;, &quot;r5.large&quot;, &quot;r5.xlarge&quot;, &quot;r5.2xlarge&quot;, &quot;r5.4xlarge&quot;. Defaults to None.
+- `instance_type` - The AWS EC2 instance type to use for the job. Acceptable strings are "m5.large", "m5.xlarge", "m5.2xlarge", "m5.4xlarge", "r5.large", "r5.xlarge", "r5.2xlarge", "r5.4xlarge". Defaults to None.
 - `region` - The AWS region in which to run. Defaults to None.
 - `disk_size_gb` - The disk size to specify for the job. Defaults to None.
 - `additional_env` - Any additional environment variables to be passed into the job, each in the form KEY=value. Defaults to None.
@@ -308,10 +308,10 @@ Visualize a dataset
 
 - `open_browser` - if True, attempts to open the debugging visualization in a browser window. Defaults to None.
 - `show_widget` - if True, attempts to open the debugging visualization in a widget within this notebook. Defaults to None.
-- `iframe_args` - parameters to pass into the generated IFrame. Defaults to (&quot;100%&quot;, &quot;600px&quot;).
+- `iframe_args` - parameters to pass into the generated IFrame. Defaults to ("100%", "600px").
 - `tables` - tables to load attributes from for visualization. Defaults to None,
 - `app_config` - additional debugging application configuration options
-- `include_fused_table` - if True, ensure &quot;fused&quot; is in the list of tables to show.
+- `include_fused_table` - if True, ensure "fused" is in the list of tables to show.
   
 
 **Returns**:
@@ -342,7 +342,7 @@ Visualize multiple datasets
 
 - `open_browser` - if True, attempts to open the debugging visualization in a browser window. Defaults to None.
 - `show_widget` - if True, attempts to open the debugging visualization in a widget within this notebook. Defaults to None.
-- `iframe_args` - parameters to pass into the generated IFrame. Defaults to (&quot;100%&quot;, &quot;600px&quot;).
+- `iframe_args` - parameters to pass into the generated IFrame. Defaults to ("100%", "600px").
 - `app_config` - additional debugging application configuration options
   
 
@@ -374,7 +374,7 @@ Visualize multiple datasets
 
 - `open_browser` - if True, attempts to open the debugging visualization in a browser window. Defaults to None.
 - `show_widget` - if True, attempts to open the debugging visualization in a widget within this notebook. Defaults to None.
-- `iframe_args` - parameters to pass into the generated IFrame. Defaults to (&quot;100%&quot;, &quot;600px&quot;).
+- `iframe_args` - parameters to pass into the generated IFrame. Defaults to ("100%", "600px").
 - `app_config` - additional debugging application configuration options
   
 
@@ -419,9 +419,9 @@ Open a Table object given a path to the root of the table
 **Example**:
 
   
-  table = fused.open_table(
-  path=&quot;s3://my_bucket/path/to/dataset/table/&quot;
-  )
+    ```python
+    table = fused.open_table(path="s3://my_bucket/path/to/dataset/table/")
+    ```
   
 
 **Returns**:
@@ -458,7 +458,7 @@ Open all Table objects under the path.
 
   
   datasets = fused.open_folder(
-  path=&quot;s3://my_bucket/path/to/folder/&quot;
+  path="s3://my_bucket/path/to/folder/"
   )
   
 
@@ -506,5 +506,5 @@ Check the health of the API backend
 def auth_token() -> str
 ```
 
-Returns the current user&#x27;s Fused environment (team) auth token
+Returns the current user's Fused environment (team) auth token
 

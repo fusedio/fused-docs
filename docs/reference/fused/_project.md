@@ -116,7 +116,7 @@ Open a Table object given a path to the root of the table
 **Example**:
 
   
-  table = project.open_table(&quot;path/to/dataset/table/&quot;)
+  table = project.open_table("path/to/dataset/table/")
   
 
 **Returns**:
@@ -166,70 +166,94 @@ Ingest a dataset into the Fused partitioned format.
 
 - `output_metadata` - Location on S3 to write the `fused` table to.
 - `schema` - Schema of the data to be ingested. This is optional and will be inferred from the data if not provided.
-- `file_suffix` - filter which files are used for ingestion. If `input` is a directory on S3, all files under that directory will be listed and used for ingestion. If `file_suffix` is not None, it will be used to filter paths by checking the trailing characters of each filename. E.g. pass `GeoDataFrame`0 to include only GeoJSON files inside the directory.
-- `GeoDataFrame`1 - Read only this set of columns when ingesting geospatial datasets. Defaults to all columns.
-- `GeoDataFrame`2 - The named columns to drop when ingesting geospatial datasets. Defaults to not drop any columns.
-- `GeoDataFrame`3 - Whether to unpack multipart geometries to single geometries when ingesting geospatial datasets, saving each part as its own row. Defaults to `GeoDataFrame`4.
-- `GeoDataFrame`5 - Whether to drop geometries outside of the expected WGS84 bounds. Defaults to True.
-- `GeoDataFrame`6 - The method to use for grouping rows into partitions.
+- `file_suffix` - filter which files are used for ingestion. If `input` is a directory on S3, all files under that directory will be listed and used for ingestion. If `file_suffix` is not None, it will be used to filter paths by checking the trailing characters of each filename. E.g. pass `file_suffix=".geojson"` to include only GeoJSON files inside the directory.
+- `load_columns` - Read only this set of columns when ingesting geospatial datasets. Defaults to all columns.
+- `remove_cols` - The named columns to drop when ingesting geospatial datasets. Defaults to not drop any columns.
+- `explode_geometries` - Whether to unpack multipart geometries to single geometries when ingesting geospatial datasets, saving each part as its own row. Defaults to `False`.
+- `drop_out_of_bounds` - Whether to drop geometries outside of the expected WGS84 bounds. Defaults to True.
+- `partitioning_method` - The method to use for grouping rows into partitions.
   
-  - `GeoDataFrame`7: Construct partitions where all contain a maximum total area among geometries.
-  - `GeoDataFrame`8: Construct partitions where all contain a maximum total length among geometries.
-  - `GeoDataFrame`9: Construct partitions where all contain a maximum total number of coordinates among geometries.
-  - `output`0: Construct partitions where all contain a maximum number of rows.
+  - `"area"`: Construct partitions where all contain a maximum total area among geometries.
+  - `"length"`: Construct partitions where all contain a maximum total length among geometries.
+  - `"coords"`: Construct partitions where all contain a maximum total number of coordinates among geometries.
+  - `"rows"`: Construct partitions where all contain a maximum number of rows.
   
-  Defaults to `output`0.
+  Defaults to `"rows"`.
   
-- `output`2 - Maximum value for `GeoDataFrame`6 to use per file. If `output`4, defaults to _1/10th_ of the total value of `GeoDataFrame`6. So if the value is `output`4 and `GeoDataFrame`6 is `GeoDataFrame`7, then each file will be have no more than 1/10th the total area of all geometries. Defaults to `output`4.
-- `main`0 - Maximum value for `GeoDataFrame`6 to use per chunk. If `output`4, defaults to _1/100th_ of the total value of `GeoDataFrame`6. So if the value is `output`4 and `GeoDataFrame`6 is `GeoDataFrame`7, then each file will be have no more than 1/100th the total area of all geometries. Defaults to `output`4.
-- `main`8 - The maximum ratio of width to height of each partition to use in the ingestion process. So for example, if the value is `main`9, then if the width divided by the height is greater than `main`9, the box will be split in half along the horizontal axis. Defaults to `main`9.
-- `output_metadata`2 - The maximum ratio of height to width of each partition to use in the ingestion process. So for example, if the value is `main`9, then if the height divided by the width is greater than `main`9, the box will be split in half along the vertical axis. Defaults to `main`9.
-- `output_metadata`6 - Whether to force partitioning within UTM zones. If set to `output_metadata`7, this will ensure that the centroid of all geometries per _file_ are contained in the same UTM zone. If set to `output_metadata`8, this will ensure that the centroid of all geometries per _chunk_ are contained in the same UTM zone. If set to `output`4, then no UTM-based partitioning will be done. Defaults to &quot;chunk&quot;.
-- `fused`0 - How to split one partition into children.
+- `partitioning_maximum_per_file` - Maximum value for `partitioning_method` to use per file. If `None`, defaults to _1/10th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will be have no more than 1/10th the total area of all geometries. Defaults to `None`.
+- `partitioning_maximum_per_chunk` - Maximum value for `partitioning_method` to use per chunk. If `None`, defaults to _1/100th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will be have no more than 1/100th the total area of all geometries. Defaults to `None`.
+- `partitioning_max_width_ratio` - The maximum ratio of width to height of each partition to use in the ingestion process. So for example, if the value is `2`, then if the width divided by the height is greater than `2`, the box will be split in half along the horizontal axis. Defaults to `2`.
+- `partitioning_max_height_ratio` - The maximum ratio of height to width of each partition to use in the ingestion process. So for example, if the value is `2`, then if the height divided by the width is greater than `2`, the box will be split in half along the vertical axis. Defaults to `2`.
+- `partitioning_force_utm` - Whether to force partitioning within UTM zones. If set to `"file"`, this will ensure that the centroid of all geometries per _file_ are contained in the same UTM zone. If set to `"chunk"`, this will ensure that the centroid of all geometries per _chunk_ are contained in the same UTM zone. If set to `None`, then no UTM-based partitioning will be done. Defaults to "chunk".
+- `partitioning_split_method` - How to split one partition into children.
   
-  - `fused`1: Split each axis according to the mean of the centroid values.
-  - `fused`2: Split each axis according to the median of the centroid values.
+  - `"mean"`: Split each axis according to the mean of the centroid values.
+  - `"median"`: Split each axis according to the median of the centroid values.
   
-  Defaults to `fused`1 (this may change in the future).
+  Defaults to `"mean"` (this may change in the future).
   
-- `fused`4 - The method to use for subdividing large geometries into multiple rows. Currently the only option is `GeoDataFrame`7, where geometries will be subdivided based on their area (in WGS84 degrees).
-- `fused`6 - The value above which geometries will be subdivided into smaller parts, according to `fused`4.
-- `fused`8 - The value below which geometries will never be subdivided into smaller parts, according to `fused`4.
-- `schema`0 - If `schema`1, should split a partition that has
+- `subdivide_method` - The method to use for subdividing large geometries into multiple rows. Currently the only option is `"area"`, where geometries will be subdivided based on their area (in WGS84 degrees).
+- `subdivide_start` - The value above which geometries will be subdivided into smaller parts, according to `subdivide_method`.
+- `subdivide_stop` - The value below which geometries will never be subdivided into smaller parts, according to `subdivide_method`.
+- `split_identical_centroids` - If `True`, should split a partition that has
   identical centroids (such as if all geometries in the partition are the
-  same) if there are more such rows than defined in &quot;partitioning_maximum_per_file&quot; and
-  &quot;partitioning_maximum_per_chunk&quot;.
-- `schema`2 - The target for the number of chunks if `output`2 is None. Note that this number is only a _target_ and the actual number of files and chunks generated can be higher or lower than this number, depending on the spatial distribution of the data itself.
-- `schema`4 - Names of longitude, latitude columns to construct point geometries from.
+  same) if there are more such rows than defined in "partitioning_maximum_per_file" and
+  "partitioning_maximum_per_chunk".
+- `target_num_chunks` - The target for the number of chunks if `partitioning_maximum_per_file` is None. Note that this number is only a _target_ and the actual number of files and chunks generated can be higher or lower than this number, depending on the spatial distribution of the data itself.
+- `lonlat_cols` - Names of longitude, latitude columns to construct point geometries from.
   
-  If your point columns are named `schema`5 and `schema`6, then pass:
+  If your point columns are named `"x"` and `"y"`, then pass:
   
-        `schema`7
+        ```py
+        fused.ingest(
+            ...,
+            lonlat_cols=("x", "y")
+        )
+        ```
   
-  This only applies to reading from Parquet files. For reading from CSV files, pass options to `schema`8.
+  This only applies to reading from Parquet files. For reading from CSV files, pass options to `gdal_config`.
   
-- `schema`8 - Configuration options to pass to GDAL for how to read these files. For all files other than Parquet files, Fused uses GDAL as a step in the ingestion process. For some inputs, like CSV files or zipped shapefiles, you may need to pass some parameters to GDAL to tell it how to open your files.
+- `gdal_config` - Configuration options to pass to GDAL for how to read these files. For all files other than Parquet files, Fused uses GDAL as a step in the ingestion process. For some inputs, like CSV files or zipped shapefiles, you may need to pass some parameters to GDAL to tell it how to open your files.
   
   This config is expected to be a dictionary with up to two keys:
   
-  - `file_suffix`0: `file_suffix`1. Define the layer of the input file you wish to read when the source contains multiple layers, as in GeoPackage.
-  - `file_suffix`2: `file_suffix`3. Pass in key-value pairs with GDAL open options. These are defined on each driver&#x27;s page in the GDAL documentation. For example, the [CSV driver](https://gdal.org/drivers/vector/csv.html) defines [these open options](https://gdal.org/drivers/vector/csv.html#open-options) you can pass in.
+  - `layer`: `str`. Define the layer of the input file you wish to read when the source contains multiple layers, as in GeoPackage.
+  - `open_options`: `Dict[str, str]`. Pass in key-value pairs with GDAL open options. These are defined on each driver's page in the GDAL documentation. For example, the [CSV driver](https://gdal.org/drivers/vector/csv.html) defines [these open options](https://gdal.org/drivers/vector/csv.html#open-options) you can pass in.
   
-  For example, if you&#x27;re ingesting a CSV file with two columns
-  `file_suffix`4 and `file_suffix`5 denoting the coordinate information, pass
+  For example, if you're ingesting a CSV file with two columns
+  `"longitude"` and `"latitude"` denoting the coordinate information, pass
   
-        `file_suffix`6
+        ```py
+        fused.ingest(
+            ...,
+            gdal_config={
+                "open_options": {
+                    "X_POSSIBLE_NAMES": "longitude",
+                    "Y_POSSIBLE_NAMES": "latitude",
+                }
+            }
+        )
+        ```
   
 
 **Returns**:
 
-  Configuration object describing the ingestion process. Call `file_suffix`7 on this object to start a job.
+  Configuration object describing the ingestion process. Call `.execute` on this object to start a job.
   
   
 
 **Examples**:
 
-    `file_suffix`8
+    ```py
+    job = fused.ingest(
+        input="https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/06_CALIFORNIA/06/tl_rd22_06_bg.zip",
+        output="s3://fused-sample/census/ca_bg_2022/main/",
+        output_metadata="s3://fused-sample/census/ca_bg_2022/fused/",
+        explode_geometries=True,
+        partitioning_maximum_per_file=2000,
+        partitioning_maximum_per_chunk=200,
+    ).execute()
+    ```
 
 #### ingest\_nongeospatial
 
@@ -269,7 +293,12 @@ Ingest a dataset into the Fused partitioned format.
 
 **Examples**:
 
-    `GeoDataFrame`0
+    ```py
+    job = fused.ingest_nongeospatial(
+        input=gdf,
+        output="s3://sample-bucket/file.parquet",
+    ).execute()
+    ```
 
 #### map
 
@@ -291,7 +320,7 @@ Construct a `map` config from this Dataset
 
 **Arguments**:
 
-- `tables` - The attribute tables to include in the map reduce. Defaults to (&quot;main&quot;,).
+- `tables` - The attribute tables to include in the map reduce. Defaults to ("main",).
 - `cache_locally` - Advanced: whether to cache all the partitions locally in the map job. Defaults to False.
   
 
@@ -324,7 +353,7 @@ Construct a join config from two datasets
 
 **Arguments**:
 
-- `how` - The manner of doing the join. Currently  Defaults to &quot;inner&quot;.
+- `how` - The manner of doing the join. Currently  Defaults to "inner".
 - `left_tables` - The names of the attribute tables on the left side to include in the join.
 - `right_tables` - The names of the attribute tables on the left side to include in the join.
 - `left_cache_locally` - Whether to cache the left dataset locally in the join. Defaults to False.
@@ -334,7 +363,13 @@ Construct a join config from two datasets
 
 **Examples**:
 
-    `output_table`0
+    ```py
+    import fused
+
+    left_dataset = fused.open("s3://bucket/path/to/dataset")
+    other_dataset = fused.open("s3://bucket/path/to/dataset")
+    join_config = left_dataset.join(other_dataset)
+    ```
   
 
 **Returns**:
@@ -463,7 +498,7 @@ Create a job input that zips or unions tables together
   of the table path) to read it from or a boolean which will be applied to all tables (default False).
 - `how` - The operation used to combine multiple input tables. This may be either `"zip"` or `"union"`.
   By default this will be `"zip"` when `tables` is specified, `"union"` otherwise. This corresponds
-  with `fused.zip_tables` and `["table_0", "table_1", "table_5"]`0 respectively.
+  with `fused.zip_tables` and `fused.union_tables` respectively.
 
 #### isel
 
@@ -516,5 +551,5 @@ Open a project folder.
   a reduced set of Table metadata will be fetched.
 - `_max_depth` - Maximum depth of folders to load.
 - `_eager` - If True, recursive calls will be made to materialize all virtual
-  folders that `"s3://bucket-name/project-name/"`0 would otherwise cause.
+  folders that `max_depth` would otherwise cause.
 

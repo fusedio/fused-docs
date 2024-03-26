@@ -20,9 +20,9 @@ on the format of the input and retrieves the UDF accordingly.
 **Arguments**:
 
 - `url_or_udf` - A string or Path object representing the location of the UDF. This can be
-  a GitHub URL starting with &quot;https://github.com&quot;, a local file path, a directory
+  a GitHub URL starting with "https://github.com", a local file path, a directory
   containing one or more UDFs, or a Fused platform-specific identifier in the
-  format &quot;email/udf_name&quot;.
+  format "email/udf_name".
 - `cache_key` - An optional key used for caching the loaded UDF. If provided, the function
   will attempt to load the UDF from cache using this key before attempting to
   load it from the specified source. Defaults to None, indicating no caching.

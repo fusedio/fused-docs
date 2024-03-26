@@ -47,16 +47,16 @@ path based on the provided parameters.
   lat, lng: Latitude and longitude for location-based UDF execution.
 - `bbox` - A geographical bounding box (as a GeoDataFrame or shapely Geometry) defining the area of interest.
 - `sync` - If True, execute the UDF synchronously. If False, execute asynchronously.
-- `engine` - The execution engine to use (&#x27;realtime&#x27;, &#x27;batch&#x27;, or &#x27;local&#x27;).
-- `type` - The type of UDF execution (&#x27;tile&#x27; or &#x27;file&#x27;).
-- `udf_name`0 - Additional parameters to pass to the UDF.
+- `engine` - The execution engine to use ('realtime', 'batch', or 'local').
+- `type` - The type of UDF execution ('tile' or 'file').
+- `**parameters` - Additional parameters to pass to the UDF.
   
 
 **Raises**:
 
-- `udf_name`1 - If the UDF is not specified or is specified in more than one way.
-- `udf_name`2 - If the first parameter is not of an expected type.
-- `udf_name`3 - Various warnings are issued for ignored parameters based on the execution path chosen.
+- `ValueError` - If the UDF is not specified or is specified in more than one way.
+- `TypeError` - If the first parameter is not of an expected type.
+- `Warning` - Various warnings are issued for ignored parameters based on the execution path chosen.
   
 
 **Returns**:
@@ -68,15 +68,21 @@ path based on the provided parameters.
 
   
   # Run a UDF saved in the Fused system:
-  fused.run(udf_email=&quot;username@fused.io&quot;, udf_name=&quot;my_udf_name&quot;)
+    ```py
+    fused.run(udf_email="username@fused.io", udf_name="my_udf_name")
+    ```
   
   # Run a UDF saved in GitHub:
-  loaded_udf = fused.load(&quot;https://github.com/fusedio/udfs/tree/main/public/Building_Tile_Example&quot;)
-  fused.run(udf=loaded_udf, bbox=bbox)
+    ```py
+    loaded_udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/Building_Tile_Example")
+    fused.run(udf=loaded_udf, bbox=bbox)
+    ```
   
   # Run a UDF saved in a local directory:
-  loaded_udf = fused.load(&quot;/Users/local/dir/Building_Tile_Example&quot;)
-  fused.run(udf=loaded_udf, bbox=bbox)
+    ```py
+    loaded_udf = fused.load("/Users/local/dir/Building_Tile_Example")
+    fused.run(udf=loaded_udf, bbox=bbox)
+    ```
   
 
 **Notes**:

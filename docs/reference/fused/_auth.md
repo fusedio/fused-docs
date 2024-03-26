@@ -55,7 +55,7 @@ Global credentials.
 def logout()
 ```
 
-Open the user&#x27;s browser to the Auth0 logout page.
+Open the user's browser to the Auth0 logout page.
 
 #### get\_code\_challenge
 

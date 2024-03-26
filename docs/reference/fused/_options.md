@@ -146,7 +146,7 @@ Sets the value of a configuration option.
 This function updates the global `options` object with a new value for a specified option.
 It supports setting values for nested options using dot notation. For example, if the
 `options` object has a nested structure, you can set a value for a nested attribute
-by specifying the option name in the form &quot;parent.child&quot;.
+by specifying the option name in the form "parent.child".
 
 **Arguments**:
 

@@ -27,7 +27,7 @@ as well as additional parameters for the UDF execution.
 **Arguments**:
 
 - `email` _str_ - Email address of user account associated with the UDF.
-- `id` _Optional[str]_ - Unique identifier for the UDF. If None, the user&#x27;s email is used as the ID.
+- `id` _Optional[str]_ - Unique identifier for the UDF. If None, the user's email is used as the ID.
 - `x` _int_ - The x coordinate of the tile.
 - `y` _int_ - The y coordinate of the tile.
 - `z` _int_ - The zoom level of the tile.
@@ -64,7 +64,7 @@ as well as additional parameters for the UDF execution.
 **Arguments**:
 
 - `token` _str_ - A shared access token that authorizes the operation.
-- `id` _Optional[str]_ - Unique identifier for the UDF. If None, the user&#x27;s email is used as the ID.
+- `id` _Optional[str]_ - Unique identifier for the UDF. If None, the user's email is used as the ID.
 - `x` _int_ - The x coordinate of the tile.
 - `y` _int_ - The y coordinate of the tile.
 - `z` _int_ - The zoom level of the tile.
@@ -97,7 +97,7 @@ This function constructs a URL to run a UDF associated with the given email and 
 **Arguments**:
 
 - `email` _str_ - Email address of user account associated with the UDF.
-- `id` _Optional[str]_ - Unique identifier for the UDF. If None, the user&#x27;s email is used as the ID.
+- `id` _Optional[str]_ - Unique identifier for the UDF. If None, the user's email is used as the ID.
 - `_dtype_out_vector` _str_ - Desired data type for vector output, defaults to a predefined type.
 - `_dtype_out_raster` _str_ - Desired data type for raster output, defaults to a predefined type.
 - `_client_id` _Optional[str]_ - Client identifier for API usage. If None, a default or global client ID may be used.
@@ -120,7 +120,7 @@ def run_shared_file(token: str,
 
 Executes a shared file-based UDF.
 
-This function constructs a URL for running an operation on a file accessible via a shared token. It allows for customization of the output data types for vector and raster data and supports additional parameters for the operation&#x27;s execution.
+This function constructs a URL for running an operation on a file accessible via a shared token. It allows for customization of the output data types for vector and raster data and supports additional parameters for the operation's execution.
 
 **Arguments**:
 
@@ -142,7 +142,7 @@ This function constructs a URL for running an operation on a file accessible via
 
 **Notes**:
 
-  This function is designed to access shared operations that require a token for authorization. It requires network access to communicate with the server hosting these operations and may incur data transmission costs or delays depending on the network&#x27;s performance.
+  This function is designed to access shared operations that require a token for authorization. It requires network access to communicate with the server hosting these operations and may incur data transmission costs or delays depending on the network's performance.
 
 #### run\_tile\_async
 
@@ -166,8 +166,8 @@ This function constructs a URL to asynchronously run a UDF on a specific tile de
 
 **Arguments**:
 
-- `email` _str_ - User&#x27;s email address. Used to identify the user&#x27;s saved UDFs. If the ID is not provided, the email is also used as the ID.
-- `id` _Optional[str]_ - Unique identifier for the UDF. If None, the user&#x27;s email is used as the ID.
+- `email` _str_ - User's email address. Used to identify the user's saved UDFs. If the ID is not provided, the email is also used as the ID.
+- `id` _Optional[str]_ - Unique identifier for the UDF. If None, the user's email is used as the ID.
 - `x` _int_ - The x coordinate of the tile.
 - `y` _int_ - The y coordinate of the tile.
 - `z` _int_ - The zoom level of the tile.
@@ -179,7 +179,7 @@ This function constructs a URL to asynchronously run a UDF on a specific tile de
 
 **Returns**:
 
-  A coroutine that, when awaited, sends a request to the server to execute the UDF on the specified tile and returns the server&#x27;s response. The format and content of the response depend on the UDF&#x27;s implementation and the server&#x27;s response format.
+  A coroutine that, when awaited, sends a request to the server to execute the UDF on the specified tile and returns the server's response. The format and content of the response depend on the UDF's implementation and the server's response format.
 
 #### run\_shared\_tile\_async
 
@@ -197,7 +197,7 @@ async def run_shared_tile_async(
 
 Asynchronously executes a shared tile-based UDF using a specific access token.
 
-This function constructs a URL for running an operation on a tile, defined by its x, y, and z coordinates, accessible via a shared token. It allows for customization of the output data types for vector and raster data and supports additional parameters for the operation&#x27;s execution.
+This function constructs a URL for running an operation on a tile, defined by its x, y, and z coordinates, accessible via a shared token. It allows for customization of the output data types for vector and raster data and supports additional parameters for the operation's execution.
 
 **Arguments**:
 
@@ -212,7 +212,7 @@ This function constructs a URL for running an operation on a tile, defined by it
 
 **Returns**:
 
-  A coroutine that, when awaited, sends a request to the server to execute the operation on the specified tile and returns the server&#x27;s response. The format and content of the response depend on the operation&#x27;s implementation and the server&#x27;s response format.
+  A coroutine that, when awaited, sends a request to the server to execute the operation on the specified tile and returns the server's response. The format and content of the response depend on the operation's implementation and the server's response format.
 
 #### run\_file\_async
 
@@ -229,12 +229,12 @@ async def run_file_async(
 
 Asynchronously executes a file-based UDF associated with the specific email and ID.
 
-This function constructs a URL to run a UDF on a server, allowing for output data type customization for vector and raster outputs and supporting additional parameters for the UDF execution. If no ID is provided, the user&#x27;s email is used as the identifier.
+This function constructs a URL to run a UDF on a server, allowing for output data type customization for vector and raster outputs and supporting additional parameters for the UDF execution. If no ID is provided, the user's email is used as the identifier.
 
 **Arguments**:
 
-- `email` _str_ - The user&#x27;s email address, used to identify the user&#x27;s saved UDFs. If the ID is not provided, this email will also be used as the ID.
-- `id` _Optional[str]_ - Unique identifier for the UDF. If None, the function fetches the user&#x27;s email as the ID.
+- `email` _str_ - The user's email address, used to identify the user's saved UDFs. If the ID is not provided, this email will also be used as the ID.
+- `id` _Optional[str]_ - Unique identifier for the UDF. If None, the function fetches the user's email as the ID.
 - `_dtype_out_vector` _str_ - Desired data type for vector output, defaults to a predefined type.
 - `_dtype_out_raster` _str_ - Desired data type for raster output, defaults to a predefined type.
 - `_client_id` _Optional[str]_ - Client identifier for API usage. If None, a default or global client ID may be used.
@@ -243,7 +243,7 @@ This function constructs a URL to run a UDF on a server, allowing for output dat
 
 **Returns**:
 
-  A coroutine that, when awaited, sends a request to the server to execute the UDF and returns the server&#x27;s response. The format and content of the response depend on the UDF&#x27;s implementation and the server&#x27;s response format.
+  A coroutine that, when awaited, sends a request to the server to execute the UDF and returns the server's response. The format and content of the response depend on the UDF's implementation and the server's response format.
 
 #### run\_shared\_file\_async
 
@@ -258,7 +258,7 @@ async def run_shared_file_async(
 
 Asynchronously executes a shared file-based UDF using the specific access token.
 
-Constructs a URL to run an operation on a file accessible via a shared token, enabling customization of the output data types for vector and raster data. It accommodates additional parameters for the operation&#x27;s execution.
+Constructs a URL to run an operation on a file accessible via a shared token, enabling customization of the output data types for vector and raster data. It accommodates additional parameters for the operation's execution.
 
 **Arguments**:
 
@@ -270,5 +270,5 @@ Constructs a URL to run an operation on a file accessible via a shared token, en
 
 **Returns**:
 
-  A coroutine that, when awaited, sends a request to the server to execute the operation on the file and returns the server&#x27;s response. The format and content of the response depend on the operation&#x27;s implementation and the server&#x27;s response format.
+  A coroutine that, when awaited, sends a request to the server to execute the operation on the file and returns the server's response. The format and content of the response depend on the operation's implementation and the server's response format.
 
