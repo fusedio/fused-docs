@@ -12,7 +12,8 @@ const config: Config = {
   url: "https://fusedio.github.io/",
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
-  baseUrl: '/fused-docs/',
+  // baseUrl: '/fused-docs/', // needed for GitHub pages
+  baseUrl: '/',
 
 
   // GitHub pages deployment config.
@@ -178,7 +179,7 @@ const config: Config = {
     announcementBar: {
       id: 'announcement',
       content:
-        '⭐ If you like Fused, give us a star on <a target="_blank" rel="noopener noreferrer" href="https://github.com/fusedio/udfs/">GitHub</a>! ⭐',
+        '⭐ If you like Fused, star the UDF <a target="_blank" rel="noopener noreferrer" href="https://github.com/fusedio/udfs/">GitHub</a> repo! ⭐',
       backgroundColor: '#991199',
       textColor: '#ffffff',
       isCloseable: false,

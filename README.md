@@ -22,12 +22,16 @@ Run locally every time there's a content update to reindex search.
 docker run -it --env-file=.env -e "CONFIG=$(cat config.json | jq -r tostring)" typesense/docsearch-scraper:0.9.1
 ```
 
-## Deploy (to GitHub pages)
+## 3. Deploy 
+
+### a) To "staging" on GitHub pages
 
 This deploys to [fusedio.github.io/fused-docs](https://fusedio.github.io/fused-docs/) which is a "staging" site.
-
-The "production" site is [docs.fused.io](https://docs.fused.io/), and the deploy workflow runs with GitHub Actions on merges to main.
 
 ```
 npx docusaurus deploy   
 ```
+
+### b) To "production"
+
+The "production" site is [docs.fused.io](https://docs.fused.io/), and the deploy workflow runs with GitHub Actions on merges to main.
