@@ -6,6 +6,11 @@ sidebar_position: 8
 ---
 # Changelog
 
+## v1.5.0 (2024-03-25) :open_file_folder:
+
+- The upload view in Workbench now shows a file browser.
+- Users can now preview files in the file browser using a default UDF.
+
 ## v1.4.1 (2024-03-19) :speech_balloon:
 
 - UDFs now support typed function annotations.
