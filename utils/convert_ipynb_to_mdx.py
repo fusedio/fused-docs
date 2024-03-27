@@ -21,15 +21,33 @@ from nbformat.notebooknode import NotebookNode
 try:
     from libfb.py.fbcode_root import get_fbcode_dir  # pyre-ignore
 except ImportError:
+    # SCRIPTS_DIR = Path(__file__).parent.resolve()
+    # LIB_DIR = SCRIPTS_DIR.parent.parent.resolve()
     SCRIPTS_DIR = Path(__file__).parent.resolve()
-    LIB_DIR = SCRIPTS_DIR.parent.parent.resolve()
+    LIB_DIR = SCRIPTS_DIR.parent.resolve() / 'docs'
 else:
     LIB_DIR = (Path(get_fbcode_dir()) / "beanmachine").resolve()
 
-WEBSITE_DIR = LIB_DIR.joinpath("basics")
-DOCS_DIR = LIB_DIR.joinpath("")
-OVERVIEW_DIR = DOCS_DIR.joinpath("basics") # pg
-TUTORIALS_DIR = OVERVIEW_DIR.joinpath("tutorials")
+NOTEBOOK_CONFIG_PATHS = [
+    {
+        'config': Path("docs/basics/tutorials/tutorials.json"),
+        'tutorials_dir': Path("docs/basics/tutorials")
+    },
+    {
+        'config': Path("docs/basics/in/in.json"),
+        'tutorials_dir': Path("docs/basics/in")
+    },
+    {
+        'config': Path("docs/basics/out/out.json"),
+        'tutorials_dir': Path("docs/basics/out")
+    },
+    {
+        'config': Path("docs/basics/transform/transform.json"),
+        'tutorials_dir': Path("docs/basics/transform")
+    },
+
+]
+
 # Data display priority. Below lists the priority for displaying data from cell outputs.
 # Cells can output many different items, and some will output a fallback display, e.g.
 # text/plain if text/html is not working. The below priorities help ensure the output in
@@ -47,21 +65,19 @@ priorities = [
 ]
 
 
-def load_nb_metadata() -> Dict[str, Dict[str, str]]:
+def load_nb_metadata(config_path) -> Dict[str, Dict[str, str]]:
     """
     Load the metadata and list of notebooks that are to be converted to MDX.
 
     Args:
-        None
+        config_path: Path to the config `.json` file.
 
     Returns:
         Dict[str, Dict[str, str]]: A dictionary of metadata needed to convert notebooks
             to MDX. Only those notebooks that are listed in the `tutorials.json` file
             will be included in the Docusaurus MDX output.
     """
-    # tutorials_json_path = WEBSITE_DIR.joinpath(TUTORIALS_DIR/"tutorials.json")
-    tutorials_json_path = Path("docs/basics/tutorials/tutorials.json")
-    with tutorials_json_path.open("r") as f:
+    with config_path.open("r") as f:
         tutorials_data = json.load(f)
     return tutorials_data
 
@@ -218,8 +234,13 @@ def handle_images_found_in_markdown(
 
     # Convert the given Markdown to a list so we can delete the old path with the new
     # standard path.
+
     markdown_list = list(markdown)
     for search in searches:
+
+        # Skip remote images
+        if search.groups()[0].startswith('http'):
+            continue
         # Find the old image path and replace it with the new one.
         old_path, _ = search.groups()
         start = 0
@@ -925,7 +946,7 @@ def handle_code_cell(cell: NotebookNode, plot_data_folder: Path) -> str:
     return cell_input_mdx + cell_output_mdx
 
 
-def transform_notebook(path: Path) -> str:
+def transform_notebook(path: Path, nb_metadata) -> str:
     """
     Transform a notebook located at the given path into MDX.
 
@@ -940,7 +961,6 @@ def transform_notebook(path: Path) -> str:
     plot_data_folder = assets_folder / "plot_data"
     save_folder = assets_folder.joinpath("..").resolve()
     nb = load_notebook(path)
-    nb_metadata = load_nb_metadata()
     mdx = ""
     mdx += create_frontmatter(path, nb_metadata)
     mdx += create_imports()
@@ -966,12 +986,21 @@ def transform_notebook(path: Path) -> str:
 
 
 if __name__ == "__main__":
-    tutorials_metadata = load_nb_metadata()
+    
     print("--------------------------------------------")
     print("Converting tutorial notebooks into mdx files")
     print("--------------------------------------------")
-    for _, value in tutorials_metadata.items():
-        path = (LIB_DIR / value["nb_path"]).resolve()
-        print(f"{path.stem}")
-        mdx = transform_notebook(path)
+
+
+    # Loop through each directory that contains notebooks
+    for notebook_config_path in NOTEBOOK_CONFIG_PATHS:
+        TUTORIALS_DIR = notebook_config_path['tutorials_dir'] 
+        config_path = notebook_config_path['config']
+        nb_metadata = load_nb_metadata(config_path=config_path)
+
+        # Loop through each notebook in the directory
+        for _, value in nb_metadata.items():
+            path = (LIB_DIR / value["nb_path"]).resolve()
+            print(f"{path.stem}")
+            mdx = transform_notebook(path=path, nb_metadata=nb_metadata)
     print("")

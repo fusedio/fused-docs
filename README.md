@@ -11,7 +11,7 @@ This website is built using [Docusaurus](https://docusaurus.io/), a modern stati
 Run after modifying a notebook. See `docs/basics/tutorials/tutorials.json` to configure notebook autogeneration.
 
 ```
-python3 docs/basics/tutorials/_convert_ipynb_to_mdx.py 
+python3 utils/convert_ipynb_to_mdx.py
 ```
 
 
