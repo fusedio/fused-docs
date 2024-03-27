@@ -12,13 +12,12 @@ import TagGitHub from '@site/src/components/TagGitHub'
 
 const LinkButtons = ({githubUrl, colabUrl}) => {
   return (
-    <div className="link-buttons">
+    <div className="link-buttons" style={{ textAlign: 'right' }}>
       <br></br>
       <Link to={colabUrl}><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open in Colab"/></Link>
-      
-      <div></div>
-      
-      <Link to={githubUrl}><TagGitHub color="#444444">Open in GitHub</TagGitHub></Link>
+         {" "}
+      <Link to={githubUrl}><img src="https://badgen.net/static/GitHub/Open/blue?icon=github" alt="Open in GitHub"/></Link>
+    
     </div>
   );
 };
