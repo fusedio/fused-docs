@@ -7,7 +7,6 @@
 
 import React from 'react';
 import Link from '@docusaurus/Link';
-import TagGitHub from '@site/src/components/TagGitHub'
 
 
 const LinkButtons = ({githubUrl, colabUrl}) => {

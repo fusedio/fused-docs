@@ -36,7 +36,15 @@ NOTEBOOK_CONFIG_PATHS = [
     {
         'config': Path("docs/basics/in/in.json"),
         'tutorials_dir': Path("docs/basics/in")
-    }
+    },
+    {
+        'config': Path("docs/basics/out/out.json"),
+        'tutorials_dir': Path("docs/basics/out")
+    },
+    {
+        'config': Path("docs/basics/transform/transform.json"),
+        'tutorials_dir': Path("docs/basics/transform")
+    },
 
 ]
 
@@ -226,8 +234,13 @@ def handle_images_found_in_markdown(
 
     # Convert the given Markdown to a list so we can delete the old path with the new
     # standard path.
+
     markdown_list = list(markdown)
     for search in searches:
+
+        # Skip remote images
+        if search.groups()[0].startswith('http'):
+            continue
         # Find the old image path and replace it with the new one.
         old_path, _ = search.groups()
         start = 0
