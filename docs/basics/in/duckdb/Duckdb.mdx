@@ -1,0 +1,87 @@
+---
+title: DuckDB
+sidebar_label: DuckDB
+path: basics/in/duckdb/duckdb
+nb_path: basics/in/duckdb.ipynb
+github: https://github.com/fusedio/notebooks/blob/main/public/noaa.ipynb
+colab: https://githubtocolab.com/fusedio/notebooks/blob/main/public/noaa.ipynb
+---
+
+import LinkButtons from "../../../../src/components/LinkButtons.jsx";
+import CellOutput from "../../../../src/components/CellOutput.jsx";
+import {BokehFigure, PlotlyFigure} from "../../../../src/components/Plotting.jsx";
+
+<LinkButtons
+  githubUrl="https://github.com/fusedio/notebooks/blob/main/public/noaa.ipynb"
+  colabUrl="https://githubtocolab.com/fusedio/notebooks/blob/main/public/noaa.ipynb"
+/>
+
+# DuckDB
+
+import Tag from '@site/src/components/Tag'
+
+Fused interfaces <Tag color="#3399ff">DuckDB</Tag> through the Python `duckdb` library.
+This example shows how to harness the power of DuckDB to load data in your Fused UDFs.
+
+```python
+# !pip install fused duckdb
+```
+
+```python
+# Note: This UDF is only for demo purposes. You may get `HTTP GET error` after several times calling it. This is the data retrieval issue caused by Cloudfront servers not responding.
+
+import fused
+@fused.udf
+def udf(bbox=None, agg_factor=3, min_count=5):
+    import duckdb
+
+    utils = fused.load(
+        "https://github.com/fusedio/udfs/tree/f928ee1/public/common/"
+    ).utils
+    con = duckdb.connect()
+
+    print("duckdb version:", duckdb.__version__)
+    con.sql(
+        """SET home_directory='/tmp/';
+    install 'httpfs';
+    load 'httpfs';
+    """
+    )
+    df = con.sql(
+        f"""
+    SELECT round(pickup_longitude*{agg_factor},3)/{agg_factor} lng, 
+           round(pickup_latitude*{agg_factor},3)/{agg_factor} lat, 
+           count(1) cnt
+    FROM read_parquet('https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2010-01.parquet') 
+    GROUP BY round(pickup_longitude*{agg_factor},3), 
+             round(pickup_latitude*{agg_factor},3)
+    HAVING cnt>{min_count} and lat>40 and lat<41
+    """
+    ).df()
+    print("number of trips:", df.cnt.sum())
+    gdf = utils.geo_convert(df)
+    return gdf
+
+gdf = fused.run(udf=udf)
+gdf
+```
+
+
+|       | lng        | lat       | cnt   | geometry                   | fused_index   |
+|:------|:-----------|:----------|:------|:---------------------------|:--------------|
+| 0     | -73.956667 | 40.767667 | 196   | POINT (-73.95667 40.76767) | 0             |
+| 1     | -73.996000 | 40.764000 | 1288  | POINT (-73.99600 40.76400) | 1             |
+| 2     | -73.990000 | 40.725667 | 1780  | POINT (-73.99000 40.72567) | 2             |
+| 3     | -73.997000 | 40.716667 | 648   | POINT (-73.99700 40.71667) | 3             |
+| 4     | -73.991667 | 40.729667 | 2953  | POINT (-73.99167 40.72967) | 4             |
+| ...   | ...        | ...       | ...   | ...                        | ...           |
+| 44847 | -73.935333 | 40.757333 | 6     | POINT (-73.93533 40.75733) | 44847         |
+| 44848 | -73.929667 | 40.765000 | 7     | POINT (-73.92967 40.76500) | 44848         |
+| 44849 | -74.009667 | 40.730000 | 6     | POINT (-74.00967 40.73000) | 44849         |
+| 44850 | -73.864333 | 40.767000 | 6     | POINT (-73.86433 40.76700) | 44850         |
+| 44851 | -73.926333 | 40.866000 | 6     | POINT (-73.92633 40.86600) | 44851         |
+
+```python
+
+```
+

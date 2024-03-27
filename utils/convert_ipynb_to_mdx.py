@@ -30,8 +30,12 @@ else:
 
 NOTEBOOK_CONFIG_PATHS = [
     {
-    'config': Path("docs/basics/tutorials/tutorials.json"),
-    'tutorials_dir': Path("docs/basics/tutorials")
+        'config': Path("docs/basics/tutorials/tutorials.json"),
+        'tutorials_dir': Path("docs/basics/tutorials")
+    },
+    {
+        'config': Path("docs/basics/in/in.json"),
+        'tutorials_dir': Path("docs/basics/in")
     }
 
 ]
