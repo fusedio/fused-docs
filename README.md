@@ -1,9 +1,10 @@
-# Website
+# Fused Docs
 
-The Fused docs website.
+The Fused documentatiob website: [docs.fused.io](https://docs.fused.io/)
 
 This website is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
 
+# Development
 
 ## 1. Generate notebooks
 
