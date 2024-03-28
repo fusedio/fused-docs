@@ -155,6 +155,7 @@ def create_frontmatter(path: Path, nb_metadata: Dict[str, Dict[str, str]]) -> st
             },
         ).items()
     ]
+    breakpoint()
     frontmatter = "\n".join(frontmatter_delimiter + frontmatter + frontmatter_delimiter)
     mdx = mdformat.text(frontmatter, options={"wrap": 88}, extensions={"myst"})
     return f"{mdx}\n"
