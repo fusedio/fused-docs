@@ -3,7 +3,7 @@
 Microsoft Excel can import data from a given URL in `.csv` format. You can use this to load data from a UDF into an Excel sheet.
 
 
-## Step 1: Create a UDF in Fused Hosted API
+## 1. Create a UDF in Fused Hosted API
 
 This example retrieves Caltrain live location data from GTFS realtime feed, and returns it as a dataframe.
 
@@ -19,12 +19,20 @@ def udf(bbox=None):
     return df
 ```
 
-## Step 2: Create a URL for the UDF
 
-Now, [create a signed Tile HTTP endpoint](/hosted-api/overview/#create-and-manage-shared-tokens-recommended) for the UDF.
+## 2. Create a URL for the UDF
+
+Now, [create a signed Tile HTTP endpoint](/basics/core-concepts/#generate-endpoints-with-workbench) for the UDF.
+
+Append this query parameter to the end of the URL to structure the response as a CSV type: `?dtype_out_vector=csv`.
+
+The generated URL should look like this:
+
+`https://app-staging.fused.io/server/v1/realtime-shared/ccd781317018362a6966c9f12b27e95f1fe2fd88ff339de90eb9ac35b87cf439/run/file?dtype_out_vector=csv`
 
 
-## Step 3: Import Data to Excel
+
+## 3. Import Data to Excel
 
 Open Excel, then click the `Data` tab in the top ribbon. Click `From Web`.
 

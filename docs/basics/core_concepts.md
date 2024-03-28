@@ -680,7 +680,9 @@ gdf.head()
 my_udf = fused.core.load_udf_from_fused("user@fused.io", "caltrain_live_location")
 ```
 
-
+:::note
+Did you know UDFs can also call other UDFs? It's an easy way to chain UDFs together or even run them in parallel.
+:::
 
 #### Call UDFs with HTTP requests
 
@@ -736,6 +738,3 @@ Raster:
 - tiff
 
 
-:::note
-Did you know UDFs can also call other UDFs? It's an easy way to chain UDFs together or even run jobs in parallel.
-:::

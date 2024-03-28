@@ -97,7 +97,7 @@ const config: Config = {
       contextualSearch: true,
     },
     // Replace with your project's social card
-    image: 'img/logo-black-bg-transparent.svg',
+    image: 'https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/ecosystem_diagram.png',
     navbar: {
       title: 'Fused',
       logo: {
