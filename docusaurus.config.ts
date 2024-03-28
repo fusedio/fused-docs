@@ -105,6 +105,11 @@ const config: Config = {
         src: 'img/logo-black-bg-transparent.svg',
       },
       items: [
+        {
+          type: 'html',
+          position: 'left',
+          value: '<span class="logo-docs">{{ docs }}</span>'
+        },
         // Show "Docs" in top navbar
         // {
         //   type: 'docSidebar',

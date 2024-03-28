@@ -3,11 +3,11 @@
 Bring your apps to life with embedded responsive maps that dynamically respond to user input.
 
 
-This guide shows how to create a web map using the [Mapbox GL JS](https://docs.mapbox.com/mapbox-gl-js/example/) library to display vector tiles from a custom tile server provided by Fused. 
+This guide shows how to create a web map using the [Mapbox GL JS](https://docs.mapbox.com/mapbox-gl-js/example/) library to display vector or raster tiles from a custom tile server provided by Fused. 
 
 You'll first generate a signed UDF URL and render it on an HTML map. You can then use the HTML map in a low-code app like Retool or render it as an `iframe` in an app such as Notion.
 
-## Step 1. Generate a signed URL for a UDF
+## 1. Generate a signed URL for a UDF
 
 First, on Workbench, create and save a UDF that successfully renders in `Tile` mode. Under the "Settings" tab, click "Share" to [generate a signed URL](/basics/core-concepts/#generate-endpoints-with-workbench) that can be called via HTTP requests. 
 
@@ -15,7 +15,7 @@ First, on Workbench, create and save a UDF that successfully renders in `Tile` m
 Modify the generated `HTTP` URL to run as a [Tile](/core-concepts/#call-udfs-with-http-requests) by setting the `tiles/` path paramater, followed by templated `/{z}/{x}/{y}` path. You can optionally pass UDF parameters as UDF-encoded strings, which can be configured to change based on UI user input.
 
 
-## Step 2. Create a Mapbox HTML map
+## 2. Create a Mapbox HTML map
 
 Create an `.html` file following this template. This code creates a mapbox map, adds a source, then a layer that renders data from that source. This is a basic example. Read on to see how to configure vector and raster layers.
 
