@@ -717,7 +717,7 @@ The response data format is configured with the `dtype_out_vector` and `dtype_ou
 
 Vector:
 - parquet 
-- geojson,
+- geojson
 - json 
 - feather 
 - csv 
