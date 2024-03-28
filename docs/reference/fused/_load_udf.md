@@ -3,7 +3,7 @@ sidebar_label: _load_udf
 title: fused._load_udf
 ---
 
-#### load
+## load
 
 ```python
 def load(url_or_udf: Union[str, Path], *, cache_key: Any = None) -> BaseUdf

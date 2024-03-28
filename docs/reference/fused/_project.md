@@ -22,31 +22,31 @@ project.my_table_name
 project['my_table_name']
 ```
 
-#### root\_base\_path
+## root\_base\_path
 
 The base path of the overall project.
 
-#### base\_path
+## base\_path
 
 The base path of the project folder, which tables in it are relative to. This may be different
 than `root_base_path` if this Project instance is a folder (sub-project) of an overall project.
 
-#### tables
+## tables
 
 Tables in this project.
 
-#### folders
+## folders
 
 Project folders in this project.
 
-#### virtual\_folders
+## virtual\_folders
 
 Project folders in this project that have not been materialized.
 
 Accessing one of these through `project[virtual_folder_name]` will result in automatic
 loading of that folder to a `Project` instance.
 
-#### tree
+## tree
 
 ```python
 def tree(file: TextIO = None) -> None
@@ -58,7 +58,7 @@ Print a tree representation of this project.
 
 - `file` - File-like object to write to. Defaults to `None` for `sys.stdout`.
 
-#### refresh
+## refresh
 
 ```python
 def refresh(*,
@@ -77,7 +77,7 @@ with metadata, after it is initially loaded without metadata.
 - `fetch_table_metadata` - If True, fetch metadata on each table.
 - `fetch_samples` - If True, fetch sample on each table.
 
-#### path
+## path
 
 ```python
 def path(path: str) -> str
@@ -85,7 +85,7 @@ def path(path: str) -> str
 
 Returns the path to an item under this project.
 
-#### project
+## project
 
 ```python
 def project(path: str) -> Project
@@ -93,7 +93,7 @@ def project(path: str) -> Project
 
 Open a subproject of this project.
 
-#### open\_table
+## open\_table
 
 ```python
 def open_table(path: Union[str, DatasetOutputV2],
@@ -123,7 +123,7 @@ Open a Table object given a path to the root of the table
 
   A Table object
 
-#### ingest
+## ingest
 
 ```python
 def ingest(
@@ -255,7 +255,7 @@ Ingest a dataset into the Fused partitioned format.
     ).execute()
     ```
 
-#### ingest\_nongeospatial
+## ingest\_nongeospatial
 
 ```python
 def ingest_nongeospatial(
@@ -300,7 +300,7 @@ Ingest a dataset into the Fused partitioned format.
     ).execute()
     ```
 
-#### map
+## map
 
 ```python
 def map(dataset: Union[str, Dataset, Table],
@@ -328,7 +328,7 @@ Construct a `map` config from this Dataset
 
   An object describing the map configuration.
 
-#### join
+## join
 
 ```python
 def join(dataset: Union[str, Dataset, Table],
@@ -376,7 +376,7 @@ Construct a join config from two datasets
 
   An object describing the join configuration.
 
-#### delete
+## delete
 
 ```python
 def delete(path: str,
@@ -392,7 +392,7 @@ Delete the files at the path.
   This option is to help avoid accidentally deleting more data that intended.
   Pass `"unlimited"` for unlimited.
 
-#### list
+## list
 
 ```python
 def list(path: Optional[str] = None) -> List[str]
@@ -409,7 +409,7 @@ List the files at the path.
 
   A list of paths as URLs
 
-#### get
+## get
 
 ```python
 def get(path: str) -> bytes
@@ -426,7 +426,7 @@ Download the contents at the path to memory.
 
   bytes of the file
 
-#### download
+## download
 
 ```python
 def download(path: str, local_path: Union[str, Path]) -> None
@@ -439,7 +439,7 @@ Download the contents at the path to disk.
 - `path` - Path to a file, like `table_name/file.parquet`
 - `local_path` - Path to a local file.
 
-#### sign\_url
+## sign\_url
 
 ```python
 def sign_url(path: str) -> str
@@ -458,7 +458,7 @@ This function may not check that the file represented by the path exists.
 
   HTTPS URL to access the file using signed access.
 
-#### sign\_url\_prefix
+## sign\_url\_prefix
 
 ```python
 def sign_url_prefix(path: str) -> Dict[str, str]
@@ -475,7 +475,7 @@ Create signed URLs to access all blobs under the path.
 
   Dictionary mapping from blob store key to signed HTTPS URL.
 
-#### sel
+## sel
 
 ```python
 def sel(tables: Union[Iterable[Union[Table, str]], Table, str, None] = None,
@@ -500,7 +500,7 @@ Create a job input that zips or unions tables together
   By default this will be `"zip"` when `tables` is specified, `"union"` otherwise. This corresponds
   with `fused.zip_tables` and `fused.union_tables` respectively.
 
-#### isel
+## isel
 
 ```python
 def isel(
@@ -526,7 +526,7 @@ are implicitly ordered by name.
 - `how` - The operation used to combine multiple input tables. This may be either `"zip"` or `"union"`.
   This corresponds with `fused.zip_tables` and `fused.union_tables` respectively. Defaults to `"zip"`.
 
-#### open\_project
+## open\_project
 
 ```python
 def open_project(path: str,

@@ -3,7 +3,7 @@ sidebar_label: _udf_ops
 title: fused.core._udf_ops
 ---
 
-#### load\_udf\_from\_fused
+## load\_udf\_from\_fused
 
 ```python
 def load_udf_from_fused(email_or_id: str,
@@ -22,7 +22,7 @@ Download the code of a UDF, to be run inline.
   Keyword args:
 - `cache_key` - Additional cache key for busting the UDF cache
 
-#### load\_udf\_from\_github
+## load\_udf\_from\_github
 
 ```python
 def load_udf_from_github(url: str, *, cache_key: Any = None) -> BaseUdf

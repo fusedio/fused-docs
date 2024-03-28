@@ -3,7 +3,7 @@ sidebar_label: _download
 title: fused.core._download
 ---
 
-#### filesystem
+## filesystem
 
 ```python
 def filesystem(protocol: str, **storage_options) -> fsspec.AbstractFileSystem
@@ -21,7 +21,7 @@ Get an fsspec filesystem for the given protocol.
 
   An fsspec AbstractFileSystem.
 
-#### create\_path
+## create\_path
 
 ```python
 def create_path(file_path: str, mkdir: bool = True) -> str
@@ -43,7 +43,7 @@ This is useful for UDFs that temporarily store indermediate results as files, su
 
   The located file path.
 
-#### download
+## download
 
 ```python
 def download(url: str, file_path: str) -> str
@@ -84,7 +84,7 @@ Fused addresses the latency of downloading files with the download utility funct
         return gdf
     ```
 
-#### download\_folder
+## download\_folder
 
 ```python
 def download_folder(url: str, file_path: str) -> str
@@ -104,7 +104,7 @@ May be called from multiple processes with the same inputs to get the same resul
 
   The string of the local path.
 
-#### \_run\_once
+## \_run\_once
 
 ```python
 def _run_once(signal_name: str, fn: Callable) -> None

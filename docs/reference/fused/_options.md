@@ -11,19 +11,19 @@ class OpenOptions(OptionsBaseModel)
 
 Options for opening tables and projects.
 
-#### fetch\_samples
+## fetch\_samples
 
 Whether to automatically fetch samples when opening tables
 
-#### fetch\_table\_metadata
+## fetch\_table\_metadata
 
 Whether to automatically fetch table metadata when opening projects
 
-#### fetch\_minimal\_table\_metadata
+## fetch\_minimal\_table\_metadata
 
 Whether to fetch only a minimal set of table metadata when opening projects
 
-#### auto\_refresh\_project
+## auto\_refresh\_project
 
 Automatically refresh project objects when accessing a key that is not present locally
 
@@ -35,19 +35,19 @@ class ShowOptions(OptionsBaseModel)
 
 Options for showing debug information
 
-#### open\_browser
+## open\_browser
 
 Whether to open a local browser window for debug information
 
-#### show\_widget
+## show\_widget
 
 Whether to show debug information in an IPython widget
 
-#### format\_numbers
+## format\_numbers
 
 Whether to format numbers in object reprs
 
-#### materialize\_virtual\_folders
+## materialize\_virtual\_folders
 
 Whether to automatically materialize virtual project folders in reprs
 
@@ -59,7 +59,7 @@ class CacheOptions(OptionsBaseModel)
 
 Options for caching samples
 
-#### enable
+## enable
 
 Whether to enable caching
 
@@ -69,51 +69,51 @@ Whether to enable caching
 class Options(OptionsBaseModel)
 ```
 
-#### base\_url
+## base\_url
 
 Fused API endpoint
 
-#### open
+## open
 
 Options for `fused.open_table` and `fused.open_project`.
 
-#### show
+## show
 
 Options for object reprs and how data are shown for debugging.
 
-#### cache
+## cache
 
 Options for caching data fused-py can retrieve, such as
 the sample for `run_local`.
 
-#### max\_workers
+## max\_workers
 
 Maximum number of threads, when multithreading requests
 
-#### request\_timeout
+## request\_timeout
 
 Request timeout for the Fused service
 
 May be set to a tuple of connection timeout and read timeout
 
-#### realtime\_client\_id
+## realtime\_client\_id
 
 Client ID for realtime service.
 
-#### save\_user\_settings
+## save\_user\_settings
 
 Save per-user settings such as credentials and environment IDs.
 
-#### default\_udf\_run\_engine
+## default\_udf\_run\_engine
 
 Default engine to run UDFs, one of: `local`, `realtime`, `batch`.
 
-#### default\_validate\_imports
+## default\_validate\_imports
 
 Default for whether to validate imports in UDFs before `run_local`,
 `run_batch`.
 
-#### save
+## save
 
 ```python
 def save()
@@ -122,7 +122,7 @@ def save()
 Save Fused options to `~/.fused/settings.toml`. They will be automatically
 reloaded the next time fused-py is imported.
 
-#### options
+## options
 
 List global configuration options.
 
@@ -135,7 +135,7 @@ This object contains a set of configuration options that control global behavior
     fused.options.request_timeout = 120
     ```
 
-#### set\_option
+## set\_option
 
 ```python
 def set_option(option_name: str, option_value: Any)
@@ -170,7 +170,7 @@ by specifying the option name in the form "parent.child".
     set_option('request_timeout', 120)
     ```
 
-#### \_env
+## \_env
 
 ```python
 def _env(environment_name: str)

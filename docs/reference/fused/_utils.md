@@ -18,7 +18,7 @@ from the server.
   __getattribute__(self, key: str) -> Union[Any, AttrDict]: Attempts to access class attributes, falling back to fetching the attribute's configuration from a server if not found.
   __getitem__(self, key: str) -> AttrDict: Fetches the configuration for the given key from a server and returns a utility object for execution.
 
-#### \_\_init\_\_
+## \_\_init\_\_
 
 ```python
 def __init__(cache_key: Any = None)
@@ -30,7 +30,7 @@ Initializes the _Public instance with an optional cache key.
 
 - `cache_key` _Any, optional_ - A key used for caching purposes. Defaults to None.
 
-#### utils
+## utils
 
 A module to access utility functions located in the UDF called "common".
 

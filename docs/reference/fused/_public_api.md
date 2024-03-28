@@ -3,7 +3,7 @@ sidebar_label: _public_api
 title: fused._public_api
 ---
 
-#### get\_jobs
+## get\_jobs
 
 ```python
 def get_jobs(n: int = 5,
@@ -31,7 +31,7 @@ Get the job history.
 
   The job history.
 
-#### get\_udfs
+## get\_udfs
 
 ```python
 def get_udfs(n: int = 10,
@@ -68,7 +68,7 @@ Fetches a list of UDFs.
     fused.get_udfs()
     ```
 
-#### open\_table
+## open\_table
 
 ```python
 def open_table(path: Union[str, DatasetOutputV2],
@@ -98,7 +98,7 @@ Open a Table object given a path to the root of the table
     table = fused.open_table("s3://my_bucket/path/to/dataset/table/")
     ```
 
-#### ingest
+## ingest
 
 ```python
 def ingest(
@@ -231,7 +231,7 @@ Ingest a dataset into the Fused partitioned format.
     ).execute()
     ```
 
-#### ingest\_nongeospatial
+## ingest\_nongeospatial
 
 ```python
 def ingest_nongeospatial(
@@ -276,7 +276,7 @@ Ingest a dataset into the Fused partitioned format.
     ).execute()
     ```
 
-#### map
+## map
 
 ```python
 def map(dataset: Union[str, Dataset, Table],
@@ -304,7 +304,7 @@ Construct a `map` config from this Table
 
   An object describing the map configuration.
 
-#### join
+## join
 
 ```python
 def join(dataset: Union[str, Dataset, Table],
@@ -350,7 +350,7 @@ Construct a join config from two tables
     join_config = fused.join(left_table, other_table)
     ```
 
-#### job
+## job
 
 ```python
 def job(input: Union[
@@ -376,7 +376,7 @@ Construct a JobConfig
 
   A combined job config.
 
-#### \_whoami
+## \_whoami
 
 ```python
 def _whoami()
@@ -384,7 +384,7 @@ def _whoami()
 
 Returns information on the currently logged in user
 
-#### plot
+## plot
 
 ```python
 def plot(gdf: gpd.GeoDataFrame,
@@ -405,7 +405,7 @@ Plot a GeoDataFrame on a map using contextily to add basemap
   path to local file.
 - `**geopandas_kwargs` - Additional keyword arguments to pass to `gdf.plot`.
 
-#### delete
+## delete
 
 ```python
 def delete(path: str,
@@ -429,7 +429,7 @@ Delete the files at the path.
     fused.delete("fd://bucket-name/deprecated_table/")
     ```
 
-#### list
+## list
 
 ```python
 def list(path: str) -> List[str]
@@ -453,7 +453,7 @@ List the files at the path.
     fused.list("fd://bucket-name/")
     ```
 
-#### get
+## get
 
 ```python
 def get(path: str) -> bytes
@@ -477,7 +477,7 @@ Download the contents at the path to memory.
     fused.get("fd://bucket-name/file.parquet")
     ```
 
-#### download
+## download
 
 ```python
 def download(path: str, local_path: Union[str, Path]) -> None
@@ -490,7 +490,7 @@ Download the contents at the path to disk.
 - `path` - URL to a file, like `fd://bucket-name/file.parquet`
 - `local_path` - Path to a local file.
 
-#### upload
+## upload
 
 ```python
 def upload(local_path: Union[str, Path, bytes, BinaryIO],
@@ -514,7 +514,7 @@ Upload local file to S3.
     fused.upload("my_file.json", "fd://my_bucket/my_file.json")
     ```
 
-#### sign\_url
+## sign\_url
 
 ```python
 def sign_url(path: str) -> str
@@ -540,7 +540,7 @@ This function may not check that the file represented by the path exists.
     fused.sign_url("fd://bucket-name/table_directory/file.parquet")
     ```
 
-#### sign\_url\_prefix
+## sign\_url\_prefix
 
 ```python
 def sign_url_prefix(path: str) -> Dict[str, str]
@@ -564,7 +564,7 @@ Create signed URLs to access all blobs under the path.
     fused.sign_url_prefix("fd://bucket-name/table_directory/")
     ```
 
-#### zip\_tables
+## zip\_tables
 
 ```python
 def zip_tables(
@@ -584,7 +584,7 @@ Create a job input that zips the columns of tables together. This takes the part
 
 - `read_sidecar` - Whether to read sidecar information, either a sequence of table names (i.e. the last part of the table path) to read it from or a boolean which will be applied to all tables (default False).
 
-#### union\_tables
+## union\_tables
 
 ```python
 def union_tables(

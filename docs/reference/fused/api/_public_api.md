@@ -3,7 +3,7 @@ sidebar_label: _public_api
 title: fused.api._public_api
 ---
 
-#### job\_get\_logs
+## job\_get\_logs
 
 ```python
 def job_get_logs(job: CoerceableToJobId,
@@ -22,7 +22,7 @@ Fetch logs for a job
 
   Log messages for the given job.
 
-#### job\_print\_logs
+## job\_print\_logs
 
 ```python
 def job_print_logs(job: CoerceableToJobId,
@@ -43,7 +43,7 @@ Fetch and print logs for a job
 
   None
 
-#### job\_tail\_logs
+## job\_tail\_logs
 
 ```python
 def job_tail_logs(job: CoerceableToJobId,
@@ -63,7 +63,7 @@ Continuously print logs for a job
 - `timeout` - if not None, how long to continue tailing logs for. Defaults to None for indefinite.
 - `get_logs_retries` - Number of additional retries for log requests. Defaults to 1.
 
-#### job\_get\_status
+## job\_get\_status
 
 ```python
 def job_get_status(job: CoerceableToJobId) -> RunResponse
@@ -80,7 +80,7 @@ Fetch the status of a running job
 
   The status of the given job.
 
-#### job\_cancel
+## job\_cancel
 
 ```python
 def job_cancel(job: CoerceableToJobId) -> RunResponse
@@ -97,7 +97,7 @@ Cancel an existing job
 
   A new job object.
 
-#### job\_get\_exec\_time
+## job\_get\_exec\_time
 
 ```python
 def job_get_exec_time(job: CoerceableToJobId) -> timedelta
@@ -109,7 +109,7 @@ Determine the execution time of this job, using the logs.
 
   Time the job took. If the job is in progress, time from first to last log message is returned.
 
-#### job\_wait\_for\_job
+## job\_wait\_for\_job
 
 ```python
 def job_wait_for_job(job: CoerceableToJobId,

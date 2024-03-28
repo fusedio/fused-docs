@@ -3,7 +3,7 @@ sidebar_label: _table_ops_impl
 title: fused.core._impl._table_ops_impl
 ---
 
-#### get\_chunks\_metadata
+## get\_chunks\_metadata
 
 ```python
 def get_chunks_metadata(url: str) -> gpd.GeoDataFrame
@@ -15,7 +15,7 @@ Returns a GeoDataFrame with each chunk in the table as a row.
 
 - `url` - URL of the table.
 
-#### get\_chunk\_from\_table
+## get\_chunk\_from\_table
 
 ```python
 def get_chunk_from_table(

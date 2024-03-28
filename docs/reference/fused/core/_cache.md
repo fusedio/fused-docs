@@ -3,7 +3,7 @@ sidebar_label: _cache
 title: fused.core._cache
 ---
 
-#### cache
+## cache
 
 ```python
 def cache(func: Optional[Callable[..., Any]] = None,
@@ -54,7 +54,7 @@ keyword arguments.
         return result
     ```
 
-#### cache\_call
+## cache\_call
 
 ```python
 def cache_call(func: Callable[..., T], *args: Any, **kwargs: Any) -> T
@@ -83,7 +83,7 @@ the implementation of the `_cache` function.
 - `Exception` - Propagates any exception raised by the function being called
   or the caching mechanism.
 
-#### cache\_call\_async
+## cache\_call\_async
 
 ```python
 async def cache_call_async(func: Callable[..., Awaitable[T]], *args: Any,

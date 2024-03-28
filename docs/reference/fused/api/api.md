@@ -11,7 +11,7 @@ class FusedAPI()
 
 API for running jobs in the Fused service.
 
-#### \_\_init\_\_
+## \_\_init\_\_
 
 ```python
 def __init__(*,
@@ -28,7 +28,7 @@ Create a FusedAPI instance.
 - `set_global_api` - Set this as the global API object. Defaults to True.
 - `credentials_needed` - If True, automatically attempt to log in. Defaults to True.
 
-#### sample\_map
+## sample\_map
 
 ```python
 def sample_map(config: MapJobStepConfig,
@@ -51,7 +51,7 @@ Fetch a sample of an operation
 - `chunk_id` - The numeric index of the chunk within the file to fetch. Defaults to None.
 - `n_rows` - The maximum number of rows to sample. Defaults to None for all rows in the chunk.
 
-#### sample\_join
+## sample\_join
 
 ```python
 def sample_join(config: JoinJobStepConfig,
@@ -74,7 +74,7 @@ Fetch a sample of an operation
 - `chunk_id` - The numeric index of the chunk within the file to fetch. Defaults to None.
 - `n_rows` - The maximum number of rows to sample from the left dataset. Defaults to None for all rows in the chunk.
 
-#### sample\_single\_file\_join
+## sample\_single\_file\_join
 
 ```python
 def sample_single_file_join(
@@ -98,7 +98,7 @@ Fetch a sample of an operation
 - `chunk_id` - The numeric index of the chunk within the file to fetch. Defaults to None.
 - `n_rows` - The maximum number of rows to sample from the left dataset. Defaults to None for all rows in the chunk.
 
-#### start\_job
+## start\_job
 
 ```python
 def start_job(config: Union[JobConfig, JobStepConfig],
@@ -126,7 +126,7 @@ Execute an operation
 - `additional_env` - Any additional environment variables to be passed into the job, each in the form KEY=value. Defaults to None.
 - `image_name` - Custom image name to run. Defaults to None for default image.
 
-#### create\_udf\_access\_token
+## create\_udf\_access\_token
 
 ```python
 def create_udf_access_token(udf_email: str,
@@ -156,7 +156,7 @@ The token does not allow running any other UDF on your account.
 - `metadata_json` - Additional metadata to serve as part of the tiles metadata.json.
 - `enable` - If True, the token can be used.
 
-#### get\_jobs
+## get\_jobs
 
 ```python
 def get_jobs(n: int = 5,
@@ -184,7 +184,7 @@ Get the job history.
 
   The job history.
 
-#### get\_status
+## get\_status
 
 ```python
 def get_status(job: CoerceableToJobId) -> RunResponse
@@ -201,7 +201,7 @@ Fetch the status of a running job
 
   The status of the given job.
 
-#### get\_logs
+## get\_logs
 
 ```python
 def get_logs(job: CoerceableToJobId,
@@ -220,7 +220,7 @@ Fetch logs for a job
 
   Log messages for the given job.
 
-#### tail\_logs
+## tail\_logs
 
 ```python
 def tail_logs(job: CoerceableToJobId,
@@ -240,7 +240,7 @@ Continuously print logs for a job
 - `timeout` - if not None, how long to continue tailing logs for. Defaults to None for indefinite.
 - `get_logs_retries` - Number of additional retries for log requests. Defaults to 1.
 
-#### wait\_for\_job
+## wait\_for\_job
 
 ```python
 def wait_for_job(job: CoerceableToJobId,
@@ -266,7 +266,7 @@ Block the Python kernel until the given job has finished
 
   The status of the given job.
 
-#### cancel\_job
+## cancel\_job
 
 ```python
 def cancel_job(job: CoerceableToJobId) -> RunResponse
@@ -283,7 +283,7 @@ Cancel an existing job
 
   A new job object.
 
-#### show
+## show
 
 ```python
 def show(path: str,
@@ -318,7 +318,7 @@ Visualize a dataset
 
   The url to the visualization page.
 
-#### show\_multi
+## show\_multi
 
 ```python
 def show_multi(
@@ -350,7 +350,7 @@ Visualize multiple datasets
 
   The url to the visualization page.
 
-#### show\_multi\_v2
+## show\_multi\_v2
 
 ```python
 def show_multi_v2(
@@ -382,7 +382,7 @@ Visualize multiple datasets
 
   The url to the visualization page.
 
-#### \_whoami
+## \_whoami
 
 ```python
 def _whoami() -> Any
@@ -390,7 +390,7 @@ def _whoami() -> Any
 
 Returns information on the currently logged in user
 
-#### \_list\_realtime\_instances
+## \_list\_realtime\_instances
 
 ```python
 def _list_realtime_instances(*, whose: str = "self") -> List[Any]
@@ -398,7 +398,7 @@ def _list_realtime_instances(*, whose: str = "self") -> List[Any]
 
 Returns information about available realtime instances
 
-#### open\_table
+## open\_table
 
 ```python
 def open_table(path: str, *, fetch_samples: Optional[bool] = None) -> Table
@@ -428,7 +428,7 @@ Open a Table object given a path to the root of the table
 
   A Table object
 
-#### open\_folder
+## open\_folder
 
 ```python
 def open_folder(path: str,
@@ -466,7 +466,7 @@ Open all Table objects under the path.
 
   A list of Dataset objects
 
-#### upload
+## upload
 
 ```python
 def upload(path: str, data: Union[bytes, BinaryIO]) -> None
@@ -474,7 +474,7 @@ def upload(path: str, data: Union[bytes, BinaryIO]) -> None
 
 Upload a binary blob to a cloud location
 
-#### \_upload\_tmp
+## \_upload\_tmp
 
 ```python
 def _upload_tmp(extension: str, data: Union[bytes, BinaryIO]) -> str
@@ -482,7 +482,7 @@ def _upload_tmp(extension: str, data: Union[bytes, BinaryIO]) -> str
 
 Upload a binary blob to a temporary cloud location, and return the new URL
 
-#### \_replace\_df\_input
+## \_replace\_df\_input
 
 ```python
 def _replace_df_input(
@@ -492,7 +492,7 @@ def _replace_df_input(
 
 If the input is a DataFrame, upload it and return a URL to it. Otherwise return input unchanged.
 
-#### \_health
+## \_health
 
 ```python
 def _health() -> bool
@@ -500,7 +500,7 @@ def _health() -> bool
 
 Check the health of the API backend
 
-#### auth\_token
+## auth\_token
 
 ```python
 def auth_token() -> str

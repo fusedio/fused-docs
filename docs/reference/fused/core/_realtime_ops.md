@@ -3,7 +3,7 @@ sidebar_label: _realtime_ops
 title: fused.core._realtime_ops
 ---
 
-#### run\_tile
+## run\_tile
 
 ```python
 def run_tile(email: str,
@@ -41,7 +41,7 @@ as well as additional parameters for the UDF execution.
 
   The response from the server after executing the UDF on the specified tile.
 
-#### run\_shared\_tile
+## run\_shared\_tile
 
 ```python
 def run_shared_tile(token: str,
@@ -78,7 +78,7 @@ as well as additional parameters for the UDF execution.
 
   The response from the server after executing the UDF on the specified tile.
 
-#### run\_file
+## run\_file
 
 ```python
 def run_file(email: str,
@@ -108,7 +108,7 @@ This function constructs a URL to run a UDF associated with the given email and 
 
   The response from the server after executing the UDF.
 
-#### run\_shared\_file
+## run\_shared\_file
 
 ```python
 def run_shared_file(token: str,
@@ -144,7 +144,7 @@ This function constructs a URL for running an operation on a file accessible via
 
   This function is designed to access shared operations that require a token for authorization. It requires network access to communicate with the server hosting these operations and may incur data transmission costs or delays depending on the network's performance.
 
-#### run\_tile\_async
+## run\_tile\_async
 
 ```python
 async def run_tile_async(
@@ -181,7 +181,7 @@ This function constructs a URL to asynchronously run a UDF on a specific tile de
 
   A coroutine that, when awaited, sends a request to the server to execute the UDF on the specified tile and returns the server's response. The format and content of the response depend on the UDF's implementation and the server's response format.
 
-#### run\_shared\_tile\_async
+## run\_shared\_tile\_async
 
 ```python
 async def run_shared_tile_async(
@@ -214,7 +214,7 @@ This function constructs a URL for running an operation on a tile, defined by it
 
   A coroutine that, when awaited, sends a request to the server to execute the operation on the specified tile and returns the server's response. The format and content of the response depend on the operation's implementation and the server's response format.
 
-#### run\_file\_async
+## run\_file\_async
 
 ```python
 async def run_file_async(
@@ -245,7 +245,7 @@ This function constructs a URL to run a UDF on a server, allowing for output dat
 
   A coroutine that, when awaited, sends a request to the server to execute the UDF and returns the server's response. The format and content of the response depend on the UDF's implementation and the server's response format.
 
-#### run\_shared\_file\_async
+## run\_shared\_file\_async
 
 ```python
 async def run_shared_file_async(

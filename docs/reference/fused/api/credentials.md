@@ -15,7 +15,7 @@ To use this credentials helper, run the following and it will guide you to creat
 credentials = NotebookCredentials()
 ```
 
-#### logout
+## logout
 
 ```python
 def logout()
@@ -25,7 +25,7 @@ Log out the current user.
 
 This deletes the credentials saved to disk and resets the global Fused API.
 
-#### access\_token
+## access\_token
 
 ```python
 def access_token() -> str

@@ -19,7 +19,7 @@ class MaybeInitializedCredentials()
 
 OAuth2 credentials that may or may not have been initialized.
 
-#### initialize
+## initialize
 
 ```python
 def initialize() -> None
@@ -27,7 +27,7 @@ def initialize() -> None
 
 Force initialization of credentials.
 
-#### credentials
+## credentials
 
 ```python
 @property
@@ -36,7 +36,7 @@ def credentials() -> Credentials
 
 Retrieve valid credentials, initializing them or authenticating from scratch if needed.
 
-#### \_authorization\_header
+## \_authorization\_header
 
 ```python
 @property
@@ -45,11 +45,11 @@ def _authorization_header()
 
 Access the Authorization HTTP header of these credentials.
 
-#### CREDENTIALS
+## CREDENTIALS
 
 Global credentials.
 
-#### logout
+## logout
 
 ```python
 def logout()
@@ -57,7 +57,7 @@ def logout()
 
 Open the user's browser to the Auth0 logout page.
 
-#### get\_code\_challenge
+## get\_code\_challenge
 
 ```python
 def get_code_challenge(code_verifier: str) -> str
@@ -67,7 +67,7 @@ Take an input string and hash it to generate a challenge string
 
 Refer to https://auth0.com/docs/get-started/authentication-and-authorization-flow/call-your-api-using-the-authorization-code-flow-with-pkce
 
-#### handle\_redirect
+## handle\_redirect
 
 ```python
 def handle_redirect(authorize_url: str) -> str
@@ -78,7 +78,7 @@ Open the authorization url and intercept its redirect
 The redirection from the `/authorize` endpoint includes a code that can be used
 against the `/oauth/token` endpoint to fetch a refresh and access token.
 
-#### refresh\_token
+## refresh\_token
 
 ```python
 def refresh_token(refresh_token: str)
