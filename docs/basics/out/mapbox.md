@@ -1,4 +1,4 @@
-# Mapbox (React)
+# Mapbox (HTML)
 
 Bring your apps to life with embedded responsive maps that dynamically respond to user input.
 
