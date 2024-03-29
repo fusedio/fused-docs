@@ -53,6 +53,7 @@ const sidebars: SidebarsConfig = {
         "workbench/results",
       ],
     },
+    "contribute"
   ],
 };
 
