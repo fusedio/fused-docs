@@ -7,7 +7,7 @@ const sidebars: SidebarsConfig = {
       label: "Basics",
       link: { type: "doc", id: "basics/index" },
       items: [
-        "basics/quickstart",
+        "basics/quickstart/quickstart",
         "basics/core-concepts",
         {
           type: "category",
