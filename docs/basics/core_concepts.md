@@ -652,7 +652,7 @@ fused.run("user@fused.io", "Overture_Maps", x=2808, y=6542, z=14, my_udf_paramet
 :::note
     [nest_asyncio](https://pypi.org/project/nest-asyncio/) might be required to run UDFs async from Jupyter Notebooks.
     ```python
-    !pip install nest-asyncio
+    !pip install nest-asyncio -q
     import nest_asyncio
     nest_asyncio.apply()
     ```
