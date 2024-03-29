@@ -16,7 +16,7 @@ In a Retool app, create a custom Retool component. In the `IFrame Code` box, pas
 
 ![alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/retool-1.png)
 
-It's that easy. The following two sections show how to interchange data with the map component you just created.
+It's that easy. The following two sections show how to interchange data with the map component you just created. That's a bit more elaborate, but you're in good hands. 
 
 ## 3. Pass data from a UI component to the map (optional)
 
