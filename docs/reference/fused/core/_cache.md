@@ -117,10 +117,12 @@ implementation of `_cache_async`.
 
 **Examples**:
 
+  ```py
   async def fetch_data(param):
   # Async function implementation goes here
   return data
   
   # Usage
   result = await cache_call_async(fetch_data, 'example_param')
+  ```
 
