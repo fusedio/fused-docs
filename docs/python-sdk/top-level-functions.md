@@ -141,11 +141,25 @@ path based on the provided parameters.
     ```
   
 
-**Notes**:
+
+
+:::note
 
   This function dynamically determines the execution path and parameters based on the inputs.
   It is designed to be flexible and support various UDF execution scenarios.
 
+  Fused validates the output of UDFs that execute remotely with the `realtime` engine, and will hold back invalid responses. This might result in perceived inconsistencies because running locally with the `local` engine does not validate and will instead return any output.
+
+  ```python
+  import fused
+
+  @fused.udf
+  def udf(x=1):
+      return x
+  fused.run(udf, engine='local') # Returns 1
+  fused.run(udf, engine='realtime') # Returns None because output is not a valid response object
+  ```
+:::
 
 
 ## @fused.cache
