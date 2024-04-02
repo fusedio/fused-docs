@@ -6,6 +6,11 @@ sidebar_position: 8
 ---
 # Changelog
 
+## v1.5.2 (2024-04-01) :tanabata_tree:
+
+- File browser can now preview images like TIFFs, JPEGs, PNGs, and more.
+- Users can now open Parquet files with DuckDB directly from the file browser.
+
 ## v1.5.0 (2024-03-25) :open_file_folder:
 
 - The upload view in Workbench now shows a file browser.
