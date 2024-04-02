@@ -206,6 +206,27 @@ def udf(url='https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_C
     return gpd.read_file(out_path)
 ```
 
+## `fd://` File system
+
+The `fd://` file system serves as a namespace for an S3 bucket provisioned by Fused Cloud for your organization. It provides a unified interface for accessing files and directories stored within the bucket, abstracting away the complexities of direct interaction with S3.
+
+Access it like you would an object on S3.
+
+For example, to fetch a file:
+```python
+fused.get("fd://bucket-name/file.parquet")
+```
+
+Or, for example, to ingest a table:
+```python
+job = fused.ingest(
+    input="https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/06_CALIFORNIA/06/tl_rd22_06_bg.zip",
+    output="fd://census/ca_bg_2022/",
+).execute()
+```
+
+
+
 ## Return types
 
 Spatial data provides type information to render it on a map. The Fused Workbench displays data on the map as either vector or raster types. Vectors are polygons typically in the form of a GeoDataFrame, and rasters are pixel arrays typically in the form of numpy arrays, or xarray Datasets or DataArrays.
