@@ -1,10 +1,8 @@
 # DuckDB (Parquet)
 
-[DuckDB](https://duckdb.org/) is an open source, in-process, analytical database. It is popular for fast, local queries over in memory datasets.
+[DuckDB](https://duckdb.org/) is an open source, in-process, analytical database. It is popular for fast, local queries over in memory datasets. DuckDB supports several of the output formats that Fused can serve, and in particular it has great support for Parquet files.
 
-DuckDB supports several of the output formats that Fused can serve, and in particular it has great support for Parquet files.
-
-To load data from Fused, you'll first generate a signed UDF URL
+To load data from Fused, you'll first generate a signed UDF URL.
 
 ## 1. Generate a signed URL for a UDF
 
@@ -26,11 +24,13 @@ LOAD httpfs;
 Now you can make a query using the UDF URL, with the dtype_out_vector set to `parquet`:
 
 ```sql
-select * from read_parquet('https://www.fused.io/server/v1/realtime-shared/221aa65f3d96f1a320ed0f4eea0d320724c0ddc0c75cbf70df711def11e2ecc5/run/file?dtype_out_raster=png&dtype_out_vector=parquet');
+select *
+from read_parquet('https://www.fused.io/server/v1/realtime-shared/221aa65f3d96f1a320ed0f4eea0d320724c0ddc0c75cbf70df711def11e2ecc5/run/file?dtype_out_vector=parquet');
 ```
 
 You can pass parameters into the URL from the query:
 
 ```sql
-select * from read_parquet('https://www.fused.io/server/v1/realtime-shared/221aa65f3d96f1a320ed0f4eea0d320724c0ddc0c75cbf70df711def11e2ecc5/run/file?dtype_out_raster=png&dtype_out_vector=parquet&resolution=13');
+select *
+from read_parquet('https://www.fused.io/server/v1/realtime-shared/221aa65f3d96f1a320ed0f4eea0d320724c0ddc0c75cbf70df711def11e2ecc5/run/file?dtype_out_vector=parquet&resolution=13');
 ```
