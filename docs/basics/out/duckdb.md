@@ -1,4 +1,4 @@
-# DuckDB (Parquet)
+# DuckDB
 
 [DuckDB](https://duckdb.org/) is an open source, in-process, analytical database. It is popular for fast, local queries over in memory datasets. DuckDB supports several of the output formats that Fused can serve, and in particular it has great support for Parquet files.
 
