@@ -75,7 +75,7 @@ Fused API endpoint
 
 ## open
 
-Options for `fused.open_table` and `fused.open_project`.
+Options for `fused.experimental.open_table` and `fused.experimental.open_project`.
 
 ## show
 
