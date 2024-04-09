@@ -1,0 +1,161 @@
+---
+title: DuckDB
+sidebar_label: DuckDB
+path: basics/tutorials/duckdb/duckdb
+nb_path: basics/tutorials/duckdb.ipynb
+github: 
+  https://github.com/fusedio/fused-docs/blob/main/docs/basics/tutorials/duckdb.ipynb
+colab: 
+  https://githubtocolab.com/fusedio/fused-docs/blob/main/docs/basics/tutorials/duckdb.ipynb
+description: Tutorial on how call UDFs asynchronously with Fused.
+---
+
+import LinkButtons from "../../../../src/components/LinkButtons.jsx";
+import CellOutput from "../../../../src/components/CellOutput.jsx";
+import {BokehFigure, PlotlyFigure} from "../../../../src/components/Plotting.jsx";
+
+<LinkButtons
+  githubUrl="https://github.com/fusedio/fused-docs/blob/main/docs/basics/tutorials/duckdb.ipynb"
+  colabUrl="https://githubtocolab.com/fusedio/fused-docs/blob/main/docs/basics/tutorials/duckdb.ipynb"
+/>
+
+# DuckDB
+
+This notebook tutorial is support material for the "DuckDB + Fused: Fly beyond the
+serverless horizon" blog post.
+
+## 1. Run DuckDB in a Fused UDF
+
+As an example of running DuckDB within a Fused UDF, take the case of loading a
+geospatial Parquet dataset. The "DuckDB H3" sample UDF runs an SQL query with DuckDB on
+the NYC Taxi Trip Record Dataset. It uses the bbox argument to spatially filter the
+dataset and automatically parallelize the operation.
+
+To try this example, you can run the cell below. You can find the code of the UDF in the
+Fused public UDF
+[repo](https://github.com/fusedio/udfs/tree/main/public/DuckDB_H3_Example_Tile).
+
+Alternatively, you can import the "DuckDB H3 Example Tile" UDF into your Fused Workbench
+environment.
+
+This pattern gives DuckDB easy parallel operations. Fused spatially filters via the bbox
+parameter to enable automatic parallelization. Fused breaks down operations to only a
+fraction of the dataset, so it's easy to transition between SQL and Python.
+
+<img src="https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/nyc.png" alt="overture" width="600"/>
+
+```python
+# !pip install fused 
+```
+
+```python
+import fused
+
+udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/DuckDB_H3_Example_Tile")
+gdf = fused.run(udf=udf, x=2412, y=3078, z=13)
+gdf
+```
+
+## 2. Call Fused UDFs from DuckDB
+
+Any database that supports querying data via HTTP can call and load data from Fused UDF
+endpoints using common formats like Parquet or CSV. This means that DuckDB can dispatch
+operations to Fused that otherwise would be too complex or impossible to express with
+SQL, or would be unsupported in the local runtime.
+
+As an example of calling a Fused endpoint from within DuckDB, take an operation to
+vectorize a raster dataset. This might be necessary to determine the bounds of areas
+with pixel value within a certain threshold range in an Earth observation image - such
+as a Digital Elevation Model. SQL is not geared to support raster operations, but these
+are easy to do in Python.
+
+<img src="https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/gifs/sql.gif" alt="overture" width="600"/>
+
+In this example, a Fused UDF returns a table where each record is a polygon generated
+from the contour of a raster provided by the Copernicus Digital Elevation Model as a
+Cloud Optimized GeoTIFF. DuckDB can easily trigger a UDF and load its output with this
+simple query, which specifies that the UDF endpoint returns a Parquet file.
+
+This SQL query uses DuckDB's read_parquet function to call an endpoint of a UDF instance
+of the "DEM Raster to Vector" UDF.
+
+You can find the code of the UDF in the Fused public UDF
+[repo](https://github.com/fusedio/udfs/tree/main/public/DEM_Raster_to_Vector_Example).
+
+To try this example, simply run the following SQL query on the cell below or in a
+[DuckDB shell](<https://shell.duckdb.org/#queries=v0,CREATE-TABLE-dem_polygons-AS%0ASELECT-wkt,-area%0AFROM-read_csv('https://www.fused.io/server/v1/realtime%20shared/'-%7C%7C%0A----'1e35c9b9cadf900265443073b0bd99072f859b8beddb72a45e701fb5bcde807d'-%7C%7C%0A----'/run/file?dtype_out_vector=csv'-%7C%7C%0A----'&min_elevation=500')~%0A>).
+Change the `min_elevation` parameter to run the UDF for parts of California at different
+elevations. (Note: for DuckDB WASM, the file will be requested as CSV.)
+
+```python
+import duckdb
+
+con = duckdb.connect()
+
+con.sql("""
+    SELECT 
+        wkt, 
+        ROUND(area,1) AS area
+    FROM read_parquet('https://www.fused.io/server/v1/realtime-shared/1e35c9b9cadf900265443073b0bd99072f859b8beddb72a45e701fb5bcde807d/run/file?min_elevation=500&dtype_out_vector=parquet')
+    LIMIT 5
+""")
+
+```
+
+This pattern enables DuckDB to address use cases and data formats that it doesn't
+natively support or would otherwise see high data transfer cost, such as raster
+operations, API calls, and control flow logic.
+
+## 3. Integrate DuckDB in applications using Fused
+
+Fused is the glue layer between DuckDB and apps. This enables seamless integrations that
+trigger Fused UDFs and load their results with simple parameterized HTTP calls.
+
+DuckDB is an embedded database engine and doesn't have built-in capability to share
+results other than writing out files. As a corollary of the preceding example, it's
+possible to query and transform data with DuckDB and seamlessly integrate the results of
+queries into any workflow or app.
+
+As an example, take the case of loading the output of a DuckDB query into Google Sheets.
+Sheets can easily structure the Fused UDF endpoint to pass parameters defined in
+specific cells as URL query parameters. In this example, the importData command calls
+the same UDF from above and loads its output data in CSV format.
+
+<img src="https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/gifs/sheets.gif" alt="overture" width="600"/>
+
+To try this example simply make a copy of this Google Sheets spreadsheet (File > Make a
+copy) and click, and modify the parameters in B2:4 to trigger the Fused UDF endpoint and
+load data.
+
+You can learn more about the Google Sheets integration in the
+[documentation](/basics/out/googlesheets/).
+
+This pattern brings the power of the DuckDB analytical engine into non-analytical and
+no-code software like Google Sheets, Retool, and beyond - without the need to build
+bespoke integrations with closed-source systems. With this, a Python developer can
+abstract away the UDF and deliver data to end users. This removes the need to even
+install DuckDB.
+
+```python
+import fused
+
+udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/DuckDB_H3_Example")
+gdf = fused.run(udf=udf, engine='realtime')
+gdf
+```
+
+
+|      | cell_id         | cnt    | geometry                                          | fused_index   |
+|:-----|:----------------|:-------|:--------------------------------------------------|:--------------|
+| 0    | 892a100d657ffff | 124150 | POLYGON ((-73.97990 40.76506, -73.98200 40.764... | 0             |
+| 1    | 892a100d22bffff | 97189  | POLYGON ((-73.98945 40.73572, -73.99155 40.734... | 1             |
+| 2    | 89754e64993ffff | 268965 | POLYGON ((0.00010 -0.00031, 0.00036 0.00134, -... | 2             |
+| 3    | 892a1072c7bffff | 8915   | POLYGON ((-74.01244 40.72188, -74.01454 40.720... | 3             |
+| 4    | 892a100d2afffff | 34257  | POLYGON ((-73.97887 40.73865, -73.98097 40.737... | 4             |
+| ...  | ...             | ...    | ...                                               | ...           |
+| 3945 | 892a10012d7ffff | 12     | POLYGON ((-73.88583 40.88399, -73.88794 40.883... | 3945          |
+| 3946 | 892a100ee77ffff | 13     | POLYGON ((-73.82644 40.72416, -73.82855 40.723... | 3946          |
+| 3947 | 892a107222bffff | 11     | POLYGON ((-74.06501 40.75216, -74.06711 40.751... | 3947          |
+| 3948 | 892a107204bffff | 11     | POLYGON ((-74.04833 40.76320, -74.05044 40.762... | 3948          |
+| 3949 | 892a100e297ffff | 11     | POLYGON ((-73.84098 40.77137, -73.84309 40.770... | 3949          |
+
