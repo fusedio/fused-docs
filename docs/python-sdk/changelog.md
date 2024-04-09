@@ -12,6 +12,7 @@ sidebar_position: 8
 - Geocoder in Workbench now supports coordinates and H3 cell IDs.
 - GeoDataFrame arguments to UDFs can be passed as bounding boxes.
 - The package ibis was upgraded to 8.0.0.
+- Utils modules no longer need to import fused.
 
 ## v1.5.2 (2024-04-01) :tanabata_tree:
 
