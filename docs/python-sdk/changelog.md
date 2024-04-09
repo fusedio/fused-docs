@@ -6,6 +6,13 @@ sidebar_position: 8
 ---
 # Changelog
 
+## v1.5.3 (2024-04-08) :duck:
+
+- Improved compatibility with DuckDB requesting data from shared UDFs.
+- Geocoder in Workbench now supports coordinates and H3 cell IDs.
+- GeoDataFrame arguments to UDFs can be passed as bounding boxes.
+- The package ibis was upgraded to 8.0.0.
+
 ## v1.5.2 (2024-04-01) :tanabata_tree:
 
 - File browser can now preview images like TIFFs, JPEGs, PNGs, and more.
