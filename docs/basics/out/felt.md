@@ -14,7 +14,7 @@ To load data from Fused, you'll first generate a signed UDF URL.
 
 ## 1. Generate a signed URL for a UDF
 
-First, on Workbench, create and save a UDF that successfully renders in `File` mode. Under the "Settings" tab, click "Share" to [generate a signed URL](/basics/core-concepts/#generate-endpoints-with-workbench) that can be called via HTTP requests. 
+First, on Workbench, create and save a UDF. Under the "Settings" tab, click "Share" to [generate a signed URL](/basics/core-concepts/#generate-endpoints-with-workbench) that can be called via HTTP requests. 
 
 Modify the generated `HTTP` URL depending on the data type, as detailed below. You can optionally pass UDF parameters as URL-encoded strings, which can be configured to change based on query input.
 
@@ -28,7 +28,7 @@ There's 2 ways to load data from Fused into Felt, depending on whether the UDF r
 
 Dynamically render XYZ raster tiles on the Felt map.
 
-As an example, the ["Sentinel Tile Example"](https://github.com/fusedio/udfs/tree/main/public/Sentinel_Tile_Example) public UDF returns an XYZ tile URL of NDVI from the Sentinel dataset. Create a new instance of it on your workbench, generate a shared URL, then modify the URL query parameters:
+As an example, the ["Sentinel Tile Example"](https://github.com/fusedio/udfs/tree/main/public/Sentinel_Tile_Example) public UDF returns an XYZ tile URL of NDVI from the Sentinel dataset. Create a new instance of it on your workbench and ensure it successfully renders data under `Tile` mode. Next, generate a shared URL and moddify it as such:
 
 - Set `dtype_out_raster` to `png`.
 - Set replace the values after `/run/tiles` with the `/{z}/{x}/{y}` template.
@@ -49,7 +49,7 @@ This should render the raster output tiles on the map. This example shows NDVI o
 
 Load vector data in a one-off manner onto the Felt map.
 
-As an example, the ["Single Route"](https://github.com/fusedio/udfs/tree/main/public/single_route) public UDF returns a composite vector line of driving directions between an origin and destination locations. Create a new instance of it on your workbench, generate a shared URL, then modify the URL query parameters:
+As an example, the ["Single Route"](https://github.com/fusedio/udfs/tree/main/public/single_route) public UDF returns a composite vector line of driving directions between an origin and destination locations. Create a new instance of it on your workbench and ensure it successfully renders data under `File` mode. Next, generate a shared URL and modify it as such:
 
 - Set `dtype_out_vector` to `csv` or `parquet`.
 - Set UDF parameters as needed.
