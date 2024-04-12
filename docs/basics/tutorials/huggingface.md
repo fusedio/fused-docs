@@ -20,8 +20,9 @@ def udf(bbox: fused.types.Bbox=None, n: int=10):
     import huggingface_hub
 
 
-    # Set HF cache directories to Fused filesystem
-    os.environ['HF_HOME'] = os.environ['HF_HUB_CACHE'] = '/mnt/cache/'
+    # Set HF and Torch cache directories to Fused filesystem
+    os.environ['HF_HOME'] = os.environ['HF_HUB_CACHE'] = '/mnt/cache/hf'
+    os.environ['TORCH_WHERE'] = os.environ['TORCH_HOME'] = '/mnt/cache/my_username/tmp/'
     
     # Use strategic caching to only download model files once
     @fused.cache

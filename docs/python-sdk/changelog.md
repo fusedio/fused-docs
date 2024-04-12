@@ -52,7 +52,7 @@ sidebar_position: 8
 - Standardize how a decorator's headers are preprocesses to set `source_code` key.
 - Fixed a bug loading UDFs from a job.
 
-## v1.0.3 (2023-11-7) :bowtie:
+## v1.0.3 (2023-11-7) :cloud:
 
 _Getting chunks_
 
