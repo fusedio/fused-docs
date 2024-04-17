@@ -6,6 +6,10 @@ sidebar_position: 8
 ---
 # Changelog
 
+## v1.5.4 (2024-04-15) :telescope:
+- Button to open slice of data in Kepler.gl.
+- Minor UI design and button placement updates. 
+
 ## v1.5.3 (2024-04-08) :duck:
 
 - Improved compatibility with DuckDB requesting data from shared UDFs.
@@ -52,7 +56,7 @@ sidebar_position: 8
 - Standardize how a decorator's headers are preprocesses to set `source_code` key.
 - Fixed a bug loading UDFs from a job.
 
-## v1.0.3 (2023-11-7) :cloud:
+## v1.0.3 (2023-11-7) :sweat_drops:
 
 _Getting chunks_
 
