@@ -515,11 +515,17 @@ def udf(url='https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_C
 
 ## File systems
 
+The Fused runtime has two file systems to persist and share artifacts across UDF runs: an S3 bucket and a disk file system. These are used to store downloaded or generated objects, environment variables, and auxiliary files.
+
+:::warning
+Access to the file systems is tightly scoped at the organization level, so files stored in either system can only be accessed by accounts in the same organization. 
+
+Given the flexibility of Fused to run any Python code on files in the file system, users should take precautions standard to working with sensitive files.
+:::
+
 ### `fd://` S3 bucket
 
-The `fd://` file system serves as a namespace for an S3 bucket provisioned by Fused Cloud for your organization. It provides a unified interface for accessing files and directories stored within the bucket, abstracting away the complexities of direct interaction with S3.
-
-Access it like you would an object on S3.
+The `fd://` bucket file system serves as a namespace for an S3 bucket provisioned by Fused Cloud for your organization. It provides a unified interface for accessing files and directories stored within the bucket, abstracting away the complexities of direct interaction with S3. Fused helper functions access it like an object on S3.
 
 For example, to fetch a file:
 ```python
@@ -536,10 +542,12 @@ job = fused.ingest(
 
 ### `/mnt/cache` disk
 
+The `/mnt/cache` disk file system is the UDF runtime's local directory that persists across UDF runs. It serves to store downloaded files, the output of cached functions, access keys, and `.env` files.
+
 
 ## Environment variables
 
-Add constants and secrets to an `.env` file to make them available to your UDFs via environment variables.
+Save constants and secrets to an `.env` file to make them available to your UDFs via environment variables.
 
 First, run a UDF that sets variables in an `.env` file.
 
@@ -547,29 +555,33 @@ First, run a UDF that sets variables in an `.env` file.
 To be accessible to all UDF run events, the file must be placed on the runtime's mount path `/mnt/cache/`.
 :::
 ```py
-env_vars = """
-MY_ENV_VAR=123
-DB_USER=username
-DB_PASS=******
-"""
+@fused.udf
+def udf():
+    env_vars = """
+    MY_ENV_VAR=123
+    DB_USER=username
+    DB_PASS=******
+    """
 
-# Path to your .env file
-env_file_path = '/mnt/cache/.env'
+    # Path to .env file in disk file system
+    env_file_path = '/mnt/cache/.env'
 
-# Writing the environment variables to the .env file
-with open(env_file_path, 'w') as file:
-    file.write(env_vars)
+    # Write the environment variables to the .env file
+    with open(env_file_path, 'w') as file:
+        file.write(env_vars)
 ```
 
 Then, in a different UDF, load the variables into the environment.
 
 ```py
-from dotenv import load_dotenv
+@fused.udf
+def udf():
+    from dotenv import load_dotenv
 
-# Load environment variable
-env_file_path = '/mnt/cache/.env'
-load_dotenv(env_file_path, override=True)
-print(f"Updated MY_ENV_VAR: {os.getenv('MY_ENV_VAR')}")
+    # Load environment variable
+    env_file_path = '/mnt/cache/.env'
+    load_dotenv(env_file_path, override=True)
+    print(f"Updated MY_ENV_VAR: {os.getenv('MY_ENV_VAR')}")
 ```
 
 ## Hosted API 
