@@ -24,10 +24,10 @@ User Defined Functions (UDFs) are Python operations that integrate across the st
 
 A UDF is a python function with the following components:
 
-- a) [`@fused.udf` decorator](/basics/core-concepts/#a-fusedudf-decorator)
-- b) [Function declaration](/basics/core-concepts/#b-function-declaration)
-- c) [Typed parameters](/basics/core-concepts/#c-typed-parameters)
-- d) [Return object](/basics/core-concepts/#d-returned-object)
+- [a) `@fused.udf` decorator](/basics/core-concepts/#a-fusedudf-decorator)
+- [b) Function declaration](/basics/core-concepts/#b-function-declaration)
+- [c) Typed parameters](/basics/core-concepts/#c-typed-parameters)
+- [d) Return object](/basics/core-concepts/#d-return-object)
 
 The structure of the API call determines a UDFs execution mode.
 
@@ -67,14 +67,24 @@ You can read more about the XYZ indexing system in the [Deck.gl](http://Deck.gl)
 
 ### a) `@fused.udf` decorator
 
-To create a UDF, decorate a Python function with `@fused.udf` - this automatically turns the function into an endpoint and gives it the ability to fractionally load data. Structure the function's business logic return an object which will be the UDF's output.
+To create a UDF, decorate a Python function with `@fused.udf`. This decorator automatically the function into a serverless endpoint that can be invoked via HTTP requests and gives it the ability to fractionally load data. 
+
+This simplified example illustrates the concept. It's that simple.
+
+```python
+@fused.udf
+def my_udf():
+    ...
+    return gdf
+```
 
 ### b) Function declaration
+
+The next step is to structure the function's business logic to interact with upstream data sources and return an object which will be the UDF's output.
 
 To illustrate, this UDF is a function called `udf` that returns a dataframe. Notice how its import statements are placed within the function declaration. The `bbox` argument gives the data spatial awareness, which you can read more about [here](/basics/core-concepts/#file--tile).
 
 ```python
-
 @fused.udf
 def udf(bbox, table_path="s3://fused-asset/infra/building_msft_us"):
     from utils import table_to_tile
@@ -89,19 +99,12 @@ To visualize the output of a UDF on Workbench, the function should return a Rast
 #### Syntax to keep in mind
 
 The Fused compute engine recognizes the UDF as self-contained function. This means that developers should:
-
-a) Decorate the UDF function with `@fused.udf`.
-
-b) Declare imports within the function.
-
-c) Encapsulate helper functions as importable `util modules` of the UDF.
-
-d) Optionally, enable autodetection with [explicit typing](/workbench/udf-editor/#auto-tile-and-file).
+- Decorate the UDF function with `@fused.udf`.
+- Declare imports within the function.
+- Encapsulate helper functions as importable `util modules` of the UDF.
+- Optionally, enable autodetection with [explicit typing](/workbench/udf-editor/#auto-tile-and-file).
 
 That’s all the new syntax you need to remember to get started!
-
-
-
 
 ### c) Typed parameters
 
@@ -509,7 +512,10 @@ def udf(url='https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_C
     return gpd.read_file(out_path)
 ```
 
-## `fd://` File system
+
+## File systems
+
+### `fd://` S3 bucket
 
 The `fd://` file system serves as a namespace for an S3 bucket provisioned by Fused Cloud for your organization. It provides a unified interface for accessing files and directories stored within the bucket, abstracting away the complexities of direct interaction with S3.
 
@@ -527,6 +533,8 @@ job = fused.ingest(
     output="fd://census/ca_bg_2022/",
 ).execute()
 ```
+
+### `/mnt/cache` disk
 
 
 ## Environment variables
@@ -585,7 +593,7 @@ The following sections describes how to create a UDF endpoint either in Workbenc
 
 ### Generate endpoints with Workbench
 
-Once a UDF is saved in Workbench, the "Settings" tab of the editor will show code snippets that can be used to call the UDF from different environments. 
+Once a UDF is saved in Workbench, the "Settings" tab of the editor shows code snippets that can be used to call the UDF from different environments. 
 
 #### Shareable public endpoints
 
