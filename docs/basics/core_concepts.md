@@ -542,8 +542,16 @@ job = fused.ingest(
 
 ### `/mnt/cache` disk
 
-The `/mnt/cache` disk file system is the UDF runtime's local directory that persists across UDF runs. It serves to store downloaded files, the output of cached functions, access keys, and `.env` files.
+The `/mnt/cache` disk file system is the UDF runtime's local directory that persists across UDF runs. Use it store downloaded files, the output of cached functions, access keys, and to set environment variables with `.env` files.
 
+To list files in the directory, run this in a UDF.
+
+```python
+import os
+
+for each in os.listdir('/mnt/cache/'):
+    print(each)
+```
 
 ## Environment variables
 
@@ -554,6 +562,7 @@ First, run a UDF that sets variables in an `.env` file.
 :::note
 To be accessible to all UDF run events, the file must be placed on the runtime's mount path `/mnt/cache/`.
 :::
+
 ```py
 @fused.udf
 def udf():
