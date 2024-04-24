@@ -63,6 +63,10 @@ const config: Config = {
 
 
   themeConfig: {
+    tableOfContents: {
+      minHeadingLevel: 2,
+      maxHeadingLevel: 4,
+    },
 
     typesense: {
       // Replace this with the name of your index/collection.

@@ -209,8 +209,6 @@ numba==0.58.1
 numcodecs==0.11.0
 numexpr==2.8.8
 numpy==1.26.4
-oauth2client==4.1.3
-oauthlib==3.2.2
 odc-geo==0.4.1
 odc-stac==0.3.8
 openai==1.14.1
