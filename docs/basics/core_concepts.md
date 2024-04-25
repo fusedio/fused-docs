@@ -108,7 +108,11 @@ That’s all the new syntax you need to remember to get started!
 
 ### c) Typed parameters
 
-When a UDF's signature have explicit types, Fused converts passed parameters to the specified types.
+HTTP calls to UDF endpoints may specify argument values via [query parameters](https://www.branch.io/glossary/query-parameters/). These must be URL encoded, but Fused needs to know their intended type.
+
+When a UDF's signature have explicit types, Fused resolves arguments to the specified types. 
+
+For example, take a function like this one, with typed parameters.
 
 ```python
 @fused.udf
@@ -116,6 +120,12 @@ def udf(bbox: fused.types.Bbox = None, table_path: str = "", n: int=10):
     from utils import table_to_tile
     df=table_to_tile(bbox, table=table_path, n=n)
     return df
+```
+
+When its endpoint is called like so, Fused injects a `bbox` parameter corresponding to a Tile with the `1,1,1` index, resolve `table_path` value as a string and the `n` value as an integer.
+
+```bash
+curl -XGET "https://app.fused.io/server/v1/realtime-shared/$SHARED_TOKEN/run/tiles/1/1/1?table_path=table.shp&n=4"
 ```
 
 :::tip
