@@ -112,7 +112,7 @@ When a UDF's signature have explicit types, Fused converts passed parameters to 
 
 ```python
 @fused.udf
-def udf(bbox: fused.types.Bbox=None, table_path: str = "", n: int=10):
+def udf(bbox: fused.types.Bbox = None, table_path: str = "", n: int=10):
     from utils import table_to_tile
     df=table_to_tile(bbox, table=table_path, n=n)
     return df
