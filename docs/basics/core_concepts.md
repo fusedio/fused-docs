@@ -545,6 +545,8 @@ Given the flexibility of Fused to run any Python code on files in the file syste
 
 The `fd://` bucket file system serves as a namespace for an S3 bucket provisioned by Fused Cloud for your organization. It provides a unified interface for accessing files and directories stored within the bucket, abstracting away the complexities of direct interaction with S3. Fused helper functions access it like an object on S3.
 
+![alt text](image.png)
+
 For example, to fetch a file:
 ```python
 fused.get("fd://bucket-name/file.parquet")
