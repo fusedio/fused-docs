@@ -547,16 +547,18 @@ The `fd://` bucket file system serves as a namespace for an S3 bucket provisione
 
 ![alt text](image.png)
 
+In this image, the bucket path `s3://fused-users/fused/plinio/dir-name/file.parquet` is conveniently aliased as `fd://dir-name/file.parquet`.
+
 For example, to fetch a file:
 ```python
-fused.get("fd://bucket-name/file.parquet")
+fused.get("fd://dir-name/file.parquet")
 ```
 
 Or, for example, to ingest a table:
 ```python
 job = fused.ingest(
     input="https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/06_CALIFORNIA/06/tl_rd22_06_bg.zip",
-    output="fd://census/ca_bg_2022/",
+    output="fd://dir-name/census/ca_bg_2022/",
 ).execute()
 ```
 
