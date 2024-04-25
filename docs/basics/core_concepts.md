@@ -33,7 +33,7 @@ The structure of the API call determines a UDFs execution mode.
 
 ### Execution modes (File & Tile)
 
-Fused automatically creates an endpoint for all saved Fused UDF. When a client application calls a UDF endpoint, Fused runs a lightweight serverless Python operation and returns the function output. Its engine leverages industry standard cloud optimized dataset formats to efficiently pull specific fragments of datasets - based on specified geographic or logical partitions.
+Fused automatically creates an endpoint for all saved Fused UDF. When a client application calls a UDF endpoint, Fused runs a lightweight serverless Python operation and returns the function output. Like an analytical engine, Fused leverages cloud optimized data formats to efficiently load only the fragments of datasets relevant to an operation - based on specified geographic or logical partitions.
 
 Fused can processes datasets of any size and serve them as dynamic vector and raster tilesets. Instead of loading an entire dataset, which is an expensive operation, Fused tile layers load instantly because they operate on a fraction of the dataset - in parallel. Tile-level spatial filtering supercharges UDFs to process only specific spatial areas within a geopartitioned dataset. 
 
