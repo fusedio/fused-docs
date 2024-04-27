@@ -24,6 +24,7 @@ aiosqlite==0.19.0
 anyio==3.6.2
 appdirs==1.4.4
 appnope==0.1.3
+arcgis==2.3.0
 argon2-cffi==23.1.0
 argon2-cffi-bindings==21.2.0
 arraylake==0.7.8
@@ -54,6 +55,7 @@ Brotli==1.1.0
 cachetools==5.3.2
 Cartopy==0.22.0
 cattrs==22.2.0
+cdsapi==0.7.0
 certifi==2023.5.7
 cffi==1.15.1
 cftime==1.6.2
@@ -97,13 +99,13 @@ fonttools==4.47.0
 fqdn==1.5.1
 frozenlist==1.3.3
 fsspec==2023.6.0
-fused-internal=0.1.2
 future==0.18.3
 gax-google-logging-v2==0.8.3
 gax-google-pubsub-v1==0.8.3
 gcloud==0.18.3
 gcsfs==2023.6.0
 geopandas==0.12.2
+geopy==2.4.1
 google-api-core==2.11.1
 google-api-python-client==2.111.0
 google-auth==2.23.0
@@ -235,6 +237,7 @@ planetary-computer==1.0.0
 platformdirs==3.5.1
 pluggy==1.4.0
 ply==3.8
+pmtiles==3.3.0
 portalocker==2.8.2
 prometheus_client==0.20.0
 prompt-toolkit==3.0.38
@@ -275,8 +278,6 @@ pyshp==2.3.1
 PySocks==1.7.1
 pystac==1.9.0
 pystac-client==0.7.5
-pytest==8.0.0
-pytest-asyncio==0.23.5
 python-dateutil==2.8.2
 python-dotenv==1.0.0
 python-json-logger==2.0.7
