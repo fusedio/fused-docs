@@ -6,6 +6,10 @@ sidebar_position: 8
 ---
 # Changelog
 
+## v1.5.5 (2024-04-30) :checkered_flag:
+- The Workbench file explorer now shows UDFs contributed by community members.
+- Team admins can now set up a GitHub repository with UDFs that their team members can access from Workbench.
+
 ## v1.5.4 (2024-04-15) :telescope:
 - Button to open slice of data in Kepler.gl.
 - Minor UI design and button placement updates. 
