@@ -27,7 +27,7 @@ sidebar_position: 7
     </div>
 </details>
 <details>
-    <summary>How should I conceptualize how Fused’s tools interface eachother?</summary>
+    <summary>How should I conceptualize how Fused’s tools interface each other?</summary>
         <div>
     You Build UDFs with the Python SDK, preview them on the browser with Fused Workbench, and run them anywhere in your stack via the Hosted API.
 

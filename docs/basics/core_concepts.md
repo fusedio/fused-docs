@@ -22,7 +22,7 @@ Fused takes your Python code and runs it in the cloud. Fused lets any of your to
 
 User Defined Functions (UDFs) are the core of Fused. They contain the Python code you want to run. As this diagram shows, the UDF code defines interactions with datasets and data platforms using standard Python libraries. Fused automagically creates a Hosted API endpoint for each of your UDFs. When an app calls the endpoint, Fused runs the UDF code on a serverless machine and returns the function output.
 
-As a glue layer, UDFs are building blocks that integrate with your most important apps and can be assembled into complex workflows in which UDFs call eachother or run in parallel.
+As a glue layer, UDFs are building blocks that integrate with your most important apps and can be assembled into complex workflows in which UDFs call each other or run in parallel.
 
 ![alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/ecosystem_diagram.png)
 
