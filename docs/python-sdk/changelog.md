@@ -6,7 +6,7 @@ sidebar_position: 8
 ---
 # Changelog
 
-## v1.5.5 (2024-04-30) :checkered_flag:
+## v1.5.6 (2024-04-30) :checkered_flag:
 - The Workbench file explorer now shows UDFs contributed by community members.
 - Team admins can now set up a GitHub repository with UDFs that their team members can access from Workbench.
 
