@@ -363,7 +363,7 @@ Similarly, signed URLs endpoints can be created that can be called from another 
 
 #### Single File HTTP endpoints
 
-Single file HTTP endpoints are suitable for handling individual requests, ideal for scenarios where a single resource is required, such as loading data into [Google Sheets](/hosted-api/integrations/google_sheets/).
+Single file HTTP endpoints are suitable for handling individual requests, ideal for scenarios where a single resource is required, such as loading data into [Google Sheets](/basics/out/googlesheets/).
 
 
 ```python
@@ -376,7 +376,7 @@ api.create_udf_access_token(udf_email="user@fused.io", udf_name="caltrain_live_l
 
 #### Tile HTTP endpoints
 
-Tile HTTP endpoints are designed for serving map applications that consume Tiles, such as [Lonboard](/hosted-api/integrations/lonboard/) or [geemap](/hosted-api/integrations/geemap/).
+Tile HTTP endpoints are designed for serving map applications that consume Tiles, such as [Lonboard](/basics/out/lonboard/) or [geemap](/basics/out/geemap/).
 
 ```python
 from fused.api import FusedAPI
@@ -462,7 +462,7 @@ https://www.fused.io/server/v1/realtime-shared/******/run/tiles/{z}/{x}/{y}?dtyp
 
 ##### Private token
 
-Calling UDFs with [Bearer authentication](https://swagger.io/docs/specification/authentication/bearer-authentication/) requires an account's [private token](/basics/core-concepts/#get-an-accounts-private-token). The URL structure to run UDFs with the private token varies slightly, as the URL specifies the UDF's name and the owner's user account. 
+Calling UDFs with [Bearer authentication](https://swagger.io/docs/specification/authentication/bearer-authentication/) requires an account's [private token](/basics/utilities/#get-an-accounts-private-token). The URL structure to run UDFs with the private token varies slightly, as the URL specifies the UDF's name and the owner's user account. 
 
 ```bash
 curl -XGET "https://app.fused.io/server/v1/realtime/fused/api/v1/run/udf/saved/user@fused.io/caltrain_live_location?dtype_out_raster=png" -H "Authorization: Bearer $ACCESS_TOKEN"

@@ -12,7 +12,7 @@ You'll first generate a signed UDF URL and render it on an HTML map. You can the
 First, on Workbench, create and save a UDF that successfully renders in `Tile` mode. Under the "Settings" tab, click "Share" to [generate a signed URL](/basics/core-concepts/#generate-endpoints-with-workbench) that can be called via HTTP requests. 
 
 
-Modify the generated `HTTP` URL to run as a [Tile](/core-concepts/#call-udfs-with-http-requests) by setting the `tiles/` path paramater, followed by templated `/{z}/{x}/{y}` path. You can optionally pass UDF parameters as UDF-encoded strings, which can be configured to change based on UI user input.
+Modify the generated `HTTP` URL to run as a [Tile](/basics/utilities/#call-udfs-with-http-requests) by setting the `tiles/` path paramater, followed by templated `/{z}/{x}/{y}` path. You can optionally pass UDF parameters as UDF-encoded strings, which can be configured to change based on UI user input.
 
 
 ## 2. Create a Mapbox HTML map
