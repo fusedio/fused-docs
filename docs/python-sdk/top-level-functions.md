@@ -477,8 +477,10 @@ Ingest a dataset into the Fused partitioned format.
 ## upload
 
 ```python
-def upload(local_path: Union[str, Path, bytes, BinaryIO],
-           remote_path: str) -> None
+def upload(
+  local_path: Union[str, Path, bytes, BinaryIO],
+  remote_path: str
+) -> None
 ```
 
 Upload local file to S3.
