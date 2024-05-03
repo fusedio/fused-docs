@@ -492,7 +492,7 @@ Upload local file to S3.
 
 :::warning
 
-Fused holds files in memory during the upload process, so it's best to keep file sizes `< 300 MB`. It's possible larger files cause errors. To upload a large file, it's best to partition the file into smaller files.
+Fused holds files in memory during the upload process, so it's best to keep file sizes `< 300 MB`. It's possible larger files cause errors. To upload a large file, it's best to partition the file into smaller files and upload each one individually.
 
 :::
 
