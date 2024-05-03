@@ -489,7 +489,12 @@ Upload local file to S3.
   Any string will be treated as a Path, if you wish to upload the contents of
   the string, first encode it: `s.encode("utf-8")`
 - `remote_path` - URL to upload to, like `fd://new-file.txt`
-  
+
+:::warning
+
+Fused holds files in memory during the upload process, so it's best to keep file sizes `< 300 MB`. It's possible larger files cause errors. To upload a large file, it's best to partition the file into smaller files.
+
+:::
 
 **Examples**:
 
