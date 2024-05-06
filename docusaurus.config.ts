@@ -66,15 +66,9 @@ const config: Config = {
     },
 
     algolia: {
-      // The application ID provided by Algolia
       appId: 'JNTLW5AVDA',
-
-      // Public API key: it is safe to commit it
-      apiKey: '6ce1dd49f199420095a7d356058a2e49',
-
+      apiKey: 'b39072abe30fa571950e5c8449fa1552',
       indexName: 'fused',
-
-      // Optional: see doc section below
       contextualSearch: true,
 
       // Optional: Algolia search parameters
@@ -84,7 +78,7 @@ const config: Config = {
       searchPagePath: 'search',
 
       // Optional: whether the insights feature is enabled or not on Docsearch (`false` by default)
-      insights: false
+      insights: true
 
     },
     // Replace with your project's social card
