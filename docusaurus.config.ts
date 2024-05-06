@@ -87,40 +87,9 @@ const config: Config = {
       searchPagePath: 'search',
 
       // Optional: whether the insights feature is enabled or not on Docsearch (`false` by default)
-      insights: false,
+      insights: false
 
-    // typesense: {
-    //   // Replace this with the name of your index/collection.
-    //   // It should match the "index_name" entry in the scraper's "config.json" file.
-    //   typesenseCollectionName: 'fused',
-
-    //   typesenseServerConfig: {
-    //     nodes: [
-    //       {
-    //         host: 'o4svizatly9q58nkp-1.a1.typesense.net',
-    //         port: 443,
-    //         protocol: 'https',
-    //       },
-    //       {
-    //         host: 'xxx-2.a1.typesense.net',
-    //         port: 443,
-    //         protocol: 'https',
-    //       },
-    //       {
-    //         host: 'xxx-3.a1.typesense.net',
-    //         port: 443,
-    //         protocol: 'https',
-    //       },
-    //     ],
-    //     apiKey: '5xjdcw9HHu92ZkibK6t7uB2ou7bjxZPA', // Search-only API key
-    //   },
-
-    //   // Optional: Typesense search parameters: https://typesense.org/docs/0.24.0/api/search.html#search-parameters
-    //   typesenseSearchParameters: {},
-
-    //   // Optional
-    //   contextualSearch: true,
-    // },
+    },
     // Replace with your project's social card
     image: 'https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/ecosystem_diagram.png',
     navbar: {
