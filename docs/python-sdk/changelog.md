@@ -6,6 +6,10 @@ sidebar_position: 8
 ---
 # Changelog
 
+## v1.6.1 (2024-05-06) :dancers:
+- With the team GitHub integration, teams can now share version controlled UDFs.
+- Users are now able to create shared UDF token from a team UDF both in Workbench and fused-py.
+
 ## v1.6.0 (2024-04-30) :checkered_flag:
 - The Workbench file explorer now shows UDFs contributed by community members.
 - Team admins can now set up a GitHub repository with UDFs that their team members can access from Workbench.
