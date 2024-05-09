@@ -26,11 +26,13 @@ Coming soon: A button to submit UDFs with one click from Fused Workbench. For no
 
 :::
 
-### Contribution workflow
-
 Once you write a UDF, follow these steps to share it with the community.
 
-To keep your code organized with a readable history, and make it easy for the community to see what you've done and why you did it, we recommend this workflow:
+### Publish a UDF to a GitHub repository
+
+This section shows how to publish a UDF to a GitHub repository. The same workflow can be used to modify or delete UDFs, but instead performing the corresponding actions on step 3. 
+
+To keep your code organized with a readable history, and make it easy for the community or your toam to see what you've done and why you did it, we recommend this workflow:
 
 1. Create an account on GitHub if you do not already have one.
 
@@ -65,8 +67,16 @@ Create a branch to save your changes, even before you start making changes. You 
 git checkout -b your-new-feature-branch
 ```
 
-#### 3. Commit and push your changes
-Now make your modifications, commit the changes to your branch, and push the latest to your repo.
+#### 3. Introduce a UDF to the repository
+
+In the repository, create a directory with the UDF and its associated files.
+
+To add a UDF that was created on Fused Workbench, click ["Download"](http://localhost:3000/workbench/udf-editor/#toolbar) to download the UDF `.zip` to a local directory, then unzip the file. Place the resulting directory in the repo. Each UDF should have its own directory.
+
+![alt text](image.png)
+
+#### 4. Commit and push your changes
+Make intended modifications, commit the changes to your branch, and push the latest to your repo.
 
 ```
 git add .
@@ -74,7 +84,7 @@ git commit -m"Create neat UDF"
 git push origin your-new-feature-branch
 ```
 
-#### 4. Open a Pull Request (PR)
+#### 5. Open a Pull Request (PR)
 
 [PRs](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/about-pull-requests) are the mechanism to contribute to the Fused UDFs repo to share them with the world.
 
