@@ -28,7 +28,7 @@ Append this query parameter to the end of the URL to structure the response as a
 
 The generated URL should look like this:
 
-`https://app-staging.fused.io/server/v1/realtime-shared/ccd781317018362a6966c9f12b27e95f1fe2fd88ff339de90eb9ac35b87cf439/run/file?dtype_out_vector=csv`
+`https://www.fused.io/server/v1/realtime-shared/ccd781317018362a6966c9f12b27e95f1fe2fd88ff339de90eb9ac35b87cf439/run/file?dtype_out_vector=csv`
 
 
 
