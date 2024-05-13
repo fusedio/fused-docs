@@ -122,6 +122,14 @@ sidebar_position: 7
     </div>
 </details>
 
+<details>
+    <summary>HTTPError: {'detail': 'Quota limit: Number of running instances'}</summary>
+    <div>
+    Fused ingest and batch job operations require workers, specified with a quota number. If you encounter this error, please get in touch with the Fused team to increase the quota allotted to your account.
+    </div>
+</details>
+
+
 
 
 ## Workbench-specific
