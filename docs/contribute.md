@@ -71,7 +71,7 @@ git checkout -b your-new-feature-branch
 
 In the repository, create a directory with the UDF and its associated files.
 
-To add a UDF that was created on Fused Workbench, click ["Download"](http://localhost:3000/workbench/udf-editor/#toolbar) to download the UDF `.zip` to a local directory, then unzip the file. Place the resulting directory in the repo. Each UDF should have its own directory.
+To add a UDF that was created on Fused Workbench, click ["Download"](/workbench/udf-editor/#toolbar) to download the UDF `.zip` to a local directory, then unzip the file. Place the resulting directory in the repo. Each UDF should have its own directory.
 
 ![alt text](image.png)
 
