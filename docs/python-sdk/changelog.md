@@ -6,6 +6,14 @@ sidebar_position: 8
 ---
 # Changelog
 
+
+## v1.7.0 (2024-06-04) :bird:
+
+- Execution infrastructure updates.
+- Update DuckDB package to v1.0.0.
+- Improve responsivity of Workbench allotments.
+- Crispen Workbench UI.
+
 ## v1.6.1 (2024-05-06) :guardsman:
 
 _GitHub integration_
