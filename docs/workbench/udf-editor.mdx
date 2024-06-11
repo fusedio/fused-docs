@@ -1,4 +1,3 @@
-
 # UDF Editor
 
 ## Code Editor
@@ -18,7 +17,7 @@ A UDF can be set to render its outputs on Workbench as a [Tile or File](/basics/
 :::note
 Because the same UDF endpoint can called as either File or Tile, it needs to tell Workbench which one to use. When a UDF is configured as "Auto", Workbench automatically handles the output as Tile if it statically checks that the types `fused.types.TileXYZ`, `fused.types.TileGDF`, or `fused.types.Bbox` are used in the UDF. Otherwise, it assumes File.
 
-Note that the "Auto" setting is specific and applicable only to the Workbench UI. UDFs called via `fused-py` or HTTP requests run as Tile only if a parameter specifies the Tile geometry. 
+Note that the "Auto" setting is specific and applicable only to the Workbench UI. UDFs called via `fused-py` or HTTP requests run as Tile only if a parameter specifies the Tile geometry.
 :::
 
 ### Toolbar
@@ -27,17 +26,13 @@ The toolbar atop the editor is where buttons to configure, save, duplicate, down
 
 ![Alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/image-34.png)
 
-
 ### Error indicator
 
 Sifting through error logs to debug failed multi-hour jobs is a persistent and recurring annoyance of working with large datasets and data orchestrators. The Fused Workbench is desiged with sound developer experience in mind. As such, the UDF code editor immediately highlights errors in the code, so developers can flow and focus on what matters.
 
 ![Alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/gifs/editor_error.gif)
 
-
-
 ## Module
-
 
 As UDFs grow in complexity, it's useful to modularize the code to make it reusable and composable. It's also a good practice to keep only the essential "business logic" in the decorated UDF function - this makes it easy to know what a UDF does at a glance.
 
@@ -63,9 +58,7 @@ This means that when a user saves, exports, shares, or uploads a UDF, the code f
 
 > 💡 Note: At the moment, UDFs in the Workbench have a single module. To support advanced use cases, the Python SDK support multiple modules per UDF.
 
-
 ## Visualization
-
 
 A layer is a geo visualization that made up of the UDF's Python code, the output of its execution, and associated visual configurations like color, line width, etc. In the Workbench, layers have a 1:1 relationship with UDFs.
 
@@ -75,21 +68,126 @@ Fused maps data (a vector or raster output from a UDF) as a stack of visual laye
 
 ![Alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/image-7.png)
 
-### Style layers
+### Visualization styling
 
-Layers are highly customizable. Developers can edit the code to transform the underlying data to show on the map, then edit what it looks like.
+To style the visual representation of a UDF's output, configure it under the "Visualization" tab. The Workbench DeckGL map uses [`@deck.gl/json`](https://deck.gl/docs/api-reference/json/conversion-reference) to implement a `TileLayer` with a sublayer for either a `rasterLayer` or a `vectorLayer` - both are set by default for flexibility, but only the one corresponding to the UDF output type is used.
 
-The visualization configuration uses **[@deck.gl/json](https://deck.gl/docs/api-reference/json/conversion-reference)** to implement a **[TileLayer](https://deck.gl/docs/api-reference/geo-layers/tile-layer)** with a **[GeoJsonLayer](https://deck.gl/docs/api-reference/layers/geojson-layer)** sublayer.
+import VizTab from "/img/viz_tab.png";
 
-For example, the visualization json for a vector tile layer that dynamically sets `LineColor` properties from a GeoDataFrame (line `18`), might look like this.
+<div style={{ textAlign: "center" }}>
+  <img src={VizTab} alt="Gls" style={{}} />
+</div>
 
-![Alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/image-5.png)
+Styles to keep in mind are `H3HexagonLayers` and Vector `GeoJsonLayer`.
+
+#### a. `H3HexagonLayer`
+
+The visualization json for a H3HexagonLayer that for a returned `DataFrame` dynamically sets `getHexagon` from an H3 index column (every row must be at the same H3 resolution), then `getFillColor` & `getElevation` properties from a value column might look like this.
+
+<iframe
+  src="/img/deckgl_h3.html"
+  height="400px"
+  width="100%"
+  scrolling="no"
+></iframe>
+
+```json
+{
+  "tileLayer": {
+    "@@type": "TileLayer",
+    "minZoom": 0,
+    "maxZoom": 19,
+    "tileSize": 256,
+    "pickable": true
+  },
+  "vectorLayer": {
+    "opacity": 2,
+    "@@type": "H3HexagonLayer",
+    "stroked": true,
+    "filled": true,
+    "pickable": true,
+    "getHexagon": "@@=hex",
+    "getFillColor": "@@=[count+400, count+50, count]",
+    "getElevation": "@@=count",
+    "elevationScale": 4
+  }
+}
+```
+
+#### b. Vector `GeoJsonLayer`
+
+The visualization json for a vector tile layer that dynamically sets `getLineColor` properties from the returned GeoDataFrame might look like this.
+
+import GlsTile from "/img/gls_tile.png";
+
+<div style={{ textAlign: "center" }}>
+  <img src={GlsTile} alt="Gls" style={{ width: 400 }} />
+</div>
+
+```json
+{
+  "tileLayer": {
+    "@@type": "TileLayer",
+    "minZoom": 0,
+    "maxZoom": 15,
+    "tileSize": 256,
+    "pickable": true
+  },
+  "vectorLayer": {
+    "@@type": "GeoJsonLayer",
+    "stroked": true,
+    "filled": true,
+    "pickable": true,
+    "extruded": true,
+    "getElevation": "@@=properties.stats*1",
+    "lineWidthMinPixels": 1,
+    "getLineColor": {
+      "@@function": "hasProp",
+      "property": "stats",
+      "present": "@@=[properties.stats*5, properties.stats*3, properties.stats*2]",
+      "absent": [255, 0, 255]
+    },
+    "getFillColor": "@@=[properties.stats*5, properties.stats*3, properties.stats*2]"
+  }
+}
+```
+
+#### c. Custom loading and error
+
+Other layers that can be set are the loading and error layers. These are used to show the user that the UDF is still processing or that an error occurred.
+
+```json
+ "loadingLayer": {
+    "@@type": "GeoJsonLayer",
+    "stroked": true,
+    "filled": true,
+    "pickable": true,
+    "lineWidthMinPixels": 1
+  },
+  "errorLayer": {
+    "@@type": "GeoJsonLayer",
+    "stroked": true,
+    "filled": true,
+    "pickable": true,
+    "lineWidthMinPixels": 1,
+    "getLineColor": [
+      255,
+      0,
+      0,
+      255
+    ],
+    "getFillColor": [
+      255,
+      0,
+      0,
+      40
+    ]
+  }
+```
 
 ## Settings
 
-
 The settings tab is where each UDF can be configured. This section provides quick access to caching and to metadata associated with discoverability and the UDF's profile card.
-
 
 ![Alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/image-27.png)
 
@@ -101,7 +199,6 @@ UDFs run code remotely and return outputs to the browser over the network. Conse
 
 ![Alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/image-28.png)
 
-
 ### Share & snippets
 
 Once a user creates a UDF in the Workbench, they can use shared endpoint and snippets to call it and load its output it into other workflows. The "Share" and "Snippets" sections shows copyable code snippets to trigger the UDF from within different applications.
@@ -112,14 +209,11 @@ Generate signed tokens that allow anyone with the token to call the UDF. These t
 
 ![Alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/gifs/templated_share_snippets.gif)
 
-
 #### Snippets
-
 
 By default, UDFs can only be called by user account that creates them. This can be done with the snippets below.
 
 ![Alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/snippets2.png)
-
 
 ### Default parameter values
 
@@ -134,7 +228,6 @@ Setting a default view state on a published or shared UDF helps users navigate t
 ![Alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/default_view_state.png)
 
 UDFs with the default view state enabled show a "Zoom to layer" button. Clicking it sets the viewport to the preconfigured state.
-
 
 ![Alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/gifs/zoom_to_layer.gif)
 
@@ -155,4 +248,3 @@ Tags relevant to the UDF to make it easy to find in the Explorer search.
 It's good practice to document UDFs with a brief description of their purpose, code, and datasets they import Markdown text box to include general information about the UDF. The markdown supports links, code blocks, and headers.
 
 ![Alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/image-32.png)
-
