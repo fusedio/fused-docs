@@ -12,7 +12,7 @@ You'll first generate a signed UDF URL and render it on an HTML map. You can the
 First, on Workbench, create and save a UDF that successfully renders in `Tile` mode. Under the "Settings" tab, click "Share" to [generate a signed URL](/basics/core-concepts/#generate-endpoints-with-workbench) that can be called via HTTP requests. 
 
 
-Modify the generated `HTTP` URL to run as a [Tile](/basics/utilities/#call-udfs-with-http-requests) by setting the `tiles/` path paramater, followed by templated `/{z}/{x}/{y}` path. You can optionally pass UDF parameters as UDF-encoded strings, which can be configured to change based on UI user input.
+If looking to render a [Tile](http://localhost:3000/basics/core-concepts/#file--tile) map, modify the generated `HTTP` URL to run as a [Tile](/basics/utilities/#call-udfs-with-http-requests) by setting the `tiles/` path paramater, followed by templated `/{z}/{x}/{y}` path. You can optionally pass UDF parameters as UDF-encoded strings, which can be configured to change based on UI user input.
 
 
 ## 2. Create a Mapbox HTML map
@@ -84,7 +84,7 @@ body { margin: 0; padding: 0; }
 
 ```
 
-### Vector layers
+### a. Vector Tile layers
 
 Use the following snippet to introduce a vector layer, which should look similar to this. The layer in the sample map comes from [Overture Buildings UDF](https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example).
 
@@ -120,7 +120,7 @@ Use the following snippet to introduce a vector layer, which should look similar
 </script>
 ```
 
-### Raster layers
+### b. Raster Tile layers
 
 Use the following snippet to introduce a raster layer, which should look similar to this. The layer in the sample map comes from the [Solar Irradiance UDF](https://github.com/fusedio/udfs/tree/main/public/Solar_Irradiance).
 
