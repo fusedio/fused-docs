@@ -164,7 +164,7 @@ const config: Config = {
     prism: {
       theme: prismThemes.nightOwl,
       darkTheme: prismThemes.nightOwl,
-      additionalLanguages: ['python', 'javascript', 'bash'],
+      additionalLanguages: ['python', 'javascript', 'bash', 'json'],
     },
 
 
