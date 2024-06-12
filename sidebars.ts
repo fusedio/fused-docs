@@ -52,6 +52,7 @@ const sidebars: SidebarsConfig = {
         "workbench/navigation",
         "workbench/map",
         "workbench/results",
+        "workbench/viz-styling",
       ],
     },
     "contribute"
