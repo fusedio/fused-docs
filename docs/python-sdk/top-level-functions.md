@@ -456,7 +456,7 @@ Ingest a dataset into the Fused partitioned format.
 
 **Returns**:
 
-  Configuration object describing the ingestion process. Call `.execute` on this object to start a job.
+  Configuration object describing the ingestion process. Call `.run_remote` on this object to start a job.
   
   
 
@@ -470,7 +470,7 @@ Ingest a dataset into the Fused partitioned format.
         explode_geometries=True,
         partitioning_maximum_per_file=2000,
         partitioning_maximum_per_chunk=200,
-    ).execute()
+    ).run_remote()
     ```
 
 
