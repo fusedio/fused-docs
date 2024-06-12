@@ -51,7 +51,17 @@ const config: Config = {
               '**/__tests__/**',
             ],
         },
-        blog: false,
+        // blog: false,
+        blog: {
+          blogTitle: 'Fused blog!',
+          blogDescription: 'Latest blog posts from Fused.',
+          postsPerPage: 'ALL',
+          blogSidebarTitle: 'All posts',
+          blogSidebarCount: 'ALL',
+          showReadingTime: true, // When set to false, the "x min read" won't be shown
+          readingTime: ({content, frontMatter, defaultReadingTime}) =>
+            defaultReadingTime({content, options: {wordsPerMinute: 300}}),
+        },
         theme: {
           customCss: './src/css/custom.css',
         },
@@ -96,13 +106,13 @@ const config: Config = {
         //   value: '<span class="logo-docs">{{ docs }}</span>'
         // },
         // Show "Docs" in top navbar
-        // {
-        //   type: 'docSidebar',
-        //   sidebarId: 'tutorialSidebar',
-        //   position: 'left',
-        //   label: 'Docs',
-        // },
-        // {to: '/blog', label: 'Blog', position: 'left'},
+        {
+          type: 'docSidebar',
+          sidebarId: 'tutorialSidebar',
+          position: 'left',
+          label: 'Docs',
+        },
+        {to: '/blog', label: 'Blog', position: 'left'},
         {
           href: 'https://github.com/fusedio/udfs',
           label: 'GitHub',
