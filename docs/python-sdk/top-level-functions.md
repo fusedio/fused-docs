@@ -148,7 +148,9 @@ path based on the provided parameters.
   This function dynamically determines the execution path and parameters based on the inputs.
   It is designed to be flexible and support various UDF execution scenarios.
 
-  Because the output must be serializable and returned via an HTTP response, Fused validates the output of UDFs that execute remotely with the `realtime` engine and will hold back invalid responses. This might result in perceived inconsistencies because running locally with the `local` engine does not validate and will instead return any output. Read more about the supported return object types [here](https://docs.fused.io/basics/core-concepts/#d-return-object).
+  Because the output must be serializable and returned via an HTTP response, Fused validates the output of UDFs that execute remotely with the `realtime` engine and will hold back invalid responses. This might result in perceived inconsistencies because running locally with the `local` engine does not validate and will instead return any output. 
+  
+  ☝️ See the set of supported return object types [here](https://docs.fused.io/basics/core-concepts/#d-return-object).
 
   ```python
   import fused
