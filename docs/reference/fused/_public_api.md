@@ -249,7 +249,7 @@ Ingest a dataset into the Fused partitioned format.
 
 **Arguments**:
 
-- `input` - A GeoPandas `GeoDataFrame` or a path to file or files on S3 to ingest. Files may be Parquet or another geo data format.
+- `input` - A Pandas `DataFrame` or a path to file or files on S3 to ingest. Files may be Parquet or another data format.
 - `output` - Location on S3 to write the `main` table to.
   
 
