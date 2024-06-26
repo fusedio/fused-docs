@@ -51,7 +51,7 @@ Create an `.html` file following this template. This code creates a DeckGL map t
   <body>
     <div id="map"></div>
     <script>
-      const { DeckGL, H3HexagonLayer } = deck;
+      const { DeckGL, H3HexagonLayer, GeoJsonLayer, BitmapLayer, TileLayer } = deck;
 
       new DeckGL({
         mapboxApiAccessToken:
