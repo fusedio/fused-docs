@@ -143,10 +143,6 @@ const config: Config = {
               label: 'Discord',
               href: 'https://discord.com/invite/BxS5wMzdRk',
             },
-            {
-              label: 'Twitter',
-              href: 'https://twitter.com/Fused_io',
-            },
           ],
         },
         {
