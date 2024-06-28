@@ -8,9 +8,12 @@ sidebar_position: 8
 
 ## v1.8.0 (2024-06-25) :package:
 
+- Added Workbench tour for first-time users.
+- Undo history is now saved across UDFs and persists through reloads.
+- Added autocomplete when writing UDFs in Workbench.
+- Added `colorBins`, `colorCategories`, and `colorContinuous` functions to Workbench's Visualize tab.
 - Migrated SDK to Pydantic v2 for improved data validation and serialization.
 - Fixed a bug causing NumPy dependency conflicts.
-- Clarified documentation for ingesting datasets into the Fused partitioned format.
 
 ## v1.7.0 (2024-06-04) :bird:
 
