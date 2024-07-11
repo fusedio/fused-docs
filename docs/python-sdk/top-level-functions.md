@@ -168,7 +168,8 @@ path based on the provided parameters.
 
 ```python
 def cache(func: Optional[Callable[..., Any]] = None,
-          **kwargs: Any) -> Callable[..., Any]
+          path: Optional[str],
+          reset: Optional[bool]) -> Callable[..., Any]
 ```
 
 Decorator to cache the return value of a function.
@@ -181,9 +182,8 @@ keyword arguments.
 
 - `func` _Callable, optional_ - The function to be decorated. If None, this
   returns a partial decorator with the passed keyword arguments.
-- `**kwargs` - Arbitrary keyword arguments that are passed to the internal
-  caching mechanism. These could specify cache size, expiration time,
-  and other cache-related settings.
+- `path` _string, optional_ - Path on disk where to write the cache.
+- `reset` _bool, optional_ - Whether to reset the cache on the next call.
   
 
 **Returns**:
@@ -198,7 +198,7 @@ keyword arguments.
   Use the `@cache` decorator to cache the return value of a function in a custom path.
   
     ```py
-    @cache(path="/tmp/custom_path/")
+    @fused.cache(path="/tmp/custom_path/")
     def expensive_function():
         # Function implementation goes here
         return result
@@ -209,10 +209,37 @@ keyword arguments.
   the argument can be cleared.
   
     ```py
-    @cache(path="/tmp/custom_path/", reset=True)
+    @fused.cache(path="/tmp/custom_path/", reset=True)
     def expensive_function():
         # Function implementation goes here
         return result
+    ```
+  
+  The best practice is to wrap slow-runninc code in a function with arguments that make the output unique. In this example, the `bbox`, `time_of_interest`, and `collection` parameters make the data load unique across calls. 
+
+    ```py
+    # Define cached function
+    @fused.cache
+    def load_data(bbox, time_of_interest, collection):
+    
+        items = catalog.search(
+            collections=[collection],
+            bbox=bbox.total_bounds,
+            datetime=time_of_interest,
+            query={"eo:cloud_cover": {"lt": 10}},
+        ).item_collection()
+
+        ds = odc.stac.load(
+            items,
+            crs="EPSG:3857",
+            bands=['blue', 'red', 'green', 'nir08', 'swir16', 'swir22'],
+            resolution=resolution,
+            bbox=bbox.total_bounds,
+        ).astype(float)
+        return ds
+
+    # Call the function
+    ds = load_data(bbox, time_of_interest, collection)
     ```
 
 ## load
