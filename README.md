@@ -30,4 +30,11 @@ Create a PR on this repo. Once PRs merge to main, GitHub actions will run to re-
 
 ### b. Staging site
 
-Commit to `gh-pages` branch then run `USE_SSH=true npx docusaurus deploy`.
+
+Set the following on `docusaurus.config.ts`:
+```
+  baseUrl: '/fused-docs/', // needed for GitHub pages
+  url: "https://fusedio.github.io/",
+```
+
+Run `USE_SSH=true npx docusaurus deploy`.
