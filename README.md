@@ -23,4 +23,11 @@ python3 utils/convert_ipynb_to_mdx.py
 
 ## 3. Deploy 
 
+
+### a. Production site
+
 Create a PR on this repo. Once PRs merge to main, GitHub actions will run to re-deploy the docs site. 
+
+### b. Staging site
+
+Commit to `gh-pages` branch then run `USE_SSH=true npx docusaurus deploy`.
