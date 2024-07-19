@@ -1,0 +1,61 @@
+# H3 NYC Taxi Fare by CBG
+
+
+```python
+@fused.udf
+def udf(year: str = '2010', month: str = '01', n_rows: int = 1000, h3_size: int=12, object_to_show: str='h3'):
+    import geopandas as gpd
+    import h3
+    import pandas as pd
+    from utils import generate_color_from_identifier
+
+
+    @fused.cache
+    def load_taxi_data(year, month):
+        print(132)
+        return pd.read_parquet(f'https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{year}-{month}.parquet')
+
+    
+    @fused.cache
+    def load_census_blocks(counties=["061"]):
+        url="https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/36_NEW_YORK/36/tl_rd22_36_bg.zip"
+        gdf = gpd.read_file(url)
+        gdf = gdf[gdf["COUNTYFP"].isin(counties)]
+        return gdf
+
+    # Load data
+    gdf = load_census_blocks()
+    taxi_data = load_taxi_data(year='2010', month='01').head(n_rows)
+
+    # Generate H3 column
+    # TODO: use DuckDB
+    taxi_data['pickup_h3'] = taxi_data.apply(lambda row: h3.latlng_to_cell(row['pickup_latitude'], row['pickup_longitude'], h3_size), axis=1)
+    gdf['hex'] = gdf.geometry.apply(lambda geom: list(h3.geo_to_cells(geom.__geo_interface__, h3_size)))
+    gdf_exploded = gdf.explode('hex').reset_index(drop=True)
+    gdf_exploded = gdf_exploded.dropna(axis=0, subset='hex')
+
+    # Join on H3 index
+    joined = taxi_data.merge(gdf_exploded, left_on='pickup_h3', right_on='hex', how='left')
+    joined[['r', 'g', 'b']] = gpd.GeoDataFrame(joined['GEOID'].apply(generate_color_from_identifier).tolist(), index=joined.index)
+    
+
+    joined_pickup_count = joined[['hex', 'fare_amount', 'GEOID', 'r', 'g', 'b']].groupby('hex').sum()
+    cols = ['hex', "fare_amount", "GEOID", 'r', 'g', 'b']
+    joined_pickup_count.reset_index(inplace=True)
+    print(joined_pickup_count.T)
+    if object_to_show == 'h3':
+        return joined_pickup_count[cols]
+    else:
+        return gdf
+
+
+```
+
+
+import Iframe from '@site/src/components/Iframe';
+
+
+<Iframe url="https://staging.fused.io/workbench#app/s/aH4sIAAAAAAAAA41UbW%2FbNhD%2BKwQ7IDagOLJlW7YBAVtbpMXQT%2Bu2L1YgUOJJYk2TKkkldoP8951eqsiZP5QWzOMd74733EM%2B00xzoDsqjpU2jlRnDtmBMEsqfohVr7XOADtK4RqDdYM%2Bry3whFXVoClAV0xx3IZfUfFYNT%2FrZk44CZOYfg7IPTNA0jP5AMrWlryXGjN%2BMrquYjrtHN6RL5pxwpljJDf6SP75eE8yJmWsnD6AIhG58RdsFeDHN%2Bt0BTxchnkO23nqb9ecB%2BGWL1O22PBgvVmzLNzm4SaEYLHla55ulv46vWkS%2FY5Hy1hWQtLkihWHnEhM3S4nKjH6yUYrH4dHyiCx4gdE8%2Fl0FyuCg%2Bd4kAGEmanVpD2eR3T6DTKXOJ3YUj9FN5WW50Ire%2BORPmg3vUbt5%2BnPyEkZ%2FGrwMvjVsAZcbRRG97oMDQTDAtO9lo4OUhUekcyhfnIbBrPtJgy3K48s%2FVm4Wq62y6FZH5AeDgj2VrIzGHRtJvRDEs2%2BNPKky9%2F0%2FzOcGELRqmPqjert5UpkB5ZKiP42NfQ6ZCDWzseqXEh5qYGTMzW%2F1BXgkrLLGMUUpSFlY2liJJmW2qBxb7zCSx8uNkihoN%2BwXyyRBAsEwH%2Fod7TWJ8FdmRyFSipxAmkjfzYfRQAJj8yJNn2OzE%2FYUdfKDVkGe2KR4MiuWLW4thAmPW%2BuQDkeMf0E%2Bk%2F7FtTxaJoaYav%2Fb3mDw36xWnVlBljufKj1rcsFMp1L89e4%2BFedrrTwaswWz2juv9kz9Tqu%2FQV4SU37pnSPVZKVzLgelQalj6gcgXRkVWLdGaGNKcqpPu3u7lqFvevWd5yZw%2B3jfH6BnFDCCSaTRwFPGAAJHjXR%2F8Xl12Y1washHPItQgEvilZFv2zuzQ%2Btj9Ec4UiBGaGK6BbRqYTLymjhT0dp2j7baH9Zbav1yBXlT0q8msZgO62lE1X0HFOH1yGmOyTHH49F9%2Bh21NuR355HTHyJ6UsXYNpTj3rUwPdaGDiCcpbu9nR413sbWNeIJ2YMO6NwZkbi1HWEPnhU2Ptayq%2BZAVB0lzNp4eU%2F1LU8zW0GAAA%3D"/>
+
+
+
