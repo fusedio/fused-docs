@@ -1,0 +1,98 @@
+---
+id: zonal-stats
+title: Zonal Stats
+tags: [zonal,stats]
+# sidebar_position: 2
+---
+
+# Zonal Statistics: A Comprehensive Guide
+
+Zonal statistics is a versatile tool to summarize raster data within defined zones, providing valuable insights across multiple domains. It's a geospatial technique that calculates aggregate statistics (e.g., mean, sum, maximum) of the pixel values of a raster (i.e. cell values) that fall within areas defined by another dataset. The method has diverse applications such as determining vegetation health in an agricultural field, assess surface water availability in watersheds, or approximate the height of buildings.
+
+
+<iframe src="/img/deckgl_vector_zstats.html"  height="400px" width="100%" scrolling="no"></iframe>
+
+
+## Applications
+
+### Urban Analysis
+
+- Approximate the height of buildings using DSM.
+- Determine buildings with greenery on rooftops using NDVI rasters.
+- Identify buildings with solar panels using solar radiation rasters.
+
+### Environmental Management
+
+- Precision Agriculture: Determine vegetation health within crop polygons using NDVI rasters.
+- Water Resource Management: Assess surface water availability in watersheds using NDWI rasters.
+- Environmental Monitoring: Track forest cover percentage within administrative zones and monitor changes over time using LULC rasters.
+- Assess building density in urban areas using LULC rasters.
+
+
+<div style={{textAlign: 'center'}}>
+<img src="https://camo.githubusercontent.com/c2f7fcebe282d2834a24b95de0d2dca7cfbced457e7193f921afe2672ae9f771/68747470733a2f2f66757365642d6d616769632e73332e75732d776573742d322e616d617a6f6e6177732e636f6d2f7468756d626e61696c732f756466732d73746167696e672f44534d5f5a6f6e616c5f53746174732e706e67" alt="File" style={{width: 600}} />
+</div>
+_Visual representation of building `Polygon` objects colored based on DSM aggregate values._ 
+
+## Implementing zonal statistics
+
+Determining the pixels that within a polygon requires using analysis packages that can operate on both raster and vector data. Once the pixels are identified, we can calculate aggregate statistics such as the mean, sum, or maximum of the pixel values within the polygon. 
+
+### Implementation steps
+
+To perform this operation, we can load raster and vector data for spatially overlapping area then perform zonal statistics using methods in `xarray` and `GeoPandas` libraries. Here's how to do this:
+
+1. Load overlapping the raster and vector data
+2. For the extent of each `Polygon`, clip the raster to create a mask array
+3. Perform an aggregation operation (e.g., mean, sum, max) on each masked array
+4. Return the results in a `GeoDataFrame`, where each row corresponds to a `Polygon` and the a columns contain the value for the aggregate zonal statistics
+
+
+### Example UDF
+
+This example UDF loads the building footprint table `gdf` and DSM raster `arr` from S3 only for a section defined by `bbox`, which corresponds to a map tile. It then calculates the zonal statistics, and returns the results as the `GeoDataFrame` `gdf_zonal`. This process enables Fused workbench to perform the calculation dynamically as users scroll and zoom in the map. 
+
+```python
+@fused.udf
+def udf(
+    bbox, min_zoom=15, table="s3://fused-asset/infra/building_msft_us/", chip_len=256
+):
+    import utils
+
+    gdf = utils.table_to_tile(bbox, table, min_zoom)
+    arr = utils.dsm_to_tile(bbox, z_levels=[4, 6, 9, 11], verbose=False)
+    gdf_zonal = utils.geom_stats(gdf, arr, chip_len=chip_len)
+    return gdf_zonal
+```
+
+The UDF would return a `GeoDataFrame` like the following, with an aggregate `stats` column for each input `Polygon`:
+
+```plaintext
+                                                geometry      stats  count
+660    POLYGON ((-122.39806 37.76221, -122.39806 37.7...  22.000000      5
+661    POLYGON ((-122.39881 37.76219, -122.39876 37.7...  21.994819    193
+1452   POLYGON ((-122.39619 37.76326, -122.39613 37.7...  13.500000      2
+1458   POLYGON ((-122.39774 37.76327, -122.39776 37.7...  11.000000     28
+3033   POLYGON ((-122.39680 37.76362, -122.39701 37.7...  10.200000      5
+...
+```
+
+
+### Scaling up with Fused 
+
+Zonal stats can be challenging to implement on large datasets because some tools are specialized to work with either, but not both. As such, handling large datasets, such as nationwide building footprints and high-resolution rasters, requires strategic approaches to process data.  
+
+To perform zonal stats on large datasets, Fused UDFs can be used to spatially filter the raster and table to only perform calculations over subsections of the data that spatially overlap. This enables the computation to be performed in parallel across multiple workers, making it scalable to any size dataset.
+
+// TODO: mention running w/ multiprocess
+
+## Conclusion
+
+While zonal statistics is a valuable tool, it's often just the starting point for more complex analyses. Combining zonal statistics with other techniques such time series analysis or machine learning approaches can provide even richer insights into your data. 
+
+## ⭐ Demo app
+
+import Iframe from '@site/src/components/Iframe';
+
+<Iframe url="https://staging.fused.io/workbench#app/s/aH4sIAAAAAAAAA91Ye2%2FbNhD%2FKoQCLPZgW5JfsQwIQ7sgRYcWLZp0xVYVLi1RMhuK1EjKsRP4u%2B8oSn7lsWx%2FbMXiBJaO5D1%2Fd7zLnROLhDhTh%2BaFkBoV64TE1wgrVCTXEa%2BpSkuCc0a1WVA64hFXurcgOCGydfq74JihS421Om3XazeSatKKnOrDX3OkF1QhXWohKWy%2BIaeMoVTEpUKCo9uKgwIOVGkaKzQn%2BoYQjjCSWGkiEeYJKgRbZ4IrRM2CxnNGeuhTxYmsCiYkQQtxg7RABZGpkPl9vrCGi0KKFc2xJqAUHCE0W2gkUjQvKUsozxQqFXyBjIRmVBsOpUxxTFAOvmKodX75tt0olmCNFdGVgrVS%2B7zARqELSbneqt9DVyC2Pm6cAm8v3ry7RK%2BYmIMw4I4ip6J8EpIlaHCOumjg5aj14tPgfOC1IwfFuNClJAmarysG7z%2B8hmOiACuNvoQrIY1nt8wV2MsggqSDbqhegK4Dr5sTo8MCYgKeMoZKogQrNRXcarlzSWNnrXDkvGwsvGgsVKBXsy2VIkdvaSyFEqkGmQsaL1BspFBuWXx9bx3y9dD31Cr9kYOuSYUqonoGVRG%2FMhgiK5wX4GQQSCSONV0StkaUsRJQajY%2FE017wWoiM60kN3ukxGtjriQFuIVwbb2NUQYLCtwMOuQ4qziYcyZuhrHe89te%2BDHAc59VFYWilMaWPVfMv5FYA0asxR8VkQqCzbfm2nNGRryATJ2LFVFNoBVNyBxLg3ItsgwYK0gIdwHkacS7B7gzmje0B7QVpWaUE%2FX4FlBLmJzbQjAnoGZBV5AhS8zKrV%2BsRGPNb6I0ycoFRMUkH9aPOEtV3tryB0QljY1PS6m8UyOojqoFcsUL2ahJzDNwWgXRBMtr1GJQNipuqm2cN5dVSWgt4KuhGzYAhiVVJWb0FpscgdrBCkBsAhGl6XoPxFWQzHFQCeQCf5NnttIcmIOXEFXA0J5FTfCr2lnV0xP0M9RfqFc5LiLOMOQTA3eFaOj1zsbBeNRB3bNBLwg8LxiaAwyvDW5CdBdxBD%2BRUwfBmZq63ntj1lt2za6%2FpBqYV%2FTI6exWTqqMDiNnoXWhpq4LaZWBib20BCt6VLiAULDBXfou6Mg0zUlXLSB8iTuf%2B5OzeDxKPC9NEw8%2BaYw94vmeNxkHQRxPvCQI8HyCh%2FNg6PvpcOSPhrBrcBYMxpPUlSV3NWVEuXe3G%2FduBX%2FrzU%2BJXhdkBgCdWaPCgmc%2F7IhLyB8hw4yIb0rwA2Mq0P%2FntvhDdzjpD92xPxo%2FbIwkUNv5zNaCEArRgRVzUfJEhZ%2B7Z8Oe5w0Cb9wHAFRQgBe%2FPwEQjCaTGhMTPxgMRsHgrN4z8UZDfzjwJ2Nv4A%2B%2F7PEVBY6pXof9g%2FBrIcARRXgXOZqstEEQXE5ZZrE6RXcx15vI2cDWq3fn76bo4%2FmFKTslXFzWDgT3LVzImppqYpi2Ow0qbaweR%2BUrIn6BIN6H5XcBSn%2Fs%2BkE%2FmLj94bj%2FSCifhcuCxtfmLgqvZEn26CncaiQJLzBT%2B2S458Q10I92Z0TPTM2eVbUOvPMZbOog%2BO2P%2Bl8OBG633tBEL8Jh5zAwNpTN86k1p396P0ondZw%2BVDuuwCuHoTr5foL1VxXkSOdtMoALG%2Foxbmfq9h9A939VUb8LU%2F6tPDyiNml4nJ4mucyJXR7uCmAvhuKtf%2BwNOuge0ev53gPkp1PX21valeotyWLx4cJ9LGljJrXm0KaD%2FmZF39hO5YIy04dtm5xdlwpzIXSjdVCgN4EpsW5Ye80mGBgvzQjXdCsdq2zleeiEaGp6R7THZmrl236nV4iitWt12rVAG%2FCnBTYX0RMC7ZaHBDaHDwXObtVzZNpWcTeyqGcoAawf16OqSs0Ybsf5WQw5p%2BvyZMrVORD3qhV0fjOl18z0RvAMOla5vDbJZd9d0yd3l8FhOwUjGgzzsyUlNzOjOwkN81%2FhtRrbWoc4hL6V6jIhoWlgj5YEz%2Bo1nh2t3QqRh%2F7oiFpQHR%2Biv733bN0SMpj%2FWrWLbGvdajfbwENtp%2BNI8kdJJcmhg1fO9LMDZaGAIQ6reo0obR5X1TQID2ssGXxZv8JD1VJSAU851gUTMDXN4WX7D5MujonzBfapi5Kxy1jCHOpMU1MyNn8Ck4LFonwRAAA%3D"/>
+
