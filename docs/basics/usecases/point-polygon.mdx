@@ -1,0 +1,88 @@
+---
+id: point-in-polygon
+title: Point in polycon
+tags: [point, polygon]
+sidebar_position: 2
+---
+
+# Point in Polygon: A Guide With Overture & NSI
+
+Point in polygon operations ask whether a given set of points in a map fall within a polygon. This is used to enrich data from one dataset with information from another dataset.
+
+This walkthrough demonstrates how to enrich Overture Maps building polygons with hazard metadata from the National Structure Inventory (NSI) using point in polygon analysis. The result is a risk map that combines building footprints with hazard information. The Overture Maps buildings dataset contains `Polygon` objects of building footprints and the NSI dataset contains `Point` objects of catalogued businesses and structures with metadata that supports the evaluation of consequences from natural and man-made hazards. Together, these datasets can be used to identify buildings at risk from hazards.
+
+Such type of analysis can provide a comprehensive view of disaster risk, combining physical vulnerability (building type, damage category), economic exposure (structure and content values), and social vulnerability (population at risk). It can enable decision-makers to make informed choices about resource allocation for disaster preparedness, response, and recovery. 
+
+## Applications
+
+- Disaster risk assessment and planning (e.g. flood or fire)
+- Insurance risk modeling 
+- Infrastructure replacement planning 
+- Urban planning and zoning
+- Emergency response and evacuation planning
+
+## Implementing point in polygon analysis
+
+### Implementation steps
+
+1. Load data for each dataset as a `GeoDataFrame` for a spatially filtered subregion. 
+2. Use the `GeoPandas` method `sjoin` to determine which points lie within each polygon.
+3. Structure the output table.
+
+
+### Example UDF
+
+
+This UDF loads the Overture and NSI datasets (with pre-defined subsets of columns), performs a spatial join to enrich the building polygons with hazard metadata, and returns the enriched GeoDataFrame. It can be used within a larger analysis workflow to enrich building polygons to calculate risk indices. 
+
+```python
+@fused.udf
+def udf(bbox: fused.types.TileGDF=None):
+    from utils import load_overture_gdf, load_nsi_gdf
+
+    # Load both datasets
+    gdf_overture = load_overture_gdf(bbox, overture_type = "building")
+    gdf_nsi = load_nsi_gdf(bbox)
+
+    # Spatial join - keeps the polygon geometry
+    gdf_enriched_buildings = gdf_overture.sjoin(gdf_nsi)
+
+    # Drop cases where two points fall within one polygon
+    gdf_enriched_buildings.drop_duplicates(subset='id', keep='first', inplace=True, ignore_index=True)
+
+    return gdf_enriched_buildings
+```
+
+The UDF would return a `GeoDataFrame` with the Overture building geometry and the selected NSI columns:
+
+```text
+┌─────────┬──────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────┬───────────┬─────────┬────────────┬────────────┬────────────┬───────────┐
+│ column0 │          id          │                                        geometry                                         │                          names                          │ st_damcat │ occtype │ med_yr_blt │ val_struct │  val_cont  │ val_vehic │
+│  int64  │       varchar        │                                         varchar                                         │                         varchar                         │  varchar  │ varchar │   int64    │   double   │   double   │  double   │
+├─────────┼──────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────┼───────────┼─────────┼────────────┼────────────┼────────────┼───────────┤
+│       0 │ 08b489e34622dfff02…  │ POLYGON ((-97.7532121 30.2694096, -97.7532879 30.2692591, -97.7533541 30.2691264, -97…  │ {'primary': 'The Bowie', 'common': None, 'rules': None} │ COM       │ COM4    │       2003 │ 963089.123 │ 963089.123 │   27000.0 │
+│       1 │ 08b489e346229fff02…  │ POLYGON ((-97.7530941 30.2695412, -97.7530164 30.2695137, -97.7529916 30.269566, -97.…  │                                                         │ COM       │ COM8    │       2003 │  228292.24 │  228292.24 │   45000.0 │
+└─────────┴──────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────┴───────────┴─────────┴────────────┴────────────┴────────────┴───────────┘
+
+```
+
+
+### Scaling up with Fused 
+
+For large scale analysis across nation datasets, you can run the above UDF that spatially filters each table then runs the code over the sub-areas. This makes for computationally efficiency analyses that can run in parallel.
+
+
+## Conclusion
+
+Point-in-polygon analysis using Overture building polygons and NSI point data is a powerful technique for geospatial risk assessment and urban planning. By combining the detailed building footprints from Overture Maps with the comprehensive hazard and value information from the National Structure Inventory, we can create rich, informative risk maps and indices.
+
+However, it's important to consider the limitations and potential complexities of the data such as: quality and completeness, temporal alignment between datasets, scale and resolution differences, and adequately handling cases where multiple points fall within a single polygon.
+
+## ⭐ Demo app
+
+
+import Iframe from '@site/src/components/Iframe';
+
+
+<Iframe url="https://staging.fused.io/workbench#app/s/aH4sIAAAAAAAAA91Ye2%2FbNhD%2FKoQCLPZgW5JfsQwIQ7sgRYcWLZp0xVYVLi1RMhuK1EjKsRP4u%2B8oSn7lsWx%2FbMXiBJaO5D1%2Fd7zLnROLhDhTh%2BaFkBoV64TE1wgrVCTXEa%2BpSkuCc0a1WVA64hFXurcgOCGydfq74JihS421Om3XazeSatKKnOrDX3OkF1QhXWohKWy%2BIaeMoVTEpUKCo9uKgwIOVGkaKzQn%2BoYQjjCSWGkiEeYJKgRbZ4IrRM2CxnNGeuhTxYmsCiYkQQtxg7RABZGpkPl9vrCGi0KKFc2xJqAUHCE0W2gkUjQvKUsozxQqFXyBjIRmVBsOpUxxTFAOvmKodX75tt0olmCNFdGVgrVS%2B7zARqELSbneqt9DVyC2Pm6cAm8v3ry7RK%2BYmIMw4I4ip6J8EpIlaHCOumjg5aj14tPgfOC1IwfFuNClJAmarysG7z%2B8hmOiACuNvoQrIY1nt8wV2MsggqSDbqhegK4Dr5sTo8MCYgKeMoZKogQrNRXcarlzSWNnrXDkvGwsvGgsVKBXsy2VIkdvaSyFEqkGmQsaL1BspFBuWXx9bx3y9dD31Cr9kYOuSYUqonoGVRG%2FMhgiK5wX4GQQSCSONV0StkaUsRJQajY%2FE017wWoiM60kN3ukxGtjriQFuIVwbb2NUQYLCtwMOuQ4qziYcyZuhrHe89te%2BDHAc59VFYWilMaWPVfMv5FYA0asxR8VkQqCzbfm2nNGRryATJ2LFVFNoBVNyBxLg3ItsgwYK0gIdwHkacS7B7gzmje0B7QVpWaUE%2FX4FlBLmJzbQjAnoGZBV5AhS8zKrV%2BsRGPNb6I0ycoFRMUkH9aPOEtV3tryB0QljY1PS6m8UyOojqoFcsUL2ahJzDNwWgXRBMtr1GJQNipuqm2cN5dVSWgt4KuhGzYAhiVVJWb0FpscgdrBCkBsAhGl6XoPxFWQzHFQCeQCf5NnttIcmIOXEFXA0J5FTfCr2lnV0xP0M9RfqFc5LiLOMOQTA3eFaOj1zsbBeNRB3bNBLwg8LxiaAwyvDW5CdBdxBD%2BRUwfBmZq63ntj1lt2za6%2FpBqYV%2FTI6exWTqqMDiNnoXWhpq4LaZWBib20BCt6VLiAULDBXfou6Mg0zUlXLSB8iTuf%2B5OzeDxKPC9NEw8%2BaYw94vmeNxkHQRxPvCQI8HyCh%2FNg6PvpcOSPhrBrcBYMxpPUlSV3NWVEuXe3G%2FduBX%2FrzU%2BJXhdkBgCdWaPCgmc%2F7IhLyB8hw4yIb0rwA2Mq0P%2FntvhDdzjpD92xPxo%2FbIwkUNv5zNaCEArRgRVzUfJEhZ%2B7Z8Oe5w0Cb9wHAFRQgBe%2FPwEQjCaTGhMTPxgMRsHgrN4z8UZDfzjwJ2Nv4A%2B%2F7PEVBY6pXof9g%2FBrIcARRXgXOZqstEEQXE5ZZrE6RXcx15vI2cDWq3fn76bo4%2FmFKTslXFzWDgT3LVzImppqYpi2Ow0qbaweR%2BUrIn6BIN6H5XcBSn%2Fs%2BkE%2FmLj94bj%2FSCifhcuCxtfmLgqvZEn26CncaiQJLzBT%2B2S458Q10I92Z0TPTM2eVbUOvPMZbOog%2BO2P%2Bl8OBG633tBEL8Jh5zAwNpTN86k1p396P0ondZw%2BVDuuwCuHoTr5foL1VxXkSOdtMoALG%2Foxbmfq9h9A939VUb8LU%2F6tPDyiNml4nJ4mucyJXR7uCmAvhuKtf%2BwNOuge0ev53gPkp1PX21valeotyWLx4cJ9LGljJrXm0KaD%2FmZF39hO5YIy04dtm5xdlwpzIXSjdVCgN4EpsW5Ye80mGBgvzQjXdCsdq2zleeiEaGp6R7THZmrl236nV4iitWt12rVAG%2FCnBTYX0RMC7ZaHBDaHDwXObtVzZNpWcTeyqGcoAawf16OqSs0Ybsf5WQw5p%2BvyZMrVORD3qhV0fjOl18z0RvAMOla5vDbJZd9d0yd3l8FhOwUjGgzzsyUlNzOjOwkN81%2FhtRrbWoc4hL6V6jIhoWlgj5YEz%2Bo1nh2t3QqRh%2F7oiFpQHR%2Biv733bN0SMpj%2FWrWLbGvdajfbwENtp%2BNI8kdJJcmhg1fO9LMDZaGAIQ6reo0obR5X1TQID2ssGXxZv8JD1VJSAU851gUTMDXN4WX7D5MujonzBfapi5Kxy1jCHOpMU1MyNn8Ck4LFonwRAAA%3D"/>
+
