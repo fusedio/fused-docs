@@ -43,7 +43,6 @@ export default function Iframe({ id, url, code, requirements }) {
     // intersection observer
     const intersectionObserver = new IntersectionObserver((entries) => {
       for (const entry of entries) {
-        console.log("intersection observer entry", entry);
         if (entry.isIntersecting) {
           const iframe = document.getElementById("magic-iframe");
           if (iframe) {
