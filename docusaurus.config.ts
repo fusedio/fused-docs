@@ -187,6 +187,8 @@ const config: Config = {
 
 
   } satisfies Preset.ThemeConfig,
+  
+  plugins: [require.resolve("./docusaurus-plugin-custom-webpack")],
 };
 
 export default config;
