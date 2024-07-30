@@ -1,0 +1,104 @@
+---
+title: Long-running jobs
+sidebar_label: Long-running jobs
+path: basics/tutorials/longrunning/longrunning
+nb_path: basics/tutorials/longrunning.ipynb
+github: 
+  https://github.com/fusedio/fused-docs/blob/main/docs/basics/tutorials/longrunning.ipynb
+colab: 
+  https://githubtocolab.com/fusedio/fused-docs/blob/main/docs/basics/tutorials/longrunning.ipynb
+description: Tutorial on how to execute long-running jobs with the batch modality.
+---
+
+import LinkButtons from "../../../../src/components/LinkButtons.jsx";
+import CellOutput from "../../../../src/components/CellOutput.jsx";
+import {BokehFigure, PlotlyFigure} from "../../../../src/components/Plotting.jsx";
+
+<LinkButtons
+  githubUrl="https://github.com/fusedio/fused-docs/blob/main/docs/basics/tutorials/longrunning.ipynb"
+  colabUrl="https://githubtocolab.com/fusedio/fused-docs/blob/main/docs/basics/tutorials/longrunning.ipynb"
+/>
+
+# Execute a long-running job
+
+Follow these steps to execute a long-running job using the fused-py library.
+
+Running long processes can be challenging due to potential interruptions like browser
+closures or network issues. The fused-py library can help manage and execute these tasks
+efficiently in batch jobs, which run on dedicated and customizable EC2 instances.
+
+As an example, this guide will walk you through setting up and running a long-running
+job that unzips a large file and uploads it to S3. Because unzipping large files is
+expected to be a long-running job, Fused recommends running a UDF as a batch job, with
+can be triggered and observed from a Python notebook.
+
+The following sample UDF downloads a zipped file from S3 file specified with the
+`source_s3_path` parameter, unzips it, then uploads it to a target S3 location specified
+with the `destination_s3_path` parameter. You can modify it to serve your usecase.
+
+A few notes to keep in mind:
+
+- For `fused.run` to execute successfully on an EC2 instance, you'll need to set the
+  parameter `engine='batch'` and ensure your Fused account has batch-mode enabled. You
+  can get in touch with the Fused team for this.
+- To get started quickly, you can use the S3 bucket namespace that Fused provides for
+  you for free when you create an account. You can find the path in your Workbench file
+  explorer.
+
+## 1. Define UDF
+
+```python
+import fused
+
+@fused.udf
+def udf(
+    source_s3_path = '',
+    destination_s3_path = ''
+):
+    import zipfile
+    import s3fs
+    import os
+    import pandas as pd
+    
+    file_path = fused.download(source_s3_path, source_s3_path.split('/')[-1])
+    
+    # Create a temporary directory to extract the files
+    s3 = s3fs.S3FileSystem()
+    with zipfile.ZipFile(file_path, 'r') as zip_ref:
+        zip_ref.extractall('/tmp/unzipped_files')
+
+    # Upload each file to the S3 bucket
+    for root, dirs, files in os.walk('/tmp/unzipped_files'):
+        for file in files:
+            file_path = os.path.join(root, file)
+            print('file_path', file_path, destination_s3_path)
+            s3.put(file_path, destination_s3_path)
+
+    return pd.DataFrame({'status': ['success']}) # UDFs must return a table or raster
+
+```
+
+## 2. Run UDF as a batch job
+
+```python
+job_id = fused.run(udf, engine='batch', source_s3_path = 'https://datadownload-production.s3.amazonaws.com/WCMC_carbon_tonnes_per_ha.zip', destination_s3_path = 's3://fused-users/fused/plinio/dswid/WCMC_carbon_tonnes_per_ha_10gb/')
+job_id
+```
+
+## 3. Monitor job
+
+```python
+fused.api.job_tail_logs("df335890-4406-4832-bf93-6a3b092e496d")
+```
+
+<CellOutput>
+{
+  `Logs for: df335890-4406-4832-bf93-6a3b092e496d
+Configuring packages and waiting for logs...`
+}
+</CellOutput>
+
+```python
+
+```
+
