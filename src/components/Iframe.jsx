@@ -40,7 +40,6 @@ export default function Iframe({ id, url, code, requirements }) {
     iframe.style.display = "block";
     syncIframeToContainer(boundingClientRect, iframe);
 
-    // intersection observer
     const intersectionObserver = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         if (entry.isIntersecting) {
