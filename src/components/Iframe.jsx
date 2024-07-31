@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from "react";
 import {DEFAULT_APP_REQUIREMENTS} from '../app-iframe/requirements'
 
-const URL = "https://staging.fused.io/workbench#app"
+const URL = "https://staging.fused.io/workbench#app/s/aH4sIAAAAAAAAA1XQPW%2FEIAwG4L9iMd1JUbJnrk7q3G5NB4c4iVW%2Bik3UU9X%2FXpIsd%2BAFeA2P%2BDU2TmR6wz7FrCCaCb1jBZS6GMIQRFsOc7wM5pgB6nhfWaAW%2FSTK7CkouhZeZ9D9wJMILgSYEmGWBpIjFIIlgtZaCaZoBRyGicMCac9erGP7BTEc57ciNIGLtQPHuNF13w0QcOMFlWDEmj3uqs%2Ft%2Fe3pOo3XAy3F2gp5ch9CgpTj6MhDxQuLPghJgSshFrvCxviAeWGxMU9go%2FclsN57WFWT9F03srbu3s17bjpjTxzTmEzfhTPtPyWm%2F%2FhsDMutOPdmM1EwveZCf%2F%2Bx8TCDjQEAAA%3D%3D"
 
+// Hardcode common requirements, unless specified otherwise
 export default function Iframe({ id, code, url=URL, requirements=DEFAULT_APP_REQUIREMENTS }) {
   const containerRef = useRef(null);
 
