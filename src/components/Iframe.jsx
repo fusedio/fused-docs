@@ -1,6 +1,9 @@
 import React, { useEffect, useRef } from "react";
+import {DEFAULT_APP_REQUIREMENTS} from '../app-iframe/requirements'
 
-export default function Iframe({ id, url, code, requirements }) {
+const URL = "https://staging.fused.io/workbench#app"
+
+export default function Iframe({ id, code, url=URL, requirements=DEFAULT_APP_REQUIREMENTS }) {
   const containerRef = useRef(null);
 
   function syncIframeToContainer(boundingClientRect, iframe) {
