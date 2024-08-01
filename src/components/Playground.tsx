@@ -1,12 +1,3 @@
-/**
- * Copyright (c) Facebook, Inc. and its affiliates.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
-
-/* eslint-disable global-require */
-
 import React from 'react';
 import clsx from 'clsx';
 import Translate from '@docusaurus/Translate';
@@ -25,6 +16,17 @@ const Playgrounds = [
         CodeSandbox is an online code editor and development environment that
         allows developers to create, share and collaborate on web development
         projects in a browser-based environment
+      </Translate>
+    ),
+  },
+  {
+    name: ' 123 test',
+    image: 'https://fused-magic.s3.us-west-2.amazonaws.com/thumbnails/udfs-staging/Fused_Logo.png',
+    url: 'https://docusaurus.new/codesandbox',
+    urlTS: 'https://docusaurus.new/codesandbox-ts',
+    description: (
+      <Translate id="playground.codesandbox.description">
+        Co...
       </Translate>
     ),
   },
@@ -61,8 +63,8 @@ interface Props {
 
 function PlaygroundCard({name, image, url, urlTS, description}: Props) {
   return (
-    <div className="col col--6 margin-bottom--lg">
-      <div className={clsx('card')}>
+    <div className="col col--6 margin-bottom--lg" style={{ display: 'flex' }}>
+      <div className={clsx('card')} >
         <div className={clsx('card__image')}>
           <Link to={url}>
             <Image img={image} alt={`${name}'s image`} />
