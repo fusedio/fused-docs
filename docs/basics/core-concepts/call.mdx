@@ -1,0 +1,447 @@
+---
+id: call
+title: Call UDF
+tags: [call]
+sidebar_position: 2
+toc_min_heading_level: 2
+toc_max_heading_level: 4
+---
+
+# Call UDF
+
+Fused automatically creates an endpoint for all saved Fused UDFs. When a client application calls a UDF endpoint, Fused runs a lightweight serverless Python operation and returns the function output. A call to a Fused UDF endpoint can return data as if it were a single remote `File`. The same endpoint can be called dynamically, as `Tile`, so it interoperates with map tiling systems.
+
+## File & Tile
+
+To understand how a Fused UDF can be configured to execute, it's important to first understand the difference between `File` and `Tile` data. 
+
+Consider this diagram. When loaded as a remote File, every coordinate of the complex polygon would be included in one single file. In a Tiled format, there are predefined tile sets (grids) and the geometry is split into one or more Files, where each File represents one cell of the grid.
+
+import ImageFileTile from '/img/filetile6.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImageFileTile} alt="File" style={{width: 400}} />
+</div>
+
+Loading or rendering an entire dataset is an expensive operation in part because of the data volume that must transfer across the network. Fused UDFs can be designed to automatically split and output a dataset across several `Tiles` - and speed up computation by operating on each part of the dataset in parallel. 
+
+
+#### File
+
+When an endpoint is called as a `File`, the UDF runs only once and returns all output data in a single batch. This behaves like the access pattern for a remote file URL.
+
+import ImageFile from '/img/image-file2.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImageFile} alt="File" style={{width: 600,}} />
+</div>
+
+
+#### Tile
+
+When and endpoint is called as a `Tile`, the endpoint becomes interoperable with map tiling clients. The endpoint is called as a `File` for every `Tile` requested, and Fused dynamically passes a `bbox` object to each UDF call corresponding to the index of each tile on the map.
+
+import ImageTile from '/img/image-tile2.png';
+
+
+<div style={{textAlign: 'center'}}>
+<img src={ImageTile} alt="File" style={{width: 600}} />
+</div>
+
+## The `bbox` object
+
+A UDF can strategically leverage [cloud-optimized data formats](https://guide.cloudnativegeo.org/) and effeciently load only a fraction of a dataset. A UDF becomes spatially aware when it leverages the `bbox` parameter to spatially filter the datasets it operates on. This way, Fused distributes execution across multiple workers that scale and wind down as needed. Tile-level spatial filtering supercharges UDFs to process only specific parts of a dataset - based on specified geographic or logical partitions.
+
+:::tip
+The growing popularity of cloud optimized data formats is revolutionizing data processing by eliminating the need for specialized hardware to handle large datasets. For further reading on data formats, refer to resources on: [Cloud Optimized GeoTiff](https://www.cogeo.org/), [Geoparquet](https://geoparquet.org/), and [GeoArrow](https://geoarrow.org/format.html).
+:::
+
+Tile mapping tools call Fused endpoints and dynamically pass an XYZ index for each Tile to render. When a UDF endpoint is called this way - in Tile mode - Fused passes the UDF a `bbox` object as the first parameter. This object is a data structure with information that corresponds to the Tile's bounds and/or XYZ coordinates. The object is named `bbox` by convention, but it's possible to use a different name as long as it's in the first parameter.
+
+
+### `bbox` object types
+For convenience, users can set the type and structure of the `bbox` object by setting explicit typing. Read more about [supported types for UDF parameters](python-sdk/#typing). 
+
+The 4 available structures are:
+
+#### `fused.types.TileGDF` 
+This is a [geopandas.geodataframe.GeoDataFrame](https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.html) with `x`, `y`, `z`, and `geometry` columns.
+
+```python
+@fused.udf
+def udf(bbox: fused.types.TileGDF=None):
+    print(bbox)
+    return bbox
+
+>>>      x    y   z                                           geometry
+>>> 0  327  790  11  POLYGON ((-122.0 37.0, -122.0 37.1, -122.1 37.1, -122.1 37.0, -122.0 37.0))
+```
+
+#### `fused.types.Bbox` 
+This is a [shapely.geometry.polygon.Polygon](https://shapely.readthedocs.io/en/stable/reference/shapely.Polygon.html) corresponding to the Tile's bounds.
+
+```python
+@fused.udf
+def udf(bbox: fused.types.Bbox=None):
+    print(bbox)
+    return bbox
+
+>>> POLYGON ((-122.0 37.0, -122.0 37.1, -122.1 37.1, -122.1 37.0, -122.0 37.0))
+```
+
+
+#### `fused.types.TileXYZ` 
+This is a [mercantile.Tile](https://mercantile.readthedocs.io/en/stable/api/mercantile.html) object with values for the `x`, `y`, and `z` Tile indices.
+
+```python
+@fused.udf
+def udf(bbox: fused.types.TileXYZ=None):
+    print(bbox)
+    return bbox
+
+>>> Tile(x=328, y=790, z=11)
+```
+
+:::tip
+
+If the UDF is called as a File, Fused does not pass a `bbox` parameter. To write UDFs so they can be called in either execution mode, Fused recommends setting the `bbox` as the first parameter, and typing it as a `fused.types.Bbox` with a default value of `None`. This will enable the UDF to run in both as `File` (when `bbox` isn’t necessarily passed) and as a `Tile`. For example:
+
+```python
+@fused.udf
+def udf(bbox: fused.types.Bbox=None):
+    ...
+    return ...
+```
+
+When using the Fused Workbench, a UDF can be configured to render as "Auto" so Workbench automatically handles the output as `Tile` if it statically checks that the above types are used in the UDF. Otherwise, it assumes File.
+
+UDFs called via the Fused Python SDK or HTTP requests run as Tile only if a parameter specifies the `Tile` geometry. 
+:::
+
+
+### Spatially filtering
+
+##### Spatially filter raster files
+
+The Fused utility function `utils.mosaic_tiff` and `pystac-client`'s `catalog.search` illustrate how to use `bbox` to spatially filter a dataset.
+
+For example, function `utils.mosaic_tiff` generates a mosaic image from a list of TIFF files. `bbox` defines the area of interest within the list of TIFF files set by `tiff_list`.
+
+```python
+@fused.udf
+def udf(bbox: fused.types.TileGDF=None):
+
+    utils = fused.load("https://github.com/fusedio/udfs/tree/f928ee1/public/common/").utils
+    data = utils.mosaic_tiff(
+        bbox=bbox,
+        tiff_list=tiff_list,
+        output_shape=(256, 256),
+    )
+```
+
+As an example, the [LULC_Tile UDF](https://github.com/fusedio/udfs/blob/b89a3aab05cb75dab25abb73e4c17490844ab764/public/LULC_Tile_Example/LULC_Tile_Example.py#L21-L27) uses `mosaic_tiff` to create a mosaic from a set of Land Cover tiffs.
+
+
+##### Spatially filter STAC datasets
+
+STAC ([SpatioTemporal Asset Catalog](https://github.com/radiantearth/stac-spec)) datasets can be queried by passing the bounding box’s bounds (`bbox.bounds`) to the pystac client of the Python [pystac-client](https://pypi.org/project/pystac-client/) library.
+
+```python
+@fused.udf
+def udf(bbox: fused.types.TileGDF=None):
+
+    import pystac_client
+    from pystac.extensions.eo import EOExtension as eo
+
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        modifier=planetary_computer.sign_inplace,
+    )
+    items = catalog.search(
+        collections=[collection],
+        bbox=bbox.total_bounds,
+    ).item_collection()
+```
+
+
+## Create a UDF endpoint
+
+Fused automatically creates HTTP endpoints for every UDF saved in the Fused cloud.
+
+Using the Fused Hosted API supercharges your stack with the ability to trigger and load the output of any scale workflows. API calls automatically provision serverless compute resources to run workflows in parallel using advanced caching and geo partitioning - without your team needing to spend time on setup.
+
+Endpoints created with Fused Hosted API seamlessly integrate with tools such as:
+
+- Tile-based maps: Simply pass the endpoint into tile-based maps such as open source JavaScript tools (e.g. leaflet, Deck.gl, and Kepler.gl), proprietary web-based apps (such as Felt and Foursquare Studio), or desktop based tools such as ArcGIS, ESRI, and QGIS.
+- Apps that make HTTP requests: Load data into low-code app builders such as Streamlit & Retool.
+- Apps that render embeddable maps: Embed responsive maps to significantly enhance the utility and interactivity of documentation sites and apps, such as Notion.
+
+:::note
+    Shared endpoints cache UDF outputs by default for each combination of code and input parameters, which can be useful for performance and cost savings. A client application calling an endpoint will compute the UDF only once for each unique input, and subsequent calls will return the cached result. This might be experienced in the form of a slight latency in the first call, with subsequent calls running faster.
+:::
+
+The following sections describes how to create a UDF endpoint either in Workbench or with the Fused Python SDK, and how to authenticate requests to call the endpoint. They also describe how to make authenticated calls to these endpoints. Browse the ["Get data out"](/basics/out/) section for examples of how to use them to load data into specific tools.
+
+
+
+## Generate endpoints with Workbench
+
+Once a UDF is saved in Workbench, the "Settings" tab of the editor shows code snippets that can be used to call the UDF from different environments. 
+
+:::note
+    Endpoints can be called with "private" or "shared" authentication tokens. Shared tokens are easy to create and revoke. Use shared tokens to call UDFs from 3rd party applications or to share them with others.
+:::
+
+
+### Shareable public endpoints
+
+The "Share" subsection contains snippets with shared tokens and signed URLs. 
+- `HTTP` is the URL to call the UDF endpoint.
+- `cURL` is the command to call the UDF endpoint from the terminal.
+- `Python` is the code to call the UDF endpoint from a Python environment using the token.
+- `Token` is the shared token, which you'll notice appears in the above snippets. 
+
+![alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/share.png)
+
+
+
+### Private endpoints
+
+The "Snippets" subsection below it contains snippets that can only be called with the authoring account's authentication.
+- `cURL` is the command to call the UDF endpoint from the terminal, which requires the authoring account's private token.
+- `Python` is the code to call the UDF endpoint from a Python environment using the token.
+- `Load this UDF` is loads the UDF into a Python environment where it can be modified, chained with other UDFs, or called. 
+
+![alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/snippets.png)
+
+
+
+## Generate endpoints with `fused-py`
+
+
+### Get an account's private token
+
+Python environments where the authentication flow completed successfully store a credentials key in the default location ` ~/.fused/credentials`. Calls to UDFs from those environments will use that key, unless a token for a different account is explicitly set in the call. Making calls to endpoints from a non-authenticated environment will need the authenticated account's access token, which can be retrieved with the following commands.
+
+```python
+from fused._auth import CREDENTIALS
+
+CREDENTIALS.credentials.access_token
+```
+
+
+:::danger
+
+Note that the "private" token can access all UDFs and should be kept private. The recommended approach is instead to use "shared" tokens with tightly scoped permissions, as detailed below.
+
+Remember that tokens are tied to the account that created them and requests to their corresponding endpoints will accrue charges on that account.
+:::
+
+
+This is how to call UDF endpoints via HTTP requests with the token.
+
+```bash
+curl -XGET https://app.fused.io/server/v1/realtime-shared/$SHARED_TOKEN/run/file
+```
+
+### Create and manage shared tokens (recommended)
+
+Shared tokens are tightly scoped to a single UDF, and can easily be revoked. Creating a shared token for a UDF returns a token object that, among other attributes, contains the token as a string and sample endpoint URLs.
+
+This is how to to call UDF endpoints in Python with signed token URLs.
+```python
+from fused.api import FusedAPI
+api = FusedAPI()
+
+token_object = api.create_udf_access_token(udf_email="user@fused.io", udf_name="caltrain_live_location")
+output = fused.core.run_shared_file(token=token_object.token, my_param="...")
+```
+
+### Manage shared tokens
+
+Fetch a specific UDF token object using its unique token string:
+```python
+token_object = api.get_udf_access_token(token=token.token)
+```
+
+Fetch all UDF tokens:
+```python
+token_objects = api.get_udf_access_tokens()
+```
+
+Update a specific UDF token using its unique token string:
+```python
+token_object = api.update_udf_access_token(token=token.token, enabled=True)
+```
+
+Delete a specific UDF token using its unique token string:
+```python
+api.delete_udf_access_token(token=token.token, enabled=True)
+```
+
+
+Similarly, signed URLs endpoints can be created that can be called from another application via HTTP requests.
+
+### Single File HTTP endpoints
+
+Single file HTTP endpoints are suitable for handling individual requests, ideal for scenarios where a single resource is required, such as loading data into [Google Sheets](/basics/out/googlesheets/).
+
+
+```python
+from fused.api import FusedAPI
+api = FusedAPI()
+
+# URL for single call
+api.create_udf_access_token(udf_email="user@fused.io", udf_name="caltrain_live_location").get_file_url()
+```
+
+### Tile HTTP endpoints
+
+Tile HTTP endpoints are designed for serving map applications that consume Tiles, such as [Lonboard](/basics/out/lonboard/) or [geemap](/basics/out/geemap/).
+
+```python
+from fused.api import FusedAPI
+api = FusedAPI()
+
+# URL for XYZ tiles
+api.create_udf_access_token(udf_email="user@fused.io", udf_name="caltrain_live_location").get_tile_url()
+```
+
+## Call UDFs
+
+UDFs can be triggered via the Python SDK or HTTP requests, and they can return data in different formats depending on how they're called. The following sections describe how to call UDFs and how to configure calls to return data in different formats.
+
+### Call UDFs with Python
+
+
+The Fused Python SDK exposes methods to call UDFs. In Python environments authenticated to Fused, the UDF be called or imported in these 3 ways:
+
+
+#### Call UDF and return its output
+
+```python
+fused.run("user@fused.io", "Overture_Maps", x=2808, y=6542, z=14, my_udf_parameter=5)
+```
+
+#### Call UDF asynchronously and return its output
+
+:::note
+    [nest_asyncio](https://pypi.org/project/nest-asyncio/) might be required to run UDFs async from Jupyter Notebooks.
+    ```python
+    !pip install nest-asyncio -q
+    import nest_asyncio
+    nest_asyncio.apply()
+    ```
+:::
+
+```python
+import asyncio
+import fused
+
+# Run the UDF in an async function
+async def main():
+    return await fused.run("user@fused.io", "Overture_Maps", x=2808, y=6542, z=14, sync=False)
+
+# Run the coroutine and capture the result
+gdf = asyncio.run(main())
+
+# Use the returned value outside the event loop
+gdf.head()
+
+```
+
+#### Import as a UDF object
+
+```python
+my_udf = fused.core.load_udf_from_fused("user@fused.io", "caltrain_live_location")
+```
+
+:::note
+Did you know UDFs can also call other UDFs? It's an easy way to chain UDFs together or even run them in parallel.
+:::
+
+### Call UDFs with HTTP requests
+
+Beyond Python, other frameworks can call the UDF endpoint via HTTP requests and receive output data in the response. This makes it easy to load data from UDFs into Tile-based mapping tools such as [DeckGL](https://deck.gl/docs/api-reference/geo-layers/tile-layer), [Mapbox](https://docs.mapbox.com/mapbox-gl-js/example/vector-source/), and [Felt](https://felt.com/), or no-code data analytics environments like [Google Sheets](https://support.google.com/docs/answer/3093335?hl=en) and [Retool](https://docs.retool.com/apps/web/guides/components/custom). Read the ["Get data out"](/basics/out/) section of the documentation for example integrations with your favorite tools. 
+
+
+#### Shared token
+
+To run a UDF via HTTP request, generate a [signed UDF endpoint](/basics/core-concepts/#generate-endpoints-with-workbench) then modify the provided URL. 
+
+Structure the URL with the `file` path parameter to run as a single batch operation.
+
+```
+https://www.fused.io/server/v1/realtime-shared/******/run/file?dtype_out_raster=png
+```
+
+To integrate with a tiling service, structure the URL with the `tiles` path paramater, followed by templated `/{z}/{x}/{y}` path parameters. See [Lonboard](/basics/out/lonboard/) for an example.
+
+```
+https://www.fused.io/server/v1/realtime-shared/******/run/tiles/{z}/{x}/{y}?dtype_out_raster=png
+```
+
+#### Private token
+
+Calling UDFs with [Bearer authentication](https://swagger.io/docs/specification/authentication/bearer-authentication/) requires an account's [private token](/basics/utilities/#get-an-accounts-private-token). The URL structure to run UDFs with the private token varies slightly, as the URL specifies the UDF's name and the owner's user account. 
+
+```bash
+curl -XGET "https://app.fused.io/server/v1/realtime/fused/api/v1/run/udf/saved/user@fused.io/caltrain_live_location?dtype_out_raster=png" -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+### Response formats
+
+The response data format is configured with the `dtype_out_vector` and `dtype_out_raster` parameter. Because the UDF's returned object determines whether response is a vector or raster, both parameters can be specified simultaneously, which the sample snippets show in query parameters like: `?dtype_out_raster=png&dtype_out_vector=csv`.
+
+Vector:
+- parquet 
+- geojson
+- json 
+- feather 
+- csv 
+- mvt 
+- html 
+- excel 
+- xml
+
+Raster:
+- png 
+- gif 
+- jpg 
+- jpeg
+- webp 
+- tif 
+- tiff
+
+
+### File endpoint
+
+By default, a UDF runs as `File` - it executes once and returns a single output that corresponds to the input parameters. The UDF endpoint behaves like a remote file in that calling it returns a single batch of data - but the endpoint also accepts parameters that dynamically influence the UDF's execution. 
+
+```bash
+https://www.fused.io/server/.../run/file?dtype_out_vector=csv
+```
+
+This enables client applications to make an HTTP request and load the UDF's output data into the tool that makes the call.
+
+:::tip
+Note that files are downloaded entirely - even if the data is requested as a Parquet.
+:::
+
+### Tile endpoint
+
+The same UDF's API endpoint can be called to run like a `Tile`. This makes it possible for Fused to serve vector or raster tiles into industry standard tools that work with [tiled web maps](https://en.wikipedia.org/wiki/Tiled_web_map) - think Leaflet, Mapbox, Foursquare Studio, Lonboard, and beyond. 
+
+```bash
+https://www.fused.io/server/.../run/tiles/{z}/{x}/{y}?&dtype_out_vector=csv
+```
+
+
+Tiling clients can make dozens of simultaneous calls to the Fused API endpoint - one for each tile - and seamlessly stitch the outputs to render a map. Instead of operating on an entire dataset, Fused only acts on the data that corresponds to the area visible in the current viewport.
+
+
+
+:::tip
+You can read more about the XYZ indexing system in the [Deck.gl](http://Deck.gl) [documentation](https://deck.gl/docs/api-reference/geo-layers/tile-layer#indexing-system). In fact, Fused Workbench runs UDFs on a serverless backend and renders output in Deck.gl.
+:::
+
