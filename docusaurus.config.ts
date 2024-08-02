@@ -118,10 +118,15 @@ const config: Config = {
           label: 'GitHub',
           position: 'right',
         },
+        {
+          href: 'https://www.fused.io/workbench',
+          label: 'Workbench',
+          position: 'right',
+        },
       ],
     },
     footer: {
-      style: 'dark',
+      // style: 'dark',
       links: [
         {
           title: 'Docs',
