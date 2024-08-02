@@ -1,6 +1,6 @@
 ---
 id: faq
-title: FAQ
+title: ❓FAQ
 tags: [FAQ]
 sidebar_position: 7
 ---
