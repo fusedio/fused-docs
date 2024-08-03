@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { DEFAULT_APP_REQUIREMENTS } from "../app-iframe/requirements";
 
-const URL = "https://staging.fused.io/workbench#app/s/e/";
+const URL = "https://staging.fused.io/workbench#app/s/aH4sIAAAAAAAAAw3JMQoCMRAF0KuEqRSWPUBKCy9gaSyG5C8EkkmcmRQi3t0tH%2B9LeRRQpNrnUA%2FmCu6temA7kSSJ%2BV7lGJdENzYEnjO0wQUl2MoZZsdq7bMnutJGiveqig5xo%2Fh8bVTtfv4jKyAUXRd%2Bf156J2R1AAAA";
 
 export default function Iframe({
   id = "iframe-1",
