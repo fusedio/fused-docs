@@ -1,4 +1,4 @@
-# 🍪 Contribute to Fused 
+# Contribute to Fused 
 
 ## Overview
 
