@@ -75,7 +75,13 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Python SDK",
       link: { type: "doc", id: "python-sdk/index" },
-      items: ["python-sdk/top-level-functions", require("./docs/reference/sidebar.json"), "python-sdk/dependencies", "python-sdk/changelog"],
+      items: [
+        "python-sdk/top-level-functions", 
+        require("./docs/reference/sidebar.json"), 
+        "python-sdk/dependencies", 
+        "python-sdk/changelog",
+        "python-sdk/contribute",
+      ],
     },
 
     // "basics/faq",
