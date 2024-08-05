@@ -193,7 +193,22 @@ const config: Config = {
 
   } satisfies Preset.ThemeConfig,
   
-  plugins: [require.resolve("./docusaurus-plugin-custom-webpack")],
+  plugins: [
+    require.resolve("./docusaurus-plugin-custom-webpack"),
+    [
+      '@docusaurus/plugin-client-redirects',
+      {
+        redirects: [
+          {to: '/basics/core-concepts/faq/',from: ['/basics/faq/'],},
+          {to: '/workbench/map-builder/udf-editor/', from: ['/workbench/udf-editor/']},
+          {to: '/workbench/map-builder/navigation/', from: ['/workbench/navigation/']},
+          {to: '/workbench/map-builder/map/', from: ['/workbench/map/']},
+          {to: '/workbench/map-builder/results/', from: ['/workbench/results/']},
+          {to: '/workbench/map-builder/viz-styling/', from: ['/workbench/viz-styling/']}
+        ]   
+      }
+    ]
+  ],
 };
 
 export default config;
