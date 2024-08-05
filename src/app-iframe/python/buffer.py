@@ -1,5 +1,4 @@
 import fused_app
-import pydeck as pdk
 import streamlit as st
 
 st.header("Buffer analysis")
@@ -15,6 +14,15 @@ Users can interact with the two sliders on the sidebar to adjust:
 # Slider widgets
 n_points = st.sidebar.slider("Number of points:", 0, 1000, 100)
 buffer = st.sidebar.slider("Buffer:", 0.0, 0.01, 0.0025, step=0.001)
+
+# Imports
+import micropip
+await micropip.install('geopandas')
+await micropip.install('requests')
+await micropip.install('pydeck')
+await micropip.install('xarray')
+await micropip.install('yarl')
+import pydeck as pdk
 
 # Run UDF
 @st.cache_data
