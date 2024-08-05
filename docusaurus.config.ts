@@ -204,7 +204,7 @@ const config: Config = {
           {to: '/workbench/map-builder/navigation/', from: ['/workbench/navigation/']},
           {to: '/workbench/map-builder/map/', from: ['/workbench/map/']},
           {to: '/workbench/map-builder/results/', from: ['/workbench/results/']},
-          {to: '/workbench/map-builder/viz-styling/', from: ['/workbench/viz-styling/']}
+          {to: '/workbench/map-builder/styling/', from: ['/workbench/viz-styling/']}
         ]   
       }
     ]
