@@ -8,11 +8,11 @@ toc_max_heading_level: 4
 ---
 
 
-Fused automatically creates an endpoint for all saved Fused UDFs. When a client application calls a UDF endpoint, Fused runs a lightweight serverless Python operation and returns the function output. A call to a Fused UDF endpoint can return data as if it were a single remote `File`. The same endpoint can be called dynamically, as `Tile`, so it interoperates with map tiling systems.
+Fused automatically creates an endpoint for all saved Fused UDFs. When a client application calls a UDF endpoint, Fused runs a lightweight serverless Python operation and returns the function output. A call to a Fused UDF endpoint can return data as if it were a single remote `File`. The same endpoint can be called dynamically as `Tile` and natively integrate with [Tiled web map](https://en.wikipedia.org/wiki/Tiled_web_map) systems.
 
 ## File & Tile
 
-To understand how a Fused UDF can be configured to execute, it's important to first understand the difference between `File` and `Tile` data. 
+To understand how a Fused UDF can be configured to execute, it's important to first understand the difference between `File` and `Tile` endpoints. 
 
 Consider this diagram. When loaded as a remote File, every coordinate of the complex polygon would be included in one single file. In a Tiled format, there are predefined tile sets (grids) and the geometry is split into one or more Files, where each File represents one cell of the grid.
 
@@ -22,12 +22,11 @@ import ImageFileTile from '/img/filetile6.png';
 <img src={ImageFileTile} alt="File" style={{width: 400}} />
 </div>
 
-Loading or rendering an entire dataset is an expensive operation in part because of the data volume that must transfer across the network. Fused UDFs can be designed to automatically split and output a dataset across several `Tiles` - and speed up computation by operating on each part of the dataset in parallel. 
-
+Loading or rendering an entire dataset can be an expensive operation because of the data volume that must transfer across the network. Fused UDFs can be designed to automatically split and output a dataset across several `Tiles` - and speed up computation by operating on each part of the dataset in parallel. 
 
 #### File
 
-When an endpoint is called as a `File`, the UDF runs only once and returns all output data in a single batch. This behaves like the access pattern for a remote file URL.
+When an endpoint is called as a `File`, the UDF runs only once and returns all output data in a single batch. This behaves like the standard access pattern for a remote file URL (such as with an S3 endpoint).
 
 import ImageFile from '/img/image-file2.png';
 
@@ -38,7 +37,7 @@ import ImageFile from '/img/image-file2.png';
 
 #### Tile
 
-When and endpoint is called as a `Tile`, the endpoint becomes interoperable with map tiling clients. The endpoint is called as a `File` for every `Tile` requested, and Fused dynamically passes a `bbox` object to each UDF call corresponding to the index of each tile on the map.
+When and endpoint is called as a `Tile`, the endpoint becomes interoperable with Tiled web map clients. The endpoint is called as a `File` for every `Tile` requested, and Fused dynamically passes a `bbox` object to each UDF call, with `z`, `x`, and `y` values corresponding to the index of each tile on the map.
 
 import ImageTile from '/img/image-tile2.png';
 
@@ -49,19 +48,22 @@ import ImageTile from '/img/image-tile2.png';
 
 ## The `bbox` object
 
-A UDF can strategically leverage [cloud-optimized data formats](https://guide.cloudnativegeo.org/) and effeciently load only a fraction of a dataset. A UDF becomes spatially aware when it leverages the `bbox` parameter to spatially filter the datasets it operates on. This way, Fused distributes execution across multiple workers that scale and wind down as needed. Tile-level spatial filtering supercharges UDFs to process only specific parts of a dataset - based on specified geographic or logical partitions.
+One of Fused's most powerful features is its first-class support for [cloud-optimized data formats](https://guide.cloudnativegeo.org/): it can effeciently load only a fraction of a dataset. 
+
+A UDF becomes spatially aware when it leverages the `bbox` parameter to spatially filter the datasets it operates on. This way, Fused distributes the execution across multiple workers that scale up and wind down as needed. Tile-level spatial filtering supercharges UDFs to process only specific parts of a dataset - based on specified geographic or logical partitions.
 
 :::tip
 The growing popularity of cloud optimized data formats is revolutionizing data processing by eliminating the need for specialized hardware to handle large datasets. For further reading on data formats, refer to resources on: [Cloud Optimized GeoTiff](https://www.cogeo.org/), [Geoparquet](https://geoparquet.org/), and [GeoArrow](https://geoarrow.org/format.html).
 :::
 
-Tile mapping tools call Fused endpoints and dynamically pass an XYZ index for each Tile to render. When a UDF endpoint is called this way - in Tile mode - Fused passes the UDF a `bbox` object as the first parameter. This object is a data structure with information that corresponds to the Tile's bounds and/or XYZ coordinates. The object is named `bbox` by convention, but it's possible to use a different name as long as it's in the first parameter.
+Consequently, Tiled web map clients can call Fused endpoints and dynamically pass a ZXY index for each Tile to render. When a UDF endpoint is called this way - in Tile mode - Fused passes the UDF a `bbox` object as the first parameter. This object is a data structure with information that corresponds to the Tile's bounds and/or XYZ coordinates. The object is named `bbox` by convention, but it's possible to use a different name __as long as it's in the first parameter__.
 
 
 ### `bbox` object types
-For convenience, users can set the type and structure of the `bbox` object by setting explicit typing. Read more about [supported types for UDF parameters](/python-sdk/#typing). 
-
-The 4 available structures are:
+:::tip
+Read more about [supported types for UDF parameters](/python-sdk/#typing). 
+:::
+For convenience, users can configure the Python type of the `bbox` object. The 4 available types for the `bbox` object are:
 
 #### `fused.types.TileGDF` 
 This is a [geopandas.geodataframe.GeoDataFrame](https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.html) with `x`, `y`, `z`, and `geometry` columns.
@@ -165,23 +167,19 @@ def udf(bbox: fused.types.TileGDF=None):
 
 ## Create a UDF endpoint
 
-Fused automatically creates HTTP endpoints for every UDF saved in the Fused cloud.
-
-Using the Fused Hosted API supercharges your stack with the ability to trigger and load the output of any scale workflows. API calls automatically provision serverless compute resources to run workflows in parallel using advanced caching and geo partitioning - without your team needing to spend time on setup.
+Every UDF saved to your Fused cloud will be assigned an API endpoint. When an app calls the endpoint, Fused runs the UDF and returns the function output. As your call these endpoints, Fused automatically provision serverless compute resources for the execution, so you don't have to manage endpoints or infrastructure. Any tool in your stack can call a Fused UDF with a simple HTTP request to process and fetch data, which enables you to easily create reactive applications that integrate across your stack.
 
 Endpoints created with Fused Hosted API seamlessly integrate with tools such as:
 
-- Tile-based maps: Simply pass the endpoint into tile-based maps such as open source JavaScript tools (e.g. leaflet, Deck.gl, and Kepler.gl), proprietary web-based apps (such as Felt and Foursquare Studio), or desktop based tools such as ArcGIS, ESRI, and QGIS.
+- Tile web map clients: Simply pass the templated endpoint to mapping clients such as open source JavaScript frameworks (e.g. leaflet, Deck.gl, and Kepler.gl), proprietary web-based apps (such as Felt and Foursquare Studio), or desktop based tools (such as ArcGIS, ESRI, and QGIS).
 - Apps that make HTTP requests: Load data into low-code app builders such as Streamlit & Retool.
-- Apps that render embeddable maps: Embed responsive maps to significantly enhance the utility and interactivity of documentation sites and apps, such as Notion.
+- Apps that render embeddable maps and apps: Embed responsive maps to significantly enhance the utility and interactivity of documentation sites and apps, such as Notion.
 
 :::note
-    Shared endpoints cache UDF outputs by default for each combination of code and input parameters, which can be useful for performance and cost savings. A client application calling an endpoint will compute the UDF only once for each unique input, and subsequent calls will return the cached result. This might be experienced in the form of a slight latency in the first call, with subsequent calls running faster.
+Shared endpoints cache UDF outputs by default for each combination of code and input parameters, which can be useful for performance and cost savings. A client application calling an endpoint will compute the UDF only once for each unique input, and subsequent calls will return the cached result. This might be experienced in the form of a slight latency in the first call, with subsequent calls running faster.
 :::
 
-The following sections describes how to create a UDF endpoint either in Workbench or with the Fused Python SDK, and how to authenticate requests to call the endpoint. They also describe how to make authenticated calls to these endpoints. Browse the ["Get data out"](/basics/out/) section for examples of how to use them to load data into specific tools.
-
-
+The following sections describes how to create a UDF endpoint from Workbench or with the Fused Python SDK. They also describe how to make authenticated calls to these endpoints. See the ["Get data out"](/basics/out/) section for examples of how to use the endpoints streamline integrations with the different tools in the modern data stack.
 
 ## Generate endpoints with Workbench
 
