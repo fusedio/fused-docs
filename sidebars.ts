@@ -2,15 +2,13 @@ import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
 
 const sidebars: SidebarsConfig = {
   tutorialSidebar: [
-    
+    "basics/index",
     {
       type: "category",
       label: "User guide",
       collapsed: false,
       link: { type: "doc", id: "basics/user-guide" },
-      className: 'caps', 
-      items: [
-        "basics/index",
+      items: [ 
         "basics/quickstart",
         // "basics/core-concepts",
         {
