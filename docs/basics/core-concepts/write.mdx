@@ -9,17 +9,6 @@ toc_max_heading_level: 4
 
 A UDF is a Python function that can easily be called via an API endpoint. It can easily be version controlled, shared, and reused across your workflows.
 
-## Why UDFs
-
-Fused UDFs are Python functions that run in the cloud. They are the glue between your data and applications, and you can use them to build powerful workflows and apps to interact with any size dataset. Every UDF is can be shared as a map layer, called as an API endpoint, and deployed in an app.
-
-You can write and run UDFs on the Fused Workbench browser IDE or in any Python environment using the Fused Python SDK.
-
-As soon as you save a UDF Fused creates an API endpoint for it and, when an app calls the endpoint, Fused runs the UDF code on a serverless worker pool and returns the function output. Any tool in your stack can call a Fused UDF with a simple HTTP request to process and fetch data, which enables you to easily create reactive applications that integrate across your stack.
-
-You can think of UDFs as building blocks to create workflows and integrations - without the devops or managing infrastructure. They integrate with your most important apps and can call each other (sequentially and in parallel) to assemble into complex workflows.
-
-
 
 ## UDF Structure
 
@@ -41,59 +30,33 @@ import ImageAnatomy from '/img/udfanatomy.png';
 
 ### `@fused.udf` decorator
 
-First decorate a Python function with `@fused.udf`. This makes the function run in the Fused cloud, which can provision and scale compute. 
+First decorate a Python function with `@fused.udf`. This makes the function run on the Fused cloud, which can provision and scale compute. 
 
-```python
-# highlight-next-line
-@fused.udf # <- Fused decorator
-def udf():
-    ...
-    return gdf 
-```
 
 ### Function declaration
 
 The next step is to structure the function's code. It can import Python libraries, run code to interact with upstream data sources, and return an object. 
 
-To illustrate, this UDF is a function called `udf` that returns a `GeoDataFrame`. 
+To illustrate, this UDF is a function called `udf` that returns a `gpd.GeoDataFrame` object. 
 
 
 ```python
-@fused.udf
+# highlight-next-line
+@fused.udf # <- Fused decorator
 # highlight-start
-def udf( # <- Function declaration
-    bbox: fused.types.Bbox = None,
-    table_path: str = "", 
-    n: int=10
-):
-    from utils import table_to_tile
-
-    gdf=table_to_tile(bbox, table=table_path)
-    return gdf
+def udf(name: str = "Fused"): # <- Function declaration
+    import pandas as pd
+    df = pd.DataFrame({'message': [f'Hello {name}!']})
+    print(df)
+    return df
 # highlight-end
 ```
 
 :::note
-Note that import statements must be placed within the function declaration to ensure they go wherever the function goes.
+Place import statements inside the function declaration to ensure they are included wherever the function is executed.
 :::
 
 
-#### `@fused.cache` decorator
-
-Fused executes UDFs sequentially, so caching the results of slow computations can save time. Use the @fused.cache decorator to persist a function's output across runs, enabling faster iteration and avoiding repeated execution of slow code. For more details, refer to the [caching documentation](/basics/core-concepts/advanced/content-management/cache/).
-
-
-```python
-@fused.udf
-def udf(bbox):
-
-    @fused.cache
-    def sample_function(n):
-        return ...
-
-    return sample_function(n=1)
-
-```
 
 
 
@@ -138,20 +101,22 @@ curl -XGET "https://app.fused.io/server/v1/realtime-shared/$SHARED_TOKEN/run/til
 
 ### Utility functions
 
-When writing a UDF it's important to modularize its code into reusable and composable components. A UDF can import utility modules from their [local context](/basics/core-concepts/advanced/core-modules/#from-local) or from a [GitHub repo using `fused.load`](/basics/core-concepts/advanced/core-modules/#from-github).
+When writing a UDF it's important to modularize its code into modular, reusable components that UDFs can reference. A UDF can import [utility modules](workbench/map-builder/udf-editor/#module) from the [local context](/workbench/map-builder/udf-editor/#from-local) or from a [GitHub repo using `fused.load`](/workbench/map-builder/udf-editor/#from-github).
 
 
 ```python
 @fused.udf
 def udf( 
     bbox: fused.types.Bbox = None,
-    table_path: str = "", 
-    n: int=10
+    table_path: str = "s3://fused-asset/infra/building_msft_us/", 
 ):
     # highlight-start
-    from utils import table_to_tile # <- Utility function
+    utils = fused.load( # <- Utility functions
+        "https://github.com/fusedio/udfs/tree/eda5aec/public/common/"
+        ).utils 
+
     # highlight-end
-    gdf=table_to_tile(bbox, table=table_path)
+    gdf=utils.table_to_tile(bbox, table=table_path)
     return gdf
 ```
 
@@ -163,10 +128,9 @@ Like with a regular Python function, the UDF return statement makes a UDF functi
 
 ```python
 @fused.udf
-def udf():
-    ...
+def udf(bbox: fused.types.Bbox = None):
     # highlight-start
-    return gdf # <- Return object
+    return bbox # <- Return object
     # highlight-end
 ```
 
