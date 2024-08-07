@@ -58,6 +58,21 @@ The growing popularity of cloud optimized data formats is revolutionizing data p
 
 Consequently, Tiled web map clients can call Fused endpoints and dynamically pass a ZXY index for each Tile to render. When a UDF endpoint is called this way - in Tile mode - Fused passes the UDF a `bbox` object as the first parameter. This object is a data structure with information that corresponds to the Tile's bounds and/or XYZ coordinates. The object is named `bbox` by convention, but it's possible to use a different name __as long as it's in the first parameter__.
 
+:::tip
+
+If the UDF is called as a File, Fused does not pass a `bbox` parameter. To write UDFs so they can be called in either execution mode, Fused recommends setting the `bbox` as the first parameter, and typing it as a `fused.types.Bbox` with a default value of `None`. This will enable the UDF to run in both as `File` (when `bbox` isn’t necessarily passed) and as a `Tile`. For example:
+
+```python
+@fused.udf
+def udf(bbox: fused.types.Bbox=None):
+    ...
+    return ...
+```
+
+When using the Fused Workbench, a UDF can be configured to render as "Auto" so Workbench automatically handles the output as `Tile` if it statically checks that the above types are used in the UDF. Otherwise, it assumes File.
+
+UDFs called via the Fused Python SDK or HTTP requests run as Tile only if a parameter specifies the `Tile` geometry. 
+:::
 
 ### `bbox` object types
 :::tip
@@ -103,21 +118,7 @@ def udf(bbox: fused.types.TileXYZ=None):
 >>> Tile(x=328, y=790, z=11)
 ```
 
-:::tip
 
-If the UDF is called as a File, Fused does not pass a `bbox` parameter. To write UDFs so they can be called in either execution mode, Fused recommends setting the `bbox` as the first parameter, and typing it as a `fused.types.Bbox` with a default value of `None`. This will enable the UDF to run in both as `File` (when `bbox` isn’t necessarily passed) and as a `Tile`. For example:
-
-```python
-@fused.udf
-def udf(bbox: fused.types.Bbox=None):
-    ...
-    return ...
-```
-
-When using the Fused Workbench, a UDF can be configured to render as "Auto" so Workbench automatically handles the output as `Tile` if it statically checks that the above types are used in the UDF. Otherwise, it assumes File.
-
-UDFs called via the Fused Python SDK or HTTP requests run as Tile only if a parameter specifies the `Tile` geometry. 
-:::
 
 
 ### Spatially filtering
@@ -448,3 +449,67 @@ Tiled web map clients can make dozens of simultaneous calls to the Fused API end
 You can read more about the XYZ indexing system in the [Deck.gl](http://Deck.gl) [documentation](https://deck.gl/docs/api-reference/geo-layers/tile-layer#indexing-system). In fact, Fused Workbench runs UDFs on a serverless backend and renders their output on a Deck.gl map.
 :::
 
+
+
+
+#################
+
+For example the following UDF accepts a `gpd.GeoDataFrame` type for the `target_gdf` parameter. 
+
+```python
+import geopandas as gpd
+
+@fused.udf
+def my_udf(target_gdf: gpd.GeoDataFrame=None):
+    return target_gdf
+```
+
+When calling the UDF with a GeoJSON string for the `target_gdf` parameter, Fused will automatically convert the string to a `GeoDataFrame` object.
+
+```python
+import fused
+import geopandas as gpd
+import json
+
+target_geom = json.dumps({"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"Polygon","coordinates":[[[-122.51121183018593,37.77096317381872],[-122.47612122306056,37.77228925202057],[-122.44351531587931,37.77597823096521],[-122.44362991745042,37.7664402812457],[-122.50998289649768,37.76279226591039],[-122.51121183018593,37.77096317381872]]]}}]})
+
+gdf = fused.run(my_udf, target_gdf=target_geom)
+
+```
+
+
+
+
+:::warning
+Note that the parameter must not be named `bbox` because `fused.run` will handle that reserved parameter name in a special way.
+:::
+
+
+For example this function accepts a `bbox` object of `fused.types.Bbox` type, a `table_path` string, and an `n` integer.
+
+```python
+@fused.udf
+
+def udf(
+    # highlight-start
+    bbox: fused.types.Bbox = None, # UDF parameters
+    table_path: str = "", 
+    n: int = 10
+    # highlight-end
+):
+    from utils import table_to_tile
+
+    gdf=table_to_tile(bbox, table=table_path)
+    return gdf
+```
+:::info
+When UDF endpoints are called via HTTP requests argument values are specified with [query parameters](https://www.branch.io/glossary/query-parameters/), which require input parameters to be serializable. As such, Fused needs to know the types to cast them to. Read more about [supported types for UDF parameters](/python-sdk/#typing). 
+:::
+
+The `bbox` argument gives the UDF spatial awareness and users can decide its structure, for convenience - which you can read more about [here](/basics/core-concepts/#the-bbox-object).
+
+When its endpoint is called like so, Fused injects a `bbox` parameter corresponding to a Tile with the `1,1,1` index, resolve `table_path` value as a string and the `n` value as an integer.
+
+```bash
+curl -XGET "https://app.fused.io/server/v1/realtime-shared/$SHARED_TOKEN/run/tiles/1/1/1?table_path=table.shp&n=4"
+```
