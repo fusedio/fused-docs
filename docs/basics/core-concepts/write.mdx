@@ -7,22 +7,21 @@ toc_min_heading_level: 2
 toc_max_heading_level: 4
 ---
 
+A UDF is a Python function that can easily be called via an API endpoint. It can easily be version controlled, shared, and reused across your workflows.
 
-Fused UDFs are **Python functions that run in the cloud**. They are the glue between your data and applications, and you can use them to build powerful workflows and apps to interact with any size dataset. Every UDF is can be shared as a map layer, called as an API endpoint, and deployed in an app. 
+## Why UDFs
 
-## How does it work?
+Fused UDFs are Python functions that run in the cloud. They are the glue between your data and applications, and you can use them to build powerful workflows and apps to interact with any size dataset. Every UDF is can be shared as a map layer, called as an API endpoint, and deployed in an app.
 
-You can write and run UDFs on the Fused [Workbench](/workbench/) browser IDE or in any Python environment using the [Fused Python SDK](/python-sdk/). 
+You can write and run UDFs on the Fused Workbench browser IDE or in any Python environment using the Fused Python SDK.
 
 As soon as you save a UDF Fused creates an API endpoint for it and, when an app calls the endpoint, Fused runs the UDF code on a serverless worker pool and returns the function output. Any tool in your stack can call a Fused UDF with a simple HTTP request to process and fetch data, which enables you to easily create reactive applications that integrate across your stack.
 
 You can think of UDFs as building blocks to create workflows and integrations - without the devops or managing infrastructure. They integrate with your most important apps and can call each other (sequentially and in parallel) to assemble into complex workflows.
 
-{/* ![alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/ecosystem_diagram.png) */}
 
-## UDF structure
 
-A UDF is just a Python function. Keep these key components in mind as you write a UDF.
+## UDF Structure
 
 
 import ImageAnatomy from '/img/udfanatomy.png';
@@ -32,7 +31,7 @@ import ImageAnatomy from '/img/udfanatomy.png';
 </div>
 
 
-
+ Keep these key components in mind as you write a UDF.
 - Decorate the function with the [`@fused.udf`](/basics/core-concepts/write/#fusedudf-decorator) decorator
 - [Declare the function](/basics/core-concepts/write/#function-declaration) and, optionally, cache intermediate outputs with [`@fused.cache`](/basics/core-concepts/write/#fusedcache-decorator)
 - Set [typed parameters](/basics/core-concepts/write/#typed-parameters) to dynamically execute code based on arguments
@@ -42,7 +41,7 @@ import ImageAnatomy from '/img/udfanatomy.png';
 
 ### `@fused.udf` decorator
 
-The main thing to know is that all you need to create a UDF is to decorate a Python function with `@fused.udf`. This supercharges the function with the ability to run its code in the Fused serverless cloud that automatically provisions and scales compute resources.
+First decorate a Python function with `@fused.udf`. This makes the function run in the Fused cloud, which can provision and scale compute. 
 
 ```python
 # highlight-next-line
@@ -54,7 +53,7 @@ def udf():
 
 ### Function declaration
 
-The next step is to structure the function's business logic. It can import standard Python libraries and utility modules, run code to interact with upstream data sources, and return an object which will be the UDF's output.
+The next step is to structure the function's code. It can import Python libraries, run code to interact with upstream data sources, and return an object. 
 
 To illustrate, this UDF is a function called `udf` that returns a `GeoDataFrame`. 
 
@@ -81,69 +80,27 @@ Note that import statements must be placed within the function declaration to en
 
 #### `@fused.cache` decorator
 
-You can cache the output of slow sections of code, such as downloading or processing data, so they only need to run once. Just place slow code inside a helper function decorated with `@fused.cache`, then assign the function call to a variable. The output will persist across runs and enable quick iteration on downstream code without having to wait for the slow code to run each time.
+Fused executes UDFs sequentially, so caching the results of slow computations can save time. Use the @fused.cache decorator to persist a function's output across runs, enabling faster iteration and avoiding repeated execution of slow code. For more details, refer to the [caching documentation](/basics/core-concepts/advanced/content-management/cache/).
 
-:::tip
-
-On the [Workbench UDF Editor](/workbench/map-builder/udf-editor/), every time you modify a UDF's code, Fused automatically runs the code from top to bottom. This reactive execution model keeps code and outputs consistent, and gives you immediate feedback. However, you likely don't want to wait for slow sections of code to run each time, which is where caching comes in handy.
-
-:::
-
-
-##### Basic caching
-
-To illustrate, this function accepts an argument and a keywork argument. When the function is called to set `output_1` and `output_2`, Fused caches the output of each call as separate objects. That way, the UDF only runs the function once for each argument combination.
 
 ```python
 @fused.udf
 def udf(bbox):
-    import pandas as pd
 
     @fused.cache
-    def sample_function(name, company="Fused"):
-        return f"{name}, at {company}, cached this function's output."
+    def sample_function(n):
+        return ...
 
-    output_1 = sample_function("Sina")
-    output_2 = sample_function("Plinio", company="Fused.io")
-    return pd.DataFrame([output_1, output_2], columns=["output"])
+    return sample_function(n=1)
 
 ```
 
-##### Advanced caching
 
-At this point, ony might ask: if UDFs run for each tile in the viewport, how does Fused distinguish the cache for each tile? When working with [Tile-based execution](/basics/core-concepts/call/#tile) you should pass the [`bbox` object](/basics/core-concepts/call/#the-bbox-object) as a parameter to the cached function so each Tile's output is unique.
 
-:::tip
-
-Fused caches the function's output using a unique hash identifier generated based on a combination of the function's code, the value of its parameters, and the reserved `_cache_id` argument (which you may set). 
-
-:::
-
-This example shows how:
-- Passing the `bbox` object to the cached function makes the output unique to each tile.
-- A custom caching directory can be set with the optional `path` parameter.
-- The cache for the function can be reset by running the UDF once with the optional `reset` parameter set to `True`.
-- A unique `_cache_id` string identifier can optionally be passed to the function.
-
-```python
-@fused.udf
-def udf(bbox):
-    import pandas as pd
-    import numpy as np
-
-    @fused.cache(path='optional_cache_dir', reset=True)
-    def sample_function(bbox, name, company="Fused"):
-        x,y,z = bbox.iloc[0][['x', 'y', 'z']]
-        return f"{name}, at {company}, cached this function's output for the tile {z} {x} {y}."
-
-    seed = np.random.randn()
-    output_1 = sample_function(bbox, "Plinio", company="Fused.io", _cache_id=str(seed))
-    return pd.DataFrame([output_1], columns=["output"])
-```
 
 ### Typed parameters
 
-UDFs can optionally accept parameters and dynamically execute code based on those parameters. Applications calling the UDF can pass arguments to the UDF to dynamically change its behavior. When writing a UDF, you can explicitly type the parameters to ensure the UDF receives the correct data type.
+UDFs can optionally accept parameters and execute code based on those parameters. Applications calling the UDF can pass arguments to the UDF to change its behavior. When writing a UDF, you can explicitly type the parameters to ensure the UDF receives the correct data type.
 
 
 #### Explicit Typing
