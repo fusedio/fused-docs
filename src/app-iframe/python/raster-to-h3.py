@@ -1,5 +1,4 @@
 import streamlit as st
-import fused_app
 
 st.title("Raster to H3")
 
@@ -35,8 +34,10 @@ lat, lng = ASSETS[asset]['latlng']
 
 # Imports
 import micropip
+await micropip.install('requests')
 await micropip.install('geopandas')
 await micropip.install('pydeck')
+import fused_app
 import pydeck as pdk
 
 # Define a layer to display on a map

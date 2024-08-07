@@ -1,4 +1,3 @@
-import fused_app
 import streamlit as st
 
 st.header("Buffer analysis")
@@ -22,6 +21,7 @@ await micropip.install('requests')
 await micropip.install('pydeck')
 await micropip.install('xarray')
 await micropip.install('yarl')
+import fused_app
 import pydeck as pdk
 
 # Run UDF
