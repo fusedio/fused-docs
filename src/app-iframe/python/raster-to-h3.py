@@ -1,7 +1,5 @@
-import pydeck as pdk
 import streamlit as st
 import fused_app
-import geopandas as gpd
 
 st.title("Raster to H3")
 
@@ -33,6 +31,13 @@ def load_data(asset, h3_size=5):
 
 df = load_data(set_asset, h3_size=h3_size)
 lat, lng = ASSETS[asset]['latlng']
+
+
+# Imports
+import micropip
+await micropip.install('geopandas')
+await micropip.install('pydeck')
+import pydeck as pdk
 
 # Define a layer to display on a map
 layer = pdk.Layer(
