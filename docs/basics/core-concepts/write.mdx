@@ -24,7 +24,7 @@ import ImageAnatomy from '/img/udfanatomy.png';
 - Decorate the function with the [`@fused.udf`](/basics/core-concepts/write/#fusedudf-decorator) decorator
 - [Declare the function](/basics/core-concepts/write/#function-declaration) and, optionally, cache intermediate outputs with [`@fused.cache`](/basics/core-concepts/write/#fusedcache-decorator)
 - Set [typed parameters](/basics/core-concepts/write/#typed-parameters) to dynamically execute code based on arguments
-- Import [utility functions](/basics/core-concepts/#c-udf-parameters) to modularize code
+- Import [utility modules](/workbench/map-builder/udf-editor/#module) to modularize code
 - Set a vector table or raster as a [Return object](/basics/core-concepts/#d-return-object)
 
 
@@ -66,62 +66,32 @@ Place import statements inside the function declaration to ensure they are inclu
 Fused UDFs support [Python function annotations](https://peps.python.org/pep-3107/), which allow you to specify argument types in the function signature. This is crucial for parameters serialized in HTTP calls to resolve to the intended types. These annotations ensure that each argument is resolved to the specified type to prevent type-related errors. 
 
 #### Supported types
+
 Supported native Python types are `int`, `float`, `bool`, `list`, `dict`, and `list`. Fused also supports the geospatial types `fused.types.Bbox`, `fused.types.TileXYZ`, and `fused.types.TileGDF` - which should be assigned to the first parameter of the function to be considered ([read more](/basics/core-concepts/call/#bbox-object-types)). Any parameters that are not annotated with a specific type are handled as strings by default.
 
-#### `gpd.GeoDataFrame` type
+#### `pd.DataFrame` as JSON
 
-You can pass a GeoJSON string and have the UDF interpret it as a `GeoDataFrame`. This is helpful to pass geometries as seriarized UDF parameters in HTTPS calls, so they can directly be used as a `GeoDataFrame` type parameter. 
+DataFrames can be passed as JSON strings and have the UDF interpret them as a `pd.DataFrame`. The same applies for GeoJSON strings, which can be passed as a `gpd.GeoDataFrame` type parameter. This is helpful to pass tables and geometries as seriarized UDF parameters in HTTPS calls, so they can directly be used as a typed parameter. 
 
 
+#### Reserved parameters
+
+The following are reserved parameter names: `x`, `y`, `z`, `bounds`, `lat`, and `lng`. `fused.run` will handle them in a special way.
 
 ### `utils` Module
 
-When writing a UDF it's important to organize its code into modular, reusable components that UDFs can reference. A UDF can import [utility modules](workbench/map-builder/udf-editor/#module) from the [local context](/workbench/map-builder/udf-editor/#from-local) or from a [GitHub repo using `fused.load`](/workbench/map-builder/udf-editor/#from-github).
+When writing UDFs it's important to modularize code to make it readable, maintainable, and reusable. 
+
+Every UDF has a `utils` module file which can be edited in the ["Module" tab](/workbench/map-builder/udf-editor/#module-tab) of the Workbench UDF editor. The UDF can load these functions with an import statement such as: `from utils import your_function`. 
 
 
-```python
-@fused.udf
-def udf( 
-    bbox: fused.types.Bbox = None,
-    table_path: str = "s3://fused-asset/infra/building_msft_us/", 
-):
-    # highlight-start
-    utils = fused.load( # <- Utility functions
-        "https://github.com/fusedio/udfs/tree/eda5aec/public/common/"
-        ).utils 
+### `return` object
 
-    # highlight-end
-    gdf=utils.table_to_tile(bbox, table=table_path)
-    return gdf
-```
-
-
-
-### Return object
-
-Like with a regular Python function, the UDF return statement makes a UDF function exit and hand back the return object to its caller. The return object must be a single vector table or raster object.
-
-```python
-@fused.udf
-def udf(bbox: fused.types.Bbox = None):
-    # highlight-start
-    return bbox # <- Return object
-    # highlight-end
-```
-
-:::info
-
-Fused constrains the return object to be a _single_ vector table or raster object because:
-- UDF outputs must be serializable so they can be transferred via HTTP calls
-- Industry standard mapping services expect to receive a single vector or raster object
-
-:::
-
-
+Like with a regular Python function, the UDF return statement makes a UDF function exit and hand back the return object to its caller. Fused expects spatial outputs in `EPSG:4326` - `WGS84` CRS. If the returned object has a different CRS Fused will make a best effort to convert it.
 
 #### Vector
 
-Vectors represent real-world features with points, lines, and polygons. Fused accepts the following Vector return types:
+Fused accepts the following Vector table return types:
 
 - `gpd.GeoDataFrame`
 - `pd.DataFrame`
@@ -129,48 +99,42 @@ Vectors represent real-world features with points, lines, and polygons. Fused ac
 - `pd.Series`
 - `shapely geometry`
 
-Fused expects all spatial data in `EPSG:4326` - `WGS84` coordinates, using Latitude-Longitude units in decimal degrees. If the CRS of the returned object is not in `EPSG:4326` CRS, Fused will make a best effort to convert it - so it's recommended that UDFs returning vector tables do so in the `EPSG:4326` CRS.
-
 #### Raster
 
-Raster data is comprised of pixels with values, typically arranged in a grid. Rasters can have one or multiple layers.
-
-Fused accepts the following Raster return types
+Fused accepts the following Raster return types:
 
 - `numpy.ndarray`
 - `xarray.DataArray`
 - `datashader.transfer_functions.Image`
-- `io.BytesIO` (including png images)
+- `io.BytesIO`
 
-The returned raster object must have a geospatial component. This tells Fused where on the map to render it as an image. For example, this UDF returns an `xarray` `DataArray`, which inherently contains coordinates that tell Fused where on the map to place it. Verify this by printing the object and its type.
+The returned raster object must have metadata of its spatial extent on the map, which objects like `xarray.DataArray` contain. For example:
 
 ```python
-import fused
 @fused.udf
-def udf(lat=-10, lng=30, dataset='general', version='1.5.4'):
+def udf():
     import rioxarray
 
-    lat2= int(lat//10)*10
-    lng2 = int(lng//10)*10
-    cog_url = f"s3://dataforgood-fb-data/hrsl-cogs/hrsl_{dataset}/v1.5/cog_globallat_{lat2}_lon_{lng2}_{dataset}-v{version}.tif"
+    cog_url = f"s3://dataforgood-fb-data/hrsl-cogs/hrsl_general/v1.5/cog_globallat_10_lon_30_general-v1.5.4.tif"
 
     rds = rioxarray.open_rasterio(
         cog_url,
         masked=True,
         overview_level=4
     )
- 
-    # Show the output type
-    print(type(rds))
 
     # Inspect the output object
+    print(type(rds))
     print(rds)
 
     return rds
 ```
 
 :::tip
-When returning a raster object that doesn’t have spatial metadata, like a numpy array, the UDF must return the object's *bounds* to tell Fused where to place it on the map. For example: 
+
+Fused constrains the output of calling UDFs to be a _single_ vector table or raster object.
+
+As a special case, a UDF that returns a raster object without spatial metadata, like a numpy array, must also include the object's *bounds*. These are specified with a `GeoDataFrame` or array with the structure `[xmin, ymin, xmax, ymax]` as a second return object, separated by a coma. For example: 
 
 ```python
 @fused.udf
@@ -179,30 +143,43 @@ def udf(bbox: fused.types.Bbox=None):
     return np.array([[…], […]]), bbox
 ```
 
-If you forget to pass the bounds, Fused will default its bounds to `(-180, -90, 180, 90)` and the output image will expand to the size of the globe.
+If the bounds are not present, they default to `(-180, -90, 180, 90)`.
 :::
 
-The print statements of the UDF above should display the following in the `stdout` box, which shows the layer value and coordinates of the `DataArray` object.
 
-```text
-<class 'xarray.core.dataarray.DataArray'>
-<xarray.DataArray (band: 1, y: 1126, x: 1126)>
-[1267876 values with dtype=float64]
-Coordinates:
-  * band         (band) int64 1
-  * x            (x) float64 30.0 30.01 30.02 30.03 ... 39.97 39.98 39.99 40.0
-  * y            (y) float64 -0.0001389 -0.009028 -0.01792 ... -9.991 -10.0
-    spatial_ref  int64 0
-Attributes:
-    AREA_OR_POINT:  Area
-    scale_factor:   1.0
-    add_offset:     0.0
+## Saving UDFs
+
+### UDF anatomy
+
+UDFs downloaded from Workbench or saved locally are formatted as a directory of associated files containing the UDF's code, utility modules, and metadata, and `README.md`. 
+
+```
+└── Sample_UDF
+    ├── README.MD       # Description and metadata
+    ├── Sample_UDF.py   # UDF code
+    ├── meta.json       # Fused metadata
+    └── utils.py        # Utility module
 ```
 
-:::tip
-💡 There's 2 recommended ways to control the transparency of raster images.
+### Methods
 
-  1. In RGB images, the color black (0,0,0) is automatically set to full transparency.
-  2. If a 4 channel array is passed, i.e. RGBA, the value of the 4th channel is the transparency.
-:::
+To save UDF to a local filesystem with the name `Sample_UDF`:
+
+```python
+import fused
+
+@fused.udf
+def my_udf():
+    return "Hello from Fused!"
+
+# Save locally
+my_udf.to_directory('Sample_UDF')
+```
+
+To save UDFs to the Fused cloud:
+
+```python
+# Upload the UDF to the cloud
+my_new_udf.to_fused()
+```
 
