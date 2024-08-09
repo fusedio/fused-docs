@@ -1,5 +1,3 @@
-import fused_app
-import pydeck as pdk
 import streamlit as st
 
 st.header("Point in Polygon: Overture + NSI")
@@ -34,7 +32,11 @@ url_overture = f'https://www.fused.io/server/v1/realtime-shared/c8679490a7c13017
 url_out = f'https://www.fused.io/server/v1/realtime-shared/c8679490a7c130178e2781a45f4090208c9bcd8d8d7572532c4c39c4d0914467/run/tiles/{tile_url}?dtype_out_vector=geojson&return_object=end_result&target_metric={target_metric}'
 
 
-
+# Imports
+import micropip
+await micropip.install('geopandas')
+await micropip.install('pydeck')
+import pydeck as pdk
 
 
 layers=[]

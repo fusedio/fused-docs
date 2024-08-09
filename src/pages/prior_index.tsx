@@ -35,6 +35,7 @@ export default function Home(): JSX.Element {
       title={`Hello from ${siteConfig.title}`}
       description="Description will go into a meta tag in <head />">
       <HomepageHeader />
+      <h1>HIiiiiiiiiii</h1>
       <main>
         <HomepageFeatures />
       </main>

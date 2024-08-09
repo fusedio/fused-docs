@@ -5,11 +5,12 @@ export const PYARROW_URL =
 export const DEFAULT_APP_REQUIREMENTS = [
   // Needed by fused_app.py:
   PYARROW_URL,
+  "micropip",
   "pyodide-unix-timezones", // needed by pyarrow
-  "geopandas",
-  "requests",
-  "xarray",
-  "yarl",
+  // "geopandas",
+  // "requests",
+  // "xarray",
+  // "yarl",
   // Commonly used in product:
-  "pydeck",
+  // "pydeck",
 ];

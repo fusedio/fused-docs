@@ -1,0 +1,85 @@
+---
+id: raster-h3
+title: Raster to H3
+tags: [raster, H3]
+sidebar_position: 2
+# unlisted: true
+---
+
+# Raster to H3: A Deep Dive
+
+Transforming raster data to the H3 grid system is a powerful technique that offers significant advantages in geospatial data analysis and processing. This conversion process uses DuckDB to aggregate numpy arrays by H3 indices. It opens up new possibilities for efficient raster analysis.
+
+
+## Application
+
+### Earth Observation imagery analysis
+
+- Agricultural parcels and field-level data
+- Global environmental
+- Land cover and land use change detection
+
+
+## Implementing Raster to H3
+
+
+### Implementation steps
+
+1. Load and chunk the raster into manageable parts
+2. Optionally coarsen the data to reduce resolution and speed up processing
+3. Bin the raster data to H3 indices based on points
+4. Aggregate the data by H3 indices
+
+
+
+### Example UDF
+
+```python
+@fused.udf
+def udf(
+    tiff_path: str = "s3://fused-asset/gfc2020/JRC_GFC2020_V1_N60_E20.tif",
+    chunk_id: int = 0,
+    x_chunks: int = 1,
+    y_chunks: int = 1,
+    coarsen: int = 100,
+    h3_size=6,
+):
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.geometry import box
+    from utils import chunked_tiff_to_points, run_query
+
+    df_tiff = chunked_tiff_to_points(
+        tiff_path, i=chunk_id, x_chunks=x_chunks, y_chunks=y_chunks, coarsen=coarsen
+    )
+
+    qr = f"""
+        SELECT h3_latlng_to_cell(lat, lng, {h3_size}) AS hex, ARRAY_AGG(data) as agg_data
+        FROM df_tiff
+        group by 1
+      --  order by 1
+
+    """
+
+    df = run_query(qr, return_arrow=True)
+    df = df.to_pandas()
+    df["agg_data"] = df.agg_data.map(lambda x: pd.Series(x).sum())
+    df["hex"] = df["hex"].map(lambda x: hex(x)[2:])
+    df["metric"] = df.agg_data / df.agg_data.max() * 100
+    return df
+
+```
+
+
+### Scaling up with Fused
+
+
+## Conclusion
+
+
+## Demo app [beta]
+
+import Iframe from "@site/src/components/Iframe";
+import RASTER_TO_H3_CODE from "@site/src/app-iframe/python/raster-to-h3.py";
+
+<Iframe id="iframe-1" code={RASTER_TO_H3_CODE} />

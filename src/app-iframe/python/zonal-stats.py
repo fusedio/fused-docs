@@ -1,4 +1,3 @@
-import pydeck as pdk
 import streamlit as st
 
 st.header('Zonal Stats')
@@ -18,6 +17,11 @@ Users can interact with the checkboxes on the sidebar to toggle show/hide:
 You'll notice that the building footprints are colored based on the mean pixel value of the raster within the polygon. The color scale ranges from dark (low values) to bright (high values). This visualization helps identify buildings with higher or lower height based on the average pixel values. 
 
 """)
+
+# Imports
+import micropip
+await micropip.install('pydeck')
+import pydeck as pdk
 
 # Create map
 lat, lng = 40.76965, -73.990094

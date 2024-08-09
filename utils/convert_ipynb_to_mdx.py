@@ -168,9 +168,9 @@ def create_imports() -> str:
     Returns:
         str: MDX formatted imports.
     """
-    link_btn = "../../../../src/components/LinkButtons.jsx"
-    cell_out = "../../../../src/components/CellOutput.jsx"
-    plot_out = "../../../../src/components/Plotting.jsx"
+    link_btn = "@site/src/components/LinkButtons.jsx"
+    cell_out = "@site/src/components/CellOutput.jsx"
+    plot_out = "@site/src/components/Plotting.jsx"
     imports = f'import LinkButtons from "{link_btn}";\n'
     imports += f'import CellOutput from "{cell_out}";\n'
     imports += f'import {{BokehFigure, PlotlyFigure}} from "{plot_out}";\n'
