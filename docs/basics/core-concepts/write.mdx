@@ -16,24 +16,24 @@ import ImageAnatomy from '/img/udfanatomy.png';
 </div>
 
 
- Keep these key components in mind as you write a UDF.
-- Decorate the function with the [`@fused.udf`](/basics/core-concepts/write/#fusedudf-decorator) decorator
-- [Declare the function](/basics/core-concepts/write/#function-declaration)
-- Set [typed parameters](/basics/core-concepts/write/#typed-parameters) to dynamically execute code based on arguments
-- Import [utility modules](/basics/core-concepts/write/#utils-module) to modularize code
-- Set a vector table or raster as a [return object](/basics/core-concepts/write/#return-object)
-- How to [save UDFs](/basics/core-concepts/write/#save-udfs) 
+ Follow these steps to write a UDF.
+- Decorate a function with [`@fused.udf`](/basics/core-concepts/write/#fusedudf-decorator)
+- [Declare the function](/basics/core-concepts/write/#function-declaration) logic
+- Set [typed parameters](/basics/core-concepts/write/#typed-parameters) to dynamically run based on inputs
+- Import [utility modules](/basics/core-concepts/write/#utils-module) and modularize
+- [Return](/basics/core-concepts/write/#return-object) a vector table or raster
+- [Save](/basics/core-concepts/write/#save-udfs) the UDF
 
 ## `@fused.udf` decorator
 
-First decorate a Python function with `@fused.udf`. This makes the function run on the Fused cloud, which can provision and scale compute. 
+First decorate a Python function with `@fused.udf`. This makes the function run on the Fused cloud, which provisions and scales compute. 
 
 
 ## Function declaration
 
-The next step is to structure the function's code. It can import Python libraries, run code to interact with upstream data sources, and return an object. Place import statements inside the function declaration to ensure they are included wherever the function is executed.
+Now structure the function's code. Import Python libraries, interact with upstream data sources, and return an object. Import statements go in the function so they come wherever the function runs.
 
-To illustrate, this UDF is a function called `udf` that returns a `gpd.GeoDataFrame` object. 
+This UDF is called `udf` and returns a `pd.DataFrame` object. 
 
 
 ```python
@@ -42,37 +42,42 @@ To illustrate, this UDF is a function called `udf` that returns a `gpd.GeoDataFr
 # highlight-start
 def udf(bbox: fused.types.Bbox = None, name: str = "Fused"): # <- Function declaration
     import pandas as pd
-    df = pd.DataFrame({'message': [f'Hello {name}!']})
-    print(df)
+
+    @fused.cache # <- Cache decorator
+    def structure_output(name):
+        return pd.DataFrame({'message': [f'Hello {name}!']})
+    
+    df = structure_output(name)
     return df
 # highlight-end
 ```
 
-When writing a UDF you can use the [@fused.cache](/basics/core-concepts/content-management/cache/) decorator to persist a function's output across runs, helping with faster code development.
+The [@fused.cache](/basics/core-concepts/content-management/cache/) decorator persists a function's output across runs so you move faster. 
 
 
 ## Typed parameters
 
-Fused UDFs support [Python function annotations](https://peps.python.org/pep-3107/), which allow you to specify argument types in the function signature. This is crucial for parameters serialized in HTTP calls to resolve to the intended types. These annotations ensure that each argument is resolved to the specified type to prevent type-related errors. 
+UDFs support [Python function annotations](https://peps.python.org/pep-3107/) to specify argument types. Parameters serialized in HTTP calls resolve to intended types. These ensure arguments resolve to specified types at run time.
 
 ### Supported types
 
-Supported native Python types are `int`, `float`, `bool`, `list`, `dict`, and `list`. Any parameters that are not annotated with a specific type are handled as strings by default.
+Fused supports the Python types `int`, `float`, `bool`, `list`, `dict`, and `list`. Parameters without a specified type are handled as strings by default.
 
-Fused also supports the geospatial types `fused.types.Bbox`, `fused.types.TileXYZ`, and `fused.types.TileGDF`. When one of these types is assigned to the first parameter of the function ([read more](/basics/core-concepts/filetile/#the-bbox-object)) Fused Workbench will handle the UDF as a "Tile" otherwise as a "File". 
+The geospatial types `fused.types.Bbox`, `fused.types.TileXYZ`, and `fused.types.TileGDF` on the [first parameter](/basics/core-concepts/filetile/#the-bbox-object) tell Workbench to run the UDF as a [Map Tile or File](/basics/core-concepts/filetile/).
 
 ### `pd.DataFrame` as JSON
 
-DataFrames can be passed as JSON strings and have the UDF interpret them as a `pd.DataFrame`. The same applies for GeoJSON strings, which can be passed as a `gpd.GeoDataFrame` type parameter. This is helpful to pass tables and geometries as seriarized UDF parameters in HTTPS calls, so they can directly be used as a typed parameter. 
-
+Pass tables and geometries as seriarized UDF parameters in HTTPS calls. DataFrames passed as JSON strings show up as a `pd.DataFrame` when typed. GeoJSON strings as a `gpd.GeoDataFrame`. 
 
 ### Reserved parameters
 
-The following are reserved parameter names: `x`, `y`, `z`, `bounds`, `lat`, and `lng`. `fused.run` will handle them in a special way.
+Fused handles reserved parameters in special ways: `x`, `y`, `z`, `bounds`, `lat`, and `lng`. `fused.run`.
 
 ## `utils` Module
 
-When writing UDFs it's important to modularize code to make it readable, maintainable, and reusable. Every UDF has a `utils` Module file which can be edited in the ["Module" tab](/workbench/map-builder/udf-editor/#module-tab) of the Workbench UDF editor. The UDF can load these functions with an import statement such as: 
+Modularize code to make it readable, maintainable, and reusable. 
+
+Define a UDF's `utils` Module file in the Workbench ["Module" tab](/workbench/map-builder/udf-editor/#module-tab) and import it in the UDF.
 
 ```python
 from utils import function
@@ -80,21 +85,23 @@ from utils import function
 
 ### Import utils from other UDFs
 
-UDFs can also use `fused.load` to import `utils` Module from other UDFs saved in the [UDFs GitHub repo](https://github.com/fusedio/udfs/tree/main) or a private repository (see how to [connect a GitHub account](/basics/core-concepts/content-management/git/)). 
+UDFs import the `utils` Module from other UDFs with `fused.load` in the [UDFs GitHub repo](https://github.com/fusedio/udfs/tree/main) or [private GitHub repos](/basics/core-concepts/content-management/git/). Here the commit SHA `05ba2ab` pins `utils` to specific commit for version control.
 
 
 ```python
-utils = fused.load('https://github.com/fusedio/udfs/tree/05ba2ab/public/common/')
+utils = fused.load(
+    "https://github.com/fusedio/udfs/tree/05ba2ab/public/common/"
+)
 ```
-Note how the commit SHA `05ba2ab` in the URL ensures that UDF is loaded from a specific commit, providing version control.
 
-Modules in the public UDFs repo can also be imported using `fused.utils.UDF_NAME`, for example:
+
+Modules in the public UDFs repo are imported from `fused.utils`.
 
 ```python
 utils = fused.utils.common
 ```
 
-`utils` Module can also be imported from other UDFs in a user's account as such:
+`utils` Module are imported from other UDFs in a user's account.
 
 ```python
 utils = fused.load("your@email.com/my_udf").utils
@@ -102,7 +109,7 @@ utils = fused.load("your@email.com/my_udf").utils
 
 ## `return` object
 
-The return object can be either a table or an array. For table, Fused accepts the following table return types: `pd.DataFrame`, `pd.Series`, `gpd.GeoDataFrame`,  `gpd.GeoSeries`, and `shapely geometry`. For array: `numpy.ndarray`, `xarray.DataArray`, and `io.BytesIO`. For returning geospatial data please see ["Tile" & "File"](/basics/core-concepts/filetile/).
+UDFs return either a table or an array. Tables can be: `pd.DataFrame`, `pd.Series`, `gpd.GeoDataFrame`,  `gpd.GeoSeries`, and `shapely geometry`. Arrays: `numpy.ndarray`, `xarray.DataArray`, and `io.BytesIO`. To return geospatial data see ["Tile" & "File"](/basics/core-concepts/filetile/).
 
 ## Save UDFs
 
@@ -116,5 +123,5 @@ UDFs downloaded from Workbench or saved locally are formatted as a `.zip` file c
     └── utils.py        # `utils` Module
 ```
 
-When writing a UDF in a Python environment outside of Workbench, you can use the following methods to save UDFs. You can save UDF to a local filesystem with the `my_udf.to_directory('Sample_UDF')`. Similarly, you can save UDFs to the Fused cloud with `my_udf.to_fused()`.
+When outside of Workbench save UDF to your local filesystem with `my_udf.to_directory('Sample_UDF')` and to the Fused cloud with `my_udf.to_fused()`.
 
