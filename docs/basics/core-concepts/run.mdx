@@ -1,0 +1,118 @@
+---
+id: run
+title: Run UDFs
+tags: [write, endpoints, api, http, file, tile]
+sidebar_position: 2
+toc_min_heading_level: 2
+toc_max_heading_level: 4
+---
+
+Every UDF has a secure HTTP endpoint which can be called via a [web request](/basics/core-concepts/run/#via-http-requests) or [`fused.run`](/basics/core-concepts/run/#fusedrun). This guide covers both approaches and how they can be configured. These endpoints can be accessed with a [shared token](/basics/core-concepts/run/#shared-token) or [private token](/basics/core-concepts/run/#private-token). The shared tokens can be created and revoked [via workbench] and [Fused Python SDK]. 
+
+
+## `fused.run`
+
+The `fused.run` function runs the UDF specified in its first argument, and passes subsequent arguments to the UDF. The UDF can be specified by name, using a shared token, or directly passing a UDF object. The UDF object can be loaded using `fused.load` or declared in your code. 
+
+### Ways to run a UDF
+
+**Using public id:** Run a public UDF by specifying its public id. This does not require authentication.
+
+```python
+fused.run('fsh_PC_File_Example')
+```
+
+**Using shared token:** Run using a [shared token](...). This does not require authentication and runs on the UDF account that provisioned the shared token. Read more about [shared tokens](/).
+
+```python
+fused.run('fsh_aJHN0awSfHLpYYinPSLYC')
+```
+
+
+**Using name with private token:** Run by specifying the UDF's name and owner's user account. This requires authentication and access to the referenced UDF.
+
+```python
+fused.run("user@fused.io", "Overture_Maps")
+```
+
+**Using GitHub with private token:** Run a UDF from a GitHub repository by specifying the UDF's URL in a GitHub repo. This requires authentication and access to the referenced UDF.
+
+
+```python
+udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/REM_with_HyRiver/")
+fused.run(udf)
+```
+
+**Using UDF object:** Declare or load the UDF then run it by passing the udf object. This requires authentication unless the UDF is ran locally.
+
+```python
+@fused.udf
+def my_udf():
+    return 
+
+fused.run(my_udf, param=a)
+```
+
+The UDF object can also be loaded from a user account using `fused.load`.  
+
+```py
+udf = fused.load("username@fused.io/REM_with_HyRiver")
+```
+
+
+### Execution engines
+
+`fused.run` can run the UDF in various execution modes, as specified by the `engine` parameter either local, realtime, or batch mode. 
+- `local`: Run in the current process. This is set by default.
+- `realtime`: Run in the serverless Fused cloud engine.
+- `batch`: Run in a server in the Fused cloud. Best for long-running jobs.
+
+Fused can also run UDFs asynchronously, which you can read more about [here](/basics/core-concepts/advanced-execution/async/).
+
+
+
+## HTTP requests
+
+In Workbench, you can create an HTTP endpoint for a UDF using the "Snippets" button located in the [UDF settings tab](/workbench/map-builder/udf-editor/#share--snippets). This button generates a unique URL to call the UDF via HTTP requests. The URL is scoped to that UDF only and, if necessary, it can be revoked to disable access. The same can be done with the [Fused Python SDK](/python-sdk/).
+
+
+
+
+### Shared token
+
+To run a UDF via HTTP request, generate a [signed UDF endpoint](/basics/core-concepts/#generate-endpoints-with-workbench) then modify the provided URL. 
+
+Structure the URL with the `file` path parameter to run as a single batch operation.
+
+```
+https://www.fused.io/server/v1/realtime-shared/******/run/file?dtype_out_raster=png
+```
+
+To integrate with a tiling service, structure the URL with the `tiles` path paramater, followed by templated `/{z}/{x}/{y}` path parameters. See [Lonboard](/basics/out/lonboard/) for an example.
+
+```
+https://www.fused.io/server/v1/realtime-shared/******/run/tiles/{z}/{x}/{y}?dtype_out_raster=png
+```
+
+### Private token
+
+Calling UDFs with [Bearer authentication](https://swagger.io/docs/specification/authentication/bearer-authentication/) requires an account's [private token](/basics/utilities/#get-an-accounts-private-token). The URL structure to run UDFs with the private token varies slightly, as the URL specifies the UDF's name and the owner's user account. 
+
+```bash
+curl -XGET "https://app.fused.io/server/v1/realtime/fused/api/v1/run/udf/saved/user@fused.io/caltrain_live_location?dtype_out_raster=png" -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+### Specify parameters
+
+When UDF endpoints are called via HTTP requests argument values are specified with [query parameters](https://www.branch.io/glossary/query-parameters/), which require input parameters to be serializable. As such, the UDF should specify the types to cast them to. Read more about [supported types for UDF parameters](/python-sdk/#typing). 
+
+
+### Response data types
+
+The `dtype_out_vector` and `dtype_out_raster` parameters define the output data type for vector tables and raster arrays, respectively. The supported types for table are `parquet`, `geojson`, `json`, `feather`, `csv`, `mvt`, `html`, `excel`, and `xml`. For raster array: `png`, `gif`, `jpg`, `jpeg`, `webp`, `tif`, and `tiff`.
+
+Read how to structure HTTP endpoints to call the UDF as a [Map Tile & File](/basics/core-concepts/filetile/#http-endpoints).
+
+
+### Caching responses
+If enabled in the [UDF settings](/workbench/map-builder/udf-editor/#cache), UDF endpoints will cache outputs for each unique combination of code and parameters. The first call runs and caches the UDF and subsequent calls return the cache. 
