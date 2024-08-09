@@ -23,13 +23,6 @@ st.write("You selected:", ASSETS[asset]['url'])
 
 set_asset = asset_custom or ASSETS[asset]['url']
 
-@st.cache_data
-def load_data(asset, h3_size=5):
-    df = fused_app.run('d3802030c15910e19d180c88d5b4cd50281e110a42846eba2d5b73cfb6e93bdb', tiff_path = asset, h3_size=h3_size)
-    return df
-
-df = load_data(set_asset, h3_size=h3_size)
-lat, lng = ASSETS[asset]['latlng']
 
 
 # Imports
@@ -39,6 +32,16 @@ await micropip.install('geopandas')
 await micropip.install('pydeck')
 import fused_app
 import pydeck as pdk
+
+
+@st.cache_data
+def load_data(asset, h3_size=5):
+    df = fused_app.run('d3802030c15910e19d180c88d5b4cd50281e110a42846eba2d5b73cfb6e93bdb', tiff_path = asset, h3_size=h3_size)
+    return df
+
+df = load_data(set_asset, h3_size=h3_size)
+lat, lng = ASSETS[asset]['latlng']
+
 
 # Define a layer to display on a map
 layer = pdk.Layer(
