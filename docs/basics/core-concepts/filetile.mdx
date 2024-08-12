@@ -16,17 +16,17 @@ import Tag from '@site/src/components/Tag'
 ### <Tag color="#D1E550" fontColor="#141414" >🚧 Under Construction</Tag>
 
 
-UDFs can be called via HTTP endpoints, allowing them to execute and return results. UDFs can be called in two modes: `File` and `Tile`.
+UDFs can be called to [run](/basics/core-concepts/run/) and return results. They support two operation modes: `File` and `Tile`.
 
 ### Map File
 
-In `File` mode, the UDF processes and returns data within a single HTTP response. This is ideal for smaller datasets where entire processing can be efficiently handled in one request.
+In `File` mode, the UDF endpoint handles data processing within a single HTTP response. This is suitable for datasets small enough to fit in memory and processes that can be completed in one request.
 
 ### Map Tile
 
-`Tile` mode is designed to work with geospatial datasets. The UDF processes data in grid-based tiles that conform to [web map tiling schemas](https://wiki.openstreetmap.org/wiki/Slippy_map). Each Tile call may correspond to a manageable spatial segment of a larger dataset.
+`Tile` mode is optimized for geospatial datasets. In this mode, the UDF endpoint processes data in grid-based tiles that align with [web map tiling schemas](https://wiki.openstreetmap.org/wiki/Slippy_map). Each Tile request may correspond to a spatial slice of a larger dataset, making it ideal to work with large datasets that can be spatially filtered. 
 
-When and endpoint is called as a `Tile`, Fused passes `bbox` as the first argument, which the UDF can use to spatially filter the dataset. The `bbox` contains spatial information that defines the corresponding Tile. 
+When a UDF endpoint is called as `Tile`, Fused passes `bbox` as the first argument, which the UDF can use to spatially filter the dataset. The [`bbox` object](/basics/core-concepts/filetile/#bbox-object-types) contains spatial information, such as the Tile's bounds or XYZ index, that defines the corresponding Tile. 
 
 import ImageTile from '@site/static/img/image-tile2.png';
 
@@ -35,7 +35,7 @@ import ImageTile from '@site/static/img/image-tile2.png';
 <img src={ImageTile} alt="File" style={{width: 600}} />
 </div>
 
-This is in contrast with a `File` call, where a single call handles all the data.
+This is in contrast with a `File` call, where a single request processes and returns the complete output within a single HTTP response. In `File` mode, the UDF doesn't receive a `bbox` object and doesn't segment the data into tiles. 
 
 import ImageFile from '@site/static/img/image-file2.png';
 
@@ -46,40 +46,25 @@ import ImageFile from '@site/static/img/image-file2.png';
 
 ## The `bbox` object
 
-A UDF may use the `bbox` parameter to spatially filter a dataset. It enables UDFs to efficiently access datasets in [cloud-optimized data formats](https://guide.cloudnativegeo.org/), which reduces latency and data transfer costs. 
 
-Tile-level spatial filtering supercharges UDFs to process only specific parts of a dataset - based on specified geographic or logical partitions.
-
-:::tip
-The growing popularity of cloud optimized data formats is revolutionizing data processing by eliminating the need for specialized hardware to handle large datasets. For further reading on data formats, refer to resources on: [Cloud Optimized GeoTiff](https://www.cogeo.org/), [Geoparquet](https://geoparquet.org/), and [GeoArrow](https://geoarrow.org/format.html).
-:::
-
-Consequently, Tiled web map clients can call Fused endpoints and dynamically pass a ZXY index for each Tile to render. When a UDF endpoint is called this way - in Tile mode - Fused passes the UDF a `bbox` object as the first parameter. This object is a data structure with information that corresponds to the Tile's bounds and/or XYZ coordinates. The object is named `bbox` by convention, but it's possible to use a different name __as long as it's in the first parameter__.
+A UDF may use the `bbox` parameter to operate on spatial areas defined by the Tile's bounds. This functionality lets Tiled web map clients call Fused endpoints and dynamically define which Tile to render. 
 
 :::tip
 
-If the UDF is called as a File, Fused does not pass a `bbox` parameter. To write UDFs so they can be called in either execution mode, Fused recommends setting the `bbox` as the first parameter, and typing it as a `fused.types.Bbox` with a default value of `None`. This will enable the UDF to run in both as `File` (when `bbox` isn’t necessarily passed) and as a `Tile`. For example:
+A UDF may use the `bbox` parameter to spatially filter a [cloud-optimized dataset](https://guide.cloudnativegeo.org/), which reduces latency and data transfer costs. In these cases, the UDF spatially filters the dataset and loads into memory only the data that falls within the Tile's bounds.
 
-```python
-@fused.udf
-def udf(bbox: fused.types.Bbox=None):
-    ...
-    return ...
-```
-
-When using the Fused Workbench, a UDF can be configured to render as "Auto" so Workbench automatically handles the output as `Tile` if it statically checks that the above types are used in the UDF. Otherwise, it assumes File.
-
-UDFs called via the Fused Python SDK or HTTP requests run as Tile only if a parameter specifies the `Tile` geometry. 
+Common cloud-optimized formats are: [Cloud Optimized GeoTiff](https://www.cogeo.org/), [Geoparquet](https://geoparquet.org/), and [GeoArrow](https://geoarrow.org/format.html).
 :::
+
+
+
 
 ### `bbox` object types
-:::tip
-Read more about [supported types for UDF parameters](/python-sdk/#typing). 
-:::
-For convenience, users can configure the Python type of the `bbox` object. The 3 available types for the `bbox` object are:
+
+The `bbox` object defines the spatial bounds of the Tile, which can be represented as a geometry object or XYZ index. To accomodate different use cases, a user writing a UDF can choose from 3 `bbox` object structures by specifying a type.
 
 #### `fused.types.TileGDF` 
-This is a [geopandas.geodataframe.GeoDataFrame](https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.html) with `x`, `y`, `z`, and `geometry` columns.
+This is a [geopandas.geodataframe.GeoDataFrame](https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.html) with `x`, `y`, `z`, and `geometry` columns. This is the default structure if no type is set.
 
 ```python
 @fused.udf
@@ -116,35 +101,31 @@ def udf(bbox: fused.types.TileXYZ=None):
 >>> Tile(x=328, y=790, z=11)
 ```
 
-
-
-
-
+:::tip
+Read about other supported [UDF parameter types](/basics/core-concepts/write/#typed-parameters). 
+:::
 
 
 ## Call HTTP endpoints
+
+A UDF called via an [HTTP endpoint](/basics/core-concepts/run/#http-requests) may be invoked as `File` or `Tile`, depending on the URL structure.
+
+
 ### File endpoint
 
-By default, a UDF runs as `File` - it executes once and returns a single output that corresponds to the input parameters. The UDF endpoint behaves like a remote file in that calling it returns a single batch of data - but the endpoint also accepts parameters that dynamically influence the UDF's execution. 
+
+This endpoint structure runs a UDF as a `File`.
 
 ```bash
 https://www.fused.io/server/.../run/file?dtype_out_vector=csv
 ```
 
-This enables client applications to make an HTTP request and load the UDF's output data into the tool that makes the call.
-
-:::tip
-Note that files are downloaded entirely - even if the data is requested as a Parquet.
-:::
 
 ### Tile endpoint
 
-The same UDF's API endpoint can be called to run like a `Tile`. This makes it possible for Fused to serve vector or raster tiles into industry standard tools that work with [tiled web maps](https://en.wikipedia.org/wiki/Tiled_web_map) - think Leaflet, Mapbox, Foursquare Studio, Lonboard, and beyond. 
+
+This endpoint structure runs a UDF as a `Tile`. The `{z}/{x}/{y}` templated path parameters correspond to the Tile's XYZ index, which Tiled web map clients dynamically populate.
 
 ```bash
 https://www.fused.io/server/.../run/tiles/{z}/{x}/{y}?&dtype_out_vector=csv
 ```
-
-
-Tiled web map clients can make dozens of simultaneous calls to the Fused API endpoint - one for each tile - and seamlessly stitch the outputs to render a map. Instead of operating on an entire dataset, Fused only acts on the data that corresponds to the area visible in the current viewport.
-
