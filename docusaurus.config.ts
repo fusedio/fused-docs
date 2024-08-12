@@ -205,7 +205,7 @@ const config: Config = {
           {to: '/workbench/map-builder/map/', from: ['/workbench/map/']},
           {to: '/workbench/map-builder/results/', from: ['/workbench/results/']},
           {to: '/workbench/map-builder/styling/', from: ['/workbench/viz-styling/']},
-          {to: '/python-sdk/contribute/#publish-a-udf-to-a-github-repository', from: ['/basics/utilities/#connect-your-github-repository']},
+          {to: '/python-sdk/contribute/#publish-a-udf-to-a-github-repository', from: ['/basics/utilities/connect-your-github-repository']},
         ]   
       }
     ]
