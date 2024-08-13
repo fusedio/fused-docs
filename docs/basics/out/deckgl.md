@@ -85,7 +85,7 @@ Create an `.html` file following this template. This code creates a DeckGL map t
 </html>
 ```
 
-### a. H3HexagonLayer
+### H3HexagonLayer
 
 Use the following snippet to introduce an [`H3HexagonLayer`](https://deck.gl/docs/api-reference/geo-layers/h3-hexagon-layer), which should look similar to this.
 
