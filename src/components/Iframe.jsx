@@ -1,15 +1,17 @@
 import React, { useEffect, useRef } from "react";
 import { DEFAULT_APP_REQUIREMENTS } from "../app-iframe/requirements";
+import { gzip } from "pako";
+import { u8aToBase64 } from "../../utils/buffer";
 
-const URL = "https://staging.fused.io/workbench#app/s/aH4sIAAAAAAAAAw3JMQoCMRAF0KuEqRSWPUBKCy9gaSyG5C8EkkmcmRQi3t0tH%2B9LeRRQpNrnUA%2FmCu6temA7kSSJ%2BV7lGJdENzYEnjO0wQUl2MoZZsdq7bMnutJGiveqig5xo%2Fh8bVTtfv4jKyAUXRd%2Bf156J2R1AAAA";
+const URL_PREFIX = "https://staging.fused.io/workbench#app/s/a";
+const APP_SHARE_PREFIX = "#app/s/a";
 
 export default function Iframe({
   id = "iframe-1",
   code,
-  url = URL,
+  url = URL_PREFIX,
   requirements = DEFAULT_APP_REQUIREMENTS, // Hardcode common requirements, unless specified otherwise
   visible = true,
-  mainPage = false,
 }) {
   const containerRef = useRef(null);
 
@@ -25,43 +27,50 @@ export default function Iframe({
     let iframe = null;
     let resizeObserver = null;
     let intersectionObserver = null;
-    if (!document.getElementById("magic-iframe-" + id)) {
+    if (!document.getElementById("magic-" + id)) {
+      // build url hash with code and requirements
+      let newUrl = new URL(url);
+      const payload = JSON.stringify({
+        code: code,
+        requirements: requirements,
+        isFullScreen: false,
+      });
+      // Note: for very small strings (say <= 500 bytes), it will be less efficient to gzip them
+      const gzipped = gzip(payload);
+      const base64 = u8aToBase64(gzipped);
+
+      newUrl.hash = `${APP_SHARE_PREFIX}${encodeURIComponent(base64)}`;
+
+      // end build url hash with code and requirements
       iframe = document.createElement("iframe");
-      iframe.src = url;
+      iframe.src = newUrl.toString();
       iframe.height = "1050px";
       iframe.width = "100%";
       iframe.scrolling = "no";
-      iframe.id = "magic-iframe-" + id;
+      iframe.id = "magic-" + id;
       document.body.appendChild(iframe);
     } else {
-      iframe = document.getElementById("magic-iframe-" + id);
+      iframe = document.getElementById("magic-" + id);
+      const targetOrigin = new URL(url).origin;
+      function sendMessage() {
+        iframe.contentWindow.postMessage(
+          {
+            appRunner: {
+              code,
+              enabled: true,
+              requirements,
+            },
+          },
+          targetOrigin
+        );
+      }
+      if (visible) {
+        sendMessage();
+      }
     }
 
     iframe.style.position = "absolute";
 
-    function sendMessage() {
-      iframe.contentWindow.postMessage(
-        {
-          appRunner: {
-            code,
-            enabled: true,
-            requirements,
-          },
-        },
-        "*"
-      );
-    }
-
-    function sendMessageWhenReady(event) {
-      if (event.data === "appRunnerListener:ready") {
-        sendMessage();
-      }
-    }
-    if (!mainPage) {
-      sendMessage();
-
-      window.addEventListener("message", sendMessageWhenReady);
-    }
 
     if (visible) {
       const boundingClientRect = containerRef.current.getBoundingClientRect();
@@ -71,7 +80,7 @@ export default function Iframe({
       intersectionObserver = new IntersectionObserver((entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            const iframe = document.getElementById("magic-iframe-" + id);
+            const iframe = document.getElementById("magic-" + id);
             if (iframe) {
               const boundingClientRect = entry.boundingClientRect;
               syncIframeToContainer(boundingClientRect, iframe);
@@ -85,7 +94,7 @@ export default function Iframe({
       resizeObserver = new ResizeObserver((entries) => {
         for (const entry of entries) {
           if (entry.contentBoxSize) {
-            const iframe = document.getElementById("magic-iframe-" + id);
+            const iframe = document.getElementById("magic-" + id);
             if (iframe) {
               const boundingClientRect =
                 containerRef.current.getBoundingClientRect();
@@ -106,7 +115,7 @@ export default function Iframe({
 
     return () => {
       if (visible) {
-        const iframe = document.getElementById("magic-iframe-" + id);
+        const iframe = document.getElementById("magic-" + id);
         if (iframe) {
           iframe.style.left = "-10000px";
           iframe.style.top = "-10000px";
@@ -116,9 +125,6 @@ export default function Iframe({
         }
         resizeObserver.disconnect();
         intersectionObserver.disconnect();
-      }
-      if (!mainPage) {
-        window.removeEventListener("message", sendMessageWhenReady);
       }
     };
   }, []);
