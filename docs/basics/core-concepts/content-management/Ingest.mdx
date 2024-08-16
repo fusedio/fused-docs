@@ -2,11 +2,6 @@
 title: Ingest your own data
 sidebar_label: Ingest
 path: basics/tutorials/ingest/ingest
-nb_path: basics/tutorials/ingest.ipynb
-github: 
-  https://github.com/fusedio/fused-docs/blob/main/docs/basics/tutorials/ingest.ipynb
-colab: 
-  https://githubtocolab.com/fusedio/fused-docs/blob/main/docs/basics/tutorials/ingest.ipynb
 description: Tutorial on how to ingest parquet data with Fused.
 sidebar_position: 4
 ---
@@ -27,31 +22,25 @@ This guide explains how to use `fused.ingest` to geopartition and load vector ta
 ## Ingest data
 
 
-The [`fused.ingest`](/python-sdk/top-level-functions/#ingest) method uploads
-the specified dataset with [fused.upload](/python-sdk/top-level-functions/#upload),
-geopartitions it, and writes a parquet table to S3. Each parquet file has one or more chunks, which are a further level of spatial partitioning. The Fused utility function `table_to_tile` is can read the table and load only relevant chunks that fall within a specified polygon.
+The [`fused.ingest`](/python-sdk/top-level-functions/#ingest) method first uploads
+the table specified by the `input` parameter using [fused.upload](/python-sdk/top-level-functions/#upload). It then geopartitions the table, creating chunks for spatial partitions. Finally, it writes a parquet table to the S3 path specified by the `output` parameter. The resulting parquet table contains a `main` table with the input columns and a `fused` table with metadata.
 
-An ingested dataset contains a `main` table with the original input columns and a `fused` table containing spatial metadata.
+Ingested tables can easily be read with the Fused utility function [`table_to_tile`](https://github.com/fusedio/udfs/blob/9bfb5d0/public/common/utils.py#L90), which reads only chunks that fall within a specified polygon.
 
-The `ingest()` method has many configuration options, which the API documentation
-explains. The following sections cover common ingestion use cases.
+The following sections cover common ingestion use cases.
 
 :::info
 
 If you encounter the message
-`HTTPError: {'detail': 'Quota limit: Number of running instances'}`, please get in touch
-with the Fused team to increase the number of workers allocated to your account.
+`HTTPError: {'detail': 'Quota limit: Number of running instances'}`, please contact Fused to increase the number of workers in to your account.
 
 :::
 
-Pro tip: While Fused is generally used to ingest files, it's also possible to pass the
-`GeoDataFrame` directly to `fused.ingest()`.
+
 
 ### Default ingestion
 
-By default ingestion tries to create a certain number of files (`target_num_files=20`).
-The number of rows per file and chunk are chosen to meet this target. Note that 20 files
-is only a target and the actual number of files generated can vary.
+The following code ingests a table from a URL and writes it to an S3 bucket specified with [`fd://`](/basics/core-concepts/content-management/file-system/#fd-s3-bucket), which is shorthand for the account's bucket.
 
 ```python
 # !pip install fused -q
@@ -73,6 +62,15 @@ While the job is running, follow its logs.
 job_id.tail_logs()
 ```
 
+Once ingestion completes, [`fused.experimental.open_table`](/reference/fused/experimental/#open_table) returns the corresponding `Table` object. Multiple tables may be organized within a `Dataset`.
+
+
+```python
+census_tracts = fused.experimental.open_table(f"fd://census/dc_tract")
+census_tracts
+```
+
+Each table has one or more _files_ and each file has one or more _chunks_, which are spatial partitioned. By default, ingestion will attempt to create the number of files specified by `target_num_files` (default `20`), and the number of rows per file and chunk can be adjusted to meet this number. 
 
 
 ### Ingest multiple files
@@ -145,22 +143,23 @@ job = fused.ingest(
 job_id = job.run_remote()
 ```
 
-Once ingestion completes,
-[`fused.experimental.open_table`](/reference/fused/experimental/#open_table) returns the
-corresponding `Table` object.
 
-The notebook _repr_ provides insight into the Table structure.
 
-- Each table has one or more _files_, which are spatially partitioned.
-- Each file has one or more _chunks_, which are again spatially partitioned within the
-  file.
 
-Optionally, tables can be part of a `Dataset`, which consists of one or more _tables_.
+
+
+### Ingest GeoDataFrame
+
+Ingest a [GeoDataFrame](https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.html) directly.
 
 ```python
-census_tracts = fused.experimental.open_table(f"fd://census/dc_tract")
-census_tracts
+job = fused.ingest(
+    input=gdf,
+    output="s3://sample-bucket/file.parquet",
+).run_remote()
 ```
+
+
 
 ### Ingest non-geospatial
 
