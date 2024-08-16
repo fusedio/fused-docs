@@ -9,60 +9,43 @@ import Tag from '@site/src/components/Tag'
 
 ## <Tag color="#D1E550" fontColor="#141414" >🚧 Under Construction</Tag>
 
-The Fused runtime has two file systems to persist and share artifacts across UDF runs: an S3 bucket and a disk file system. These can be used to save downloaded files, objects created by the UDF, environment variables, and auxiliary files.
-
-:::warning
-Access to the file systems is tightly scoped at the organization level, so files stored in either system can only be accessed by accounts in the same organization. 
-
-Given the flexibility of Fused to run any Python code on files in the file system, users should take precautions standard to working with sensitive files.
-:::
+Fused gives you two file systems to store files and make them accessible to all UDFs: an S3 bucket and a disk. Access is scoped at the organization level.
 
 ## `fd://` S3 bucket
 
-Fused Cloud provisions an S3 bucket for each organization to store files and objects. The bucket is accessible through the `fd://` file system, which provides a unified interface to access files and directories stored within the bucket.
+Fused provisions an S3 bucket namespace for each organization. Use the [File explorer](/workbench/file-explorer/) to browse the bucket and see its full path. It's ideal for large-scale, cloud-native, or globally accessible datasets, such as ingested tables, GeoTIFFs, and files that need to be read outside of Fused.
 
-Fused helper functions access it like an object on S3 with the `fd://` as a shorthand prefix specific to the user account. The full path is shown in the [Fused File explorer](/workbench/file-explorer/). In this image, for example, the bucket path `s3://fused-users/fused/plinio/dir-name/file.parquet` is conveniently aliased as `fd://dir-name/file.parquet`.
+In this image, for example, the bucket path `s3://fused-users/fused/plinio/dir-name/file.parquet` is conveniently aliased as `fd://dir-name/file.parquet`.
 
 
 import ImageCm from '@site/static/img/image-cm.png';
 
 <div style={{textAlign: 'center'}}>
-<img src={ImageCm} alt="File" style={{width: '80%'}} />
+<img src={ImageCm} alt="File" style={{width: '100%'}} />
 </div>
 
 
-
-
-
-For example, to fetch a file:
-```python
-fused.get("fd://dir-name/file.parquet")
-```
-
-Or, for example, to ingest a table:
+Fused utility functions may reference it with the `fd://` alias. For example, to ingest a table:
 ```python
 job = fused.ingest(
     input="https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/06_CALIFORNIA/06/tl_rd22_06_bg.zip",
-    output="fd://dir-name/census/ca_bg_2022/",
+    output="fd://census/ca_bg_2022/",
 ).run_remote()
 ```
 
+
 ## `/mnt/cache` disk
 
-The `/mnt/cache` disk file system is the UDF runtime's local directory that persists across UDF runs. In fact, the `/mnt/cache` directory is where the [`@fused.cache` decorator](/basics/core-concepts/write/#fusedcache-decorator) writes its cache files. Use it to store:
+`/mnt/cache` is a mounted disk to store files shared between UDFs. In fact, it's where [`@fused.cache`](/basics/core-concepts/write/#fusedcache-decorator) and `fused.download` write data. It's ideal when UDFs need low-latency reads for files such as downloaded files, the output of cached functions, access keys, `.env`, and ML model weights. 
 
-- downloaded files
-- the output of cached functions
-- access keys
-- environment variables with `.env` files
-- ML model weight files
-
-You can interact it through UDFs as you would with a local file system. For example, you can list files in the directory with this in a UDF.
+UDFs may interact with the disk as with a local file system. For example, to list files in the directory:
 
 ```python
-import os
+@fused.udf
+def udf():
+    import os
 
-for each in os.listdir('/mnt/cache/'):
-    print(each)
+    for each in os.listdir('/mnt/cache/'):
+        print(each)
 ```
 
