@@ -1,6 +1,6 @@
 # HuggingFace
 
-HuggingFace is the community platform to build AI and ML. Use it with Fused to interface with models, datasets, and applications.
+HuggingFace is the community platform to build AI and ML. Use it with Fused to interface models, datasets, and applications.
 
 Three things to keep in mind when working with HuggingFace on Fused:
 1. Set cache directories
