@@ -1,6 +1,6 @@
 # Excel
 
-Microsoft Excel can import data from a given URL in `.csv` format. You can use this to load data from a UDF into an Excel sheet.
+Microsoft Excel can load from a given URL to a `.csv`.
 
 
 ## 1. Create a UDF in Fused Hosted API
@@ -22,7 +22,7 @@ def udf(bbox=None):
 
 ## 2. Create a URL for the UDF
 
-Now, [create a signed Tile HTTP endpoint](/basics/core-concepts/#generate-endpoints-with-workbench) for the UDF.
+Now, [create an HTTP endpoint](/core-concepts/run/#http-requests) for the UDF.
 
 Append this query parameter to the end of the URL to structure the response as a CSV type: `?dtype_out_vector=csv`.
 

@@ -2,13 +2,15 @@ import streamlit as st
 
 st.header("Buffer analysis")
 
-st.write("""
+st.write(
+    """
 This app illustrates the buffer analysis between two GeoPandas GeoDataFrames: road segment represented with `LineStrings` and a table of vehicle GPS locations represented with `Points`. To determine which vehicles are using specific roads, we create a buffer around the road segments using the GeoDataFrame's `buffer` method and check which GPS points fall in this area using the `within` method.
 
 Users can interact with the two sliders on the sidebar to adjust:
 - The number of vehicle points to show on the map
 - The size of the buffer, causing the blue area to expand or contract accordingly
-""")
+"""
+)
 
 # Slider widgets
 n_points = st.sidebar.slider("Number of points:", 0, 1000, 100)
@@ -16,13 +18,15 @@ buffer = st.sidebar.slider("Buffer:", 0.0, 0.01, 0.0025, step=0.001)
 
 # Imports
 import micropip
-await micropip.install('geopandas')
-await micropip.install('requests')
-await micropip.install('pydeck')
-await micropip.install('xarray')
-await micropip.install('yarl')
+
+await micropip.install("geopandas")
+await micropip.install("requests")
+await micropip.install("pydeck")
+await micropip.install("xarray")
+await micropip.install("yarl")
 import fused_app
 import pydeck as pdk
+
 
 # Run UDF
 @st.cache_data
@@ -52,20 +56,23 @@ gdf_points, gdf_linestring, buffered_polygon = load_data(
     n_points=n_points, buffer=buffer
 )
 
-gdf_points['lat'], gdf_points['lng'] = gdf_points.geometry.centroid.y, gdf_points.geometry.centroid.x
+gdf_points["lat"], gdf_points["lng"] = (
+    gdf_points.geometry.centroid.y,
+    gdf_points.geometry.centroid.x,
+)
 
 
 col1, col2 = st.columns(2)
 
 with col1:
-    st.write("### 🚗 Vehicle GPS points") # TODO: car and timestamp
-    edited_gdf_points = st.data_editor(gdf_points[['lat', 'lng']].head(10).T)
+    st.write("### 🚗 Vehicle GPS points")  # TODO: car and timestamp
+    edited_gdf_points = st.data_editor(gdf_points[["lat", "lng"]].head(10).T)
     # TODO: geometry
 
 with col2:
     st.write("### 🛣️ Roads")
-    gdf_linestring['geometry_str'] = [str(each) for each in gdf_linestring.geometry]
-    st.data_editor(gdf_linestring[['name', 'geometry_str']])
+    gdf_linestring["geometry_str"] = [str(each) for each in gdf_linestring.geometry]
+    st.data_editor(gdf_linestring[["name", "geometry_str"]])
 
 
 # Create map

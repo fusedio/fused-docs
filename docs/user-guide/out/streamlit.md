@@ -62,7 +62,7 @@ streamlit run app.py
 
 ### Vector
 
-Copy and save the [Isochrone UDF](https://github.com/fusedio/udfs/tree/main/public/Get_Isochrone) on your Workbench. Create a Streamlit app with this code and paste your UDF's token below. 
+Copy and save the [Isochrone UDF](https://github.com/fusedio/udfs/tree/main/public/Get_Isochrone) on your Workbench. Create a Streamlit app with this code and paste your UDF's token below.
 
 ```python
 import folium
@@ -99,7 +99,7 @@ folium_data = st_folium(m)
 
 ### Raster Tiles
 
-Copy and save the [CDLs Tile UDF](https://github.com/fusedio/udfs/tree/main/public/CDLs_Tile_Example) on your Workbench. Create a Streamlit app with this code and paste your UDF's token below. 
+Copy and save the [CDLs Tile UDF](https://github.com/fusedio/udfs/tree/main/public/CDLs_Tile_Example) on your Workbench. Create a Streamlit app with this code and paste your UDF's token below.
 
 
 

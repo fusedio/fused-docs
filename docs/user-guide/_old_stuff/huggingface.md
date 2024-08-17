@@ -10,9 +10,9 @@ Three things to keep in mind when working with HuggingFace on Fused:
 ```python
 @fused.udf
 def udf(bbox: fused.types.Bbox=None, n: int=10):
-    
+
     import os
-    
+
     import requests
     import torch
     from transformers import AutoImageProcessor, AutoModel
@@ -23,7 +23,7 @@ def udf(bbox: fused.types.Bbox=None, n: int=10):
     # Set HF and Torch cache directories to Fused filesystem
     os.environ['HF_HOME'] = os.environ['HF_HUB_CACHE'] = '/mnt/cache/hf'
     os.environ['TORCH_WHERE'] = os.environ['TORCH_HOME'] = '/mnt/cache/my_username/tmp/'
-    
+
     # Use strategic caching to only download model files once
     @fused.cache
     def download_model_and_processor():
@@ -35,5 +35,5 @@ def udf(bbox: fused.types.Bbox=None, n: int=10):
 
     # Authenticate to HF hub with token
     huggingface_hub.login(token='hf_...')
-    
+
 ```

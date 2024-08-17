@@ -45,7 +45,7 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
 
 **Examples**:
 
-  
+
   This example shows how to access the `geo_buffer` function from the `common` UDF.
     ```python
     import fused
@@ -54,7 +54,7 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
     gdf = gpd.read_file('https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_COLUMBIA/11/tl_rd22_11_bg.zip')
     gdf_buffered = fused.public.common.geo_buffer(gdf, 10)
     ```
-  
+
   This example shows how to load a table with `table_to_tile`, which efficiently loads a table by filtering and adjusting based on the provided bounding box (bbox) and zoom level.
     ```python
     table_path = "s3://fused-asset/infra/census_bg_us"
@@ -62,13 +62,12 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
         bbox, table_path, use_columns=["GEOID", "geometry"], min_zoom=12
     )
     ```
-  
+
   This example shows how to use `rasterize_geometry` to place an input geometry within an image array.
     ```python
     geom_masks = [
         rasterize_geometry(geom, arr.shape[-2:], transform) for geom in gdf.geometry
     ]
     ```
-  
-  Public UDFs are listed at https://github.com/fusedio/udfs/tree/main/public
 
+  Public UDFs are listed at https://github.com/fusedio/udfs/tree/main/public

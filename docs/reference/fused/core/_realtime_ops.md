@@ -35,7 +35,7 @@ as well as additional parameters for the UDF execution.
 - `_dtype_out_raster` _str_ - Desired data type for raster output. Defaults to a pre-defined type.
 - `_client_id` _Optional[str]_ - Client identifier for API usage. If None, a default or global client ID may be used.
 - `**params` - Additional keyword arguments for the UDF execution.
-  
+
 
 **Returns**:
 
@@ -72,7 +72,7 @@ as well as additional parameters for the UDF execution.
 - `_dtype_out_raster` _str_ - Desired data type for raster output. Defaults to a pre-defined type.
 - `_client_id` _Optional[str]_ - Client identifier for API usage. If None, a default or global client ID may be used.
 - `**params` - Additional keyword arguments for the UDF execution.
-  
+
 
 **Returns**:
 
@@ -102,7 +102,7 @@ This function constructs a URL to run a UDF associated with the given email and 
 - `_dtype_out_raster` _str_ - Desired data type for raster output, defaults to a predefined type.
 - `_client_id` _Optional[str]_ - Client identifier for API usage. If None, a default or global client ID may be used.
 - `**params` - Additional keyword arguments for the UDF execution.
-  
+
 
 **Returns**:
 
@@ -128,17 +128,17 @@ This function constructs a URL for running an operation on a file accessible via
 - `_dtype_out_vector` _str_ - Desired data type for vector output, defaults to a predefined type.
 - `_dtype_out_raster` _str_ - Desired data type for raster output, defaults to a predefined type.
 - `**params` - Additional keyword arguments for the operation execution.
-  
+
 
 **Returns**:
 
   The response from the server after executing the operation on the file.
-  
+
 
 **Raises**:
 
 - `Exception` - Describes various exceptions that could occur during the function execution, including but not limited to invalid parameters, network errors, unauthorized access errors, or server-side errors.
-  
+
 
 **Notes**:
 
@@ -175,7 +175,7 @@ This function constructs a URL to asynchronously run a UDF on a specific tile de
 - `_dtype_out_raster` _str_ - Desired data type for raster output. Defaults to a predefined type.
 - `_client_id` _Optional[str]_ - Client identifier for API usage. If None, a default or global client ID may be used.
 - `**params` - Additional keyword arguments for the UDF execution.
-  
+
 
 **Returns**:
 
@@ -208,7 +208,7 @@ This function constructs a URL for running an operation on a tile, defined by it
 - `_dtype_out_vector` _str_ - Desired data type for vector output, defaults to a predefined type.
 - `_dtype_out_raster` _str_ - Desired data type for raster output, defaults to a predefined type.
 - `**params` - Additional keyword arguments for the operation execution.
-  
+
 
 **Returns**:
 
@@ -239,7 +239,7 @@ This function constructs a URL to run a UDF on a server, allowing for output dat
 - `_dtype_out_raster` _str_ - Desired data type for raster output, defaults to a predefined type.
 - `_client_id` _Optional[str]_ - Client identifier for API usage. If None, a default or global client ID may be used.
 - `**params` - Additional keyword arguments for the UDF execution.
-  
+
 
 **Returns**:
 
@@ -266,9 +266,8 @@ Constructs a URL to run an operation on a file accessible via a shared token, en
 - `_dtype_out_vector` _str_ - Desired data type for vector output, defaults to a predefined type.
 - `_dtype_out_raster` _str_ - Desired data type for raster output, defaults to a predefined type.
 - `**params` - Additional keyword arguments for the operation execution.
-  
+
 
 **Returns**:
 
   A coroutine that, when awaited, sends a request to the server to execute the operation on the file and returns the server's response. The format and content of the response depend on the operation's implementation and the server's response format.
-

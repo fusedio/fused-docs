@@ -23,30 +23,30 @@ keyword arguments.
 - `**kwargs` - Arbitrary keyword arguments that are passed to the internal
   caching mechanism. These could specify cache size, expiration time,
   and other cache-related settings.
-  
+
 
 **Returns**:
 
 - `Callable` - A decorator that, when applied to a function, caches its
   return values according to the specified keyword arguments.
-  
+
 
 **Examples**:
 
-  
+
   Use the `@cache` decorator to cache the return value of a function in a custom path.
-  
+
     ```py
     @cache(path="/tmp/custom_path/")
     def expensive_function():
         # Function implementation goes here
         return result
     ```
-  
+
   If the output of a cached function changes, for example if remote data is modified,
   it can be reset by running the function with the `reset` keyword argument. Afterward,
   the argument can be cleared.
-  
+
     ```py
     @cache(path="/tmp/custom_path/", reset=True)
     def expensive_function():
@@ -71,12 +71,12 @@ the implementation of the `_cache` function.
 - `func` _Callable_ - The function to call and cache its result.
 - `*args` - Positional arguments to pass to the function.
 - `**kwargs` - Keyword arguments to pass to the function.
-  
+
 
 **Returns**:
 
   The cached return value of the function.
-  
+
 
 **Raises**:
 
@@ -102,18 +102,18 @@ implementation of `_cache_async`.
 - `func` _Callable_ - The asynchronous function to call and cache its result.
 - `*args` - Positional arguments to pass to the async function.
 - `**kwargs` - Keyword arguments to pass to the async function.
-  
+
 
 **Returns**:
 
   The cached return value of the async function.
-  
+
 
 **Raises**:
 
 - `Exception` - Propagates any exception raised by the async function being
   called or the caching mechanism.
-  
+
 
 **Examples**:
 
@@ -121,8 +121,7 @@ implementation of `_cache_async`.
   async def fetch_data(param):
   # Async function implementation goes here
   return data
-  
+
   # Usage
   result = await cache_call_async(fetch_data, 'example_param')
   ```
-

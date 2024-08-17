@@ -37,7 +37,7 @@ _GitHub integration_
 ## v1.5.4 (2024-04-15) :telescope:
 
 - Button to open slice of data in Kepler.gl.
-- Minor UI design and button placement updates. 
+- Minor UI design and button placement updates.
 
 ## v1.5.3 (2024-04-08) :duck:
 

@@ -154,14 +154,14 @@ by specifying the option name in the form "parent.child".
   attribute name or a dot-separated path for nested attributes.
 - `option_value` - The new value to set for the specified option. This can be of any type
   that is compatible with the attribute being set.
-  
+
 
 **Raises**:
 
 - `AttributeError` - If the specified attribute path is not valid, either because a part
   of the path does not exist or the final attribute cannot be set with
   the provided value.
-  
+
 
 **Examples**:
 
@@ -177,4 +177,3 @@ def _env(environment_name: str)
 ```
 
 Set the environment.
-

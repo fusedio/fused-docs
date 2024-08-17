@@ -7,6 +7,7 @@ Configure `pydoc-markdown.yml` and set the path to the base of `fused-py`.
 Run with `python3 pydoc_docusaurus.py`
 
 """
+
 from pydoc_markdown.main import RenderSession
 
 print("start")

@@ -53,23 +53,23 @@ Load UDF(s) in a UdfRegistry object.
 - `content_type` - The content type of the UDF source, e.g., "file", "py", or "url".
 - `load_schema` - Whether to automatically detect and load the table schema.
 - `header_paths` - A sequence of headers for the UDF.
-  
+
 
 **Returns**:
 
   UdfRegistry or UDF: Returns a UdfRegistry containing registered UDFs.
-  
+
 
 **Raises**:
 
   - ValueError: If multiple UDFs with the same name are found in a list of UDF paths.
   - AssertionError: If an unsupported content type is provided.
-  
+
 
 **Examples**:
 
   Load multiple UDFs from a list of files and register them in a UdfRegistry:
-  
+
     ```py
     load_udf(udf_paths=["udf1.py", "udf2.py"], header_paths=["header.py"])
     load_udf("my_udf.py", function="my_function", content_type="file")
@@ -88,7 +88,7 @@ Open a Table object given a path to the root of the table
 **Arguments**:
 
 - `path` - The path to the root of the table on remote storage
-  
+
 
 **Arguments**:
 
@@ -97,7 +97,7 @@ Open a Table object given a path to the root of the table
 **Returns**:
 
   A Table object
-  
+
 
 **Examples**:
 
@@ -125,7 +125,7 @@ Construct a JobConfig
 
 - `input` - A object or list of objects describing job steps.
 - `content_type` - How to interpret `input` when it is a string. E.g. "json" for JSON or "fused_job_id" for a Fused Job ID.
-  
+
 
 **Returns**:
 
@@ -144,12 +144,12 @@ This function may not check that the file represented by the path exists.
 **Arguments**:
 
 - `path` - URL to a file, like `fd://bucket-name/file.parquet`
-  
+
 
 **Returns**:
 
   HTTPS URL to access the file using signed access.
-  
+
 
 **Examples**:
 
@@ -168,16 +168,15 @@ Create signed URLs to access all blobs under the path.
 **Arguments**:
 
 - `path` - URL to a prefix, like `fd://bucket-name/some_directory/`
-  
+
 
 **Returns**:
 
   Dictionary mapping from blob store key to signed HTTPS URL.
-  
+
 
 **Examples**:
 
     ```python
     fused.experimental.sign_url_prefix("fd://bucket-name/table_directory/")
     ```
-

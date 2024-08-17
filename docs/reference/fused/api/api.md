@@ -43,7 +43,7 @@ Fetch a sample of an operation
 **Arguments**:
 
 - `config` - The configuration to sample from.
-  
+
 
 **Arguments**:
 
@@ -66,7 +66,7 @@ Fetch a sample of an operation
 **Arguments**:
 
 - `config` - The configuration to sample from.
-  
+
 
 **Arguments**:
 
@@ -90,7 +90,7 @@ Fetch a sample of an operation
 **Arguments**:
 
 - `config` - The configuration to sample from.
-  
+
 
 **Arguments**:
 
@@ -116,7 +116,7 @@ Execute an operation
 **Arguments**:
 
 - `config` - the configuration object to run in the job.
-  
+
 
 **Arguments**:
 
@@ -147,7 +147,7 @@ The token does not allow running any other UDF on your account.
 
 - `udf_email` - The email of the user owning the UDF, or, if udf_name is None, the name of the UDF.
 - `udf_name` - The name of the UDF to create the
-  
+
 
 **Arguments**:
 
@@ -171,14 +171,14 @@ Get the job history.
 **Arguments**:
 
 - `n` - The number of jobs to fetch. Defaults to 5.
-  
+
 
 **Arguments**:
 
 - `skip` - Where in the job history to begin. Defaults to 0, which retrieves the most recent job.
 - `per_request` - Number of jobs per request to fetch. Defaults to 25.
 - `max_requests` - Maximum number of requests to make. May be None to fetch all jobs. Defaults to 1.
-  
+
 
 **Returns**:
 
@@ -195,7 +195,7 @@ Fetch the status of a running job
 **Arguments**:
 
 - `job` - the identifier of a job or a `RunResponse` object.
-  
+
 
 **Returns**:
 
@@ -214,7 +214,7 @@ Fetch logs for a job
 
 - `job` - the identifier of a job or a `RunResponse` object.
 - `since_ms` - Timestamp, in milliseconds since epoch, to get logs for. Defaults to None for all logs.
-  
+
 
 **Returns**:
 
@@ -255,12 +255,12 @@ Block the Python kernel until the given job has finished
 - `job` - the identifier of a job or a `RunResponse` object.
 - `poll_interval_seconds` - How often (in seconds) to poll for status updates. Defaults to 5.
 - `timeout` - The length of time in seconds to wait for the job. Defaults to None.
-  
+
 
 **Raises**:
 
 - `TimeoutError` - if waiting for the job timed out.
-  
+
 
 **Returns**:
 
@@ -277,7 +277,7 @@ Cancel an existing job
 **Arguments**:
 
 - `job` - the identifier of a job or a `RunResponse` object.
-  
+
 
 **Returns**:
 
@@ -302,7 +302,7 @@ Visualize a dataset
 **Arguments**:
 
 - `path` - The path of the dataset to visualize.
-  
+
 
 **Arguments**:
 
@@ -312,7 +312,7 @@ Visualize a dataset
 - `tables` - tables to load attributes from for visualization. Defaults to None,
 - `app_config` - additional debugging application configuration options
 - `include_fused_table` - if True, ensure "fused" is in the list of tables to show.
-  
+
 
 **Returns**:
 
@@ -336,7 +336,7 @@ Visualize multiple datasets
 **Arguments**:
 
 - `datasets` - `DatasetViz` configuration objects.
-  
+
 
 **Arguments**:
 
@@ -344,7 +344,7 @@ Visualize multiple datasets
 - `show_widget` - if True, attempts to open the debugging visualization in a widget within this notebook. Defaults to None.
 - `iframe_args` - parameters to pass into the generated IFrame. Defaults to ("100%", "600px").
 - `app_config` - additional debugging application configuration options
-  
+
 
 **Returns**:
 
@@ -368,7 +368,7 @@ Visualize multiple datasets
 **Arguments**:
 
 - `datasets` - `DatasetVizV2` configuration objects.
-  
+
 
 **Arguments**:
 
@@ -376,7 +376,7 @@ Visualize multiple datasets
 - `show_widget` - if True, attempts to open the debugging visualization in a widget within this notebook. Defaults to None.
 - `iframe_args` - parameters to pass into the generated IFrame. Defaults to ("100%", "600px").
 - `app_config` - additional debugging application configuration options
-  
+
 
 **Returns**:
 
@@ -440,4 +440,3 @@ def auth_token() -> str
 ```
 
 Returns the current user's Fused environment (team) auth token
-

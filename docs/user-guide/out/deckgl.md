@@ -10,9 +10,9 @@ You'll first generate a signed UDF URL and render it on an HTML map.
 
 ## 1. Generate a signed URL for a UDF
 
-First, on Workbench, create and save a UDF that successfully renders in `Tile` mode. Under the "Settings" tab, click "Share" to [generate a signed URL](/basics/core-concepts/#generate-endpoints-with-workbench) that can be called via HTTP requests.
+First, on Workbench, create and save a UDF that successfully renders in `Tile` mode. Under the "Settings" tab, click "Share" to [generate a signed URL](/core-concepts/run/#http-requests) that can be called via HTTP requests.
 
-If looking to render a [Tile](http://localhost:3000/basics/core-concepts/#file--tile) map, modify the generated `HTTP` URL to run as a [Tile](/basics/utilities/#call-udfs-with-http-requests) by setting the `tiles/` path paramater, followed by templated `/{z}/{x}/{y}` path. You can optionally pass UDF parameters as UDF-encoded strings, which can be configured to change based on UI user input.
+If looking to render a [Tile](/core-concepts/filetile/) map, modify the generated `HTTP` URL to run as a [Tile](/core-concepts/filetile/#tile-endpoint) with the `tiles/` path paramater, followed by templated `/{z}/{x}/{y}` path. You can optionally pass UDF parameters as UDF-encoded strings, which can be configured to change based on UI user input.
 
 ## 2. Create a DeckGL HTML map
 

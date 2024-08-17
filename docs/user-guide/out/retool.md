@@ -1,22 +1,22 @@
 # Retool
 
-Supercharge your team's Retool apps with serverless geospatial operations! ⚡
+Run Fused UDFs from Retool.
 
-This guide shows how to create a [custom Retool component](https://docs.retool.com/apps/web/guides/components/custom) using the [Mapbox GL JS](https://docs.mapbox.com/mapbox-gl-js/example/) library to display vector tiles from a custom tile server provided by Fused. 
+This guide shows how to create a [custom Retool component](https://docs.retool.com/apps/web/guides/components/custom) using the [Mapbox GL JS](https://docs.mapbox.com/mapbox-gl-js/example/) library to render vector tiles.
 
 You'll first generate a signed UDF URL then introduce it into a custom map component that can input and output data across other Retool components.
 
 ## 1. Create an HTML map
 
-Create a mapbox `.html` map following this [tutorial](/basics/out/mapbox/).
+Create a mapbox `.html` map following this [tutorial](/user-guide/out/mapbox/).
 
 ## 2. Create a custom Retool component
 
-In a Retool app, create a custom Retool component. In the `IFrame Code` box, paste the code Mapbox HTML map created in the first step. 
+In a Retool app, create a custom Retool component. In the `IFrame Code` box, paste the code Mapbox HTML map created in the first step.
 
 ![alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/retool-1.png)
 
-It's that easy. The following two sections show how to interchange data with the map component you just created. That's a bit more elaborate, but you're in good hands. 
+It's that easy. The following two sections show how to interchange data with the map component you just created. That's a bit more elaborate, but you're in good hands.
 
 ## 3. Pass data from a UI component to the map (optional)
 
@@ -31,7 +31,7 @@ In Retool custom components, variables are passed through the Model. The IFrame 
 In the custom component's `Model` box, paste a snippet like this one to pass data from the `select` component.
 
 ```json
-{  
+{
   "theme": {{select1.value}}
 }
 ```
@@ -54,7 +54,7 @@ window.Retool.subscribe(function (model) {
             'minzoom': 6,
             'maxzoom': 14
         });
-      
+
         map.addLayer(
             ...
         );
@@ -73,13 +73,13 @@ Passing data from the map component to another Retool component follows a simila
 First, update the custom component's model to include a `data` key with an empty dictionary as a value. This is where the map component will pass data.
 
 ```json
-{  
+{
   "theme": {{select1.value}},
-  "data": {} 
+  "data": {}
 }
 ```
 
-Then, introduce these headers and snippet to the map IFrame. 
+Then, introduce these headers and snippet to the map IFrame.
 
 ```html
 <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.2.1/mapbox-gl-draw.js"></script>
@@ -108,11 +108,8 @@ function updateData(e) {
 }
 ```
 
-Finally, create a `jsonExplorer` component with the following value `{{customComponent1.model.data}}` which will receive the GeoJSON when a polygon is drawn on the map. 
+Finally, create a `jsonExplorer` component with the following value `{{customComponent1.model.data}}` which will receive the GeoJSON when a polygon is drawn on the map.
 
 ![alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/gifs/retool_out.gif)
 
-This GeoJSON can be used in subsequent operations. For example, it could be passed as a parameter to downstream UDF calls as explained [here](/basics/out/http/#with-a-geojson).
-
-
-
+This GeoJSON can be used in subsequent operations. For example, it could be passed as a parameter to downstream UDF calls as explained [here](/user-guide/out/http/#with-a-geojson).

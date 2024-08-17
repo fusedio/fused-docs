@@ -6,7 +6,7 @@ To load data from Fused, you'll first generate a signed UDF URL.
 
 ## 1. Generate a signed URL for a UDF
 
-First, on Workbench, create and save a UDF that successfully renders in `File` mode. Under the "Settings" tab, click "Share" to [generate a signed URL](/basics/core-concepts/#generate-endpoints-with-workbench) that can be called via HTTP requests. 
+First, on Workbench, create and save a UDF that successfully renders in `File` mode. Under the "Settings" tab, click "Share" to [generate a signed URL](/core-concepts/run/#http-requests) that can be called via HTTP requests.
 
 Modify the generated `HTTP` URL to set `dtype_out_vector` to `parquet`. You can optionally pass UDF parameters as URL-encoded strings, which can be configured to change based on query input.
 

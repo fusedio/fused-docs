@@ -3,16 +3,16 @@
 Bring your apps to life with embedded responsive maps that dynamically respond to user input.
 
 
-This guide shows how to create a web map using the [Mapbox GL JS](https://docs.mapbox.com/mapbox-gl-js/example/) library to display vector or raster tiles from a custom tile server provided by Fused. 
+This guide shows how to create a web map using the [Mapbox GL JS](https://docs.mapbox.com/mapbox-gl-js/example/) library to display vector or raster tiles from a custom tile server provided by Fused.
 
 You'll first generate a signed UDF URL and render it on an HTML map. You can then use the HTML map in a low-code app like Retool or render it as an `iframe` in an app such as Notion.
 
 ## 1. Generate a signed URL for a UDF
 
-First, on Workbench, create and save a UDF that successfully renders in `Tile` mode. Under the "Settings" tab, click "Share" to [generate a signed URL](/basics/core-concepts/#generate-endpoints-with-workbench) that can be called via HTTP requests. 
+First, on Workbench, create and save a UDF that successfully renders in `Tile` mode. Under the "Settings" tab, click "Share" to [generate a HTTP endpoint](/core-concepts/run/#http-requests) that can be called via HTTP requests.
 
 
-If looking to render a [Tile](http://localhost:3000/basics/core-concepts/#file--tile) map, modify the generated `HTTP` URL to run as a [Tile](/basics/utilities/#call-udfs-with-http-requests) by setting the `tiles/` path paramater, followed by templated `/{z}/{x}/{y}` path. You can optionally pass UDF parameters as UDF-encoded strings, which can be configured to change based on UI user input.
+If looking to render a [Tile](/core-concepts/filetile/#map-tiles) map, modify the generated `HTTP` URL to run as a [Tile](/core-concepts/filetile/#tile-endpoint) by setting the `tiles/` path paramater, followed by templated `/{z}/{x}/{y}` path. You can optionally pass UDF parameters as UDF-encoded strings, which can be configured to change based on UI user input.
 
 
 ## 2. Create a Mapbox HTML map
@@ -145,8 +145,6 @@ Use the following snippet to introduce a raster layer, which should look similar
             'paint': {}
         },
         'building' // Place layer under labels, roads and buildings.
-    ); 
+    );
 </script>
 ```
-
-

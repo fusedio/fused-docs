@@ -35,9 +35,8 @@ This can be called with file_id and chunk_id from `get_chunks_metadata`.
 - `url` - URL of the table.
 - `file_id` - File ID to read.
 - `chunk_id` - Chunk ID to read.
-  
+
 
 **Arguments**:
 
 - `columns` - Read only the specified columns.
-

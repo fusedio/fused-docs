@@ -93,7 +93,7 @@ Similarly, signed URLs endpoints can be created that can be called from another 
 
 ### Single File HTTP endpoints
 
-Single file HTTP endpoints are suitable for handling individual requests, ideal for scenarios where a single resource is required, such as loading data into [Google Sheets](/basics/out/googlesheets/).
+Single file HTTP endpoints are suitable for handling individual requests, ideal for scenarios where a single resource is required, such as loading data into [Google Sheets](/user-guide/out/googlesheets/).
 
 
 ```python
@@ -106,7 +106,7 @@ api.create_udf_access_token(udf_email="user@fused.io", udf_name="caltrain_live_l
 
 ### Tile HTTP endpoints
 
-Tile HTTP endpoints are designed for serving map applications that consume Tiles, such as [Lonboard](/basics/out/lonboard/) or [geemap](/basics/out/geemap/).
+Tile HTTP endpoints are designed for serving map applications that consume Tiles, such as [Lonboard](/user-guide/out/lonboard/) or [geemap](/user-guide/out/geemap/).
 
 ```python
 from fused.api import FusedAPI

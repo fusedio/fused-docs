@@ -24,28 +24,24 @@ except ImportError:
     # SCRIPTS_DIR = Path(__file__).parent.resolve()
     # LIB_DIR = SCRIPTS_DIR.parent.parent.resolve()
     SCRIPTS_DIR = Path(__file__).parent.resolve()
-    LIB_DIR = SCRIPTS_DIR.parent.resolve() / 'docs'
+    LIB_DIR = SCRIPTS_DIR.parent.resolve() / "docs"
 else:
     LIB_DIR = (Path(get_fbcode_dir()) / "beanmachine").resolve()
 
 NOTEBOOK_CONFIG_PATHS = [
     {
-        'config': Path("docs/basics/tutorials/tutorials.json"),
-        'tutorials_dir': Path("docs/basics/tutorials")
+        "config": Path("docs/basics/tutorials/tutorials.json"),
+        "tutorials_dir": Path("docs/basics/tutorials"),
+    },
+    {"config": Path("docs/basics/in/in.json"), "tutorials_dir": Path("docs/basics/in")},
+    {
+        "config": Path("docs/basics/out/out.json"),
+        "tutorials_dir": Path("docs/basics/out"),
     },
     {
-        'config': Path("docs/basics/in/in.json"),
-        'tutorials_dir': Path("docs/basics/in")
+        "config": Path("docs/basics/transform/transform.json"),
+        "tutorials_dir": Path("docs/basics/transform"),
     },
-    {
-        'config': Path("docs/basics/out/out.json"),
-        'tutorials_dir': Path("docs/basics/out")
-    },
-    {
-        'config': Path("docs/basics/transform/transform.json"),
-        'tutorials_dir': Path("docs/basics/transform")
-    },
-
 ]
 
 # Data display priority. Below lists the priority for displaying data from cell outputs.
@@ -152,7 +148,7 @@ def create_frontmatter(path: Path, nb_metadata: Dict[str, Dict[str, str]]) -> st
                 "nb_path": "",
                 "github": "",
                 "colab": "",
-                "description": ""
+                "description": "",
             },
         ).items()
     ]
@@ -240,7 +236,7 @@ def handle_images_found_in_markdown(
     for search in searches:
 
         # Skip remote images
-        if search.groups()[0].startswith('http'):
+        if search.groups()[0].startswith("http"):
             continue
         # Find the old image path and replace it with the new one.
         old_path, _ = search.groups()
@@ -703,9 +699,11 @@ def prioritize_dtypes(
             associated with the cell output having Plotly information in it or not.
     """
     cell_output_dtypes = [
-        list(cell_output["data"].keys())
-        if "data" in cell_output
-        else [cell_output["output_type"]]
+        (
+            list(cell_output["data"].keys())
+            if "data" in cell_output
+            else [cell_output["output_type"]]
+        )
         for cell_output in cell_outputs
     ]
     prioritized_cell_output_dtypes = [
@@ -987,16 +985,15 @@ def transform_notebook(path: Path, nb_metadata) -> str:
 
 
 if __name__ == "__main__":
-    
+
     print("--------------------------------------------")
     print("Converting tutorial notebooks into mdx files")
     print("--------------------------------------------")
 
-
     # Loop through each directory that contains notebooks
     for notebook_config_path in NOTEBOOK_CONFIG_PATHS:
-        TUTORIALS_DIR = notebook_config_path['tutorials_dir'] 
-        config_path = notebook_config_path['config']
+        TUTORIALS_DIR = notebook_config_path["tutorials_dir"]
+        config_path = notebook_config_path["config"]
         nb_metadata = load_nb_metadata(config_path=config_path)
 
         # Loop through each notebook in the directory

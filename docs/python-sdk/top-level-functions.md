@@ -1,7 +1,7 @@
 # Top-Level Functions
 
 
-## @fused.udf 
+## @fused.udf
 
 ```python
 def udf(
@@ -21,7 +21,7 @@ A decorator that transforms a function into a Fused UDF.
 - `schema` - The schema for the DataFrame returned by the UDF. The schema may be either
   a string (in the form `"field_name:DataType field_name2:DataType"`, or as JSON),
   as a Python dictionary representing the schema, or a `Schema` model object.
-  
+
   Defaults to None, in which case a schema must be evaluated by calling `run_local`
   for a job to be able to write output. The return value of `run_local` will also
   indicate how to include the schema in the decorator so `run_local` does not need
@@ -32,24 +32,24 @@ A decorator that transforms a function into a Fused UDF.
 - `headers` - A list of files to include as modules when running the UDF. For example,
   when specifying `headers=['my_header.py']`, inside the UDF function it may be
   referenced as:
-  
+
         ```py
         import my_header
         my_header.my_function()
         ```
-  
+
   Defaults to None for no headers.
 
 **Returns**:
 
   A callable that represents the transformed UDF. This callable can be used
   within GeoPandas workflows to apply the defined operation on geospatial data.
-  
+
 
 **Examples**:
 
   To create a simple UDF that calls a utility function to calculate the area of geometries in a GeoDataFrame:
-  
+
     ```py
     @fused.udf
     def udf(bbox, table_path="s3://fused-asset/infra/building_msft_us"):
@@ -106,40 +106,40 @@ path based on the provided parameters.
 - `engine` - The execution engine to use ('realtime', 'batch', or 'local').
 - `type` - The type of UDF execution ('tile' or 'file').
 - `**parameters` - Additional parameters to pass to the UDF.
-  
+
 
 **Raises**:
 
 - `ValueError` - If the UDF is not specified or is specified in more than one way.
 - `TypeError` - If the first parameter is not of an expected type.
 - `Warning` - Various warnings are issued for ignored parameters based on the execution path chosen.
-  
+
 
 **Returns**:
 
   The result of the UDF execution, which varies based on the UDF and execution path.
-  
+
 
 **Examples**:
 
-  
+
   Run a UDF saved in the Fused system:
     ```py
     fused.run(udf_email="username@fused.io", udf_name="my_udf_name")
     ```
-  
+
   Run a UDF saved in GitHub:
     ```py
     loaded_udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/Building_Tile_Example")
     fused.run(udf=loaded_udf, bbox=bbox)
     ```
-  
+
   Run a UDF saved in a local directory:
     ```py
     loaded_udf = fused.load("/Users/local/dir/Building_Tile_Example")
     fused.run(udf=loaded_udf, bbox=bbox)
     ```
-  
+
 
 
 
@@ -148,8 +148,8 @@ path based on the provided parameters.
   This function dynamically determines the execution path and parameters based on the inputs.
   It is designed to be flexible and support various UDF execution scenarios.
 
-  Because the output must be serializable and returned via an HTTP response, Fused validates the output of UDFs that execute remotely with the `realtime` engine and will hold back invalid responses. This might result in perceived inconsistencies because running locally with the `local` engine does not validate and will instead return any output. 
-  
+  Because the output must be serializable and returned via an HTTP response, Fused validates the output of UDFs that execute remotely with the `realtime` engine and will hold back invalid responses. This might result in perceived inconsistencies because running locally with the `local` engine does not validate and will instead return any output.
+
   ☝️ See the set of supported return object types [here](https://docs.fused.io/basics/core-concepts/#d-return-object).
 
   ```python
@@ -184,44 +184,44 @@ keyword arguments.
   returns a partial decorator with the passed keyword arguments.
 - `path` _string, optional_ - Path on disk where to write the cache.
 - `reset` _bool, optional_ - Whether to reset the cache on the next call.
-  
+
 
 **Returns**:
 
 - `Callable` - A decorator that, when applied to a function, caches its
   return values according to the specified keyword arguments.
-  
+
 
 **Examples**:
 
-  
+
   Use the `@cache` decorator to cache the return value of a function in a custom path.
-  
+
     ```py
     @fused.cache(path="/tmp/custom_path/")
     def expensive_function():
         # Function implementation goes here
         return result
     ```
-  
+
   If the output of a cached function changes, for example if remote data is modified,
   it can be reset by running the function with the `reset` keyword argument. Afterward,
   the argument can be cleared.
-  
+
     ```py
     @fused.cache(path="/tmp/custom_path/", reset=True)
     def expensive_function():
         # Function implementation goes here
         return result
     ```
-  
-  The best practice is to wrap slow-runninc code in a function with arguments that make the output unique. In this example, the `bbox`, `time_of_interest`, and `collection` parameters make the data load unique across calls. 
+
+  The best practice is to wrap slow-runninc code in a function with arguments that make the output unique. In this example, the `bbox`, `time_of_interest`, and `collection` parameters make the data load unique across calls.
 
     ```py
     # Define cached function
     @fused.cache
     def load_data(bbox, time_of_interest, collection):
-    
+
         items = catalog.search(
             collections=[collection],
             bbox=bbox.total_bounds,
@@ -265,12 +265,12 @@ on the format of the input and retrieves the UDF accordingly.
 - `cache_key` - An optional key used for caching the loaded UDF. If provided, the function
   will attempt to load the UDF from cache using this key before attempting to
   load it from the specified source. Defaults to None, indicating no caching.
-  
+
 
 **Returns**:
 
 - `BaseUdf` - An instance of the loaded UDF.
-  
+
 
 **Raises**:
 
@@ -279,7 +279,7 @@ on the format of the input and retrieves the UDF accordingly.
   cannot be parsed.
 - `Exception` - For errors related to network issues, file access permissions, or other
   unforeseen errors during the loading process.
-  
+
 
 **Examples**:
 
@@ -287,12 +287,12 @@ on the format of the input and retrieves the UDF accordingly.
     ```py
     udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/REM_with_HyRiver/")
     ```
-  
+
   Load a UDF from a local file:
     ```py
     udf = fused.load("/localpath/REM_with_HyRiver/")
     ```
-  
+
   Load a UDF using a Fused platform-specific identifier:
     ```py
     udf = fused.load("username@fused.io/REM_with_HyRiver")
@@ -320,12 +320,12 @@ Fused addresses the latency of downloading files with the download utility funct
 
 - `url` - The URL to download.
 - `file_path` - The local path where to save the file.
-  
+
 
 **Returns**:
 
   The function downloads the file only on the first execution, and returns the file path.
-  
+
 
 **Examples**:
 
@@ -354,7 +354,7 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
 
 **Examples**:
 
-  
+
   This example shows how to access the `geo_buffer` function from the `common` UDF.
     ```python
     import fused
@@ -363,7 +363,7 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
     gdf = gpd.read_file('https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_COLUMBIA/11/tl_rd22_11_bg.zip')
     gdf_buffered = fused.public.common.geo_buffer(gdf, 10)
     ```
-  
+
   This example shows how to load a table with `table_to_tile`, which efficiently loads a table by filtering and adjusting based on the provided bounding box (bbox) and zoom level.
     ```python
     table_path = "s3://fused-asset/infra/census_bg_us"
@@ -371,14 +371,14 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
         bbox, table_path, use_columns=["GEOID", "geometry"], min_zoom=12
     )
     ```
-  
+
   This example shows how to use `rasterize_geometry` to place an input geometry within an image array.
     ```python
     geom_masks = [
         rasterize_geometry(geom, arr.shape[-2:], transform) for geom in gdf.geometry
     ]
     ```
-  
+
   Public UDFs are listed at https://github.com/fusedio/udfs/tree/main/public
 
 
@@ -448,28 +448,28 @@ Ingest a dataset into the Fused partitioned format.
   "partitioning_maximum_per_chunk".
 - `target_num_chunks` - The target for the number of chunks if `partitioning_maximum_per_file` is None. Note that this number is only a _target_ and the actual number of files and chunks generated can be higher or lower than this number, depending on the spatial distribution of the data itself.
 - `lonlat_cols` - Names of longitude, latitude columns to construct point geometries from.
-  
+
   If your point columns are named `"x"` and `"y"`, then pass:
-  
+
         ```py
         fused.ingest(
             ...,
             lonlat_cols=("x", "y")
         )
         ```
-  
+
   This only applies to reading from Parquet files. For reading from CSV files, pass options to `gdal_config`.
-  
+
 - `gdal_config` - Configuration options to pass to GDAL for how to read these files. For all files other than Parquet files, Fused uses GDAL as a step in the ingestion process. For some inputs, like CSV files or zipped shapefiles, you may need to pass some parameters to GDAL to tell it how to open your files.
-  
+
   This config is expected to be a dictionary with up to two keys:
-  
+
   - `layer`: `str`. Define the layer of the input file you wish to read when the source contains multiple layers, as in GeoPackage.
   - `open_options`: `Dict[str, str]`. Pass in key-value pairs with GDAL open options. These are defined on each driver's page in the GDAL documentation. For example, the [CSV driver](https://gdal.org/drivers/vector/csv.html) defines [these open options](https://gdal.org/drivers/vector/csv.html#open-options) you can pass in.
-  
+
   For example, if you're ingesting a CSV file with two columns
   `"longitude"` and `"latitude"` denoting the coordinate information, pass
-  
+
         ```py
         fused.ingest(
             ...,
@@ -481,13 +481,13 @@ Ingest a dataset into the Fused partitioned format.
             }
         )
         ```
-  
+
 
 **Returns**:
 
   Configuration object describing the ingestion process. Call `.run_remote` on this object to start a job.
-  
-  
+
+
 
 **Examples**:
 
@@ -543,12 +543,12 @@ Download the contents at the path to memory.
 **Arguments**:
 
 - `path` - URL to a file, like `fd://bucket-name/file.parquet`
-  
+
 
 **Returns**:
 
   bytes of the file
-  
+
 
 **Examples**:
 
@@ -580,12 +580,12 @@ Fetches a list of UDFs.
 - `by` - The attribute by which to sort the UDFs. Can be "name", "id", or "slug". Defaults to "name".
 - `whose` - Specifies whose UDFs to fetch. Can be "self" for the user's own UDFs or "public" for
   UDFs available publicly. Defaults to "self".
-  
+
 
 **Returns**:
 
   A list of UDFs.
-  
+
 
 **Examples**:
 
@@ -599,7 +599,7 @@ Fetches a list of UDFs.
 **Arguments**:
 
 - `path` - Parent directory, like `table_name`. Defaults to None to list the root of the project.
-  
+
 
 **Returns**:
 
@@ -616,7 +616,7 @@ Download the contents at the path to memory.
 **Arguments**:
 
 - `path` - Path to a file, like `table_name/file.parquet`
-  
+
 
 **Returns**:
 
@@ -637,8 +637,8 @@ Delete the files at the path.
 - `max_deletion_depth` - If set (defaults to 2), the maximum depth the operation will recurse to.
   This option is to help avoid accidentally deleting more data that intended.
   Pass `"unlimited"` for unlimited.
-  
-  
+
+
 
 **Examples**:
 
@@ -680,14 +680,14 @@ by specifying the option name in the form "parent.child".
   attribute name or a dot-separated path for nested attributes.
 - `option_value` - The new value to set for the specified option. This can be of any type
   that is compatible with the attribute being set.
-  
+
 
 **Raises**:
 
 - `AttributeError` - If the specified attribute path is not valid, either because a part
   of the path does not exist or the final attribute cannot be set with
   the provided value.
-  
+
 
 **Examples**:
 
@@ -709,12 +709,12 @@ This function may not check that the file represented by the path exists.
 **Arguments**:
 
 - `path` - URL to a file, like `fd://bucket-name/file.parquet`
-  
+
 
 **Returns**:
 
   HTTPS URL to access the file using signed access.
-  
+
 
 **Examples**:
 
@@ -733,12 +733,12 @@ Create signed URLs to access all blobs under the path.
 **Arguments**:
 
 - `path` - URL to a prefix, like `fd://bucket-name/some_directory/`
-  
+
 
 **Returns**:
 
   Dictionary mapping from blob store key to signed HTTPS URL.
-  
+
 
 **Examples**:
 
@@ -780,4 +780,3 @@ This can be called with file_id and chunk_id from `get_chunks_metadata`.
 - `file_id` - File ID to read.
 - `chunk_id` - Chunk ID to read.
 - `columns` - Read only the specified columns.
-

@@ -106,18 +106,18 @@ Open a Table object given a path to the root of the table
 **Arguments**:
 
 - `path` - The path to the root of the table on remote storage
-  
+
 
 **Arguments**:
 
 - `fetch_samples` - If True, fetch sample on each table when getting dataset metadata.
-  
+
 
 **Example**:
 
-  
+
   table = project.open_table("path/to/dataset/table/")
-  
+
 
 **Returns**:
 
@@ -160,7 +160,7 @@ Ingest a dataset into the Fused partitioned format.
 
 - `input` - A GeoPandas `GeoDataFrame` or a path to file or files on S3 to ingest. Files may be Parquet or another geo data format.
 - `output` - Location on S3 to write the `main` table to.
-  
+
 
 **Arguments**:
 
@@ -172,26 +172,26 @@ Ingest a dataset into the Fused partitioned format.
 - `explode_geometries` - Whether to unpack multipart geometries to single geometries when ingesting geospatial datasets, saving each part as its own row. Defaults to `False`.
 - `drop_out_of_bounds` - Whether to drop geometries outside of the expected WGS84 bounds. Defaults to True.
 - `partitioning_method` - The method to use for grouping rows into partitions.
-  
+
   - `"area"`: Construct partitions where all contain a maximum total area among geometries.
   - `"length"`: Construct partitions where all contain a maximum total length among geometries.
   - `"coords"`: Construct partitions where all contain a maximum total number of coordinates among geometries.
   - `"rows"`: Construct partitions where all contain a maximum number of rows.
-  
+
   Defaults to `"rows"`.
-  
+
 - `partitioning_maximum_per_file` - Maximum value for `partitioning_method` to use per file. If `None`, defaults to _1/10th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will be have no more than 1/10th the total area of all geometries. Defaults to `None`.
 - `partitioning_maximum_per_chunk` - Maximum value for `partitioning_method` to use per chunk. If `None`, defaults to _1/100th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will be have no more than 1/100th the total area of all geometries. Defaults to `None`.
 - `partitioning_max_width_ratio` - The maximum ratio of width to height of each partition to use in the ingestion process. So for example, if the value is `2`, then if the width divided by the height is greater than `2`, the box will be split in half along the horizontal axis. Defaults to `2`.
 - `partitioning_max_height_ratio` - The maximum ratio of height to width of each partition to use in the ingestion process. So for example, if the value is `2`, then if the height divided by the width is greater than `2`, the box will be split in half along the vertical axis. Defaults to `2`.
 - `partitioning_force_utm` - Whether to force partitioning within UTM zones. If set to `"file"`, this will ensure that the centroid of all geometries per _file_ are contained in the same UTM zone. If set to `"chunk"`, this will ensure that the centroid of all geometries per _chunk_ are contained in the same UTM zone. If set to `None`, then no UTM-based partitioning will be done. Defaults to "chunk".
 - `partitioning_split_method` - How to split one partition into children.
-  
+
   - `"mean"`: Split each axis according to the mean of the centroid values.
   - `"median"`: Split each axis according to the median of the centroid values.
-  
+
   Defaults to `"mean"` (this may change in the future).
-  
+
 - `subdivide_method` - The method to use for subdividing large geometries into multiple rows. Currently the only option is `"area"`, where geometries will be subdivided based on their area (in WGS84 degrees).
 - `subdivide_start` - The value above which geometries will be subdivided into smaller parts, according to `subdivide_method`.
 - `subdivide_stop` - The value below which geometries will never be subdivided into smaller parts, according to `subdivide_method`.
@@ -201,28 +201,28 @@ Ingest a dataset into the Fused partitioned format.
   "partitioning_maximum_per_chunk".
 - `target_num_chunks` - The target for the number of chunks if `partitioning_maximum_per_file` is None. Note that this number is only a _target_ and the actual number of files and chunks generated can be higher or lower than this number, depending on the spatial distribution of the data itself.
 - `lonlat_cols` - Names of longitude, latitude columns to construct point geometries from.
-  
+
   If your point columns are named `"x"` and `"y"`, then pass:
-  
+
         ```py
         fused.ingest(
             ...,
             lonlat_cols=("x", "y")
         )
         ```
-  
+
   This only applies to reading from Parquet files. For reading from CSV files, pass options to `gdal_config`.
-  
+
 - `gdal_config` - Configuration options to pass to GDAL for how to read these files. For all files other than Parquet files, Fused uses GDAL as a step in the ingestion process. For some inputs, like CSV files or zipped shapefiles, you may need to pass some parameters to GDAL to tell it how to open your files.
-  
+
   This config is expected to be a dictionary with up to two keys:
-  
+
   - `layer`: `str`. Define the layer of the input file you wish to read when the source contains multiple layers, as in GeoPackage.
   - `open_options`: `Dict[str, str]`. Pass in key-value pairs with GDAL open options. These are defined on each driver's page in the GDAL documentation. For example, the [CSV driver](https://gdal.org/drivers/vector/csv.html) defines [these open options](https://gdal.org/drivers/vector/csv.html#open-options) you can pass in.
-  
+
   For example, if you're ingesting a CSV file with two columns
   `"longitude"` and `"latitude"` denoting the coordinate information, pass
-  
+
         ```py
         fused.ingest(
             ...,
@@ -234,13 +234,13 @@ Ingest a dataset into the Fused partitioned format.
             }
         )
         ```
-  
+
 
 **Returns**:
 
   Configuration object describing the ingestion process. Call `.run_remote` on this object to start a job.
-  
-  
+
+
 
 **Examples**:
 
@@ -275,7 +275,7 @@ Ingest a dataset into the Fused partitioned format.
 
 - `input` - A Pandas `DataFrame` or a path to file or files on S3 to ingest. Files may be Parquet or another data format.
 - `output` - Location on S3 to write the `main` table to.
-  
+
 
 **Arguments**:
 
@@ -283,13 +283,13 @@ Ingest a dataset into the Fused partitioned format.
 - `partition_col` - Partition along this column for nongeospatial datasets.
 - `partitioning_maximum_per_file` - Maximum number of items to store in a single file. Defaults to 2,500,000.
 - `partitioning_maximum_per_chunk` - Maximum number of items to store in a single file. Defaults to 65,000.
-  
+
 
 **Returns**:
 
-  
+
   Configuration object describing the ingestion process. Call `.run_remote` on this object to start a job.
-  
+
 
 **Examples**:
 
@@ -316,13 +316,13 @@ Construct a `map` config from this Dataset
 
 - `output_table` - Where to save the output of this operation. Defaults to `None`, which will not save the output.
 - `udf` - A user-defined function to run in this map. Defaults to None.
-  
+
 
 **Arguments**:
 
 - `tables` - The attribute tables to include in the map reduce. Defaults to ("main",).
 - `cache_locally` - Advanced: whether to cache all the partitions locally in the map job. Defaults to False.
-  
+
 
 **Returns**:
 
@@ -349,7 +349,7 @@ Construct a join config from two datasets
 - `other` - The other Dataset object to join on
 - `output_table` - Where to save the output of this operation. Defaults to `None`, which will not save the output.
 - `udf` - The user-defined function to run in the join
-  
+
 
 **Arguments**:
 
@@ -359,7 +359,7 @@ Construct a join config from two datasets
 - `left_cache_locally` - Whether to cache the left dataset locally in the join. Defaults to False.
 - `right_cache_locally` - Whether to cache the right dataset locally in the join. Defaults to False.
 - `buffer_distance` - The size of the buffer (in meters) on the left table to use during the join. Defaults to None.
-  
+
 
 **Examples**:
 
@@ -370,7 +370,7 @@ Construct a join config from two datasets
     other_dataset = fused.open("s3://bucket/path/to/dataset")
     join_config = left_dataset.join(other_dataset)
     ```
-  
+
 
 **Returns**:
 
@@ -403,7 +403,7 @@ List the files at the path.
 **Arguments**:
 
 - `path` - Parent directory, like `table_name`. Defaults to None to list the root of the project.
-  
+
 
 **Returns**:
 
@@ -420,7 +420,7 @@ Download the contents at the path to memory.
 **Arguments**:
 
 - `path` - Path to a file, like `table_name/file.parquet`
-  
+
 
 **Returns**:
 
@@ -452,7 +452,7 @@ This function may not check that the file represented by the path exists.
 **Arguments**:
 
 - `path` - Path to a file, like `table_name/file.parquet`
-  
+
 
 **Returns**:
 
@@ -469,7 +469,7 @@ Create signed URLs to access all blobs under the path.
 **Arguments**:
 
 - `path` - Path to a prefix, like `table_name/`
-  
+
 
 **Returns**:
 
@@ -490,7 +490,7 @@ Create a job input that zips or unions tables together
 **Arguments**:
 
 - `tables` - The names of tables to include in the input, e.g. `["table_0", "table_1", "table_5"]`.
-  
+
 
 **Arguments**:
 
@@ -517,7 +517,7 @@ are implicitly ordered by name.
 **Arguments**:
 
 - `tables` - The index of tables to include in the input, e.g. `[0, 1, 5]`.
-  
+
 
 **Arguments**:
 
@@ -552,4 +552,3 @@ Open a project folder.
 - `_max_depth` - Maximum depth of folders to load.
 - `_eager` - If True, recursive calls will be made to materialize all virtual
   folders that `max_depth` would otherwise cause.
-
