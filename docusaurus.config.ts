@@ -193,6 +193,10 @@ const config: Config = {
         redirects: [
           // { to: "/basics/core-concepts/faq/", from: ["/basics/faq/"] },
           {
+            to: "/user-guide/",
+            from: ["/basics/user-guide/"],
+          },
+          {
             to: "/workbench/map-builder/udf-editor/",
             from: ["/workbench/udf-editor/"],
           },
