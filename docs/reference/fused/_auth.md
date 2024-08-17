@@ -85,4 +85,3 @@ def refresh_token(refresh_token: str)
 ```
 
 Generate a new access_token using a refresh token
-

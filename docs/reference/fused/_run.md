@@ -50,43 +50,42 @@ path based on the provided parameters.
 - `engine` - The execution engine to use ('realtime', 'batch', or 'local').
 - `type` - The type of UDF execution ('tile' or 'file').
 - `**parameters` - Additional parameters to pass to the UDF.
-  
+
 
 **Raises**:
 
 - `ValueError` - If the UDF is not specified or is specified in more than one way.
 - `TypeError` - If the first parameter is not of an expected type.
 - `Warning` - Various warnings are issued for ignored parameters based on the execution path chosen.
-  
+
 
 **Returns**:
 
   The result of the UDF execution, which varies based on the UDF and execution path.
-  
+
 
 **Examples**:
 
-  
+
   # Run a UDF saved in the Fused system:
     ```py
     fused.run(udf_email="username@fused.io", udf_name="my_udf_name")
     ```
-  
+
   # Run a UDF saved in GitHub:
     ```py
     loaded_udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/Building_Tile_Example")
     fused.run(udf=loaded_udf, bbox=bbox)
     ```
-  
+
   # Run a UDF saved in a local directory:
     ```py
     loaded_udf = fused.load("/Users/local/dir/Building_Tile_Example")
     fused.run(udf=loaded_udf, bbox=bbox)
     ```
-  
+
 
 **Notes**:
 
   This function dynamically determines the execution path and parameters based on the inputs.
   It is designed to be flexible and support various UDF execution scenarios.
-

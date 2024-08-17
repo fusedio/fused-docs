@@ -1,12 +1,13 @@
 import streamlit as st
 
-st.header('Zonal Stats')
+st.header("Zonal Stats")
 
-st.write("""
+st.write(
+    """
 In this tutorial we'll focus on zonal statistics between a raster and polygons in a table. We'll explore how to perform zonal statistics to approximate the height of buildings using a digital surface model (DSM) raster dataset and a table of building footprint polygons. The raster is the ALOS Global DSM "ALOS World 3D - 30m (AW3D30)" captured by the PRISM optical sensor on the ALOS satellite, with a 30-meter horizontal resolution. The buildings dataset is the "Building Footprints" dataset from Microsoft, which contains the `Polygon` of buildings in the United States.
 
 
-This example interactively illustrates zonal statistics between a raster and a table of polygons: the raster array is represented by a grayscale image of the DSM and the building footprint are represented with purple `Polygon` objects. 
+This example interactively illustrates zonal statistics between a raster and a table of polygons: the raster array is represented by a grayscale image of the DSM and the building footprint are represented with purple `Polygon` objects.
 
 
 Users can interact with the checkboxes on the sidebar to toggle show/hide:
@@ -14,13 +15,15 @@ Users can interact with the checkboxes on the sidebar to toggle show/hide:
 - The building footprint outlines
 - The building footprints colored by the mean pixel value of the raster
 
-You'll notice that the building footprints are colored based on the mean pixel value of the raster within the polygon. The color scale ranges from dark (low values) to bright (high values). This visualization helps identify buildings with higher or lower height based on the average pixel values. 
+You'll notice that the building footprints are colored based on the mean pixel value of the raster within the polygon. The color scale ranges from dark (low values) to bright (high values). This visualization helps identify buildings with higher or lower height based on the average pixel values.
 
-""")
+"""
+)
 
 # Imports
 import micropip
-await micropip.install('pydeck')
+
+await micropip.install("pydeck")
 import pydeck as pdk
 
 # Create map

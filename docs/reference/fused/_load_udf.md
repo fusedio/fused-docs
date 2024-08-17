@@ -26,12 +26,12 @@ on the format of the input and retrieves the UDF accordingly.
 - `cache_key` - An optional key used for caching the loaded UDF. If provided, the function
   will attempt to load the UDF from cache using this key before attempting to
   load it from the specified source. Defaults to None, indicating no caching.
-  
+
 
 **Returns**:
 
 - `BaseUdf` - An instance of the loaded UDF.
-  
+
 
 **Raises**:
 
@@ -40,7 +40,7 @@ on the format of the input and retrieves the UDF accordingly.
   cannot be parsed.
 - `Exception` - For errors related to network issues, file access permissions, or other
   unforeseen errors during the loading process.
-  
+
 
 **Examples**:
 
@@ -48,14 +48,13 @@ on the format of the input and retrieves the UDF accordingly.
     ```py
     udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/REM_with_HyRiver/")
     ```
-  
+
   Loading a UDF from a local file:
     ```py
     udf = fused.load("/localpath/REM_with_HyRiver/")
     ```
-  
+
   Loading a UDF using a Fused platform-specific identifier:
     ```py
     udf = fused.load("username@fused.io/REM_with_HyRiver")
     ```
-

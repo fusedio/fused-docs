@@ -32,4 +32,3 @@ def access_token() -> str
 ```
 
 Get an access token for the Fused service.
-

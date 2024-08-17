@@ -15,7 +15,7 @@ Get an fsspec filesystem for the given protocol.
 
 - `protocol` - Protocol part of the URL, such as "s3" or "gs".
 - `storage_options` - Additional arguments to pass to the storage backend.
-  
+
 
 **Returns**:
 
@@ -37,7 +37,7 @@ This is useful for UDFs that temporarily store indermediate results as files, su
 
 - `file_path` - The file path to locate.
 - `mkdir` - If True, create the directory if it doesn't already exist. Defaults to True.
-  
+
 
 **Returns**:
 
@@ -65,12 +65,12 @@ Fused addresses the latency of downloading files with the download utility funct
 
 - `url` - The URL to download.
 - `file_path` - The local path where to save the file.
-  
+
 
 **Returns**:
 
   The function downloads the file only on the first execution, and returns the file path.
-  
+
 
 **Examples**:
 
@@ -98,7 +98,7 @@ May be called from multiple processes with the same inputs to get the same resul
 
 - `url` - The URL to download.
 - `file_path` - The local path where to save the files.
-  
+
 
 **Returns**:
 
@@ -116,4 +116,3 @@ Run a function once, waiting for another process to run it if in progress.
 
 - `signal_key` - A relative key for signalling done status. Files are written using `create_path` and this key to deduplicate runs.
 - `fn` - A function that will be run once.
-

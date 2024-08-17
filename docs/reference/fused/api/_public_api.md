@@ -16,7 +16,7 @@ Fetch logs for a job
 
 - `job` - the identifier of a job or a `RunResponse` object.
 - `since_ms` - Timestamp, in milliseconds since epoch, to get logs for. Defaults to None for all logs.
-  
+
 
 **Returns**:
 
@@ -37,7 +37,7 @@ Fetch and print logs for a job
 - `job` - the identifier of a job or a `RunResponse` object.
 - `since_ms` - Timestamp, in milliseconds since epoch, to get logs for. Defaults to None for all logs.
 - `file` - Where to print logs to. Defaults to sys.stdout.
-  
+
 
 **Returns**:
 
@@ -74,7 +74,7 @@ Fetch the status of a running job
 **Arguments**:
 
 - `job` - the identifier of a job or a `RunResponse` object.
-  
+
 
 **Returns**:
 
@@ -91,7 +91,7 @@ Cancel an existing job
 **Arguments**:
 
 - `job` - the identifier of a job or a `RunResponse` object.
-  
+
 
 **Returns**:
 
@@ -123,14 +123,13 @@ Block the Python kernel until this job has finished
 
 - `poll_interval_seconds` - How often (in seconds) to poll for status updates. Defaults to 5.
 - `timeout` - The length of time in seconds to wait for the job. Defaults to None.
-  
+
 
 **Raises**:
 
 - `TimeoutError` - if waiting for the job timed out.
-  
+
 
 **Returns**:
 
   The status of the given job.
-

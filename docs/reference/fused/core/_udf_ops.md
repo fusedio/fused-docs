@@ -31,7 +31,5 @@ Download the code of a UDF, to be run inline.
 **Arguments**:
 
 - `email_or_id` - Email of the UDF's owner, or name of the UDF to import.
-- `id` - Name of the UDF to import. If only the first argument is provided, the current user's email will be used.  
+- `id` - Name of the UDF to import. If only the first argument is provided, the current user's email will be used.
 - `cache_key` - Additional cache key for busting the UDF cache.
-
-
