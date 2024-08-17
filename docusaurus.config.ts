@@ -191,7 +191,7 @@ const config: Config = {
       "@docusaurus/plugin-client-redirects",
       {
         redirects: [
-          { to: "/basics/core-concepts/faq/", from: ["/basics/faq/"] },
+          // { to: "/basics/core-concepts/faq/", from: ["/basics/faq/"] },
           {
             to: "/workbench/map-builder/udf-editor/",
             from: ["/workbench/udf-editor/"],
