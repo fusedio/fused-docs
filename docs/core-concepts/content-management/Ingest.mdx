@@ -14,37 +14,22 @@ import Tag from '@site/src/components/Tag'
 ## <Tag color="#D1E550" fontColor="#141414" >🚧 Under Construction</Tag>
 
 
-
-
-This guide explains how to use `fused.ingest` to geopartition and load vector tables into an S3 bucket so they can easily be queried with Fused.
-
+This guide explains how to use `fused.ingest` to geopartition and load vector tables into an S3 bucket so they can quickly be queried with Fused.
 
 ## Ingest data
 
 
-The [`fused.ingest`](/python-sdk/top-level-functions/#ingest) method first uploads
-the table specified by the `input` parameter using [fused.upload](/python-sdk/top-level-functions/#upload). It then geopartitions the table, creating chunks for spatial partitions. Finally, it writes a parquet table to the S3 path specified by the `output` parameter. The resulting parquet table contains a `main` table with the input columns and a `fused` table with metadata.
+[`fused.ingest`](/python-sdk/top-level-functions/#ingest) first uploads the table specified by the `input` parameter using [fused.upload](/python-sdk/top-level-functions/#upload). It then geopartitions the table, creating chunks for spatial partitions. Finally, it writes a parquet table to the S3 path specified by the `output` parameter. Along with the table records, the resulting parquet file contains two metadata files: `main` and `fused`.
 
-Ingested tables can easily be read with the Fused utility function [`table_to_tile`](https://github.com/fusedio/udfs/blob/9bfb5d0/public/common/utils.py#L90), which reads only chunks that fall within a specified polygon.
+Ingested tables can easily be read with the Fused utility function [`table_to_tile`](https://github.com/fusedio/udfs/blob/9bfb5d0/public/common/utils.py#L90), which efficiently reads only chunks that fall within a specified polygon.
 
-The following sections cover common ingestion use cases.
-
-:::info
-
-If you encounter the message
-`HTTPError: {'detail': 'Quota limit: Number of running instances'}`, please contact Fused to increase the number of workers in to your account.
-
-:::
+The following sections cover common ingestion implementations. It's recommended they run from a Python Notebook.
 
 
+### Ingest a table from a URL
 
-### Default ingestion
+Ingests a table from a URL and writes it to an S3 bucket specified with [`fd://`](/core-concepts/content-management/file-system/#fd-s3-bucket).
 
-The following code ingests a table from a URL and writes it to an S3 bucket specified with [`fd://`](/core-concepts/content-management/file-system/#fd-s3-bucket), which is shorthand for the account's bucket.
-
-```python
-# !pip install fused -q
-```
 
 ```python
 import fused
@@ -56,7 +41,14 @@ job = fused.ingest(
 job_id = job.run_remote()
 ```
 
-While the job is running, follow its logs.
+:::info
+
+If you encounter the message
+`HTTPError: {'detail': 'Quota limit: Number of running instances'}`, please contact Fused to increase the number of workers in to your account.
+
+:::
+
+While the job runs, follow its logs in a separate cell.
 
 ```python
 job_id.tail_logs()
@@ -70,16 +62,8 @@ census_tracts = fused.experimental.open_table(f"fd://census/dc_tract")
 census_tracts
 ```
 
-Each table has one or more _files_ and each file has one or more _chunks_, which are spatial partitioned. By default, ingestion will attempt to create the number of files specified by `target_num_files` (default `20`), and the number of rows per file and chunk can be adjusted to meet this number.
-
-
 ### Ingest multiple files
 
-:::warning
-
-To ingest multiple local files, first upload them with [fused.upload](/python-sdk/top-level-functions/#upload) then specify an array of their S3 paths as the input to ingest.
-
-:::
 
 ```python
 import fused
@@ -91,10 +75,20 @@ job = fused.ingest(
 job_id = job.run_remote()
 ```
 
+:::warning
+
+To ingest multiple local files, first upload them with [fused.upload](/python-sdk/top-level-functions/#upload) then specify an array of their S3 paths as the input to ingest.
+
+:::
+
+
 ### Row-based ingestion
 
-Our basic ingestion is row-based, where the user set the maximum number of rows per each
+Standard ingestion is row-based, where the user set the maximum number of rows per each
 chunk and file.
+
+Each resulting table has one or more _files_ and each file has one or more _chunks_, which are spatially partitioned. By default, ingestion does a best effort to create the number of files specified by `target_num_files` (default `20`), and the number of rows per file and chunk can be adjusted to meet this number.
+
 
 ```python
 job = fused.ingest(
@@ -126,7 +120,7 @@ job_id = job.run_remote()
 
 ### Geometry subdivision
 
-It's also possible to subdivide geometries in the ingestion process.
+Subdivide geometries during ingestion. This keeps operations efficient when geometries have many vertices or span large areas.
 
 ```python
 job = fused.ingest(
@@ -142,11 +136,6 @@ job = fused.ingest(
 )
 job_id = job.run_remote()
 ```
-
-
-
-
-
 
 ### Ingest GeoDataFrame
 
