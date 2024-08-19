@@ -12,6 +12,7 @@ export default function Iframe({
   url = URL_PREFIX,
   requirements = DEFAULT_APP_REQUIREMENTS, // Hardcode common requirements, unless specified otherwise
   visible = true,
+  height = "500px",
 }) {
   const containerRef = useRef(null);
 
@@ -44,7 +45,7 @@ export default function Iframe({
       // end build url hash with code and requirements
       iframe = document.createElement("iframe");
       iframe.src = newUrl.toString();
-      iframe.height = "1050px";
+      iframe.height = height;
       iframe.width = "100%";
       iframe.scrolling = "no";
       iframe.id = "magic-" + id;
@@ -73,7 +74,7 @@ export default function Iframe({
 
 
     if (visible) {
-      const boundingClientRect = containerRef.current.getBoundingClientRect();
+      const boundingClientRect = containerRef.current?.getBoundingClientRect();
       iframe.style.display = "block";
       syncIframeToContainer(boundingClientRect, iframe);
 
@@ -97,14 +98,14 @@ export default function Iframe({
             const iframe = document.getElementById("magic-" + id);
             if (iframe) {
               const boundingClientRect =
-                containerRef.current.getBoundingClientRect();
+                containerRef?.current?.getBoundingClientRect();
               syncIframeToContainer(boundingClientRect, iframe);
             }
           }
         }
       });
 
-      resizeObserver.observe(containerRef.current);
+      resizeObserver?.observe(containerRef.current);
     } else {
       iframe.style.left = "-10000px";
       iframe.style.top = "-10000px";
@@ -135,7 +136,7 @@ export default function Iframe({
       ref={containerRef}
       style={{
         width: "100%",
-        height: "1050px",
+        height: "500px",
       }}
     />
   );
