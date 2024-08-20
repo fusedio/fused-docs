@@ -1,12 +1,12 @@
 # Streamlit
 
-Streamlit is an open source Python app builder to turn data scripts into shareable web apps.
+[Streamlit](https://streamlit.io/) is an open source Python app builder to turn data scripts into shareable web apps. You can run Fused UDFs from Streamlit to create apps powered by UDFs. In fact, the Fused [App Builder](/workbench/app-builder/) runs a serverless version of Streamlit.
 
 ![streamlit](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/gifs/streamlit_leaflet.gif)
 
 ## Basic walkthrough
 
-### Step 1: Install streamlit
+### 1: Install streamlit
 
 Prepare an environment and install streamlit.
 
@@ -14,9 +14,7 @@ Prepare an environment and install streamlit.
 pip install streamlit
 ```
 
-### Step 2: Create a UDF
-
-Create a UDF.
+### 2: Create a UDF
 
 As an example, this minimalist UDF returns a dataframe with polygons for each administrative zone in Washington DC.
 
@@ -27,7 +25,7 @@ def my_udf(url='https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_O
     return gpd.read_file(url)
 ```
 
-### Step 3: Create your streamlit app
+### 3: Create app
 
 Create a new Python script for your Streamlit app - in this case in a file called `app.py`. This script will be the entry point of your application.
 
@@ -49,7 +47,7 @@ df = fused.run(udf=my_udf)
 st.dataframe(df)
 ```
 
-### Step 4. Run your streamlit app
+### 4. Run your streamlit app
 
 Start the app using Streamlit's CLI command.
 
@@ -57,10 +55,8 @@ Start the app using Streamlit's CLI command.
 streamlit run app.py
 ```
 
-## Intermediate examples
 
-
-### Vector
+## Intermediate Vector example
 
 Copy and save the [Isochrone UDF](https://github.com/fusedio/udfs/tree/main/public/Get_Isochrone) on your Workbench. Create a Streamlit app with this code and paste your UDF's token below.
 
@@ -97,7 +93,7 @@ folium_data = st_folium(m)
 ```
 
 
-### Raster Tiles
+## Intermediate Raster Tiles example
 
 Copy and save the [CDLs Tile UDF](https://github.com/fusedio/udfs/tree/main/public/CDLs_Tile_Example) on your Workbench. Create a Streamlit app with this code and paste your UDF's token below.
 
