@@ -1,0 +1,47 @@
+---
+title: Earth on AWS
+sidebar_label: Earth on AWS
+description: Connect with Earth on AWS.
+---
+
+
+import Tag from '@site/src/components/Tag'
+
+Fused interfaces <Tag color="#3399ff">Earth on AWS</Tag> with the Python [`pystac_client`](https://pystac-client.readthedocs.io/en/stable/) library. This example shows how to write a UDF to load data from the [AWS Earth data catalog](https://aws.amazon.com/earth/).
+
+
+## Load data from AWS with ODC
+
+This UDF loads data from an endpoint by [Element 84](https://aws.amazon.com/marketplace/seller-profile?id=seller-ndxivtlrwqtuc) on AWS data marketplace. It uses the `pystac_client` library to search for items in the `cop-dem-glo-30` collection that corresponds to the area that falls within the extent of the [`bbox` object](/core-concepts/filetile/#the-bbox-object)  and loads the data with [`odc.stac.load`](https://odc-stac.readthedocs.io/en/latest/_api/odc.stac.load.html).
+
+```python
+@fused.udf
+def udf(bbox: fused.types.TileGDF):
+    import odc.stac
+    import pystac_client
+    from pystac.extensions.eo import EOExtension as eo
+
+    utils = fused.load(
+        "https://github.com/fusedio/udfs/tree/f928ee1/public/common/"
+    ).utils
+
+    odc.stac.configure_s3_access(aws_unsigned=True)
+    catalog = pystac_client.Client.open("https://earth-search.aws.element84.com/v1")
+
+    items = catalog.search(
+        collections=["cop-dem-glo-30"],
+        bbox=bbox.total_bounds,
+    ).item_collection()
+
+    resolution = int(20 * 2 ** (13 - bbox.z[0]))
+
+    ds = odc.stac.load(
+        items,
+        crs="EPSG:3857",
+        bands=["data"],
+        resolution=resolution,
+        bbox=bbox.total_bounds,
+    ).astype(float)
+    arr = ds["data"].max(dim="time")
+    return utils.arr_to_plasma(arr.values, min_max=(0, 500), reverse=False)
+```
