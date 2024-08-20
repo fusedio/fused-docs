@@ -197,20 +197,20 @@ const config: Config = {
             from: ["/basics/user-guide/"],
           },
           {
-            to: "/workbench/map-builder/udf-editor/",
+            to: "/workbench/udf-builder/code-editor/",
             from: ["/workbench/udf-editor/"],
           },
           {
-            to: "/workbench/map-builder/navigation/",
+            to: "/workbench/udf-builder/navigation/",
             from: ["/workbench/navigation/"],
           },
-          { to: "/workbench/map-builder/map/", from: ["/workbench/map/"] },
+          { to: "/workbench/udf-builder/map/", from: ["/workbench/map/"] },
           {
-            to: "/workbench/map-builder/results/",
+            to: "/workbench/udf-builder/results/",
             from: ["/workbench/results/"],
           },
           {
-            to: "/workbench/map-builder/styling/",
+            to: "/workbench/udf-builder/styling/",
             from: ["/workbench/viz-styling/"],
           },
           {
