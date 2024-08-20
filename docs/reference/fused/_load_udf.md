@@ -5,7 +5,7 @@ title: fused._load_udf
 
 ## load
 
-```python
+```python showLineNumbers
 def load(url_or_udf: Union[str, Path], *, cache_key: Any = None) -> BaseUdf
 ```
 

@@ -3,7 +3,7 @@
 
 ## @fused.udf
 
-```python
+```python showLineNumbers
 def udf(
     fn: Optional[Callable] = None,
     *,
@@ -61,7 +61,7 @@ A decorator that transforms a function into a Fused UDF.
 ## run
 
 
-```python
+```python showLineNumbers
 def run(email_or_udf_or_token: Union[str, None, UdfJobStepConfig,
                                      GeoPandasUdfV2] = None,
         udf_name: Optional[str] = None,
@@ -150,7 +150,7 @@ path based on the provided parameters.
 
   Because the output must be serializable and returned via an HTTP response, Fused validates the output of UDFs that execute remotely with the `realtime` engine and will hold back invalid responses. This might result in perceived inconsistencies because running locally with the `local` engine does not validate and will instead return any output.See the set of supported return object types [here](/core-concepts/write/#return-object).
 
-  ```python
+  ```python showLineNumbers
   import fused
 
   @fused.udf
@@ -164,7 +164,7 @@ path based on the provided parameters.
 
 ## @fused.cache
 
-```python
+```python showLineNumbers
 def cache(func: Optional[Callable[..., Any]] = None,
           path: Optional[str],
           reset: Optional[bool]) -> Callable[..., Any]
@@ -242,7 +242,7 @@ keyword arguments.
 
 ## load
 
-```python
+```python showLineNumbers
 def load(url_or_udf: Union[str, Path], *, cache_key: Any = None) -> BaseUdf
 ```
 
@@ -298,7 +298,7 @@ on the format of the input and retrieves the UDF accordingly.
 
 ## download
 
-```python
+```python showLineNumbers
 def download(url: str, file_path: str) -> str
 ```
 
@@ -327,7 +327,7 @@ Fused addresses the latency of downloading files with the download utility funct
 
 **Examples**:
 
-    ```python
+    ```python showLineNumbers
     @fused.udf
     def geodataframe_from_geojson():
         import geopandas as gpd
@@ -354,7 +354,7 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
 
 
   This example shows how to access the `geo_buffer` function from the `common` UDF.
-    ```python
+    ```python showLineNumbers
     import fused
     import geopandas as gpd
 
@@ -363,7 +363,7 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
     ```
 
   This example shows how to load a table with `table_to_tile`, which efficiently loads a table by filtering and adjusting based on the provided bounding box (bbox) and zoom level.
-    ```python
+    ```python showLineNumbers
     table_path = "s3://fused-asset/infra/census_bg_us"
     gdf = fused.public.common.table_to_tile(
         bbox, table_path, use_columns=["GEOID", "geometry"], min_zoom=12
@@ -371,7 +371,7 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
     ```
 
   This example shows how to use `rasterize_geometry` to place an input geometry within an image array.
-    ```python
+    ```python showLineNumbers
     geom_masks = [
         rasterize_geometry(geom, arr.shape[-2:], transform) for geom in gdf.geometry
     ]
@@ -382,7 +382,7 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
 
 ## ingest
 
-```python
+```python showLineNumbers
 def ingest(
     input: Union[str, Sequence[str], Path, gpd.GeoDataFrame],
     output: Optional[str] = None,
@@ -503,7 +503,7 @@ Ingest a dataset into the Fused partitioned format.
 
 ## upload
 
-```python
+```python showLineNumbers
 def upload(local_path: Union[str, Path, bytes, BinaryIO],
            remote_path: str) -> None
 ```
@@ -532,7 +532,7 @@ Fused holds files in memory during the upload process, so it's best to keep file
 
 ## get
 
-```python
+```python showLineNumbers
 def get(path: str) -> bytes
 ```
 
@@ -550,14 +550,14 @@ Download the contents at the path to memory.
 
 **Examples**:
 
-    ```python
+    ```python showLineNumbers
     fused.get("fd://bucket-name/file.parquet")
     ```
 
 
 ## get\_udfs
 
-```python
+```python showLineNumbers
 def get_udfs(n: int = 10,
              *,
              skip: int = 0,
@@ -605,7 +605,7 @@ Fetches a list of UDFs.
 
 #### get
 
-```python
+```python showLineNumbers
 def get(path: str) -> bytes
 ```
 
@@ -622,7 +622,7 @@ Download the contents at the path to memory.
 
 ## delete
 
-```python
+```python showLineNumbers
 def delete(path: str,
            max_deletion_depth: Union[int, Literal["unlimited"]] = 2) -> bool
 ```
@@ -640,7 +640,7 @@ Delete the files at the path.
 
 **Examples**:
 
-    ```python
+    ```python showLineNumbers
     fused.delete("fd://bucket-name/deprecated_table/")
     ```
 
@@ -661,7 +661,7 @@ This object contains a set of configuration options that control global behavior
 
 ## set\_option
 
-```python
+```python showLineNumbers
 def set_option(option_name: str, option_value: Any)
 ```
 
@@ -690,13 +690,13 @@ by specifying the option name in the form "parent.child".
 **Examples**:
 
   Set the `request_timeout` top-level option to 120 seconds:
-    ```python
+    ```python showLineNumbers
     set_option('request_timeout', 120)
     ```
 
 ## sign\_url
 
-```python
+```python showLineNumbers
 def sign_url(path: str) -> str
 ```
 
@@ -716,13 +716,13 @@ This function may not check that the file represented by the path exists.
 
 **Examples**:
 
-    ```python
+    ```python showLineNumbers
     fused.sign_url("fd://bucket-name/table_directory/file.parquet")
     ```
 
 ## sign\_url\_prefix
 
-```python
+```python showLineNumbers
 def sign_url_prefix(path: str) -> Dict[str, str]
 ```
 
@@ -740,13 +740,13 @@ Create signed URLs to access all blobs under the path.
 
 **Examples**:
 
-    ```python
+    ```python showLineNumbers
     fused.sign_url_prefix("fd://bucket-name/table_directory/")
     ```
 
 ## get\_chunks\_metadata
 
-```python
+```python showLineNumbers
 def get_chunks_metadata(url: str) -> gpd.GeoDataFrame
 ```
 
@@ -759,7 +759,7 @@ Returns a GeoDataFrame with each chunk in the table as a row.
 
 ## get\_chunk\_from\_table
 
-```python
+```python showLineNumbers
 def get_chunk_from_table(
         url: str,
         file_id: Union[str, int, None],

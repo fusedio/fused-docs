@@ -5,7 +5,7 @@ title: fused._run
 
 ## run
 
-```python
+```python showLineNumbers
 def run(email_or_udf_or_token: Union[str, None, UdfJobStepConfig,
                                      GeoPandasUdfV2] = None,
         udf_name: Optional[str] = None,

@@ -5,7 +5,7 @@ title: fused._project
 
 ## Project Objects
 
-```python
+```python showLineNumbers
 class Project(BaseModel)
 ```
 
@@ -48,7 +48,7 @@ loading of that folder to a `Project` instance.
 
 ## tree
 
-```python
+```python showLineNumbers
 def tree(file: TextIO = None) -> None
 ```
 
@@ -60,7 +60,7 @@ Print a tree representation of this project.
 
 ## refresh
 
-```python
+```python showLineNumbers
 def refresh(*,
             fetch_table_metadata: Optional[bool] = None,
             fetch_samples: Optional[bool] = None,
@@ -79,7 +79,7 @@ with metadata, after it is initially loaded without metadata.
 
 ## path
 
-```python
+```python showLineNumbers
 def path(path: str) -> str
 ```
 
@@ -87,7 +87,7 @@ Returns the path to an item under this project.
 
 ## project
 
-```python
+```python showLineNumbers
 def project(path: str) -> Project
 ```
 
@@ -95,7 +95,7 @@ Open a subproject of this project.
 
 ## open\_table
 
-```python
+```python showLineNumbers
 def open_table(path: Union[str, DatasetOutputV2],
                *,
                fetch_samples: Optional[bool] = None) -> Table
@@ -125,7 +125,7 @@ Open a Table object given a path to the root of the table
 
 ## ingest
 
-```python
+```python showLineNumbers
 def ingest(
     input: Union[str, Sequence[str], Path, gpd.GeoDataFrame],
     output: Optional[str] = None,
@@ -257,7 +257,7 @@ Ingest a dataset into the Fused partitioned format.
 
 ## ingest\_nongeospatial
 
-```python
+```python showLineNumbers
 def ingest_nongeospatial(
     input: Union[str, Sequence[str], Path, gpd.GeoDataFrame],
     output: Optional[str] = None,
@@ -302,7 +302,7 @@ Ingest a dataset into the Fused partitioned format.
 
 ## map
 
-```python
+```python showLineNumbers
 def map(dataset: Union[str, Dataset, Table],
         output_table: Optional[str] = None,
         udf: Union[BaseUdf, None] = None,
@@ -330,7 +330,7 @@ Construct a `map` config from this Dataset
 
 ## join
 
-```python
+```python showLineNumbers
 def join(dataset: Union[str, Dataset, Table],
          other: Union[str, Dataset, Table],
          output_table: Optional[str] = None,
@@ -378,7 +378,7 @@ Construct a join config from two datasets
 
 ## delete
 
-```python
+```python showLineNumbers
 def delete(path: str,
            max_deletion_depth: Union[int, Literal["unlimited"]] = 2) -> bool
 ```
@@ -394,7 +394,7 @@ Delete the files at the path.
 
 ## list
 
-```python
+```python showLineNumbers
 def list(path: Optional[str] = None) -> List[str]
 ```
 
@@ -411,7 +411,7 @@ List the files at the path.
 
 ## get
 
-```python
+```python showLineNumbers
 def get(path: str) -> bytes
 ```
 
@@ -428,7 +428,7 @@ Download the contents at the path to memory.
 
 ## download
 
-```python
+```python showLineNumbers
 def download(path: str, local_path: Union[str, Path]) -> None
 ```
 
@@ -441,7 +441,7 @@ Download the contents at the path to disk.
 
 ## sign\_url
 
-```python
+```python showLineNumbers
 def sign_url(path: str) -> str
 ```
 
@@ -460,7 +460,7 @@ This function may not check that the file represented by the path exists.
 
 ## sign\_url\_prefix
 
-```python
+```python showLineNumbers
 def sign_url_prefix(path: str) -> Dict[str, str]
 ```
 
@@ -477,7 +477,7 @@ Create signed URLs to access all blobs under the path.
 
 ## sel
 
-```python
+```python showLineNumbers
 def sel(tables: Union[Iterable[Union[Table, str]], Table, str, None] = None,
         *,
         read_sidecar: Union[Sequence[str], bool] = False,
@@ -502,7 +502,7 @@ Create a job input that zips or unions tables together
 
 ## isel
 
-```python
+```python showLineNumbers
 def isel(
         tables: Union[Iterable[int], int],
         *,
@@ -528,7 +528,7 @@ are implicitly ordered by name.
 
 ## open\_project
 
-```python
+```python showLineNumbers
 def open_project(path: str,
                  *,
                  lazy: bool = False,

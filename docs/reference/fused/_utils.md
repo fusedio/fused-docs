@@ -5,7 +5,7 @@ title: fused._utils
 
 ## \_PublicUtils Objects
 
-```python
+```python showLineNumbers
 class _PublicUtils()
 ```
 
@@ -20,7 +20,7 @@ from the server.
 
 ## \_\_init\_\_
 
-```python
+```python showLineNumbers
 def __init__(cache_key: Any = None)
 ```
 
@@ -47,7 +47,7 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
 
 
   This example shows how to access the `geo_buffer` function from the `common` UDF.
-    ```python
+    ```python showLineNumbers
     import fused
     import geopandas as gpd
 
@@ -56,7 +56,7 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
     ```
 
   This example shows how to load a table with `table_to_tile`, which efficiently loads a table by filtering and adjusting based on the provided bounding box (bbox) and zoom level.
-    ```python
+    ```python showLineNumbers
     table_path = "s3://fused-asset/infra/census_bg_us"
     gdf = fused.public.common.table_to_tile(
         bbox, table_path, use_columns=["GEOID", "geometry"], min_zoom=12
@@ -64,7 +64,7 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
     ```
 
   This example shows how to use `rasterize_geometry` to place an input geometry within an image array.
-    ```python
+    ```python showLineNumbers
     geom_masks = [
         rasterize_geometry(geom, arr.shape[-2:], transform) for geom in gdf.geometry
     ]

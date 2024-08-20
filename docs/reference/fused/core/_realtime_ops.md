@@ -5,7 +5,7 @@ title: fused.core._realtime_ops
 
 ## run\_tile
 
-```python
+```python showLineNumbers
 def run_tile(email: str,
              id: Optional[str] = None,
              *,
@@ -43,7 +43,7 @@ as well as additional parameters for the UDF execution.
 
 ## run\_shared\_tile
 
-```python
+```python showLineNumbers
 def run_shared_tile(token: str,
                     *,
                     x: int,
@@ -80,7 +80,7 @@ as well as additional parameters for the UDF execution.
 
 ## run\_file
 
-```python
+```python showLineNumbers
 def run_file(email: str,
              id: Optional[str] = None,
              *,
@@ -110,7 +110,7 @@ This function constructs a URL to run a UDF associated with the given email and 
 
 ## run\_shared\_file
 
-```python
+```python showLineNumbers
 def run_shared_file(token: str,
                     *,
                     _dtype_out_vector: str = DEFAULT_DTYPE_VECTOR,
@@ -146,7 +146,7 @@ This function constructs a URL for running an operation on a file accessible via
 
 ## run\_tile\_async
 
-```python
+```python showLineNumbers
 async def run_tile_async(
         email: str,
         id: Optional[str] = None,
@@ -183,7 +183,7 @@ This function constructs a URL to asynchronously run a UDF on a specific tile de
 
 ## run\_shared\_tile\_async
 
-```python
+```python showLineNumbers
 async def run_shared_tile_async(
         token: str,
         *,
@@ -216,7 +216,7 @@ This function constructs a URL for running an operation on a tile, defined by it
 
 ## run\_file\_async
 
-```python
+```python showLineNumbers
 async def run_file_async(
         email: str,
         id: Optional[str] = None,
@@ -247,7 +247,7 @@ This function constructs a URL to run a UDF on a server, allowing for output dat
 
 ## run\_shared\_file\_async
 
-```python
+```python showLineNumbers
 async def run_shared_file_async(
         token: str,
         *,

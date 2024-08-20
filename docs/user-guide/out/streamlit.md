@@ -20,7 +20,7 @@ Create a UDF.
 
 As an example, this minimalist UDF returns a dataframe with polygons for each administrative zone in Washington DC.
 
-```python
+```python showLineNumbers
 @fused.udf
 def my_udf(url='https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_COLUMBIA/11/tl_rd22_11_bg.zip'):
     import geopandas as gpd
@@ -33,7 +33,7 @@ Create a new Python script for your Streamlit app - in this case in a file calle
 
 This script creates a minimalist Streamlit app that runs the UDF then displays its output dataframe.
 
-```python
+```python showLineNumbers
 import fused
 import streamlit as st
 
@@ -64,7 +64,7 @@ streamlit run app.py
 
 Copy and save the [Isochrone UDF](https://github.com/fusedio/udfs/tree/main/public/Get_Isochrone) on your Workbench. Create a Streamlit app with this code and paste your UDF's token below.
 
-```python
+```python showLineNumbers
 import folium
 import fused
 import streamlit as st
@@ -103,7 +103,7 @@ Copy and save the [CDLs Tile UDF](https://github.com/fusedio/udfs/tree/main/publ
 
 
 
-```python
+```python showLineNumbers
 import folium
 import streamlit as st
 from streamlit_folium import st_folium

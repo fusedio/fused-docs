@@ -5,7 +5,7 @@ title: fused._auth
 
 ## Credentials Objects
 
-```python
+```python showLineNumbers
 class Credentials(BaseModel)
 ```
 
@@ -13,7 +13,7 @@ A dataclass representation of OAuth2 credentials
 
 ## MaybeInitializedCredentials Objects
 
-```python
+```python showLineNumbers
 class MaybeInitializedCredentials()
 ```
 
@@ -21,7 +21,7 @@ OAuth2 credentials that may or may not have been initialized.
 
 ## initialize
 
-```python
+```python showLineNumbers
 def initialize() -> None
 ```
 
@@ -29,7 +29,7 @@ Force initialization of credentials.
 
 ## credentials
 
-```python
+```python showLineNumbers
 @property
 def credentials() -> Credentials
 ```
@@ -38,7 +38,7 @@ Retrieve valid credentials, initializing them or authenticating from scratch if 
 
 ## \_authorization\_header
 
-```python
+```python showLineNumbers
 @property
 def _authorization_header()
 ```
@@ -51,7 +51,7 @@ Global credentials.
 
 ## logout
 
-```python
+```python showLineNumbers
 def logout()
 ```
 
@@ -59,7 +59,7 @@ Open the user's browser to the Auth0 logout page.
 
 ## get\_code\_challenge
 
-```python
+```python showLineNumbers
 def get_code_challenge(code_verifier: str) -> str
 ```
 
@@ -69,7 +69,7 @@ Refer to https://auth0.com/docs/get-started/authentication-and-authorization-flo
 
 ## handle\_redirect
 
-```python
+```python showLineNumbers
 def handle_redirect(authorize_url: str) -> str
 ```
 
@@ -80,7 +80,7 @@ against the `/oauth/token` endpoint to fetch a refresh and access token.
 
 ## refresh\_token
 
-```python
+```python showLineNumbers
 def refresh_token(refresh_token: str)
 ```
 

@@ -5,7 +5,7 @@ title: fused.api._public_api
 
 ## job\_get\_logs
 
-```python
+```python showLineNumbers
 def job_get_logs(job: CoerceableToJobId,
                  since_ms: Optional[int] = None) -> List[Any]
 ```
@@ -24,7 +24,7 @@ Fetch logs for a job
 
 ## job\_print\_logs
 
-```python
+```python showLineNumbers
 def job_print_logs(job: CoerceableToJobId,
                    since_ms: Optional[int] = None,
                    file: Optional[IO] = None) -> None
@@ -45,7 +45,7 @@ Fetch and print logs for a job
 
 ## job\_tail\_logs
 
-```python
+```python showLineNumbers
 def job_tail_logs(job: CoerceableToJobId,
                   refresh_seconds: float = 1,
                   sample_logs: bool = True,
@@ -65,7 +65,7 @@ Continuously print logs for a job
 
 ## job\_get\_status
 
-```python
+```python showLineNumbers
 def job_get_status(job: CoerceableToJobId) -> RunResponse
 ```
 
@@ -82,7 +82,7 @@ Fetch the status of a running job
 
 ## job\_cancel
 
-```python
+```python showLineNumbers
 def job_cancel(job: CoerceableToJobId) -> RunResponse
 ```
 
@@ -99,7 +99,7 @@ Cancel an existing job
 
 ## job\_get\_exec\_time
 
-```python
+```python showLineNumbers
 def job_get_exec_time(job: CoerceableToJobId) -> timedelta
 ```
 
@@ -111,7 +111,7 @@ Determine the execution time of this job, using the logs.
 
 ## job\_wait\_for\_job
 
-```python
+```python showLineNumbers
 def job_wait_for_job(job: CoerceableToJobId,
                      poll_interval_seconds: float = 5,
                      timeout: Optional[float] = None) -> RunResponse
