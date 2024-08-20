@@ -197,7 +197,7 @@ const config: Config = {
             from: ["/basics/user-guide/"],
           },
           {
-            to: "/workbench/udf-builder/udf-editor/",
+            to: "/workbench/udf-builder/code-editor/",
             from: ["/workbench/udf-editor/"],
           },
           {
