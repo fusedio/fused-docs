@@ -84,6 +84,7 @@ const sidebars: SidebarsConfig = {
       items: [
         "python-sdk/top-level-functions",
         require("./docs/reference/sidebar.json"),
+        "python-sdk/authentication",
         "python-sdk/dependencies",
         "python-sdk/changelog",
         "python-sdk/contribute",
