@@ -5,7 +5,7 @@ title: fused.core._download
 
 ## filesystem
 
-```python
+```python showLineNumbers
 def filesystem(protocol: str, **storage_options) -> fsspec.AbstractFileSystem
 ```
 
@@ -23,7 +23,7 @@ Get an fsspec filesystem for the given protocol.
 
 ## create\_path
 
-```python
+```python showLineNumbers
 def create_path(file_path: str, mkdir: bool = True) -> str
 ```
 
@@ -45,7 +45,7 @@ This is useful for UDFs that temporarily store indermediate results as files, su
 
 ## download
 
-```python
+```python showLineNumbers
 def download(url: str, file_path: str) -> str
 ```
 
@@ -74,7 +74,7 @@ Fused addresses the latency of downloading files with the download utility funct
 
 **Examples**:
 
-    ```python
+    ```python showLineNumbers
     @fused.udf
     def geodataframe_from_geojson():
         import geopandas as gpd
@@ -86,7 +86,7 @@ Fused addresses the latency of downloading files with the download utility funct
 
 ## download\_folder
 
-```python
+```python showLineNumbers
 def download_folder(url: str, file_path: str) -> str
 ```
 
@@ -106,7 +106,7 @@ May be called from multiple processes with the same inputs to get the same resul
 
 ## \_run\_once
 
-```python
+```python showLineNumbers
 def _run_once(signal_name: str, fn: Callable) -> None
 ```
 

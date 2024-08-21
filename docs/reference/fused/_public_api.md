@@ -5,7 +5,7 @@ title: fused._public_api
 
 ## get\_jobs
 
-```python
+```python showLineNumbers
 def get_jobs(n: int = 5,
              *,
              skip: int = 0,
@@ -33,7 +33,7 @@ Get the job history.
 
 ## get\_udfs
 
-```python
+```python showLineNumbers
 def get_udfs(n: int = 10,
              *,
              skip: int = 0,
@@ -70,7 +70,7 @@ Fetches a list of UDFs.
 
 ## open\_table
 
-```python
+```python showLineNumbers
 def open_table(path: Union[str, DatasetOutputV2],
                *,
                fetch_samples: Optional[bool] = None) -> Table
@@ -100,7 +100,7 @@ Open a Table object given a path to the root of the table
 
 ## ingest
 
-```python
+```python showLineNumbers
 def ingest(
     input: Union[str, Sequence[str], Path, gpd.GeoDataFrame],
     output: Optional[str] = None,
@@ -233,7 +233,7 @@ Ingest a dataset into the Fused partitioned format.
 
 ## ingest\_nongeospatial
 
-```python
+```python showLineNumbers
 def ingest_nongeospatial(
     input: Union[str, Sequence[str], Path, gpd.GeoDataFrame],
     output: Optional[str] = None,
@@ -278,7 +278,7 @@ Ingest a dataset into the Fused partitioned format.
 
 ## map
 
-```python
+```python showLineNumbers
 def map(dataset: Union[str, Dataset, Table],
         output_table: Optional[str] = None,
         udf: Union[BaseUdf, None] = None,
@@ -306,7 +306,7 @@ Construct a `map` config from this Table
 
 ## join
 
-```python
+```python showLineNumbers
 def join(dataset: Union[str, Dataset, Table],
          other: Union[str, Dataset, Table],
          output_table: Optional[str] = None,
@@ -352,7 +352,7 @@ Construct a join config from two tables
 
 ## job
 
-```python
+```python showLineNumbers
 def job(input: Union[
     str,
     Dict,
@@ -378,7 +378,7 @@ Construct a JobConfig
 
 ## \_whoami
 
-```python
+```python showLineNumbers
 def _whoami()
 ```
 
@@ -386,7 +386,7 @@ Returns information on the currently logged in user
 
 ## plot
 
-```python
+```python showLineNumbers
 def plot(gdf: gpd.GeoDataFrame,
          source: Union[str,
                        TileProvider] = cx.providers.CartoDB.DarkMatterNoLabels,
@@ -407,7 +407,7 @@ Plot a GeoDataFrame on a map using contextily to add basemap
 
 ## delete
 
-```python
+```python showLineNumbers
 def delete(path: str,
            max_deletion_depth: Union[int, Literal["unlimited"]] = 2) -> bool
 ```
@@ -425,13 +425,13 @@ Delete the files at the path.
 
 **Examples**:
 
-    ```python
+    ```python showLineNumbers
     fused.delete("fd://bucket-name/deprecated_table/")
     ```
 
 ## list
 
-```python
+```python showLineNumbers
 def list(path: str) -> List[str]
 ```
 
@@ -449,13 +449,13 @@ List the files at the path.
 
 **Examples**:
 
-    ```python
+    ```python showLineNumbers
     fused.list("fd://bucket-name/")
     ```
 
 ## get
 
-```python
+```python showLineNumbers
 def get(path: str) -> bytes
 ```
 
@@ -473,13 +473,13 @@ Download the contents at the path to memory.
 
 **Examples**:
 
-    ```python
+    ```python showLineNumbers
     fused.get("fd://bucket-name/file.parquet")
     ```
 
 ## download
 
-```python
+```python showLineNumbers
 def download(path: str, local_path: Union[str, Path]) -> None
 ```
 
@@ -492,7 +492,7 @@ Download the contents at the path to disk.
 
 ## upload
 
-```python
+```python showLineNumbers
 def upload(local_path: Union[str, Path, bytes, BinaryIO],
            remote_path: str) -> None
 ```
@@ -516,7 +516,7 @@ Upload local file to S3.
 
 ## sign\_url
 
-```python
+```python showLineNumbers
 def sign_url(path: str) -> str
 ```
 
@@ -536,13 +536,13 @@ This function may not check that the file represented by the path exists.
 
 **Examples**:
 
-    ```python
+    ```python showLineNumbers
     fused.sign_url("fd://bucket-name/table_directory/file.parquet")
     ```
 
 ## sign\_url\_prefix
 
-```python
+```python showLineNumbers
 def sign_url_prefix(path: str) -> Dict[str, str]
 ```
 
@@ -560,13 +560,13 @@ Create signed URLs to access all blobs under the path.
 
 **Examples**:
 
-    ```python
+    ```python showLineNumbers
     fused.sign_url_prefix("fd://bucket-name/table_directory/")
     ```
 
 ## zip\_tables
 
-```python
+```python showLineNumbers
 def zip_tables(
         tables: Iterable[Union[Table, str]],
         *,
@@ -586,7 +586,7 @@ Create a job input that zips the columns of tables together. This takes the part
 
 ## union\_tables
 
-```python
+```python showLineNumbers
 def union_tables(
         tables: Iterable[Union[Table, str]],
         *,

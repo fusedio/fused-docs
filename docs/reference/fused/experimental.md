@@ -5,7 +5,7 @@ title: fused.experimental
 
 ## open\_project
 
-```python
+```python showLineNumbers
 def open_project(path: str,
                  *,
                  lazy: bool = False,
@@ -32,7 +32,7 @@ Open a project folder.
 
 ## load\_udf
 
-```python
+```python showLineNumbers
 def load_udf(udf_paths: Sequence[str],
              *,
              parameters: Optional[Dict[str, Any]] = None,
@@ -77,7 +77,7 @@ Load UDF(s) in a UdfRegistry object.
 
 ## open\_table
 
-```python
+```python showLineNumbers
 def open_table(path: Union[str, DatasetOutputV2],
                *,
                fetch_samples: Optional[bool] = None) -> Table
@@ -107,7 +107,7 @@ Open a Table object given a path to the root of the table
 
 ## job
 
-```python
+```python showLineNumbers
 def job(input: Union[
     str,
     Dict,
@@ -133,7 +133,7 @@ Construct a JobConfig
 
 ## sign\_url
 
-```python
+```python showLineNumbers
 def sign_url(path: str) -> str
 ```
 
@@ -153,13 +153,13 @@ This function may not check that the file represented by the path exists.
 
 **Examples**:
 
-    ```python
+    ```python showLineNumbers
     fused.experimental.sign_url("fd://bucket-name/table_directory/file.parquet")
     ```
 
 ## sign\_url\_prefix
 
-```python
+```python showLineNumbers
 def sign_url_prefix(path: str) -> Dict[str, str]
 ```
 
@@ -177,6 +177,6 @@ Create signed URLs to access all blobs under the path.
 
 **Examples**:
 
-    ```python
+    ```python showLineNumbers
     fused.experimental.sign_url_prefix("fd://bucket-name/table_directory/")
     ```

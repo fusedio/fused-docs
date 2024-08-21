@@ -7,7 +7,7 @@ Microsoft Excel can load from a given URL to a `.csv`.
 
 This example retrieves Caltrain live location data from GTFS realtime feed, and returns it as a dataframe.
 
-```python
+```python showLineNumbers
 @fused.udf
 def udf(bbox=None):
     import requests

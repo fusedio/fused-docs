@@ -32,7 +32,7 @@ Endpoints can be called with "private" or "shared" authentication tokens. They a
 
 Python environments where the authentication flow completed successfully store a credentials key in the default location ` ~/.fused/credentials`. Calls to UDFs from those environments will use that key, unless a token for a different account is explicitly set in the call. Making calls to endpoints from a non-authenticated environment will need the authenticated account's access token, which can be retrieved with the following commands.
 
-```python
+```python showLineNumbers
 from fused._auth import CREDENTIALS
 
 CREDENTIALS.credentials.access_token
@@ -58,7 +58,7 @@ curl -XGET https://app.fused.io/server/v1/realtime-shared/$SHARED_TOKEN/run/file
 Shared tokens are tightly scoped to a single UDF, and can easily be revoked. Creating a shared token for a UDF returns a token object that, among other attributes, contains the token as a string and sample endpoint URLs.
 
 This is how to to call UDF endpoints in Python with signed token URLs.
-```python
+```python showLineNumbers
 from fused.api import FusedAPI
 api = FusedAPI()
 
@@ -69,22 +69,22 @@ output = fused.core.run_shared_file(token=token_object.token, my_param="...")
 ### Manage shared tokens
 
 Fetch a specific UDF token object using its unique token string:
-```python
+```python showLineNumbers
 token_object = api.get_udf_access_token(token=token.token)
 ```
 
 Fetch all UDF tokens:
-```python
+```python showLineNumbers
 token_objects = api.get_udf_access_tokens()
 ```
 
 Update a specific UDF token using its unique token string:
-```python
+```python showLineNumbers
 token_object = api.update_udf_access_token(token=token.token, enabled=True)
 ```
 
 Delete a specific UDF token using its unique token string:
-```python
+```python showLineNumbers
 api.delete_udf_access_token(token=token.token, enabled=True)
 ```
 
@@ -96,7 +96,7 @@ Similarly, signed URLs endpoints can be created that can be called from another 
 Single file HTTP endpoints are suitable for handling individual requests, ideal for scenarios where a single resource is required, such as loading data into [Google Sheets](/user-guide/out/googlesheets/).
 
 
-```python
+```python showLineNumbers
 from fused.api import FusedAPI
 api = FusedAPI()
 
@@ -108,7 +108,7 @@ api.create_udf_access_token(udf_email="user@fused.io", udf_name="caltrain_live_l
 
 Tile HTTP endpoints are designed for serving map applications that consume Tiles, such as [Lonboard](/user-guide/out/lonboard/) or [geemap](/user-guide/out/geemap/).
 
-```python
+```python showLineNumbers
 from fused.api import FusedAPI
 api = FusedAPI()
 
@@ -123,17 +123,17 @@ The Fused Python SDK exposes methods to call UDFs. In Python environments authen
 
 Call UDF and return its output:
 
-```python
+```python showLineNumbers
 output = fused.core.run_file("user@fused.io", "caltrain_live_location")
 ```
 
 Call UDF asynchronously and return its output:
-```python
+```python showLineNumbers
 output = await fused.core.run_file_async("user@fused.io", "caltrain_live_location")
 ```
 
 Import as a UDF object:
-```python
+```python showLineNumbers
 my_udf = fused.core.load_udf_from_fused("user@fused.io", "caltrain_live_location")
 ```
 

@@ -5,7 +5,7 @@ title: fused._options
 
 ## OpenOptions Objects
 
-```python
+```python showLineNumbers
 class OpenOptions(OptionsBaseModel)
 ```
 
@@ -29,7 +29,7 @@ Automatically refresh project objects when accessing a key that is not present l
 
 ## ShowOptions Objects
 
-```python
+```python showLineNumbers
 class ShowOptions(OptionsBaseModel)
 ```
 
@@ -53,7 +53,7 @@ Whether to automatically materialize virtual project folders in reprs
 
 ## CacheOptions Objects
 
-```python
+```python showLineNumbers
 class CacheOptions(OptionsBaseModel)
 ```
 
@@ -65,7 +65,7 @@ Whether to enable caching
 
 ## Options Objects
 
-```python
+```python showLineNumbers
 class Options(OptionsBaseModel)
 ```
 
@@ -115,7 +115,7 @@ Default for whether to validate imports in UDFs before `run_local`,
 
 ## save
 
-```python
+```python showLineNumbers
 def save()
 ```
 
@@ -137,7 +137,7 @@ This object contains a set of configuration options that control global behavior
 
 ## set\_option
 
-```python
+```python showLineNumbers
 def set_option(option_name: str, option_value: Any)
 ```
 
@@ -172,7 +172,7 @@ by specifying the option name in the form "parent.child".
 
 ## \_env
 
-```python
+```python showLineNumbers
 def _env(environment_name: str)
 ```
 

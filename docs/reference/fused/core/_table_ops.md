@@ -5,7 +5,7 @@ title: fused.core._table_ops
 
 ## get\_chunks\_metadata
 
-```python
+```python showLineNumbers
 def get_chunks_metadata(url: str) -> gpd.GeoDataFrame
 ```
 
@@ -17,7 +17,7 @@ Returns a GeoDataFrame with each chunk in the table as a row.
 
 ## get\_chunk\_from\_table
 
-```python
+```python showLineNumbers
 def get_chunk_from_table(
         url: str,
         file_id: Union[str, int, None],

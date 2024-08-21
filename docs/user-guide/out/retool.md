@@ -1,14 +1,10 @@
 # Retool
 
-Run Fused UDFs from Retool.
-
-This guide shows how to create a [custom Retool component](https://docs.retool.com/apps/web/guides/components/custom) using the [Mapbox GL JS](https://docs.mapbox.com/mapbox-gl-js/example/) library to render vector tiles.
-
-You'll first generate a signed UDF URL then introduce it into a custom map component that can input and output data across other Retool components.
+[Retool](https://retool.com/) is a platform to build internal software. This guide shows how to create a vector map from a UDF on a [Mapbox GL JS](https://docs.mapbox.com/mapbox-gl-js/example/) map with a [custom Retool component](https://docs.retool.com/apps/web/guides/components/custom). You'll first generate a signed UDF URL then introduce it into a custom map component that can input and output data across other Retool components.
 
 ## 1. Create an HTML map
 
-Create a mapbox `.html` map following this [tutorial](/user-guide/out/mapbox/).
+Follow this [guide](/user-guide/out/mapbox/) to create a mapbox `.html` map that renders vector tiles from a UDF.
 
 ## 2. Create a custom Retool component
 
@@ -16,7 +12,7 @@ In a Retool app, create a custom Retool component. In the `IFrame Code` box, pas
 
 ![alt text](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/retool-1.png)
 
-It's that easy. The following two sections show how to interchange data with the map component you just created. That's a bit more elaborate, but you're in good hands.
+The following two sections show how to interchange data with the map component.
 
 ## 3. Pass data from a UI component to the map (optional)
 

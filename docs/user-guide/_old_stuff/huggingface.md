@@ -7,7 +7,7 @@ Three things to keep in mind when working with HuggingFace on Fused:
 2. Use `@fused.cache` to ensure you download models only once.
 3. Authenticate with a token.
 
-```python
+```python showLineNumbers
 @fused.udf
 def udf(bbox: fused.types.Bbox=None, n: int=10):
 

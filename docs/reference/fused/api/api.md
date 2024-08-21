@@ -5,7 +5,7 @@ title: fused.api.api
 
 ## FusedAPI Objects
 
-```python
+```python showLineNumbers
 class FusedAPI()
 ```
 
@@ -13,7 +13,7 @@ API for running jobs in the Fused service.
 
 ## \_\_init\_\_
 
-```python
+```python showLineNumbers
 def __init__(*,
              base_url: Optional[str] = None,
              set_global_api: bool = True,
@@ -30,7 +30,7 @@ Create a FusedAPI instance.
 
 ## sample\_map
 
-```python
+```python showLineNumbers
 def sample_map(config: MapJobStepConfig,
                *,
                file_id: Optional[Union[str, int]] = None,
@@ -53,7 +53,7 @@ Fetch a sample of an operation
 
 ## sample\_join
 
-```python
+```python showLineNumbers
 def sample_join(config: JoinJobStepConfig,
                 *,
                 file_id: Optional[Union[str, int]] = None,
@@ -76,7 +76,7 @@ Fetch a sample of an operation
 
 ## sample\_single\_file\_join
 
-```python
+```python showLineNumbers
 def sample_single_file_join(
         config: JoinSinglefileJobStepConfig,
         *,
@@ -100,7 +100,7 @@ Fetch a sample of an operation
 
 ## start\_job
 
-```python
+```python showLineNumbers
 def start_job(config: Union[JobConfig, JobStepConfig],
               *,
               instance_type: Optional[WHITELISTED_INSTANCE_TYPES] = None,
@@ -128,7 +128,7 @@ Execute an operation
 
 ## create\_udf\_access\_token
 
-```python
+```python showLineNumbers
 def create_udf_access_token(udf_email: str,
                             udf_name: Optional[str] = None,
                             *,
@@ -158,7 +158,7 @@ The token does not allow running any other UDF on your account.
 
 ## get\_jobs
 
-```python
+```python showLineNumbers
 def get_jobs(n: int = 5,
              *,
              skip: int = 0,
@@ -186,7 +186,7 @@ Get the job history.
 
 ## get\_status
 
-```python
+```python showLineNumbers
 def get_status(job: CoerceableToJobId) -> RunResponse
 ```
 
@@ -203,7 +203,7 @@ Fetch the status of a running job
 
 ## get\_logs
 
-```python
+```python showLineNumbers
 def get_logs(job: CoerceableToJobId,
              since_ms: Optional[int] = None) -> List[Any]
 ```
@@ -222,7 +222,7 @@ Fetch logs for a job
 
 ## tail\_logs
 
-```python
+```python showLineNumbers
 def tail_logs(job: CoerceableToJobId,
               refresh_seconds: float = 1,
               sample_logs: bool = True,
@@ -242,7 +242,7 @@ Continuously print logs for a job
 
 ## wait\_for\_job
 
-```python
+```python showLineNumbers
 def wait_for_job(job: CoerceableToJobId,
                  poll_interval_seconds: float = 5,
                  timeout: Optional[float] = None) -> RunResponse
@@ -268,7 +268,7 @@ Block the Python kernel until the given job has finished
 
 ## cancel\_job
 
-```python
+```python showLineNumbers
 def cancel_job(job: CoerceableToJobId) -> RunResponse
 ```
 
@@ -285,7 +285,7 @@ Cancel an existing job
 
 ## show
 
-```python
+```python showLineNumbers
 def show(path: str,
          *,
          open_browser: Optional[bool] = None,
@@ -320,7 +320,7 @@ Visualize a dataset
 
 ## show\_multi
 
-```python
+```python showLineNumbers
 def show_multi(
         datasets: Sequence[DatasetViz],
         *,
@@ -352,7 +352,7 @@ Visualize multiple datasets
 
 ## show\_multi\_v2
 
-```python
+```python showLineNumbers
 def show_multi_v2(
         datasets: Sequence[DatasetVizV2],
         *,
@@ -384,7 +384,7 @@ Visualize multiple datasets
 
 ## \_whoami
 
-```python
+```python showLineNumbers
 def _whoami() -> Any
 ```
 
@@ -392,7 +392,7 @@ Returns information on the currently logged in user
 
 ## \_list\_realtime\_instances
 
-```python
+```python showLineNumbers
 def _list_realtime_instances(*, whose: str = "self") -> List[Any]
 ```
 
@@ -401,7 +401,7 @@ Returns information about available realtime instances
 
 ## upload
 
-```python
+```python showLineNumbers
 def upload(path: str, data: Union[bytes, BinaryIO]) -> None
 ```
 
@@ -409,7 +409,7 @@ Upload a binary blob to a cloud location
 
 ## \_upload\_tmp
 
-```python
+```python showLineNumbers
 def _upload_tmp(extension: str, data: Union[bytes, BinaryIO]) -> str
 ```
 
@@ -417,7 +417,7 @@ Upload a binary blob to a temporary cloud location, and return the new URL
 
 ## \_replace\_df\_input
 
-```python
+```python showLineNumbers
 def _replace_df_input(
     input: Union[str, List[str], Path,
                  gpd.GeoDataFrame]) -> Union[str, List[str]]
@@ -427,7 +427,7 @@ If the input is a DataFrame, upload it and return a URL to it. Otherwise return 
 
 ## \_health
 
-```python
+```python showLineNumbers
 def _health() -> bool
 ```
 
@@ -435,7 +435,7 @@ Check the health of the API backend
 
 ## auth\_token
 
-```python
+```python showLineNumbers
 def auth_token() -> str
 ```
 

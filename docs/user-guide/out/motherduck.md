@@ -1,8 +1,6 @@
 # MotherDuck
 
-![alt text](motherduck_fused.png)
-
-[MotherDuck](https://motherduck.com/) is a collaborative serverless analytics platform. It's popular for its hybrid DuckDB execution engine, simplified database sharing, a diverse integrations ecosystem, and a SQL notebook-like UI. It runs DuckDB, so it supports several of the table output formats that Fused can serve - particularly Parquet files.
+[MotherDuck](https://motherduck.com/) is a serverless SQL analytics platform. It's popular for its hybrid DuckDB execution engine, simplified database sharing, a diverse integrations ecosystem, and a SQL notebook-like UI. It runs DuckDB, so it supports several of the table output formats that Fused can serve - particularly Parquet files.
 
 To follow along, you'll need a Motherduck account - which you can create for free.
 
@@ -19,6 +17,8 @@ This example uses an instance of the [DEM Raster to Vector](https://github.com/f
 ## 2. Run a query
 
 Now you can make a query using the UDF URL.
+
+![alt text](motherduck_fused.png)
 
 ### Parquet
 

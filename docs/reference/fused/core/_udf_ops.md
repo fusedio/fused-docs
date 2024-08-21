@@ -5,7 +5,7 @@ title: fused.core._udf_ops
 
 ## load\_udf\_from\_fused
 
-```python
+```python showLineNumbers
 def load_udf_from_fused(email_or_id: str,
                         id: Optional[str] = None,
                         *,
@@ -22,7 +22,7 @@ Download the code of a UDF, to be run inline.
 
 ## load\_udf\_from\_github
 
-```python
+```python showLineNumbers
 def load_udf_from_github(url: str, *, cache_key: Any = None) -> BaseUdf
 ```
 
