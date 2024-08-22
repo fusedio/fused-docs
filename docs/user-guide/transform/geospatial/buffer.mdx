@@ -8,67 +8,65 @@ sidebar_position: 2
 
 # Buffer: A Comprehensive Guide
 
-Buffer analyses helps extract meaningful insights from location-based information. It helps determine which objects fall within certain distance of areas of interest (AOIs) and account for possible real-world imprecisions in gps data. This technique can be applied to various scenarios, such as identifying the average speed on road segments or pinpointing intersections prone to accidents to improve road safety.
+Buffer analysis is a geospatial technique used to extract meaningful insights from location-based data. It helps determine which objects fall within a certain distance of Areas of Interest (AOIs) and accounts for possible real-world inaccuracies in GPS data. This method is applicable in various scenarios, such as identifying average speeds on road segments or detecting accident-prone intersections to enhance road safety.
 
-In this tutorial we'll explore how to buffer analysis between pairs of tables to determine which vehicles are using specific roads. Other common industry applications involve determining which stores are within a certain distance of an area of interest (AOI), and which buildings are within a certain distance of a body of water.
+This tutorial shows a buffer analysis between a Point table and a LineString table to identify which vehicles are using specific roads. This approach can also be applied to other industry scenarios, such as determining which stores are within a certain distance of an area of interest (AOI) or which buildings are close to a body of water.
+
+import ImageAnatomy from '@site/static/img/buffer.jpg';
 
 <div style={{textAlign: 'center'}}>
-<img src="https://saylordotorg.github.io/text_essentials-of-geographic-information-systems/section_11/5c7eb6fc4bcbfc5117d778f0aabfded6.jpg" alt="File" style={{width: 1200}} />
+<img src={ImageAnatomy} alt="File" style={{}} />
 </div>
+
+
 _Visual representation of buffer around GeoPandas `Point`, `LineString`, and `Polygon` objects._ [Reference.](https://saylordotorg.github.io/text_essentials-of-geographic-information-systems/section_11/5c7eb6fc4bcbfc5117d778f0aabfded6.jpg)
 
 
 ## Applications
 
-### Urban analysis
-
-- Identify average speed on road segments.
-- Improve road safety by identifying intersections prone to collisions.
-- Analyze ride-hailing pickup locations.
-
-### Retail
-
-- Determine store visitors based on mobile GPS data.
-
-### Climate Risk
-
-- Proximity analysis (e.g., find stores within 100 meters of a river or fuel source).
+- Proximity analysis: Identify roads within a certain distance of specific landmarks
+- Safety assessment: Pinpoint intersections prone to accidents
+- Visit attribution: Determine visitors based on mobile GPS data to optimize store locations
+- Site selection: Find buildings adjacent to parks
+- Environmental monitoring: Identify watersheds within a certain distance of pollutant sources
 
 ## Implementing buffer analysis
 
-Once you determine which vehicle GPS points fall within a buffer, you can extract subsequent information such as average speed for each road segment. However, GPS data from vehicles isn't always perfectly accurate. Factors like satellite signal obstruction, atmospheric conditions, and device limitations can cause variations in reported locations. This means that even when a vehicle is traveling on a road, its GPS coordinates might not align exactly with the road's location on a map.
+
 
 
 ### Implementation steps
 
-To address this, we can create a buffer zone around the road and check which GPS point fall within this area. Here's how to do this:
+To illustrate, we'll determine which vehicle GPS points fall within a buffer around a road. We can create a buffer zone around the road and check which GPS point fall within this area. Here's how to do this:
 
+1. Represent road segments as `LineStrings` and vehicle GPS locations as `Points`
 1. Create a buffer around a set of target roads
-2. Perform a spatial join between the buffered roads and the vehible GPS points
+2. Call the [`within`](https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoSeries.within.html) method to check which GPS points fall within the buffer
 
 ### Example UDF
 
 ```python showLineNumbers
 @fused.udf
-def udf(n_points: int=10000, buffer: int=0.025):
+def udf(n_points: int=1000, buffer: float=0.0025):
     import geopandas as gpd
-    from shapely.geometry import Point, Polygon
+    from shapely.geometry import Point, Polygon, LineString
     import random
 
+    # Create LineString to represent a road
+    linestring_columbus = LineString([[-122.4194,37.8065],[-122.4032,37.7954]])
+    gdf_road = gpd.GeoDataFrame({'geometry': [linestring_columbus], 'name': ['Columbus Ave']})
 
-    # Create a GeoDataFrame for points within the bounding box of an outer square
-    gdf_polygon = gpd.GeoDataFrame({'geometry': [Polygon([(-122.52690000000051, 37.70313158980733),(-122.52690000000051, 37.816395657523195),(-122.34604834372873, 37.816134829424335),(-122.34656848822227, 37.70339041384273)])]})
-    minx, miny, maxx, maxy = gdf_polygon.bounds.iloc[0]
+    # Create Points to represent GPS pings
+    minx, miny, maxx, maxy = gdf_road.total_bounds
     points = [Point(random.uniform(minx, maxx), random.uniform(miny, maxy)) for _ in range(n_points)]
     gdf_points = gpd.GeoDataFrame({'geometry': points})
-    gdf_points['color'] = 10
 
-    # Create a buffer around a point at the centroid of the square
-    buffered_polygon = gdf_polygon.centroid.buffer(buffer)
+    # Create a buffer around the road
+    buffered_polygon = gdf_road.buffer(buffer)
 
     # Color the points that fall within the buffered polygon
     points_within = gdf_points[gdf_points.geometry.within(buffered_polygon.unary_union)]
-    gdf_points.loc[points_within.index, 'color'] = 1000
+    gdf_points = gdf_points.loc[points_within.index]
 
     return gdf_points
 ```
@@ -76,20 +74,18 @@ def udf(n_points: int=10000, buffer: int=0.025):
 
 ### Scaling up with Fused
 
-For large scale analysis across global datasets, you can implement the above process as a Fused UDF and spatially filter each table to only perform the calculation over overlapping areas. This will make computations more efficient and enable you to perform the analysis in parallel across multiple workers and scale up to any size dataset.
+To scale the analysis to larger regions or datasets, you can first spatially filter each table to only perform the above calculation over spatially overlapping regions. This makes computations more efficient and enable running the analysis in parallel.
 
 ## Conclusion
 
-Buffer analysis is a powerful technique, but it's important to consider its limitations and potential complexities of the data.
-
-For example, in some scenarios you'll often find that buffers of different Areas of Interest (AOI) intersect which can lead to ambiguous situations where a single point falls within multiple buffers. The significance of a point falling within multiple buffers depends on your specific use case:
-- For road analysis, a car can't physically be on two roads simultaneously. In such cases, you'll need to employ additional techniques to resolve ambiguities, such as speed or direction analysis.
-- In other scenarios, like identifying "all buildings within 100m of any water body," overlapping buffers might not be problematic and could actually provide valuable insights.
+Buffer analysis is a powerful technique, but it's important to consider its limitations and potential complexities of the data. For example, in some scenarios you'll often find that buffers of different Areas of Interest (AOI) intersect which can lead to ambiguous situations where a single point falls within multiple buffers. The significance of a point falling within multiple buffers depends on the specifics of the use-case. For example:
+- For road analysis, a car can't physically be on two roads simultaneously. In such cases, you'll need to employ additional techniques to resolve ambiguities, like determine speed or direction of travel.
+- In other scenarios, like identifying "all buildings within 100m of any water body" overlapping buffers might not be problematic and could actually provide valuable insights.
 
 
 ## Demo app [beta]
 
-This app illustrates the buffer analysis between two GeoPandas GeoDataFrames: road segment represented with `LineStrings` and a table of vehicle GPS locations represented with `Points`. To determine which vehicles are using specific roads, we create a buffer around the road segments using the GeoDataFrame's `buffer` method and check which GPS points fall in this area using the `within` method.
+This app runs a version of the above UDF to implement a buffer analysis between two `GeoPandas` `GeoDataFrames`: road segments represented with `LineStrings` and a table of vehicle GPS locations represented with `Points`. To determine which vehicles are using specific roads, we create a buffer around the road segments using the GeoDataFrame's `buffer` method and check which GPS points fall in this area using the `within` method.
 
 The road segments are marked in black: the intersection of Van Ness and Main Street, and Columbus Avenue. Scattered across the map are red dots, representing arbitrary GPS locations of vehicles. The key feature of this visualization is the blue buffer zone surrounding the road segments.
 
@@ -117,28 +113,3 @@ import BUFFER_CODE from "@site/src/app-iframe/python/buffer.py";
     "pydeck",
   ]}
 />
-
-{/*
-
-import POINT_IN_POLYGON_CODE from "@site/src/app-iframe/python/point-in-polygon.py";
-
-## Demo second iframe
-
-Here's a second iframe
-
-<Iframe
-  id="iframe-2"
-  code={POINT_IN_POLYGON_CODE}
-  requirements={[
-    "geopandas",
-    "requests",
-    "xarray",
-    "yarl",
-    "pydeck",
-    "imageio",
-    "matplotlib",
-    "streamlit-ace"
-  ]}
-/>
-
-*/}
