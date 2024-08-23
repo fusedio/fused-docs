@@ -3,10 +3,7 @@ import streamlit as st
 st.header("Buffer analysis")
 
 st.write(
-    """
-This app illustrates the buffer analysis between two GeoPandas GeoDataFrames: road segment represented with `LineStrings` and a table of vehicle GPS locations represented with `Points`. To determine which vehicles are using specific roads, we create a buffer around the road segments using the GeoDataFrame's `buffer` method and check which GPS points fall in this area using the `within` method.
-
-Users can interact with the two sliders on the sidebar to adjust:
+    """This app illustrates buffer analysis between road segments and vehicle GPS locations. Users can interact with the two sliders on the sidebar to adjust:
 - The number of vehicle points to show on the map
 - The size of the buffer, causing the blue area to expand or contract accordingly
 """
@@ -22,8 +19,6 @@ import micropip
 await micropip.install("geopandas")
 await micropip.install("requests")
 await micropip.install("pydeck")
-await micropip.install("xarray")
-await micropip.install("yarl")
 import fused_app
 import pydeck as pdk
 
@@ -65,9 +60,8 @@ gdf_points["lat"], gdf_points["lng"] = (
 col1, col2 = st.columns(2)
 
 with col1:
-    st.write("### 🚗 Vehicle GPS points")  # TODO: car and timestamp
+    st.write("### 🚗 Vehicle GPS points")
     edited_gdf_points = st.data_editor(gdf_points[["lat", "lng"]].head(10).T)
-    # TODO: geometry
 
 with col2:
     st.write("### 🛣️ Roads")
