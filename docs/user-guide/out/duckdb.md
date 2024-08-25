@@ -2,7 +2,6 @@
 
 [DuckDB](https://duckdb.org/) is an open source, in-process, analytical database. Its can natively read several of output formats that Fused HTTP Endpoints return.
 
-To load data from Fused, you'll first generate a signed UDF URL.
 
 ## 1. Generate a signed URL for a UDF
 

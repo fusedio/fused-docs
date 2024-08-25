@@ -89,7 +89,7 @@ Create an `.html` file following this template. This code creates a DeckGL map t
 
 ### H3HexagonLayer
 
-Create an [`H3HexagonLayer`](https://deck.gl/docs/api-reference/geo-layers/h3-hexagon-layer), which should look similar to this.
+Create an [`H3HexagonLayer`](https://deck.gl/docs/api-reference/geo-layers/h3-hexagon-layer).
 
 <iframe src="/img/deckgl_h3.html"  height="400px" width="100%" scrolling="no"></iframe>
 
@@ -112,7 +112,7 @@ new H3HexagonLayer({
 
 ### Vector Tile Layer
 
-Vector Tile layers are created by placing a [`GeoJsonLayer`](https://deck.gl/docs/api-reference/layers/geojson-layer) sublayer within a [`TileLayer`](https://deck.gl/docs/api-reference/geo-layers/tile-layer). Use the following snippet to introduce a vector layer, which should look similar to this.
+Vector Tile layers are created by placing a [`GeoJsonLayer`](https://deck.gl/docs/api-reference/layers/geojson-layer) sublayer within a [`TileLayer`](https://deck.gl/docs/api-reference/geo-layers/tile-layer). Use the following snippet to introduce a vector layer.
 
 The layer in the sample map comes from [Overture Buildings UDF](https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example).
 
@@ -151,7 +151,7 @@ new TileLayer({
 
 ### Raster Tile Layer
 
-Raster Tile layers are created by placing a [`BitmapLayer`](https://deck.gl/docs/api-reference/layers/bitmap-layer) sublayer within a [`TileLayer`](https://deck.gl/docs/api-reference/geo-layers/tile-layer). Use the following snippet to introduce a raster layer, which should look similar to this. The layer in the sample map comes from the [NAIP Tile UDF](https://github.com/fusedio/udfs/tree/main/public/NAIP_Tile_Example).
+Raster Tile layers are created by placing a [`BitmapLayer`](https://deck.gl/docs/api-reference/layers/bitmap-layer) sublayer within a [`TileLayer`](https://deck.gl/docs/api-reference/geo-layers/tile-layer). Use the following snippet to introduce a raster layer. The sample layer below was created from the [NAIP Tile UDF](https://github.com/fusedio/udfs/tree/main/public/NAIP_Tile_Example).
 
 <iframe src="/img/deckgl_raster.html"  height="300px" width="100%" scrolling="no"></iframe>
 
