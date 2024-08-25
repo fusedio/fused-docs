@@ -1,4 +1,7 @@
-# DeckGL (HTML)
+---
+title: DeckGL (HTML)
+sidebar_label: DeckGL (HTML)
+---
 
 [DeckGL](https://deck.gl/) is a highly framework to create interactive map visualizations that handle large datasets.
 
