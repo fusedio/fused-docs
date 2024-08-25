@@ -1,22 +1,24 @@
-# DeckGL (HTML)
+---
+title: DeckGL (HTML)
+sidebar_label: DeckGL (HTML)
+---
 
-[DeckGL](https://deck.gl/) is a highly performant framework for large-scale data visualization.
+[DeckGL](https://deck.gl/) is a highly framework to create interactive map visualizations that handle large datasets.
 
-This guide shows how to load data from Fused into DeckGL maps created from a single standalone HTML page. It contains example for vector, raster, and H3.
+This guide shows how to load data from Fused into DeckGL maps created from a single standalone HTML page with the following layer types:
 
-That said, DeckGL is React-friendly and can be used to create powerful applications. In fact, the Fused Workbench map is DeckGL.
-
-You'll first generate a signed UDF URL and render it on an HTML map.
+- [H3HexagonLayer](/user-guide/out/deckgl/#h3hexagonlayer)
+- [Vector Tile Layer](/user-guide/out/deckgl/#vector-tile-layers)
+- [Raster Tile Layer](/user-guide/out/deckgl/#raster-tile-layers)
 
 ## 1. Generate a signed URL for a UDF
 
-First, on Workbench, create and save a UDF that successfully renders in `Tile` mode. Under the "Settings" tab, click "Share" to [generate a signed URL](/core-concepts/run/#http-requests) that can be called via HTTP requests.
-
-If looking to render a [Tile](/core-concepts/filetile/) map, modify the generated `HTTP` URL to run as a [Tile](/core-concepts/filetile/#tile-endpoint) with the `tiles/` path paramater, followed by templated `/{z}/{x}/{y}` path. You can optionally pass UDF parameters as UDF-encoded strings, which can be configured to change based on UI user input.
+First create a UDF and [generate a HTTP endpoint](/core-concepts/run/#http-requests).
 
 ## 2. Create a DeckGL HTML map
 
-Create an `.html` file following this template. This code creates a DeckGL map then introduces a layer that renders data from the specified Fused endpoint. This is a basic example. Read on to see how to configure `H3HexagonLayer`, and raster layers.
+Create an `.html` file following this template. This code creates a DeckGL map then introduces a layer that renders data from the specified Fused endpoint.
+
 
 ```html
 <!DOCTYPE html>
@@ -87,7 +89,7 @@ Create an `.html` file following this template. This code creates a DeckGL map t
 
 ### H3HexagonLayer
 
-Use the following snippet to introduce an [`H3HexagonLayer`](https://deck.gl/docs/api-reference/geo-layers/h3-hexagon-layer), which should look similar to this.
+Create an [`H3HexagonLayer`](https://deck.gl/docs/api-reference/geo-layers/h3-hexagon-layer).
 
 <iframe src="/img/deckgl_h3.html"  height="400px" width="100%" scrolling="no"></iframe>
 
@@ -108,9 +110,9 @@ new H3HexagonLayer({
 }),
 ```
 
-### Vector Tile layers
+### Vector Tile Layer
 
-Vector Tile layers can be created by placing a [`GeoJsonLayer`](https://deck.gl/docs/api-reference/layers/geojson-layer) sublayer within a [`TileLayer`](https://deck.gl/docs/api-reference/geo-layers/tile-layer). Use the following snippet to introduce a vector layer, which should look similar to this.
+Vector Tile layers are created by placing a [`GeoJsonLayer`](https://deck.gl/docs/api-reference/layers/geojson-layer) sublayer within a [`TileLayer`](https://deck.gl/docs/api-reference/geo-layers/tile-layer). Use the following snippet to introduce a vector layer.
 
 The layer in the sample map comes from [Overture Buildings UDF](https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example).
 
@@ -147,9 +149,9 @@ new TileLayer({
 });
 ```
 
-### Raster Tile layers
+### Raster Tile Layer
 
-Raster Tile layers can be created by placing a [`BitmapLayer`](https://deck.gl/docs/api-reference/layers/bitmap-layer) sublayer within a [`TileLayer`](https://deck.gl/docs/api-reference/geo-layers/tile-layer). Use the following snippet to introduce a raster layer, which should look similar to this. The layer in the sample map comes from the [NAIP Tile UDF](https://github.com/fusedio/udfs/tree/main/public/NAIP_Tile_Example).
+Raster Tile layers are created by placing a [`BitmapLayer`](https://deck.gl/docs/api-reference/layers/bitmap-layer) sublayer within a [`TileLayer`](https://deck.gl/docs/api-reference/geo-layers/tile-layer). Use the following snippet to introduce a raster layer. The sample layer below was created from the [NAIP Tile UDF](https://github.com/fusedio/udfs/tree/main/public/NAIP_Tile_Example).
 
 <iframe src="/img/deckgl_raster.html"  height="300px" width="100%" scrolling="no"></iframe>
 
