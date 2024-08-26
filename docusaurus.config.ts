@@ -54,7 +54,7 @@ const config: Config = {
           blogDescription: "Latest blog posts from Fused.",
           postsPerPage: 5,
           blogSidebarTitle: "All posts",
-          blogSidebarCount: "ALL",
+          blogSidebarCount: 0,
           showReadingTime: true, // When set to false, the "x min read" won't be shown
           readingTime: ({ content, frontMatter, defaultReadingTime }) =>
             defaultReadingTime({ content, options: { wordsPerMinute: 300 } }),
