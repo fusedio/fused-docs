@@ -28,7 +28,7 @@ export default function BlogLayout(props: Props): JSX.Element {
             <div className="col col--2">
               <h4>Jump to section</h4>
               {toc} <br></br>
-              <Link to={"/blog"}>↰ Back to blog</Link>
+              <Link to={"/blog"}>← Back to blog</Link>
             </div>
           )}
         </div>
