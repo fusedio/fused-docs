@@ -31,7 +31,7 @@ export default function BlogSidebarDesktop({ sidebar }: Props): JSX.Element {
                 className={styles.sidebarItemLink}
                 activeClassName={styles.sidebarItemLinkActive}
               >
-                🏷 {item.title}
+                📒 {item.title}
               </Link>
             </li>
           ))}
