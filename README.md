@@ -9,6 +9,7 @@ This website is built using [Docusaurus](https://docusaurus.io/), a modern stati
 ## 1. Spin-up locally
 
 ```
+npm install
 npx docusaurus start
 ```
 
