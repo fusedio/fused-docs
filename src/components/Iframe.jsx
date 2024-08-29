@@ -153,7 +153,7 @@ export default function Iframe({
       ref={containerRef}
       style={{
         width: "100%",
-        height: "500px",
+        height,
       }}
     >{defaultIframe}</div>
   );
