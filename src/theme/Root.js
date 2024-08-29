@@ -19,6 +19,7 @@ const PATHS_WITH_ONE_IFRAME = [
   "/user-guide/transform/geospatial/zonal_stats/",
   "/workbench/app-builder/",
   "/user-guide/quickstart/",
+  "/blog/global-vegetation-segmentation/",
 ];
 
 const PATHS_WITH_TWO_IFRAMES = [];
