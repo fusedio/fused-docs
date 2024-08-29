@@ -34,7 +34,7 @@ export default function Iframe({
       const payload = JSON.stringify({
         code: code,
         requirements: requirements,
-        isFullScreen: false,
+        isFullScreen: true,
       });
       // Note: for very small strings (say <= 500 bytes), it will be less efficient to gzip them
       const gzipped = gzip(payload);
