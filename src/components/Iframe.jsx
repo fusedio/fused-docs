@@ -13,6 +13,7 @@ export default function Iframe({
   requirements = DEFAULT_APP_REQUIREMENTS, // Hardcode common requirements, unless specified otherwise
   visible = true,
   height = "500px",
+  useResizer = true, // set to false to work around nodes causing this to move around after the effect runs
 }) {
   const containerRef = useRef(null);
 
@@ -24,31 +25,39 @@ export default function Iframe({
     iframe.style.height = `${boundingClientRect.height}px`;
   }
 
+  function createIframeDefaultUrl() {
+    // build url hash with code and requirements
+    const newUrl = new URL(url);
+    const payload = JSON.stringify({
+      code: code,
+      requirements: requirements,
+      isFullScreen: true,
+    });
+    // Note: for very small strings (say <= 500 bytes), it will be less efficient to gzip them
+    const gzipped = gzip(payload);
+    const base64 = u8aToBase64(gzipped);
+
+    newUrl.hash = `${APP_SHARE_PREFIX}${encodeURIComponent(base64)}`;
+    return newUrl.toString();
+  }
+
   useEffect(() => {
+    if (!useResizer) {
+      return;
+    }
+
     let iframe = null;
     let resizeObserver = null;
     let intersectionObserver = null;
     if (!document.getElementById("magic-" + id)) {
-      // build url hash with code and requirements
-      let newUrl = new URL(url);
-      const payload = JSON.stringify({
-        code: code,
-        requirements: requirements,
-        isFullScreen: true,
-      });
-      // Note: for very small strings (say <= 500 bytes), it will be less efficient to gzip them
-      const gzipped = gzip(payload);
-      const base64 = u8aToBase64(gzipped);
-
-      newUrl.hash = `${APP_SHARE_PREFIX}${encodeURIComponent(base64)}`;
-
       // end build url hash with code and requirements
       iframe = document.createElement("iframe");
-      iframe.src = newUrl.toString();
+      iframe.src = createIframeDefaultUrl();
       iframe.height = height;
       iframe.width = "100%";
       iframe.scrolling = "no";
       iframe.id = "magic-" + id;
+
       document.body.appendChild(iframe);
     } else {
       iframe = document.getElementById("magic-" + id);
@@ -71,7 +80,6 @@ export default function Iframe({
     }
 
     iframe.style.position = "absolute";
-
 
     if (visible) {
       const boundingClientRect = containerRef.current?.getBoundingClientRect();
@@ -105,7 +113,7 @@ export default function Iframe({
         }
       });
 
-      resizeObserver?.observe(containerRef.current);
+      resizeObserver.observe(containerRef.current);
     } else {
       iframe.style.left = "-10000px";
       iframe.style.top = "-10000px";
@@ -117,6 +125,7 @@ export default function Iframe({
     return () => {
       if (visible) {
         const iframe = document.getElementById("magic-" + id);
+
         if (iframe) {
           iframe.style.left = "-10000px";
           iframe.style.top = "-10000px";
@@ -124,11 +133,19 @@ export default function Iframe({
           iframe.style.height = "0px";
           iframe.style.display = "none";
         }
+
         resizeObserver.disconnect();
         intersectionObserver.disconnect();
       }
     };
-  }, []);
+  }, [useResizer]);
+
+  const defaultIframe = useResizer ? undefined : <iframe
+    src={createIframeDefaultUrl()}
+    height={height}
+    width={"100%"}
+    scrolling={"no"}
+  />;
 
   return (
     <div
@@ -138,6 +155,6 @@ export default function Iframe({
         width: "100%",
         height: "500px",
       }}
-    />
+    >{defaultIframe}</div>
   );
 }
