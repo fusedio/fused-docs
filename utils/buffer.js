@@ -18,5 +18,5 @@ export function u8aToBase64(buf, applyMax) {
     str += String.fromCharCode.apply(null, chunk);
   }
 
-  return window.btoa(str);
+  return btoa(str);
 }
