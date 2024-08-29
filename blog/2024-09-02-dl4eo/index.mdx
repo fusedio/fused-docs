@@ -1,0 +1,83 @@
+---
+slug: earth-observation-apps-with-realtime-deep-learning
+title: "Earth Observation mapping applications with realtime deep learning layers"
+authors: [jeff]
+tags: [object detection, deep learning, airplane, ai]
+unlisted: false
+image: https://fused-magic.s3.us-west-2.amazonaws.com/blog-assets/pachama_app.png
+hide_table_of_contents: false
+keywords: [object detection, deep learning, airplane, ai]
+---
+
+
+In my last [article](https://www.linkedin.com/pulse/create-fast-api-inference-endpoint-deep-learning-jeff-faudi--fbhsc/?trackingId=P0%2F%2FPN8SQA6%2B5T7myTR7Xw%3D%3D), I demonstrated how to create an API that leverages GPU hardware to perform fast deep learning inference on satellite images. Now, I will show how to go even further and display a live deep learning layer on top of satellite images in a web-mapping application (GoogleMaps style).
+
+
+If you are impatient, you can jump directly to the demonstration [here](https://fused.deepl.earth/). But now, let’s dive into the behind-the-scenes action.
+
+For this demonstration, I will use again my aircraft detection project associated with this [article on Medium](https://medium.com/artificialis/is-yolov8-suitable-for-satellite-imagery-d9a2659a50ab). This project uses [YOLOv8](https://www.ultralytics.com/), a straightforward bounding box detection framework. I will apply it to an Airbus Pleiades image at 50 cm over the "The Historic Aviation Bone Yard" in Tucson which displays hundreds and hundreds of aircrafts.
+
+image -------
+
+To display this image on the web, you typically need to project it in WebMercator projection with [gdal](https://gdal.org/index.html) and cut it into 256x256 pixels tiles that will be displayed nicely by web-mapping applications such as [GoogleMaps](https://developers.google.com/maps), [OpenLayers](https://openlayers.org/), [Mapbox](https://docs.mapbox.com/mapbox-gl-js/guides), [MapLibre](https://maplibre.org/maplibre-gl-js/docs/), [Leaftlet](https://leafletjs.com/) or [Deck.gl](https://deck.gl/).
+
+Until recently, I would have done this physically and generated thousands of tiles. Now, we will do this almost magically with the [fused.io](http://fused.io/) platform.
+
+
+image -  - -
+
+Basically, I just have to write the piece of code that generate the content of a tile and fused.io takes care of running the code and providing the urls to share the layer in any application. The function that I have to create is called a UDF (User Defined Function) and it has at least one parameter which contains the bounding box (bbox) on which I need to generate the tile.
+
+image ---
+
+First, it is worth noting that we extract all content from a GeoTIFF image (ideally a COG i.e. Cloud Optimized GeoTIFF) which contains the bands and geometric information about the satellite image. This GeoTIFF is stored anywhere on the cloud. Here, it is stored in the AWS S3 bucket provided by fused.io. Also note that the function returns an array for raster tiles but could return a GeoJSON for vector tiles.
+
+Now, let's move to the content of the _read_geotiff_rgb_3857_ function.
+
+image ---
+
+We use the bounding box of the tile provided as parameter, convert it from lat/long to webmercator (EPSG:3857), get the corresponding bounding box in the original image and project it in webmercator projection in the destination array with the correct desired tile size (typically 256x256 pixels).
+The fused.io workbench enables to view the result while coding and inspect the logs.
+
+image ---
+
+Now, if we want to display a real-time aircraft detection layer, we could replicate the previous step: send the resulting image extract to the API and display a vector layer. However, we must avoid applying deep learning algorithms to images that might have been zoomed. These algorithms are typically trained at a specific resolution, and the Web Mercator projection does not preserve size.
+
+image ---
+https://en.wikipedia.org/wiki/Mercator_projection
+
+
+So, here we will just read the content of the Pleiades image in its original projection (either the raw geometry or a transverse mercator projection which central meridian would pass through the center of the image). In this case, the resolution is guaranteed to be the correct native resolution of the image.
+
+image -- jeffudf3
+
+The UDF is just getting the Pleiades image in the correct projection, then calling the prediction API and finally returning the predictions in a GeoDataFrame which will be dynamically rendered on the map. For performance, we have added some @fused.cache decorators which make the function automatically cache results for identical parameters.
+Can you guess why the previous code will not work? Because predictions are return in pixels in the source image. We need to convert them into lat/long to be able to display them. So the code gets a little more complex.
+
+image --- jeffudf4
+
+Then, when we look at the result in the workbench, we get some issues at the border of the tiles.
+
+image -- tileff
+
+The reason is that if an aircraft is on the tile border, it will be detected partially on the lower tile and potentially on the upper tile. The two bounding boxes might not align perfectly so we cannot merge them. The solution here is to extract a image larger than the tile ; if the center of the predicted box is inside the tile we keep it, if it is outside we discard it. We usually use a margin that is the upper size of the objects we are trying to detect i.e. 100 meters for aircrafts. After these little improvements, the result is much nicer
+
+image ---- tileffix
+
+Now that everything is running fine in the workbench, it is time to extract the layers and include them in a webpage. Fused.io provides an easy way to integrate layers in external applications. You just need to go to Settings, click Share and copy the provided URL.
+
+
+import ImageDeckGL from '/blog/2024-09-02-dl4eo/deckglcode.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImageDeckGL} alt="File" style={{}} />
+</div>
+
+
+Then, you can integrate this URL as the tile source in any mapping application. I am not diving into that here. You can check the code source of the demonstration below. Here is the extract of the JavaScript [Deck.gl](http://deck.gl/) code where the URL is integrated.
+
+And here it is: the [final working demonstration](https://fused.deepl.earth/)!
+
+Huge thanks to the amazing team at fused.io for their incredible support, and to my former colleagues at Airbus for providing the stunning Pleiades image. I think that this application turned out to be very sleek and powerful. If the underlying satellite image changes, the AI layer gets automatically recomputed on the fly.
+
+I’d love to hear your thoughts!
