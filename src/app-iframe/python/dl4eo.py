@@ -4,10 +4,7 @@ from streamlit_folium import st_folium
 
 st.title("✈️ AI for object detection on 50cm imagery")
 st.write(
-    """This app calls a UDF that tiles GeoTIFF to call an inference model. The model returns bounding boxes for detected objects.
-
-The source GeoTIFF is an Airbus Pleiades image at 50cm over the "The Historic Aviation Bone Yard", in Tucson.
-"""
+    """This app calls a UDF that tiles GeoTIFF to call an inference model. The model returns bounding boxes for detected objects."""
 )
 
 # Create map
@@ -24,3 +21,7 @@ folium.plugins.VectorGridProtobuf(url_vector, "inference").add_to(
 
 # Render map
 st_folium(m, width=300, height=500, use_container_width=True)
+
+st.write(
+    """The source GeoTIFF is an Airbus Pleiades image at 50cm over the "The Historic Aviation Bone Yard", in Tucson."""
+)
