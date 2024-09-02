@@ -221,6 +221,13 @@ const config: Config = {
         ],
       },
     ],
+    [
+      "@docusaurus/plugin-google-gtag",
+      {
+        trackingID: "G-CRPW2C404Y",
+        anonymizeIP: true,
+      },
+    ],
   ],
 };
 
