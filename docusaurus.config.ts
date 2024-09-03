@@ -179,7 +179,7 @@ const config: Config = {
     announcementBar: {
       id: "announcement",
       content:
-        '⭐ If you like Fused, star the UDF <a target="_blank" rel="noopener noreferrer" href="https://github.com/fusedio/udfs/">GitHub</a> repo! ⭐',
+        '⭐ Join the <a target="_blank" rel="noopener noreferrer" href="https://docs.google.com/forms/d/1NVzMjc2tXxlIgnFrxqQPM_NtG1B2AQ0En_pAbZHYSK0/edit">waitlist</a> for access to Fused Workbench! ⭐',
       backgroundColor: "#991199",
       textColor: "#ffffff",
       isCloseable: false,
