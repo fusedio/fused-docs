@@ -52,7 +52,7 @@ const config: Config = {
         blog: {
           blogTitle: "Fused blog",
           blogDescription: "Latest blog posts from Fused.",
-          postsPerPage: 4,
+          postsPerPage: "ALL",
           blogSidebarTitle: "Recent posts",
           blogSidebarCount: "ALL",
           showReadingTime: true, // When set to false, the "x min read" won't be shown
