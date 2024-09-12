@@ -4,6 +4,7 @@ title: Changelog
 tags: [Changelog]
 sidebar_position: 8
 ---
+
 # Changelog
 
 ## v1.8.0 (2024-06-25) :package:
@@ -62,7 +63,7 @@ _GitHub integration_
 - UDFs now support typed function annotations.
 - Introduced special types  `fused.types.TileXYZ`, `fused.types.TileGDF`, `fused.types.Bbox`.
 - Workbench now autodetects Tile or File outputs based on typing.
-- Added button to Workbench to autodelect UDF parameters based on typing.
+- Added button to Workbench to autodetect UDF parameters based on typing.
 
 ## v1.1.1 (2024-01-17) :dizzy:
 
@@ -80,7 +81,7 @@ _GitHub integration_
 
 ## v1.1.0-rc0 (2023-11-29) :cloud:
 
-- Added cloud load and save of UDFs.
+- Added cloud load and save UDFs.
 - `target_num_files` is replaced by `target_num_chunks` in the ingest API.
 - Standardize how a decorator's headers are preprocesses to set `source_code` key.
 - Fixed a bug loading UDFs from a job.
@@ -101,7 +102,7 @@ _Uploading files_
 
 - Added `fused.upload` for uploading files to Fused storage.
 - Added a warning for UDF parameter names that can cause issues.
-- Fixed some dependency validation checks incorrectly failing on built in modules.
+- Fixed some dependency validation checks incorrectly failing on built-in modules.
 
 ## v1.0.1 (2023-10-19) :ant:
 
