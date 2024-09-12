@@ -11,7 +11,6 @@ keywords: [object detection, deep learning, airplane, ai, computer vision]
 
 In this article I show how to create an object detection layer on 50cm imagery in realtime. It explains how to create a Fused User Defined Function ([UDF](/core-concepts/write/)) to load satellite image tiles to call an inference model, then publish it as an interactive map app.
 
-
 import ReactPlayer from 'react-player'
 
 <ReactPlayer className="video__player" playing={true} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/dl4eo2.mp4" width="100%" />
@@ -21,7 +20,6 @@ import ReactPlayer from 'react-player'
 ## Introduction
 
 In my last [article](https://www.linkedin.com/pulse/create-fast-api-inference-endpoint-deep-learning-jeff-faudi--fbhsc/?trackingId=P0%2F%2FPN8SQA6%2B5T7myTR7Xw%3D%3D), I demonstrated how to create an API that leverages GPU hardware to perform fast deep learning inference on satellite images. Now, I will show how to go even further and display a live deep learning layer on top of satellite images in a web-mapping application (GoogleMaps style).
-
 
 If you are impatient, you can jump directly to the demonstration [here](https://fused.deepl.earth/). But now, let’s dive into the behind-the-scenes action.
 
@@ -39,11 +37,9 @@ To display this image on the web, you typically need to project it in Web Mercat
 
 Until recently, I would have done this physically and generated thousands of tiles. Now, we will do this almost magically with [Fused](http://fused.io/).
 
-
 ## Creating a UDF
 
 Basically, I just have to write the piece of code that generate the content of a tile and Fused takes care of running the code and providing the urls to share the layer in any application. The Python function that I have to [write](/core-concepts/write/) is called a UDF and it has at least one parameter which contains the [bounding box (bbox)](/core-concepts/filetile/#the-bbox-object) on which I need to generate the tile.
-
 
 ```python showLineNumbers
 @fused.udf
@@ -57,14 +53,11 @@ def udf(
     return read_geotiff_rgb_3857(bbox, geotiff_file, output_shape=(chip_len, chip_len))
 ```
 
+First, it is worth noting that we extract all content from a GeoTIFF image (ideally a COG i.e. Cloud Optimized GeoTIFF) which contains the bands and geometric information about the satellite image. This GeoTIFF is stored anywhere on the cloud. Here, it is stored in the AWS S3 bucket provided by Fused. Also, note that the function returns an array for raster tiles but could return a GeoJSON for vector tiles.
 
-First, it is worth noting that we extract all content from a GeoTIFF image (ideally a COG i.e. Cloud Optimized GeoTIFF) which contains the bands and geometric information about the satellite image. This GeoTIFF is stored anywhere on the cloud. Here, it is stored in the AWS S3 bucket provided by Fused. Also note that the function returns an array for raster tiles but could return a GeoJSON for vector tiles.
+We use the bounding box of the tile provided as a parameter, convert it from lat/long to Web Mercator (EPSG:3857), get the corresponding bounding box in the original image, and project it in Web Mercator projection in the destination array with the correct desired tile size (typically 256x256 pixels).
 
-
-We use the bounding box of the tile provided as parameter, convert it from lat/long to Web Mercator (EPSG:3857), get the corresponding bounding box in the original image and project it in Web Mercator projection in the destination array with the correct desired tile size (typically 256x256 pixels).
-
-The Fused [UDF Builder](/workbench/udf-builder/) enables to view the result and logs while coding.
-
+The Fused [UDF Builder](/workbench/udf-builder/) enables one to view the result and logs while coding.
 
 import ImageWTucson from '/blog/2024-09-05-dl4eo/workbenchtucson.png';
 
@@ -72,9 +65,7 @@ import ImageWTucson from '/blog/2024-09-05-dl4eo/workbenchtucson.png';
 <img src={ImageWTucson} alt="File" style={{}} />
 </div>
 
-
 ## Implementing aircraft detection
-
 
 Now, if we want to display a real-time aircraft detection layer, we could replicate the previous step: send the resulting image extract to the API and display a vector layer. However, we must avoid applying deep learning algorithms to images that might have been zoomed. These algorithms are typically trained at a specific resolution, and the Web Mercator projection does not preserve size.
 
@@ -83,13 +74,12 @@ import ImageWprojection from '/blog/2024-09-05-dl4eo/projection.png';
 <div style={{textAlign: 'center'}}>
 <img src={ImageWprojection} alt="File" style={{}} />
 </div>
+
 _https://en.wikipedia.org/wiki/Mercator_projection_
 
+We read the content of the Pleiades image in its original projection (either the raw geometry or a transverse mercator projection in which the central meridian would pass through the center of the image). In this case, the resolution is guaranteed to be the correct native resolution of the image.
 
-We read the content of the Pleiades image in its original projection (either the raw geometry or a transverse mercator projection which central meridian would pass through the center of the image). In this case, the resolution is guaranteed to be the correct native resolution of the image.
-
-
-The UDF is getting the Pleiades image in the correct projection, then calling the prediction API and finally returning the predictions in a GeoDataFrame which will be dynamically rendered on the map. For performance, we have added the [@fused.cache](/core-concepts/content-management/cache/) decorators which make the function automatically cache results for identical parameters. The predictions are returned in pixels in the source image then converted them into lat/long to be able to display them. Then, when we look at the result in the workbench, we get some issues at the border of the tiles.
+The UDF gets the Pleiades image in the correct projection, then calls the prediction API, and finally returns the predictions in a GeoDataFrame which will be dynamically rendered on the map. For performance, we have added the [@fused.cache](/core-concepts/content-management/cache/) decorators which make the function automatically cache results for identical parameters. The predictions are returned in pixels in the source image and then converted into lat/long so they render on a map. Then, when we look at the result in the workbench, we get some issues at the border of the tiles.
 
 import ImagePredicTileFix from '/blog/2024-09-05-dl4eo/tilingv3.png';
 
@@ -99,30 +89,21 @@ import ImagePredicTileFix from '/blog/2024-09-05-dl4eo/tilingv3.png';
 
 The reason is that if an aircraft is on the tile border, it will be detected partially on the lower tile and potentially on the upper tile. The two bounding boxes might not align perfectly so we cannot merge them. The solution here is to extract a image larger than the tile: if the center of the predicted box is inside the tile we keep it, if it is outside we discard it. We usually use a margin that is the upper size of the objects we are trying to detect i.e. 100 meters for aircrafts. After these little improvements, the result is much nicer
 
-
-
 ## Building a web app
 
 Now that everything is running fine in the workbench, it is time to extract the layers and include them in a webpage. Fused provides an easy way to integrate layers in external applications via [HTTP requests](/core-concepts/run/#shared-token). You just need to go to Settings, click Share and copy the provided URL.
-
-
-
 
 Then, you can integrate this URL as the tile source in any mapping application. I am not diving into that here, but you can read how to do this in the [DeckGL Fused docs](/user-guide/out/deckgl/). You can check the code source of the demonstration below. Here is the extract of the JavaScript [Deck.gl](http://deck.gl/) code where the URL is integrated.
 
 And here it is: the [final working demonstration](https://fused.deepl.earth/)!
 
-
 ## Conclusion
-
 
 Huge thanks to the amazing team at Fused for their incredible support, and to my former colleagues at Airbus for providing the stunning Pleiades image. I think that this application turned out to be very sleek and powerful. If the underlying satellite image changes, the AI layer gets automatically recomputed on the fly.
 
 I'd love to hear your thoughts!
 
 _This article was originally published in [LinkedIn](https://www.linkedin.com/pulse/earth-observation-mapping-applications-realtime-deep-faudi--ng7lc/?trackingId=WSoFi5fjQmmUimZ1w0p3Lw) on June 20th 2024._
-
-
 
 import Iframe from "@site/src/components/Iframe";
 import DL4EO_CODE from "@site/src/app-iframe/python/dl4eo.py";
