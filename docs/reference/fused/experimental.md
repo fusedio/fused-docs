@@ -131,6 +131,38 @@ Construct a JobConfig
 
   A combined job config.
 
+
+
+### job.run_remote
+
+```python
+def run_remote(output_table: Optional[str] = ...,
+               instance_type: Optional[WHITELISTED_INSTANCE_TYPES] = None,
+               *,
+               region: str | None = None,
+               disk_size_gb: int | None = None,
+               additional_env: List[str] | None = None,
+               image_name: Optional[str] = None,
+               ignore_no_udf: bool = False,
+               ignore_no_output: bool = False,
+               validate_imports: Optional[bool] = None,
+               overwrite: Optional[bool] = None) -> RunResponse
+```
+
+Run a `JobConfig`.
+
+**Arguments**:
+
+- `output_table` - The name of the table to write to. Defaults to None.
+- `instance_type` - The AWS EC2 instance type to use for the job. Acceptable strings are "m5.large", "m5.xlarge", "m5.2xlarge", "m5.4xlarge", "r5.large", "r5.xlarge", "r5.2xlarge", "r5.4xlarge". Defaults to None.
+- `region` - The AWS region in which to run. Defaults to None.
+- `disk_size_gb` - The disk size to specify for the job. Defaults to None.
+- `additional_env` - Any additional environment variables to be passed into the job. Defaults to None.
+- `image_name` - Custom image name to run. Defaults to None for default image.
+
+- `ignore_no_udf` - Ignore validation errors about not specifying a UDF. Defaults to False.
+- `ignore_no_output` - Ignore validation errors about not specifying output location. Defaults to False.
+
 ## sign\_url
 
 ```python showLineNumbers

@@ -89,7 +89,7 @@ const config: Config = {
     },
     // Replace with your project's social card
     image:
-      "https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/ecosystem_diagram.png",
+      "https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/diagram_fused_products.png",
     navbar: {
       title: "Fused",
       logo: {
