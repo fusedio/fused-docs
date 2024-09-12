@@ -13,12 +13,11 @@ This guide shows how to load data from Fused into DeckGL maps created from a sin
 
 ## 1. Generate a signed URL for a UDF
 
-First create a UDF and [generate a HTTP endpoint](/core-concepts/run/#http-requests).
+First create a UDF and [generate an HTTP endpoint](/core-concepts/run/#http-requests).
 
 ## 2. Create a DeckGL HTML map
 
 Create an `.html` file following this template. This code creates a DeckGL map then introduces a layer that renders data from the specified Fused endpoint.
-
 
 ```html
 <!DOCTYPE html>
