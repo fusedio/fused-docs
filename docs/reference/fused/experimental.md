@@ -149,7 +149,7 @@ def run_remote(output_table: Optional[str] = ...,
                overwrite: Optional[bool] = None) -> RunResponse
 ```
 
-Run a `JobConfig`.
+Run a `JobConfig`, such as an [ingestion job](/core-concepts/content-management/Ingest/#ingest-data).
 
 **Arguments**:
 

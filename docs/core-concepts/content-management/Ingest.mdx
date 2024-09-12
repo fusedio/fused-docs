@@ -15,8 +15,34 @@ This guide explains how to use `fused.ingest` to geopartition and load vector ta
 
 ## Ingest data
 
+To start an ingestion job, call [`run_remote`](/reference/fused/experimental/#jobrun_remote) on the job object returned by [`fused.ingest`](/python-sdk/top-level-functions/#ingest).
 
-[`fused.ingest`](/python-sdk/top-level-functions/#ingest) first uploads the table specified by the `input` parameter using [fused.upload](/python-sdk/top-level-functions/#upload). It then geopartitions the table, creating chunks for spatial partitions. Finally, it writes a parquet table to the S3 path specified by the `output` parameter. Along with the table records, the resulting parquet file contains two metadata files: `main` and `fused`.
+```python showLineNumbers
+job = fused.ingest(
+    input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
+    output=f"fd://census/dc_tract",
+)
+job_id = job.run_remote()
+```
+
+The ingestion job first uploads the table specified by the `input` parameter using [fused.upload](/python-sdk/top-level-functions/#upload). It then geopartitions the table, creating chunks for spatial partitions. Finally, it writes a parquet table to the S3 path specified by the `output` parameter. Along with the table records, the resulting parquet file contains two metadata files: `main` and `fused`.
+
+View the ingestion job status & logs in [fused.io/profile#jobs](https://www.fused.io/profile#jobs). Monitor and manage the job with the following methods:
+
+```python showLineNumbers
+# View the job status
+job_id.status
+
+# Follow the job logs
+job_id.tail_logs()
+
+# Get the job logs
+job_id.print_logs()
+
+# Cancel the job
+job_id.cancel()
+```
+
 
 Ingested tables can easily be read with the Fused utility function [`table_to_tile`](https://github.com/fusedio/udfs/blob/9bfb5d0/public/common/utils.py#L90), which spatially filters the dataset and reads only chunks that fall within a specified polygon.
 
@@ -28,7 +54,7 @@ def udf(bbox, table="s3://fused-asset/infra/building_msft_us/"):
 ```
 
 
-The following sections cover common ingestion implementations. It's recommended they run from a Python Notebook.
+The following sections cover common ingestion implementations. It's recommended to run ingestion jobs from a Python Notebook or [this web app](https://www.fused.io/workbench#app/s/i/fa_3sY9SPDK9sqyHoR8NYm14H).
 
 
 ### Ingest a table from a URL
@@ -39,11 +65,10 @@ Ingests a table from a URL and writes it to an S3 bucket specified with [`fd://`
 ```python showLineNumbers
 import fused
 
-job = fused.ingest(
+job_id = fused.ingest(
     input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
     output=f"fd://census/dc_tract",
-)
-job_id = job.run_remote()
+).run_remote()
 ```
 
 :::info
@@ -52,12 +77,6 @@ If you encounter the message
 `HTTPError: {'detail': 'Quota limit: Number of running instances'}`, please contact Fused to increase the number of workers in to your account.
 
 :::
-
-While the job runs, follow its logs in a separate cell.
-
-```python showLineNumbers
-job_id.tail_logs()
-```
 
 Once ingestion completes, [`fused.experimental.open_table`](/reference/fused/experimental/#open_table) returns the corresponding `Table` object. Multiple tables may be organized within a `Dataset`.
 
@@ -73,16 +92,15 @@ census_tracts
 ```python showLineNumbers
 import fused
 
-job = fused.ingest(
+job_id = fused.ingest(
     input=["s3://my-bucket/file1.parquet", "s3://my-bucket/file2.parquet"],
     output=f"fd://census/dc_tract",
-)
-job_id = job.run_remote()
+).run_remote()
 ```
 
 :::warning
 
-To ingest multiple local files, first upload them with [fused.upload](/python-sdk/top-level-functions/#upload) then specify an array of their S3 paths as the input to ingest.
+To ingest multiple local files, first upload them to S3 with [fused.upload](/python-sdk/top-level-functions/#upload) then specify an array of their S3 paths as the input to ingest.
 
 :::
 
@@ -96,14 +114,13 @@ Each resulting table has one or more _files_ and each file has one or more _chun
 
 
 ```python showLineNumbers
-job = fused.ingest(
+job_id = fused.ingest(
     input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
     explode_geometries=True,
     partitioning_method="rows",
     partitioning_maximum_per_file=100,
     partitioning_maximum_per_chunk=10,
-)
-job_id = job.run_remote()
+).run_remote()
 ```
 
 ### Area-based ingestion
@@ -112,15 +129,14 @@ Fused also supports area-based ingestion, where the number of rows in each parti
 determined by the sum of their area.
 
 ```python showLineNumbers
-job = fused.ingest(
+job_id = fused.ingest(
     input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
     output=f"fd://census/dc_tract_area",
     explode_geometries=True,
     partitioning_method="area",
     partitioning_maximum_per_file=None,
     partitioning_maximum_per_chunk=None,
-)
-job_id = job.run_remote()
+).run_remote()
 ```
 
 ### Geometry subdivision
@@ -128,7 +144,7 @@ job_id = job.run_remote()
 Subdivide geometries during ingestion. This keeps operations efficient when geometries have many vertices or span large areas.
 
 ```python showLineNumbers
-job = fused.ingest(
+job_id = fused.ingest(
     input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
     output=f"fd://census/dc_tract_geometry",
     explode_geometries=True,
@@ -138,8 +154,7 @@ job = fused.ingest(
     subdivide_start=0.001,
     subdivide_stop=0.0001,
     subdivide_method="area",
-)
-job_id = job.run_remote()
+).run_remote()
 ```
 
 ### Ingest GeoDataFrame
@@ -147,7 +162,7 @@ job_id = job.run_remote()
 Ingest a [GeoDataFrame](https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.html) directly.
 
 ```python showLineNumbers
-job = fused.ingest(
+job_id = fused.ingest(
     input=gdf,
     output="s3://sample-bucket/file.parquet",
 ).run_remote()
@@ -160,7 +175,7 @@ job = fused.ingest(
 Ingest a table that doesn't have a spatial component.
 
 ```python showLineNumbers
-job = fused.ingest_nongeospatial(
+job_id = fused.ingest_nongeospatial(
     input=df,
     output="s3://sample-bucket/file.parquet",
 ).run_remote()
