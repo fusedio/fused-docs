@@ -7,7 +7,6 @@ sidebar_label: Motherduck
 
 To follow along, you'll need a Motherduck account - which you can [create for free](https://motherduck.com/docs/getting-started/).
 
-
 ## 1. Generate a signed URL for a UDF
 
 First generate an [HTTP endpoint](/core-concepts/run/#http-requests) for a UDF. Set [`dtype_out_vector`](/core-concepts/run/#http-requests) to `parquet`. You can optionally pass UDF parameters as URL-encoded strings, which can be configured to change based on query input.
@@ -22,7 +21,7 @@ Now you can make a query using the UDF URL.
 
 ### Parquet
 
-With the `dtype_out_vector` query paramater set to `parquet`:
+With the `dtype_out_vector` query parameter set to `parquet`:
 
 ```sql
 SELECT wkt, area
