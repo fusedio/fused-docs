@@ -1,6 +1,5 @@
 # Top-Level Functions
 
-
 ## @fused.udf
 
 ```python showLineNumbers
@@ -33,33 +32,38 @@ A decorator that transforms a function into a Fused UDF.
   when specifying `headers=['my_header.py']`, inside the UDF function it may be
   referenced as:
 
-        ```py
-        import my_header
-        my_header.my_function()
-        ```
+  ```
+    ```py
+    import my_header
+    my_header.my_function()
+  ```
 
+  ```
+  
   Defaults to None for no headers.
+  ```
 
 **Returns**:
 
-  A callable that represents the transformed UDF. This callable can be used
+A callable that represents the transformed UDF. This callable can be used
   within GeoPandas workflows to apply the defined operation on geospatial data.
-
 
 **Examples**:
 
-  To create a simple UDF that calls a utility function to calculate the area of geometries in a GeoDataFrame:
+To create a simple UDF that calls a utility function to calculate the area of geometries in a GeoDataFrame:
 
-    ```py
-    @fused.udf
-    def udf(bbox, table_path="s3://fused-asset/infra/building_msft_us"):
-        ...
-        gdf = table_to_tile(bbox, table=table_path)
-        return gdf
-    ```
+```
+```py
+@fused.udf
+def udf(bbox, table_path="s3://fused-asset/infra/building_msft_us"):
+    ...
+    gdf = table_to_tile(bbox, table=table_path)
+    return gdf
+```
+
+```
 
 ## run
-
 
 ```python showLineNumbers
 def run(email_or_udf_or_token: Union[str, None, UdfJobStepConfig,
@@ -84,16 +88,11 @@ def run(email_or_udf_or_token: Union[str, None, UdfJobStepConfig,
 
 Executes a user-defined function (UDF) with various execution and input options.
 
-This function supports executing UDFs in different environments (realtime, batch, local),
-with different types of inputs (tile coordinates, geographical bounding boxes, etc.), and
-allows for both synchronous and asynchronous execution. It dynamically determines the execution
-path based on the provided parameters.
+This function supports executing UDFs in different environments (\`realtime\`, `batch`, and `local`), with different types of inputs (tile coordinates, geographical bounding boxes, etc.), and allows for both synchronous and asynchronous execution. It dynamically determines the execution path based on the provided parameters.
 
 **Arguments**:
 
-- `email_or_udf_or_token` - A string that can either be an email, a UDF token, or a direct
-  reference to a UDF object. It can also be a UdfJobStepConfig object for detailed
-  configuration, or None to specify UDF details in other parameters.
+- `email_or_udf_or_token` - A string that can either be an email, a UDF token, or a direct reference to a UDF object. It can also be a `UdfJobStepConfig` object for detailed configuration, or None to specify UDF details in other parameters.
 - `udf_name` - The name of the UDF to execute.
 - `udf` - A GeoPandasUdfV2 object for direct execution.
 - `job_step` - A UdfJobStepConfig object for detailed execution configuration.
@@ -107,50 +106,43 @@ path based on the provided parameters.
 - `type` - The type of UDF execution ('tile' or 'file').
 - `**parameters` - Additional parameters to pass to the UDF.
 
-
 **Raises**:
 
 - `ValueError` - If the UDF is not specified or is specified in more than one way.
 - `TypeError` - If the first parameter is not of an expected type.
 - `Warning` - Various warnings are issued for ignored parameters based on the execution path chosen.
 
-
 **Returns**:
 
-  The result of the UDF execution, which varies based on the UDF and execution path.
-
+The result of the UDF execution, which varies based on the UDF and execution path.
 
 **Examples**:
 
-
-  Run a UDF saved in the Fused system:
+Run a UDF saved in the Fused system:
     ```py
     fused.run(udf_email="username@fused.io", udf_name="my_udf_name")
     ```
 
-  Run a UDF saved in GitHub:
+Run a UDF saved in GitHub:
     ```py
     loaded_udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/Building_Tile_Example")
     fused.run(udf=loaded_udf, bbox=bbox)
     ```
 
-  Run a UDF saved in a local directory:
+Run a UDF saved in a local directory:
     ```py
     loaded_udf = fused.load("/Users/local/dir/Building_Tile_Example")
     fused.run(udf=loaded_udf, bbox=bbox)
     ```
 
-
-
-
 :::note
 
-  This function dynamically determines the execution path and parameters based on the inputs.
+This function dynamically determines the execution path and parameters based on the inputs.
   It is designed to be flexible and support various UDF execution scenarios.
 
-  Because the output must be serializable and returned via an HTTP response, Fused validates the output of UDFs that execute remotely with the `realtime` engine and will hold back invalid responses. This might result in perceived inconsistencies because running locally with the `local` engine does not validate and will instead return any output.See the set of supported return object types [here](/core-concepts/write/#return-object).
+Because the output must be serializable and returned via an HTTP response, Fused validates the output of UDFs that execute remotely with the `realtime` engine and will hold back invalid responses. This might result in perceived inconsistencies because running locally with the `local` engine does not validate and will instead return any output. See the set of supported return object types [here](/core-concepts/write/#return-object).
 
-  ```python showLineNumbers
+```python showLineNumbers
   import fused
 
   @fused.udf
@@ -159,8 +151,8 @@ path based on the provided parameters.
   fused.run(udf, engine='local') # Returns 1
   fused.run(udf, engine='realtime') # Returns None because output is not a valid response object
   ```
-:::
 
+:::
 
 ## @fused.cache
 
@@ -180,65 +172,70 @@ keyword arguments.
 
 - `func` _Callable, optional_ - The function to be decorated. If None, this
   returns a partial decorator with the passed keyword arguments.
-- `path` _string, optional_ - Path on disk where to write the cache.
+- `path` _string, optional_ - Path on the disk where to write the cache.
 - `reset` _bool, optional_ - Whether to reset the cache on the next call.
-
 
 **Returns**:
 
 - `Callable` - A decorator that, when applied to a function, caches its
   return values according to the specified keyword arguments.
 
-
 **Examples**:
 
+Use the `@cache` decorator to cache the return value of a function in a custom path.
 
-  Use the `@cache` decorator to cache the return value of a function in a custom path.
+```
+```py
+@fused.cache(path="/tmp/custom_path/")
+def expensive_function():
+    # Function implementation goes here
+    return result
+```
 
-    ```py
-    @fused.cache(path="/tmp/custom_path/")
-    def expensive_function():
-        # Function implementation goes here
-        return result
-    ```
+```
 
-  If the output of a cached function changes, for example if remote data is modified,
-  it can be reset by running the function with the `reset` keyword argument. Afterward,
-  the argument can be cleared.
+If the output of a cached function changes, for example, if remote data is modified, it can be reset by running the function with the `reset` keyword argument. Afterward,
+the argument can be cleared.
+```
 
-    ```py
-    @fused.cache(path="/tmp/custom_path/", reset=True)
-    def expensive_function():
-        # Function implementation goes here
-        return result
-    ```
+```py
+@fused.cache(path="/tmp/custom_path/", reset=True)
+def expensive_function():
+    # Function implementation goes here
+    return result
+```
 
-  The best practice is to wrap slow-runninc code in a function with arguments that make the output unique. In this example, the `bbox`, `time_of_interest`, and `collection` parameters make the data load unique across calls.
+```
 
-    ```py
-    # Define cached function
-    @fused.cache
-    def load_data(bbox, time_of_interest, collection):
+The best practice is to wrap slow-running code in a function with arguments that make the output unique. In this example, the `bbox`, `time_of_interest`, and `collection` parameters make the data load unique across calls.
+```
 
-        items = catalog.search(
-            collections=[collection],
-            bbox=bbox.total_bounds,
-            datetime=time_of_interest,
-            query={"eo:cloud_cover": {"lt": 10}},
-        ).item_collection()
+```py
+# Define cached function
+@fused.cache
+def load_data(bbox, time_of_interest, collection):
 
-        ds = odc.stac.load(
-            items,
-            crs="EPSG:3857",
-            bands=['blue', 'red', 'green', 'nir08', 'swir16', 'swir22'],
-            resolution=resolution,
-            bbox=bbox.total_bounds,
-        ).astype(float)
-        return ds
+    items = catalog.search(
+        collections=[collection],
+        bbox=bbox.total_bounds,
+        datetime=time_of_interest,
+        query={"eo:cloud_cover": {"lt": 10}},
+    ).item_collection()
 
-    # Call the function
-    ds = load_data(bbox, time_of_interest, collection)
-    ```
+    ds = odc.stac.load(
+        items,
+        crs="EPSG:3857",
+        bands=['blue', 'red', 'green', 'nir08', 'swir16', 'swir22'],
+        resolution=resolution,
+        bbox=bbox.total_bounds,
+    ).astype(float)
+    return ds
+
+# Call the function
+ds = load_data(bbox, time_of_interest, collection)
+```
+
+```
 
 ## load
 
@@ -260,15 +257,11 @@ on the format of the input and retrieves the UDF accordingly.
   a GitHub URL starting with "https://github.com", a local file path, a directory
   containing one or more UDFs, or a Fused platform-specific identifier in the
   format "email/udf_name".
-- `cache_key` - An optional key used for caching the loaded UDF. If provided, the function
-  will attempt to load the UDF from cache using this key before attempting to
-  load it from the specified source. Defaults to None, indicating no caching.
-
+- `cache_key` - An optional key used for caching the loaded UDF. If provided, the function will attempt to load the UDF from the cache using this key before attempting to load it from the specified source. Defaults to None, indicating no caching.
 
 **Returns**:
 
 - `BaseUdf` - An instance of the loaded UDF.
-
 
 **Raises**:
 
@@ -278,20 +271,19 @@ on the format of the input and retrieves the UDF accordingly.
 - `Exception` - For errors related to network issues, file access permissions, or other
   unforeseen errors during the loading process.
 
-
 **Examples**:
 
-  Load a UDF from a GitHub URL:
+Load a UDF from a GitHub URL:
     ```py
     udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/REM_with_HyRiver/")
     ```
 
-  Load a UDF from a local file:
+Load a UDF from a local file:
     ```py
     udf = fused.load("/localpath/REM_with_HyRiver/")
     ```
 
-  Load a UDF using a Fused platform-specific identifier:
+Load a UDF using a Fused platform-specific identifier:
     ```py
     udf = fused.load("username@fused.io/REM_with_HyRiver")
     ```
@@ -319,29 +311,31 @@ Fused addresses the latency of downloading files with the download utility funct
 - `url` - The URL to download.
 - `file_path` - The local path where to save the file.
 
-
 **Returns**:
 
-  The function downloads the file only on the first execution, and returns the file path.
-
+The function downloads the file only on the first execution and returns the file path.
 
 **Examples**:
 
-    ```python showLineNumbers
-    @fused.udf
-    def geodataframe_from_geojson():
-        import geopandas as gpd
-        url = "s3://sample_bucket/my_geojson.zip"
-        path = fused.core.download(url, "tmp/my_geojson.zip")
-        gdf = gpd.read_file(path)
-        return gdf
-    ```
+```
+```python showLineNumbers
+@fused.udf
+def geodataframe_from_geojson():
+    import geopandas as gpd
+    url = "s3://sample_bucket/my_geojson.zip"
+    path = fused.core.download(url, "tmp/my_geojson.zip")
+    gdf = gpd.read_file(path)
+    return gdf
+```
+
+```
 
 ## utils
 
 A module to access utility functions located in the UDF called "common".
 
 They can be imported by other UDFs with `common = fused.public.common`. They contain common operations such as:
+
 - read_shape_zip
 - url_to_arr
 - get_collection_bbox
@@ -349,20 +343,18 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
 - table_to_tile
 - rasterize_geometry
 
-
 **Examples**:
 
+This example shows how to access the `geo_buffer` function from the `common` UDF.
+\`\`\`python showLineNumbers
+import fused
+import geopandas as gpd
+```
 
-  This example shows how to access the `geo_buffer` function from the `common` UDF.
-    ```python showLineNumbers
-    import fused
-    import geopandas as gpd
+gdf = gpd.read_file('https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_COLUMBIA/11/tl_rd22_11_bg.zip')
+gdf_buffered = fused.public.common.geo_buffer(gdf, 10)
 
-    gdf = gpd.read_file('https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_COLUMBIA/11/tl_rd22_11_bg.zip')
-    gdf_buffered = fused.public.common.geo_buffer(gdf, 10)
-    ```
-
-  This example shows how to load a table with `table_to_tile`, which efficiently loads a table by filtering and adjusting based on the provided bounding box (bbox) and zoom level.
+This example shows how to load a table with `table_to_tile`, which efficiently loads a table by filtering and adjusting based on the provided bounding box (bbox) and zoom level.
     ```python showLineNumbers
     table_path = "s3://fused-asset/infra/census_bg_us"
     gdf = fused.public.common.table_to_tile(
@@ -370,15 +362,14 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
     )
     ```
 
-  This example shows how to use `rasterize_geometry` to place an input geometry within an image array.
+This example shows how to use `rasterize_geometry` to place an input geometry within an image array.
     ```python showLineNumbers
     geom_masks = [
         rasterize_geometry(geom, arr.shape[-2:], transform) for geom in gdf.geometry
     ]
     ```
 
-  Public UDFs are listed at https://github.com/fusedio/udfs/tree/main/public
-
+Public UDFs are listed at https://github.com/fusedio/udfs/tree/main/public
 
 ## ingest
 
@@ -416,47 +407,75 @@ Ingest a dataset into the Fused partitioned format.
 **Arguments**:
 
 - `input` - A GeoPandas `GeoDataFrame` or a path to file or files on S3 to ingest. Files may be Parquet or another geo data format.
+
 - `output` - Location on S3 to write the `main` table to.
+
 - `output_metadata` - Location on S3 to write the `fused` table to.
+
 - `schema` - Schema of the data to be ingested. This is optional and will be inferred from the data if not provided.
+
 - `file_suffix` - filter which files are used for ingestion. If `input` is a directory on S3, all files under that directory will be listed and used for ingestion. If `file_suffix` is not None, it will be used to filter paths by checking the trailing characters of each filename. E.g. pass `file_suffix=".geojson"` to include only GeoJSON files inside the directory.
+
 - `load_columns` - Read only this set of columns when ingesting geospatial datasets. Defaults to all columns.
+
 - `remove_cols` - The named columns to drop when ingesting geospatial datasets. Defaults to not drop any columns.
+
 - `explode_geometries` - Whether to unpack multipart geometries to single geometries when ingesting geospatial datasets, saving each part as its own row. Defaults to `False`.
+
 - `drop_out_of_bounds` - Whether to drop geometries outside of the expected WGS84 bounds. Defaults to True.
+
 - `partitioning_method` - The method to use for grouping rows into partitions. Defaults to `"rows"`.
+
   - `"area"`: Construct partitions where all contain a maximum total area among geometries.
   - `"length"`: Construct partitions where all contain a maximum total length among geometries.
   - `"coords"`: Construct partitions where all contain a maximum total number of coordinates among geometries.
   - `"rows"`: Construct partitions where all contain a maximum number of rows.
-- `partitioning_maximum_per_file` - Maximum value for `partitioning_method` to use per file. If `None`, defaults to _1/10th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will be have no more than 1/10th the total area of all geometries. Defaults to `None`.
-- `partitioning_maximum_per_chunk` - Maximum value for `partitioning_method` to use per chunk. If `None`, defaults to _1/100th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will be have no more than 1/100th the total area of all geometries. Defaults to `None`.
+
+- `partitioning_maximum_per_file` - Maximum value for `partitioning_method` to use per file. If `None`, defaults to _1/10th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will have no more than 1/10th the total area of all geometries. Defaults to `None`.
+
+- `partitioning_maximum_per_chunk` - Maximum value for `partitioning_method` to use per chunk. If `None`, defaults to _1/100th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will have no more than 1/100th the total area of all geometries. Defaults to `None`.
+
 - `partitioning_max_width_ratio` - The maximum ratio of width to height of each partition to use in the ingestion process. So for example, if the value is `2`, then if the width divided by the height is greater than `2`, the box will be split in half along the horizontal axis. Defaults to `2`.
+
 - `partitioning_max_height_ratio` - The maximum ratio of height to width of each partition to use in the ingestion process. So for example, if the value is `2`, then if the height divided by the width is greater than `2`, the box will be split in half along the vertical axis. Defaults to `2`.
+
 - `partitioning_force_utm` - Whether to force partitioning within UTM zones. If set to `"file"`, this will ensure that the centroid of all geometries per _file_ are contained in the same UTM zone. If set to `"chunk"`, this will ensure that the centroid of all geometries per _chunk_ are contained in the same UTM zone. If set to `None`, then no UTM-based partitioning will be done. Defaults to "chunk".
+
 - `partitioning_split_method` - How to split one partition into children. Defaults to `"mean"` (this may change in the future).
+
   - `"mean"`: Split each axis according to the mean of the centroid values.
   - `"median"`: Split each axis according to the median of the centroid values.
+
 - `subdivide_method` - The method to use for subdividing large geometries into multiple rows. Currently the only option is `"area"`, where geometries will be subdivided based on their area (in WGS84 degrees).
+
 - `subdivide_start` - The value above which geometries will be subdivided into smaller parts, according to `subdivide_method`.
+
 - `subdivide_stop` - The value below which geometries will never be subdivided into smaller parts, according to `subdivide_method`.
+
 - `split_identical_centroids` - If `True`, should split a partition that has
   identical centroids (such as if all geometries in the partition are the
   same) if there are more such rows than defined in "partitioning_maximum_per_file" and
   "partitioning_maximum_per_chunk".
+
 - `target_num_chunks` - The target for the number of chunks if `partitioning_maximum_per_file` is None. Note that this number is only a _target_ and the actual number of files and chunks generated can be higher or lower than this number, depending on the spatial distribution of the data itself.
+
 - `lonlat_cols` - Names of longitude, latitude columns to construct point geometries from.
 
   If your point columns are named `"x"` and `"y"`, then pass:
 
-        ```py
-        fused.ingest(
-            ...,
-            lonlat_cols=("x", "y")
-        )
-        ```
+  ```
+    ```py
+    fused.ingest(
+        ...,
+        lonlat_cols=("x", "y")
+    )
+  ```
 
+  ```
+  
   This only applies to reading from Parquet files. For reading from CSV files, pass options to `gdal_config`.
+  
+  ```
 
 - `gdal_config` - Configuration options to pass to GDAL for how to read these files. For all files other than Parquet files, Fused uses GDAL as a step in the ingestion process. For some inputs, like CSV files or zipped shapefiles, you may need to pass some parameters to GDAL to tell it how to open your files.
 
@@ -468,38 +487,38 @@ Ingest a dataset into the Fused partitioned format.
   For example, if you're ingesting a CSV file with two columns
   `"longitude"` and `"latitude"` denoting the coordinate information, pass
 
-        ```py
-        fused.ingest(
-            ...,
-            gdal_config={
-                "open_options": {
-                    "X_POSSIBLE_NAMES": "longitude",
-                    "Y_POSSIBLE_NAMES": "latitude",
-                }
+  ```
+    ```py
+    fused.ingest(
+        ...,
+        gdal_config={
+            "open_options": {
+                "X_POSSIBLE_NAMES": "longitude",
+                "Y_POSSIBLE_NAMES": "latitude",
             }
-        )
-        ```
-
+        }
+    )
+  ```
 
 **Returns**:
 
-  Configuration object describing the ingestion process. Call `.run_remote` on this object to start a job.
-
-
+Configuration object describing the ingestion process. Call `.run_remote` on this object to start a job.
 
 **Examples**:
 
-    ```py
-    job = fused.ingest(
-        input="https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/06_CALIFORNIA/06/tl_rd22_06_bg.zip",
-        output="s3://fused-sample/census/ca_bg_2022/main/",
-        output_metadata="s3://fused-sample/census/ca_bg_2022/fused/",
-        explode_geometries=True,
-        partitioning_maximum_per_file=2000,
-        partitioning_maximum_per_chunk=200,
-    ).run_remote()
-    ```
+```
+```py
+job = fused.ingest(
+    input="https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/06_CALIFORNIA/06/tl_rd22_06_bg.zip",
+    output="s3://fused-sample/census/ca_bg_2022/main/",
+    output_metadata="s3://fused-sample/census/ca_bg_2022/fused/",
+    explode_geometries=True,
+    partitioning_maximum_per_file=2000,
+    partitioning_maximum_per_chunk=200,
+).run_remote()
+```
 
+```
 
 ## upload
 
@@ -525,7 +544,7 @@ Fused holds files in memory during the upload process, so it's best to keep file
 
 **Examples**:
 
-  To upload a local json file to your Fused-managed S3 bucket:
+To upload a local json file to your Fused-managed S3 bucket:
     ```py
     fused.upload("my_file.json", "fd://my_bucket/my_file.json")
     ```
@@ -542,20 +561,20 @@ Download the contents at the path to memory.
 
 - `path` - URL to a file, like `fd://bucket-name/file.parquet`
 
-
 **Returns**:
 
-  bytes of the file
-
+bytes of the file
 
 **Examples**:
 
-    ```python showLineNumbers
-    fused.get("fd://bucket-name/file.parquet")
-    ```
+```
+```python showLineNumbers
+fused.get("fd://bucket-name/file.parquet")
+```
 
+```
 
-## get\_udfs
+## get_udfs
 
 ```python showLineNumbers
 def get_udfs(n: int = 10,
@@ -579,15 +598,13 @@ Fetches a list of UDFs.
 - `whose` - Specifies whose UDFs to fetch. Can be "self" for the user's own UDFs or "public" for
   UDFs available publicly. Defaults to "self".
 
-
 **Returns**:
 
-  A list of UDFs.
-
+A list of UDFs.
 
 **Examples**:
 
-  Fetch UDFs under the user account:
+Fetch UDFs under the user account:
     ```py
     fused.get_udfs()
     ```
@@ -598,10 +615,9 @@ Fetches a list of UDFs.
 
 - `path` - Parent directory, like `table_name`. Defaults to None to list the root of the project.
 
-
 **Returns**:
 
-  A list of paths as URLs
+A list of paths as URLs
 
 #### get
 
@@ -615,10 +631,9 @@ Download the contents at the path to memory.
 
 - `path` - Path to a file, like `table_name/file.parquet`
 
-
 **Returns**:
 
-  bytes of the file
+bytes of the file
 
 ## delete
 
@@ -636,15 +651,14 @@ Delete the files at the path.
   This option is to help avoid accidentally deleting more data that intended.
   Pass `"unlimited"` for unlimited.
 
-
-
 **Examples**:
 
-    ```python showLineNumbers
-    fused.delete("fd://bucket-name/deprecated_table/")
-    ```
+```
+```python showLineNumbers
+fused.delete("fd://bucket-name/deprecated_table/")
+```
 
-
+```
 
 ## options
 
@@ -654,12 +668,12 @@ This object contains a set of configuration options that control global behavior
 
 **Examples**:
 
-  Change the `request_timeout` option from its default value to 120 seconds:
-    ```py
+Change the `request_timeout` option from its default value to 120 seconds:
+`py
     fused.options.request_timeout = 120
-    ```
+    `
 
-## set\_option
+## set_option
 
 ```python showLineNumbers
 def set_option(option_name: str, option_value: Any)
@@ -679,17 +693,15 @@ by specifying the option name in the form "parent.child".
 - `option_value` - The new value to set for the specified option. This can be of any type
   that is compatible with the attribute being set.
 
-
 **Raises**:
 
 - `AttributeError` - If the specified attribute path is not valid, either because a part
   of the path does not exist or the final attribute cannot be set with
   the provided value.
 
-
 **Examples**:
 
-  Set the `request_timeout` top-level option to 120 seconds:
+Set the `request_timeout` top-level option to 120 seconds:
     ```python showLineNumbers
     set_option('request_timeout', 120)
     ```
@@ -708,19 +720,20 @@ This function may not check that the file represented by the path exists.
 
 - `path` - URL to a file, like `fd://bucket-name/file.parquet`
 
-
 **Returns**:
 
-  HTTPS URL to access the file using signed access.
-
+HTTPS URL to access the file using signed access.
 
 **Examples**:
 
-    ```python showLineNumbers
-    fused.sign_url("fd://bucket-name/table_directory/file.parquet")
-    ```
+```
+```python showLineNumbers
+fused.sign_url("fd://bucket-name/table_directory/file.parquet")
+```
 
-## sign\_url\_prefix
+```
+
+## sign_url_prefix
 
 ```python showLineNumbers
 def sign_url_prefix(path: str) -> Dict[str, str]
@@ -732,19 +745,20 @@ Create signed URLs to access all blobs under the path.
 
 - `path` - URL to a prefix, like `fd://bucket-name/some_directory/`
 
-
 **Returns**:
 
-  Dictionary mapping from blob store key to signed HTTPS URL.
-
+Dictionary mapping from blob store key to signed HTTPS URL.
 
 **Examples**:
 
-    ```python showLineNumbers
-    fused.sign_url_prefix("fd://bucket-name/table_directory/")
-    ```
+```
+```python showLineNumbers
+fused.sign_url_prefix("fd://bucket-name/table_directory/")
+```
 
-## get\_chunks\_metadata
+```
+
+## get_chunks_metadata
 
 ```python showLineNumbers
 def get_chunks_metadata(url: str) -> gpd.GeoDataFrame
@@ -755,7 +769,6 @@ Returns a GeoDataFrame with each chunk in the table as a row.
 **Arguments**:
 
 - `url` - URL of the table.
-
 
 ## get\_chunk\_from\_table
 
