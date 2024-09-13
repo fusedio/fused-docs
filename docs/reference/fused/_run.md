@@ -3,9 +3,9 @@ sidebar_label: _run
 title: fused._run
 ---
 
-## run
+#### run
 
-```python showLineNumbers
+```python
 def run(email_or_udf_or_token: Union[str, None, UdfJobStepConfig,
                                      GeoPandasUdfV2] = None,
         udf_name: Optional[str] = None,
@@ -17,13 +17,14 @@ def run(email_or_udf_or_token: Union[str, None, UdfJobStepConfig,
         x: Optional[int] = None,
         y: Optional[int] = None,
         z: Optional[int] = None,
-        lat: Optional[float] = None,
-        lng: Optional[float] = None,
+        _lat: Optional[float] = None,
+        _lng: Optional[float] = None,
         bbox: Union[gpd.GeoDataFrame, shapely.Geometry, None] = None,
         sync: bool = True,
         engine: Optional[Literal["realtime", "batch", "local"]] = None,
         type: Optional[Literal["tile", "file"]] = None,
-        **parameters)
+        parameters: Optional[Dict[str, Any]] = None,
+        **kw_parameters)
 ```
 
 Executes a user-defined function (UDF) with various execution and input options.
@@ -44,12 +45,13 @@ path based on the provided parameters.
 - `token` - A token representing a shared UDF.
 - `udf_email` - The email associated with the UDF.
   x, y, z: Tile coordinates for tile-based UDF execution.
-  lat, lng: Latitude and longitude for location-based UDF execution.
+  _lat, _lng: Latitude and longitude for tile-based UDF execution.
 - `bbox` - A geographical bounding box (as a GeoDataFrame or shapely Geometry) defining the area of interest.
 - `sync` - If True, execute the UDF synchronously. If False, execute asynchronously.
 - `engine` - The execution engine to use ('realtime', 'batch', or 'local').
 - `type` - The type of UDF execution ('tile' or 'file').
-- `**parameters` - Additional parameters to pass to the UDF.
+- `parameters` - Additional parameters to pass to the UDF.
+- `**kw_parameters` - Additional parameters to pass to the UDF.
 
 
 **Raises**:
@@ -67,18 +69,19 @@ path based on the provided parameters.
 **Examples**:
 
 
-  # Run a UDF saved in the Fused system:
+
+  Run a UDF saved in the Fused system:
     ```py
     fused.run(udf_email="username@fused.io", udf_name="my_udf_name")
     ```
 
-  # Run a UDF saved in GitHub:
+  Run a UDF saved in GitHub:
     ```py
     loaded_udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/Building_Tile_Example")
     fused.run(udf=loaded_udf, bbox=bbox)
     ```
 
-  # Run a UDF saved in a local directory:
+  Run a UDF saved in a local directory:
     ```py
     loaded_udf = fused.load("/Users/local/dir/Building_Tile_Example")
     fused.run(udf=loaded_udf, bbox=bbox)

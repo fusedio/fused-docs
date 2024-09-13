@@ -1,11 +1,11 @@
 ---
-sidebar_label: experimental
-title: fused.experimental
+sidebar_label: _experimental
+title: fused._experimental
 ---
 
-## open\_project
+#### open\_project
 
-```python showLineNumbers
+```python
 def open_project(path: str,
                  *,
                  lazy: bool = False,
@@ -30,9 +30,9 @@ Open a project folder.
 - `_eager` - If True, recursive calls will be made to materialize all virtual
   folders that `max_depth` would otherwise cause.
 
-## load\_udf
+#### load\_udf
 
-```python showLineNumbers
+```python
 def load_udf(udf_paths: Sequence[str],
              *,
              parameters: Optional[Dict[str, Any]] = None,
@@ -75,9 +75,9 @@ Load UDF(s) in a UdfRegistry object.
     load_udf("my_udf.py", function="my_function", content_type="file")
     ```
 
-## open\_table
+#### open\_table
 
-```python showLineNumbers
+```python
 def open_table(path: Union[str, DatasetOutputV2],
                *,
                fetch_samples: Optional[bool] = None) -> Table
@@ -102,12 +102,12 @@ Open a Table object given a path to the root of the table
 **Examples**:
 
     ```py
-    table = fused.experimental.open_table("s3://my_bucket/path/to/dataset/table/")
+    table = fused.open_table("s3://my_bucket/path/to/dataset/table/")
     ```
 
-## job
+#### job
 
-```python showLineNumbers
+```python
 def job(input: Union[
     str,
     Dict,
@@ -131,41 +131,9 @@ Construct a JobConfig
 
   A combined job config.
 
-
-
-### job.run_remote
+#### sign\_url
 
 ```python
-def run_remote(output_table: Optional[str] = ...,
-               instance_type: Optional[WHITELISTED_INSTANCE_TYPES] = None,
-               *,
-               region: str | None = None,
-               disk_size_gb: int | None = None,
-               additional_env: List[str] | None = None,
-               image_name: Optional[str] = None,
-               ignore_no_udf: bool = False,
-               ignore_no_output: bool = False,
-               validate_imports: Optional[bool] = None,
-               overwrite: Optional[bool] = None) -> RunResponse
-```
-
-Run a `JobConfig`, such as an [ingestion job](/core-concepts/content-management/Ingest/#ingest-data).
-
-**Arguments**:
-
-- `output_table` - The name of the table to write to. Defaults to None.
-- `instance_type` - The AWS EC2 instance type to use for the job. Acceptable strings are "m5.large", "m5.xlarge", "m5.2xlarge", "m5.4xlarge", "r5.large", "r5.xlarge", "r5.2xlarge", "r5.4xlarge". Defaults to None.
-- `region` - The AWS region in which to run. Defaults to None.
-- `disk_size_gb` - The disk size to specify for the job. Defaults to None.
-- `additional_env` - Any additional environment variables to be passed into the job. Defaults to None.
-- `image_name` - Custom image name to run. Defaults to None for default image.
-
-- `ignore_no_udf` - Ignore validation errors about not specifying a UDF. Defaults to False.
-- `ignore_no_output` - Ignore validation errors about not specifying output location. Defaults to False.
-
-## sign\_url
-
-```python showLineNumbers
 def sign_url(path: str) -> str
 ```
 
@@ -185,13 +153,13 @@ This function may not check that the file represented by the path exists.
 
 **Examples**:
 
-    ```python showLineNumbers
-    fused.experimental.sign_url("fd://bucket-name/table_directory/file.parquet")
+    ```python
+    fused.sign_url("fd://bucket-name/table_directory/file.parquet")
     ```
 
-## sign\_url\_prefix
+#### sign\_url\_prefix
 
-```python showLineNumbers
+```python
 def sign_url_prefix(path: str) -> Dict[str, str]
 ```
 
@@ -209,6 +177,6 @@ Create signed URLs to access all blobs under the path.
 
 **Examples**:
 
-    ```python showLineNumbers
-    fused.experimental.sign_url_prefix("fd://bucket-name/table_directory/")
+    ```python
+    fused.sign_url_prefix("fd://bucket-name/table_directory/")
     ```

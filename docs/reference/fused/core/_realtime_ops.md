@@ -5,7 +5,7 @@ title: fused.core._realtime_ops
 
 ## run\_tile
 
-```python showLineNumbers
+```python
 def run_tile(email: str,
              id: Optional[str] = None,
              *,
@@ -15,7 +15,7 @@ def run_tile(email: str,
              _dtype_out_vector: str = DEFAULT_DTYPE_VECTOR,
              _dtype_out_raster: str = DEFAULT_DTYPE_RASTER,
              _client_id: Optional[str] = None,
-             **params) -> Optional[Union[pd.DataFrame, xr.Dataset]]
+             **params) -> Optional[Union["pd.DataFrame", "xr.Dataset"]]
 ```
 
 Executes a private tile-based UDF indexed under the specified email and ID. The calling user must have the necessary permissions to execute the UDF.
@@ -43,7 +43,7 @@ as well as additional parameters for the UDF execution.
 
 ## run\_shared\_tile
 
-```python showLineNumbers
+```python
 def run_shared_tile(token: str,
                     *,
                     x: int,
@@ -52,7 +52,7 @@ def run_shared_tile(token: str,
                     _dtype_out_vector: str = DEFAULT_DTYPE_VECTOR,
                     _dtype_out_raster: str = DEFAULT_DTYPE_RASTER,
                     _client_id: Optional[str] = None,
-                    **params) -> Optional[Union[pd.DataFrame, xr.Dataset]]
+                    **params) -> Optional[Union["pd.DataFrame", "xr.Dataset"]]
 ```
 
 Executes a shared tile-based UDF.
@@ -80,14 +80,14 @@ as well as additional parameters for the UDF execution.
 
 ## run\_file
 
-```python showLineNumbers
+```python
 def run_file(email: str,
              id: Optional[str] = None,
              *,
              _dtype_out_vector: str = DEFAULT_DTYPE_VECTOR,
              _dtype_out_raster: str = DEFAULT_DTYPE_RASTER,
              _client_id: Optional[str] = None,
-             **params) -> Optional[Union[pd.DataFrame, xr.Dataset]]
+             **params) -> Optional[Union["pd.DataFrame", "xr.Dataset"]]
 ```
 
 Executes a private file-based UDF indexed under the specified email and ID. The calling user must have the necessary permissions to execute the UDF.
@@ -110,12 +110,12 @@ This function constructs a URL to run a UDF associated with the given email and 
 
 ## run\_shared\_file
 
-```python showLineNumbers
+```python
 def run_shared_file(token: str,
                     *,
                     _dtype_out_vector: str = DEFAULT_DTYPE_VECTOR,
                     _dtype_out_raster: str = DEFAULT_DTYPE_RASTER,
-                    **params) -> Optional[Union[pd.DataFrame, xr.Dataset]]
+                    **params) -> Optional[Union["pd.DataFrame", "xr.Dataset"]]
 ```
 
 Executes a shared file-based UDF.
@@ -146,7 +146,7 @@ This function constructs a URL for running an operation on a file accessible via
 
 ## run\_tile\_async
 
-```python showLineNumbers
+```python
 async def run_tile_async(
         email: str,
         id: Optional[str] = None,
@@ -157,7 +157,7 @@ async def run_tile_async(
         _dtype_out_vector: str = DEFAULT_DTYPE_VECTOR,
         _dtype_out_raster: str = DEFAULT_DTYPE_RASTER,
         _client_id: Optional[str] = None,
-        **params) -> Optional[Union[pd.DataFrame, xr.Dataset]]
+        **params) -> Optional[Union["pd.DataFrame", "xr.Dataset"]]
 ```
 
 Asynchronously executes a private tile-based UDF indexed under the specified email and ID. The calling user must have the necessary permissions to execute the UDF.
@@ -183,7 +183,7 @@ This function constructs a URL to asynchronously run a UDF on a specific tile de
 
 ## run\_shared\_tile\_async
 
-```python showLineNumbers
+```python
 async def run_shared_tile_async(
         token: str,
         *,
@@ -192,7 +192,7 @@ async def run_shared_tile_async(
         z: int,
         _dtype_out_vector: str = DEFAULT_DTYPE_VECTOR,
         _dtype_out_raster: str = DEFAULT_DTYPE_RASTER,
-        **params) -> Optional[Union[pd.DataFrame, xr.Dataset]]
+        **params) -> Optional[Union["pd.DataFrame", "xr.Dataset"]]
 ```
 
 Asynchronously executes a shared tile-based UDF using a specific access token.
@@ -216,7 +216,7 @@ This function constructs a URL for running an operation on a tile, defined by it
 
 ## run\_file\_async
 
-```python showLineNumbers
+```python
 async def run_file_async(
         email: str,
         id: Optional[str] = None,
@@ -224,7 +224,7 @@ async def run_file_async(
         _dtype_out_vector: str = DEFAULT_DTYPE_VECTOR,
         _dtype_out_raster: str = DEFAULT_DTYPE_RASTER,
         _client_id: Optional[str] = None,
-        **params) -> Optional[Union[pd.DataFrame, xr.Dataset]]
+        **params) -> Optional[Union["pd.DataFrame", "xr.Dataset"]]
 ```
 
 Asynchronously executes a file-based UDF associated with the specific email and ID.
@@ -247,13 +247,13 @@ This function constructs a URL to run a UDF on a server, allowing for output dat
 
 ## run\_shared\_file\_async
 
-```python showLineNumbers
+```python
 async def run_shared_file_async(
         token: str,
         *,
         _dtype_out_vector: str = DEFAULT_DTYPE_VECTOR,
         _dtype_out_raster: str = DEFAULT_DTYPE_RASTER,
-        **params) -> Optional[Union[pd.DataFrame, xr.Dataset]]
+        **params) -> Optional[Union["pd.DataFrame", "xr.Dataset"]]
 ```
 
 Asynchronously executes a shared file-based UDF using the specific access token.

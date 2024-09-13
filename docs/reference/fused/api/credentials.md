@@ -5,7 +5,7 @@ title: fused.api.credentials
 
 ## NotebookCredentials Objects
 
-```python showLineNumbers
+```python
 class NotebookCredentials()
 ```
 
@@ -17,7 +17,7 @@ credentials = NotebookCredentials()
 
 ## logout
 
-```python showLineNumbers
+```python
 def logout()
 ```
 
@@ -27,7 +27,7 @@ This deletes the credentials saved to disk and resets the global Fused API.
 
 ## access\_token
 
-```python showLineNumbers
+```python
 def access_token() -> str
 ```
 

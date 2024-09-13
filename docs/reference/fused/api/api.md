@@ -5,7 +5,7 @@ title: fused.api.api
 
 ## FusedAPI Objects
 
-```python showLineNumbers
+```python
 class FusedAPI()
 ```
 
@@ -13,7 +13,7 @@ API for running jobs in the Fused service.
 
 ## \_\_init\_\_
 
-```python showLineNumbers
+```python
 def __init__(*,
              base_url: Optional[str] = None,
              set_global_api: bool = True,
@@ -28,79 +28,9 @@ Create a FusedAPI instance.
 - `set_global_api` - Set this as the global API object. Defaults to True.
 - `credentials_needed` - If True, automatically attempt to log in. Defaults to True.
 
-## sample\_map
-
-```python showLineNumbers
-def sample_map(config: MapJobStepConfig,
-               *,
-               file_id: Optional[Union[str, int]] = None,
-               chunk_id: Optional[int] = None,
-               n_rows: Optional[int] = None) -> MapInput
-```
-
-Fetch a sample of an operation
-
-**Arguments**:
-
-- `config` - The configuration to sample from.
-
-
-**Arguments**:
-
-- `file_id` - The identifier of this file. Defaults to None.
-- `chunk_id` - The numeric index of the chunk within the file to fetch. Defaults to None.
-- `n_rows` - The maximum number of rows to sample. Defaults to None for all rows in the chunk.
-
-## sample\_join
-
-```python showLineNumbers
-def sample_join(config: JoinJobStepConfig,
-                *,
-                file_id: Optional[Union[str, int]] = None,
-                chunk_id: Optional[int] = None,
-                n_rows: Optional[int] = None) -> JoinInput
-```
-
-Fetch a sample of an operation
-
-**Arguments**:
-
-- `config` - The configuration to sample from.
-
-
-**Arguments**:
-
-- `file_id` - The identifier of this file. Defaults to None.
-- `chunk_id` - The numeric index of the chunk within the file to fetch. Defaults to None.
-- `n_rows` - The maximum number of rows to sample from the left dataset. Defaults to None for all rows in the chunk.
-
-## sample\_single\_file\_join
-
-```python showLineNumbers
-def sample_single_file_join(
-        config: JoinSinglefileJobStepConfig,
-        *,
-        file_id: Optional[Union[str, int]] = None,
-        chunk_id: Optional[int] = None,
-        n_rows: Optional[int] = None) -> JoinSingleFileInput
-```
-
-Fetch a sample of an operation
-
-**Arguments**:
-
-- `config` - The configuration to sample from.
-
-
-**Arguments**:
-
-- `file_id` - The identifier of this file. Defaults to None.
-- `chunk_id` - The numeric index of the chunk within the file to fetch. Defaults to None.
-- `n_rows` - The maximum number of rows to sample from the left dataset. Defaults to None for all rows in the chunk.
-
 ## start\_job
 
-```python showLineNumbers
+```python
 def start_job(config: Union[JobConfig, JobStepConfig],
               *,
               instance_type: Optional[WHITELISTED_INSTANCE_TYPES] = None,
@@ -128,10 +58,12 @@ Execute an operation
 
 ## create\_udf\_access\_token
 
-```python showLineNumbers
-def create_udf_access_token(udf_email: str,
+```python
+def create_udf_access_token(udf_email_or_name_or_id: Optional[str] = None,
                             udf_name: Optional[str] = None,
                             *,
+                            udf_email: Optional[str] = None,
+                            udf_id: Optional[str] = None,
                             client_id: Union[str, Ellipsis, None] = ...,
                             cache: bool = True,
                             metadata_json: Optional[Dict[str, Any]] = None,
@@ -145,12 +77,14 @@ The token does not allow running any other UDF on your account.
 
 **Arguments**:
 
-- `udf_email` - The email of the user owning the UDF, or, if udf_name is None, the name of the UDF.
+- `udf_email_or_name_or_id` - A UDF ID, email address (for use with udf_name), or UDF name.
 - `udf_name` - The name of the UDF to create the
 
 
 **Arguments**:
 
+- `udf_email` - The email of the user owning the UDF, or, if udf_name is None, the name of the UDF.
+- `udf_id` - The backend ID of the UDF to create the token for.
 - `client_id` - If specified, overrides which realtime environment to run the UDF under.
 - `cache` - If True, UDF tiles will be cached.
 - `metadata_json` - Additional metadata to serve as part of the tiles metadata.json.
@@ -158,7 +92,7 @@ The token does not allow running any other UDF on your account.
 
 ## get\_jobs
 
-```python showLineNumbers
+```python
 def get_jobs(n: int = 5,
              *,
              skip: int = 0,
@@ -186,7 +120,7 @@ Get the job history.
 
 ## get\_status
 
-```python showLineNumbers
+```python
 def get_status(job: CoerceableToJobId) -> RunResponse
 ```
 
@@ -203,7 +137,7 @@ Fetch the status of a running job
 
 ## get\_logs
 
-```python showLineNumbers
+```python
 def get_logs(job: CoerceableToJobId,
              since_ms: Optional[int] = None) -> List[Any]
 ```
@@ -222,7 +156,7 @@ Fetch logs for a job
 
 ## tail\_logs
 
-```python showLineNumbers
+```python
 def tail_logs(job: CoerceableToJobId,
               refresh_seconds: float = 1,
               sample_logs: bool = True,
@@ -242,7 +176,7 @@ Continuously print logs for a job
 
 ## wait\_for\_job
 
-```python showLineNumbers
+```python
 def wait_for_job(job: CoerceableToJobId,
                  poll_interval_seconds: float = 5,
                  timeout: Optional[float] = None) -> RunResponse
@@ -268,7 +202,7 @@ Block the Python kernel until the given job has finished
 
 ## cancel\_job
 
-```python showLineNumbers
+```python
 def cancel_job(job: CoerceableToJobId) -> RunResponse
 ```
 
@@ -283,108 +217,9 @@ Cancel an existing job
 
   A new job object.
 
-## show
-
-```python showLineNumbers
-def show(path: str,
-         *,
-         open_browser: Optional[bool] = None,
-         show_widget: Optional[bool] = None,
-         iframe_args: Sequence[Any] = ("100%", "600px"),
-         tables: Optional[Sequence[str]] = None,
-         dataset_config: Optional[Union[Dict[str, Any], VizConfig]] = None,
-         app_config: Optional[Union[Dict[str, Any], VizAppConfig]] = None,
-         include_fused_table: bool = False) -> str
-```
-
-Visualize a dataset
-
-**Arguments**:
-
-- `path` - The path of the dataset to visualize.
-
-
-**Arguments**:
-
-- `open_browser` - if True, attempts to open the debugging visualization in a browser window. Defaults to None.
-- `show_widget` - if True, attempts to open the debugging visualization in a widget within this notebook. Defaults to None.
-- `iframe_args` - parameters to pass into the generated IFrame. Defaults to ("100%", "600px").
-- `tables` - tables to load attributes from for visualization. Defaults to None,
-- `app_config` - additional debugging application configuration options
-- `include_fused_table` - if True, ensure "fused" is in the list of tables to show.
-
-
-**Returns**:
-
-  The url to the visualization page.
-
-## show\_multi
-
-```python showLineNumbers
-def show_multi(
-        datasets: Sequence[DatasetViz],
-        *,
-        open_browser: Optional[bool] = None,
-        show_widget: Optional[bool] = None,
-        iframe_args: Sequence[Any] = ("100%", "600px"),
-        app_config: Optional[Union[Dict[str, Any],
-                                   VizAppConfig]] = None) -> str
-```
-
-Visualize multiple datasets
-
-**Arguments**:
-
-- `datasets` - `DatasetViz` configuration objects.
-
-
-**Arguments**:
-
-- `open_browser` - if True, attempts to open the debugging visualization in a browser window. Defaults to None.
-- `show_widget` - if True, attempts to open the debugging visualization in a widget within this notebook. Defaults to None.
-- `iframe_args` - parameters to pass into the generated IFrame. Defaults to ("100%", "600px").
-- `app_config` - additional debugging application configuration options
-
-
-**Returns**:
-
-  The url to the visualization page.
-
-## show\_multi\_v2
-
-```python showLineNumbers
-def show_multi_v2(
-        datasets: Sequence[DatasetVizV2],
-        *,
-        open_browser: Optional[bool] = None,
-        show_widget: Optional[bool] = None,
-        iframe_args: Sequence[Any] = ("100%", "600px"),
-        app_config: Optional[Union[Dict[str, Any],
-                                   VizAppConfig]] = None) -> str
-```
-
-Visualize multiple datasets
-
-**Arguments**:
-
-- `datasets` - `DatasetVizV2` configuration objects.
-
-
-**Arguments**:
-
-- `open_browser` - if True, attempts to open the debugging visualization in a browser window. Defaults to None.
-- `show_widget` - if True, attempts to open the debugging visualization in a widget within this notebook. Defaults to None.
-- `iframe_args` - parameters to pass into the generated IFrame. Defaults to ("100%", "600px").
-- `app_config` - additional debugging application configuration options
-
-
-**Returns**:
-
-  The url to the visualization page.
-
 ## \_whoami
 
-```python showLineNumbers
+```python
 def _whoami() -> Any
 ```
 
@@ -392,16 +227,15 @@ Returns information on the currently logged in user
 
 ## \_list\_realtime\_instances
 
-```python showLineNumbers
+```python
 def _list_realtime_instances(*, whose: str = "self") -> List[Any]
 ```
 
 Returns information about available realtime instances
 
-
 ## upload
 
-```python showLineNumbers
+```python
 def upload(path: str, data: Union[bytes, BinaryIO]) -> None
 ```
 
@@ -409,7 +243,7 @@ Upload a binary blob to a cloud location
 
 ## \_upload\_tmp
 
-```python showLineNumbers
+```python
 def _upload_tmp(extension: str, data: Union[bytes, BinaryIO]) -> str
 ```
 
@@ -417,17 +251,17 @@ Upload a binary blob to a temporary cloud location, and return the new URL
 
 ## \_replace\_df\_input
 
-```python showLineNumbers
+```python
 def _replace_df_input(
-    input: Union[str, List[str], Path,
-                 gpd.GeoDataFrame]) -> Union[str, List[str]]
+    input: Union[str, List[str], Path, "gpd.GeoDataFrame"]
+) -> Union[str, List[str]]
 ```
 
 If the input is a DataFrame, upload it and return a URL to it. Otherwise return input unchanged.
 
 ## \_health
 
-```python showLineNumbers
+```python
 def _health() -> bool
 ```
 
@@ -435,7 +269,7 @@ Check the health of the API backend
 
 ## auth\_token
 
-```python showLineNumbers
+```python
 def auth_token() -> str
 ```
 

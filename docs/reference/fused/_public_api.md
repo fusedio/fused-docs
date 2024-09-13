@@ -3,9 +3,9 @@ sidebar_label: _public_api
 title: fused._public_api
 ---
 
-## get\_jobs
+#### get\_jobs
 
-```python showLineNumbers
+```python
 def get_jobs(n: int = 5,
              *,
              skip: int = 0,
@@ -31,9 +31,9 @@ Get the job history.
 
   The job history.
 
-## get\_udfs
+#### get\_udfs
 
-```python showLineNumbers
+```python
 def get_udfs(n: int = 10,
              *,
              skip: int = 0,
@@ -68,9 +68,9 @@ Fetches a list of UDFs.
     fused.get_udfs()
     ```
 
-## open\_table
+#### open\_table
 
-```python showLineNumbers
+```python
 def open_table(path: Union[str, DatasetOutputV2],
                *,
                fetch_samples: Optional[bool] = None) -> Table
@@ -98,9 +98,9 @@ Open a Table object given a path to the root of the table
     table = fused.open_table("s3://my_bucket/path/to/dataset/table/")
     ```
 
-## ingest
+#### ingest
 
-```python showLineNumbers
+```python
 def ingest(
     input: Union[str, Sequence[str], Path, gpd.GeoDataFrame],
     output: Optional[str] = None,
@@ -135,10 +135,6 @@ Ingest a dataset into the Fused partitioned format.
 
 - `input` - A GeoPandas `GeoDataFrame` or a path to file or files on S3 to ingest. Files may be Parquet or another geo data format.
 - `output` - Location on S3 to write the `main` table to.
-
-
-**Arguments**:
-
 - `output_metadata` - Location on S3 to write the `fused` table to.
 - `schema` - Schema of the data to be ingested. This is optional and will be inferred from the data if not provided.
 - `file_suffix` - filter which files are used for ingestion. If `input` is a directory on S3, all files under that directory will be listed and used for ingestion. If `file_suffix` is not None, it will be used to filter paths by checking the trailing characters of each filename. E.g. pass `file_suffix=".geojson"` to include only GeoJSON files inside the directory.
@@ -146,26 +142,22 @@ Ingest a dataset into the Fused partitioned format.
 - `remove_cols` - The named columns to drop when ingesting geospatial datasets. Defaults to not drop any columns.
 - `explode_geometries` - Whether to unpack multipart geometries to single geometries when ingesting geospatial datasets, saving each part as its own row. Defaults to `False`.
 - `drop_out_of_bounds` - Whether to drop geometries outside of the expected WGS84 bounds. Defaults to True.
-- `partitioning_method` - The method to use for grouping rows into partitions.
+- `partitioning_method` - The method to use for grouping rows into partitions. Defaults to `"rows"`.
 
   - `"area"`: Construct partitions where all contain a maximum total area among geometries.
   - `"length"`: Construct partitions where all contain a maximum total length among geometries.
   - `"coords"`: Construct partitions where all contain a maximum total number of coordinates among geometries.
   - `"rows"`: Construct partitions where all contain a maximum number of rows.
 
-  Defaults to `"rows"`.
-
 - `partitioning_maximum_per_file` - Maximum value for `partitioning_method` to use per file. If `None`, defaults to _1/10th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will be have no more than 1/10th the total area of all geometries. Defaults to `None`.
 - `partitioning_maximum_per_chunk` - Maximum value for `partitioning_method` to use per chunk. If `None`, defaults to _1/100th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will be have no more than 1/100th the total area of all geometries. Defaults to `None`.
 - `partitioning_max_width_ratio` - The maximum ratio of width to height of each partition to use in the ingestion process. So for example, if the value is `2`, then if the width divided by the height is greater than `2`, the box will be split in half along the horizontal axis. Defaults to `2`.
 - `partitioning_max_height_ratio` - The maximum ratio of height to width of each partition to use in the ingestion process. So for example, if the value is `2`, then if the height divided by the width is greater than `2`, the box will be split in half along the vertical axis. Defaults to `2`.
 - `partitioning_force_utm` - Whether to force partitioning within UTM zones. If set to `"file"`, this will ensure that the centroid of all geometries per _file_ are contained in the same UTM zone. If set to `"chunk"`, this will ensure that the centroid of all geometries per _chunk_ are contained in the same UTM zone. If set to `None`, then no UTM-based partitioning will be done. Defaults to "chunk".
-- `partitioning_split_method` - How to split one partition into children.
+- `partitioning_split_method` - How to split one partition into children. Defaults to `"mean"` (this may change in the future).
 
   - `"mean"`: Split each axis according to the mean of the centroid values.
   - `"median"`: Split each axis according to the median of the centroid values.
-
-  Defaults to `"mean"` (this may change in the future).
 
 - `subdivide_method` - The method to use for subdividing large geometries into multiple rows. Currently the only option is `"area"`, where geometries will be subdivided based on their area (in WGS84 degrees).
 - `subdivide_start` - The value above which geometries will be subdivided into smaller parts, according to `subdivide_method`.
@@ -213,7 +205,7 @@ Ingest a dataset into the Fused partitioned format.
 **Returns**:
 
 
-  Configuration object describing the ingestion process. Call `.run_remote` on this object to start a job.
+  Configuration object describing the ingestion process. Call `.execute` on this object to start a job.
 
 
 
@@ -228,12 +220,12 @@ Ingest a dataset into the Fused partitioned format.
         explode_geometries=True,
         partitioning_maximum_per_file=2000,
         partitioning_maximum_per_chunk=200,
-    ).run_remote()
+    ).execute()
     ```
 
-## ingest\_nongeospatial
+#### ingest\_nongeospatial
 
-```python showLineNumbers
+```python
 def ingest_nongeospatial(
     input: Union[str, Sequence[str], Path, gpd.GeoDataFrame],
     output: Optional[str] = None,
@@ -249,12 +241,8 @@ Ingest a dataset into the Fused partitioned format.
 
 **Arguments**:
 
-- `input` - A Pandas `DataFrame` or a path to file or files on S3 to ingest. Files may be Parquet or another data format.
+- `input` - A GeoPandas `GeoDataFrame` or a path to file or files on S3 to ingest. Files may be Parquet or another geo data format.
 - `output` - Location on S3 to write the `main` table to.
-
-
-**Arguments**:
-
 - `output_metadata` - Location on S3 to write the `fused` table to.
 - `partition_col` - Partition along this column for nongeospatial datasets.
 - `partitioning_maximum_per_file` - Maximum number of items to store in a single file. Defaults to 2,500,000.
@@ -264,7 +252,7 @@ Ingest a dataset into the Fused partitioned format.
 **Returns**:
 
 
-  Configuration object describing the ingestion process. Call `.run_remote` on this object to start a job.
+  Configuration object describing the ingestion process. Call `.execute` on this object to start a job.
 
 
 **Examples**:
@@ -273,12 +261,12 @@ Ingest a dataset into the Fused partitioned format.
     job = fused.ingest_nongeospatial(
         input=gdf,
         output="s3://sample-bucket/file.parquet",
-    ).run_remote()
+    ).execute()
     ```
 
-## map
+#### map
 
-```python showLineNumbers
+```python
 def map(dataset: Union[str, Dataset, Table],
         output_table: Optional[str] = None,
         udf: Union[BaseUdf, None] = None,
@@ -304,9 +292,9 @@ Construct a `map` config from this Table
 
   An object describing the map configuration.
 
-## join
+#### join
 
-```python showLineNumbers
+```python
 def join(dataset: Union[str, Dataset, Table],
          other: Union[str, Dataset, Table],
          output_table: Optional[str] = None,
@@ -350,9 +338,9 @@ Construct a join config from two tables
     join_config = fused.join(left_table, other_table)
     ```
 
-## job
+#### job
 
-```python showLineNumbers
+```python
 def job(input: Union[
     str,
     Dict,
@@ -376,17 +364,17 @@ Construct a JobConfig
 
   A combined job config.
 
-## \_whoami
+#### \_whoami
 
-```python showLineNumbers
+```python
 def _whoami()
 ```
 
 Returns information on the currently logged in user
 
-## plot
+#### plot
 
-```python showLineNumbers
+```python
 def plot(gdf: gpd.GeoDataFrame,
          source: Union[str,
                        TileProvider] = cx.providers.CartoDB.DarkMatterNoLabels,
@@ -405,9 +393,9 @@ Plot a GeoDataFrame on a map using contextily to add basemap
   path to local file.
 - `**geopandas_kwargs` - Additional keyword arguments to pass to `gdf.plot`.
 
-## delete
+#### delete
 
-```python showLineNumbers
+```python
 def delete(path: str,
            max_deletion_depth: Union[int, Literal["unlimited"]] = 2) -> bool
 ```
@@ -425,13 +413,13 @@ Delete the files at the path.
 
 **Examples**:
 
-    ```python showLineNumbers
+    ```python
     fused.delete("fd://bucket-name/deprecated_table/")
     ```
 
-## list
+#### list
 
-```python showLineNumbers
+```python
 def list(path: str) -> List[str]
 ```
 
@@ -449,13 +437,13 @@ List the files at the path.
 
 **Examples**:
 
-    ```python showLineNumbers
+    ```python
     fused.list("fd://bucket-name/")
     ```
 
-## get
+#### get
 
-```python showLineNumbers
+```python
 def get(path: str) -> bytes
 ```
 
@@ -473,13 +461,13 @@ Download the contents at the path to memory.
 
 **Examples**:
 
-    ```python showLineNumbers
+    ```python
     fused.get("fd://bucket-name/file.parquet")
     ```
 
-## download
+#### download
 
-```python showLineNumbers
+```python
 def download(path: str, local_path: Union[str, Path]) -> None
 ```
 
@@ -490,9 +478,9 @@ Download the contents at the path to disk.
 - `path` - URL to a file, like `fd://bucket-name/file.parquet`
 - `local_path` - Path to a local file.
 
-## upload
+#### upload
 
-```python showLineNumbers
+```python
 def upload(local_path: Union[str, Path, bytes, BinaryIO],
            remote_path: str) -> None
 ```
@@ -514,9 +502,9 @@ Upload local file to S3.
     fused.upload("my_file.json", "fd://my_bucket/my_file.json")
     ```
 
-## sign\_url
+#### sign\_url
 
-```python showLineNumbers
+```python
 def sign_url(path: str) -> str
 ```
 
@@ -536,13 +524,13 @@ This function may not check that the file represented by the path exists.
 
 **Examples**:
 
-    ```python showLineNumbers
+    ```python
     fused.sign_url("fd://bucket-name/table_directory/file.parquet")
     ```
 
-## sign\_url\_prefix
+#### sign\_url\_prefix
 
-```python showLineNumbers
+```python
 def sign_url_prefix(path: str) -> Dict[str, str]
 ```
 
@@ -560,13 +548,13 @@ Create signed URLs to access all blobs under the path.
 
 **Examples**:
 
-    ```python showLineNumbers
+    ```python
     fused.sign_url_prefix("fd://bucket-name/table_directory/")
     ```
 
-## zip\_tables
+#### zip\_tables
 
-```python showLineNumbers
+```python
 def zip_tables(
         tables: Iterable[Union[Table, str]],
         *,
@@ -584,9 +572,9 @@ Create a job input that zips the columns of tables together. This takes the part
 
 - `read_sidecar` - Whether to read sidecar information, either a sequence of table names (i.e. the last part of the table path) to read it from or a boolean which will be applied to all tables (default False).
 
-## union\_tables
+#### union\_tables
 
-```python showLineNumbers
+```python
 def union_tables(
         tables: Iterable[Union[Table, str]],
         *,

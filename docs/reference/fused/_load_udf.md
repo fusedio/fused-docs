@@ -3,13 +3,13 @@ sidebar_label: _load_udf
 title: fused._load_udf
 ---
 
-## load
+#### load
 
-```python showLineNumbers
+```python
 def load(url_or_udf: Union[str, Path], *, cache_key: Any = None) -> BaseUdf
 ```
 
-Loads a UDF (User-Defined Function) from various sources including GitHub URLs,
+Loads a UDF from various sources including GitHub URLs,
 local files, or directories, and a Fused platform-specific identifier.
 
 This function supports loading UDFs from a GitHub repository URL, a local file path,
@@ -44,17 +44,17 @@ on the format of the input and retrieves the UDF accordingly.
 
 **Examples**:
 
-  Loading a UDF from a GitHub URL:
+  Load a UDF from a GitHub URL:
     ```py
     udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/REM_with_HyRiver/")
     ```
 
-  Loading a UDF from a local file:
+  Load a UDF from a local file:
     ```py
     udf = fused.load("/localpath/REM_with_HyRiver/")
     ```
 
-  Loading a UDF using a Fused platform-specific identifier:
+  Load a UDF using a Fused platform-specific identifier:
     ```py
     udf = fused.load("username@fused.io/REM_with_HyRiver")
     ```

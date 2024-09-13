@@ -5,7 +5,7 @@ title: fused.core._cache
 
 ## cache
 
-```python showLineNumbers
+```python
 def cache(func: Optional[Callable[..., Any]] = None,
           **kwargs: Any) -> Callable[..., Any]
 ```
@@ -56,7 +56,7 @@ keyword arguments.
 
 ## cache\_call
 
-```python showLineNumbers
+```python
 def cache_call(func: Callable[..., T], *args: Any, **kwargs: Any) -> T
 ```
 
@@ -85,7 +85,7 @@ the implementation of the `_cache` function.
 
 ## cache\_call\_async
 
-```python showLineNumbers
+```python
 async def cache_call_async(func: Callable[..., Awaitable[T]], *args: Any,
                            **kwargs: Any) -> T
 ```
@@ -117,11 +117,9 @@ implementation of `_cache_async`.
 
 **Examples**:
 
-  ```py
   async def fetch_data(param):
   # Async function implementation goes here
   return data
 
   # Usage
   result = await cache_call_async(fetch_data, 'example_param')
-  ```

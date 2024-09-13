@@ -3,35 +3,20 @@ sidebar_label: _download
 title: fused.core._download
 ---
 
-## filesystem
+## file\_path
 
-```python showLineNumbers
-def filesystem(protocol: str, **storage_options) -> fsspec.AbstractFileSystem
-```
-
-Get an fsspec filesystem for the given protocol.
-
-**Arguments**:
-
-- `protocol` - Protocol part of the URL, such as "s3" or "gs".
-- `storage_options` - Additional arguments to pass to the storage backend.
-
-
-**Returns**:
-
-  An fsspec AbstractFileSystem.
-
-## create\_path
-
-```python showLineNumbers
-def create_path(file_path: str, mkdir: bool = True) -> str
+```python
+def file_path(file_path: str, mkdir: bool = True) -> str
 ```
 
 Creates a directory in a predefined temporary directory.
 
-This gives users the ability to manage directories during the execution of a UDF. It takes a relative file_path, creates the corresponding directory structure, and returns its absolute path.
+This gives users the ability to manage directories during the execution of a UDF. It takes a relative file_path,
+creates the corresponding directory structure, and returns its absolute path.
 
-This is useful for UDFs that temporarily store indermediate results as files, such as when writing intermediary files do disk when processing large datasets. create_path ensures that necessary directories exist.
+This is useful for UDFs that temporarily store intermediate results as files,
+such as when writing intermediary files to disk when processing large datasets.
+file_path ensures that necessary directories exist.
 
 **Arguments**:
 
@@ -45,7 +30,7 @@ This is useful for UDFs that temporarily store indermediate results as files, su
 
 ## download
 
-```python showLineNumbers
+```python
 def download(url: str, file_path: str) -> str
 ```
 
@@ -74,7 +59,7 @@ Fused addresses the latency of downloading files with the download utility funct
 
 **Examples**:
 
-    ```python showLineNumbers
+    ```python
     @fused.udf
     def geodataframe_from_geojson():
         import geopandas as gpd
@@ -84,29 +69,9 @@ Fused addresses the latency of downloading files with the download utility funct
         return gdf
     ```
 
-## download\_folder
-
-```python showLineNumbers
-def download_folder(url: str, file_path: str) -> str
-```
-
-Download a folder.
-
-May be called from multiple processes with the same inputs to get the same result.
-
-**Arguments**:
-
-- `url` - The URL to download.
-- `file_path` - The local path where to save the files.
-
-
-**Returns**:
-
-  The string of the local path.
-
 ## \_run\_once
 
-```python showLineNumbers
+```python
 def _run_once(signal_name: str, fn: Callable) -> None
 ```
 
@@ -114,5 +79,5 @@ Run a function once, waiting for another process to run it if in progress.
 
 **Arguments**:
 
-- `signal_key` - A relative key for signalling done status. Files are written using `create_path` and this key to deduplicate runs.
+- `signal_key` - A relative key for signalling done status. Files are written using `file_path` and this key to deduplicate runs.
 - `fn` - A function that will be run once.

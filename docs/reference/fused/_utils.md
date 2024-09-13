@@ -5,7 +5,7 @@ title: fused._utils
 
 ## \_PublicUtils Objects
 
-```python showLineNumbers
+```python
 class _PublicUtils()
 ```
 
@@ -18,9 +18,9 @@ from the server.
   __getattribute__(self, key: str) -> Union[Any, AttrDict]: Attempts to access class attributes, falling back to fetching the attribute's configuration from a server if not found.
   __getitem__(self, key: str) -> AttrDict: Fetches the configuration for the given key from a server and returns a utility object for execution.
 
-## \_\_init\_\_
+#### \_\_init\_\_
 
-```python showLineNumbers
+```python
 def __init__(cache_key: Any = None)
 ```
 
@@ -30,7 +30,7 @@ Initializes the _Public instance with an optional cache key.
 
 - `cache_key` _Any, optional_ - A key used for caching purposes. Defaults to None.
 
-## utils
+#### utils
 
 A module to access utility functions located in the UDF called "common".
 
@@ -47,7 +47,7 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
 
 
   This example shows how to access the `geo_buffer` function from the `common` UDF.
-    ```python showLineNumbers
+    ```python
     import fused
     import geopandas as gpd
 
@@ -56,7 +56,7 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
     ```
 
   This example shows how to load a table with `table_to_tile`, which efficiently loads a table by filtering and adjusting based on the provided bounding box (bbox) and zoom level.
-    ```python showLineNumbers
+    ```python
     table_path = "s3://fused-asset/infra/census_bg_us"
     gdf = fused.public.common.table_to_tile(
         bbox, table_path, use_columns=["GEOID", "geometry"], min_zoom=12
@@ -64,7 +64,7 @@ They can be imported by other UDFs with `common = fused.public.common`. They con
     ```
 
   This example shows how to use `rasterize_geometry` to place an input geometry within an image array.
-    ```python showLineNumbers
+    ```python
     geom_masks = [
         rasterize_geometry(geom, arr.shape[-2:], transform) for geom in gdf.geometry
     ]
