@@ -171,8 +171,8 @@ const config: Config = {
       respectPrefersColorScheme: false,
     },
     prism: {
-      theme: prismThemes.nightOwl,
-      darkTheme: prismThemes.nightOwl,
+      theme: prismThemes.oneDark,
+      darkTheme: prismThemes.oneDark,
       additionalLanguages: ["python", "javascript", "bash", "json"],
     },
 
