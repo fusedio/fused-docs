@@ -1,8 +1,14 @@
-# Top-Level Functions
+---
+sidebar_label: Top-Level Functions
+title: Top-Level Functions
+toc_max_heading_level: 5
+---
+
+
 
 
 ## @fused.udf
-```python
+```python showLineNumbers
 def udf(
     fn: Optional[Callable] = None,
     *,
@@ -57,13 +63,13 @@ A decorator that transforms a function into a Fused UDF.
         return gdf
     ```
 
-
+---
 ## @fused.cache
 
-```python
+```python showLineNumbers
 def cache(
-  func: Optional[Callable[..., Any]] = None,
-  **kwargs: Any) -> Callable[..., Any]
+    func: Optional[Callable[..., Any]] = None,
+    **kwargs: Any) -> Callable[..., Any]
 ```
 
 Decorator to cache the return value of a function.
@@ -111,11 +117,10 @@ keyword arguments.
     ```
 
 
+---
+## fused.load
 
-
-## load
-
-```python
+```python showLineNumbers
 def load(url_or_udf: Union[str, Path], *, cache_key: Any = None) -> AnyBaseUdf
 ```
 
@@ -173,9 +178,10 @@ on the format of the input and retrieves the UDF accordingly.
 
 
 
-## run
+---
+## fused.run
 
-```python
+```python showLineNumbers
 def run(email_or_udf_or_token: Union[str, None, UdfJobStepConfig,
                                      GeoPandasUdfV2, UdfAccessToken] = None,
         udf_name: Optional[str] = None,
@@ -277,7 +283,8 @@ Because the output must be serializable and returned via an HTTP response, Fused
 
 :::
 
-## download
+---
+## fused.download
 
 ```python showLineNumbers
 def download(url: str, file_path: str) -> str
@@ -319,7 +326,8 @@ def geodataframe_from_geojson():
 
 
 
-## utils
+---
+## fused.utils
 
 A module to access utility functions located in the UDF called "common".
 
@@ -362,9 +370,10 @@ Public UDFs are listed at https://github.com/fusedio/udfs/tree/main/public
 
 
 
-## ingest
+---
+## fused.ingest
 
-```python
+```python showLineNumbers
 def ingest(
     input: Union[str, Sequence[str], Path, gpd.GeoDataFrame],
     output: Optional[str] = None,
@@ -479,12 +488,47 @@ Ingest a dataset into the Fused partitioned format.
         explode_geometries=True,
         partitioning_maximum_per_file=2000,
         partitioning_maximum_per_chunk=200,
-    ).execute()
+    ).run_remote()
     ```
 
-## ingest\_nongeospatial
+---
+#### job.run\_remote
 
 ```python
+def run_remote(output_table: Optional[str] = ...,
+               instance_type: Optional[WHITELISTED_INSTANCE_TYPES] = None,
+               *,
+               region: str | None = None,
+               disk_size_gb: int | None = None,
+               additional_env: List[str] | None = None,
+               image_name: Optional[str] = None,
+               ignore_no_udf: bool = False,
+               ignore_no_output: bool = False,
+               validate_imports: Optional[bool] = None,
+               validate_inputs: bool = True,
+               overwrite: Optional[bool] = None) -> RunResponse
+```
+
+Execute this operation
+
+**Arguments**:
+
+- `output_table` - The name of the table to write to. Defaults to None.
+- `instance_type` - The AWS EC2 instance type to use for the job. Acceptable strings are "m5.large", "m5.xlarge", "m5.2xlarge", "m5.4xlarge", "r5.large", "r5.xlarge", "r5.2xlarge", "r5.4xlarge". Defaults to None.
+- `region` - The AWS region in which to run. Defaults to None.
+- `disk_size_gb` - The disk size to specify for the job. Defaults to None.
+- `additional_env` - Any additional environment variables to be passed into the job. Defaults to None.
+- `image_name` - Custom image name to run. Defaults to None for default image.
+
+- `ignore_no_udf` - Ignore validation errors about not specifying a UDF. Defaults to False.
+- `ignore_no_output` - Ignore validation errors about not specifying output location. Defaults to False.
+
+
+{/*
+---
+## ingest\_nongeospatial
+
+```python showLineNumbers
 def ingest_nongeospatial(
     input: Union[str, Sequence[str], Path, gpd.GeoDataFrame],
     output: Optional[str] = None,
@@ -524,37 +568,4 @@ Ingest a dataset into the Fused partitioned format.
     ```
 
 
-
-## get\_chunks\_metadata
-
-```python
-def get_chunks_metadata(url: str) -> "gpd.GeoDataFrame"
-```
-
-Returns a GeoDataFrame with each chunk in the table as a row.
-
-**Arguments**:
-
-- `url` - URL of the table.
-
-## get\_chunk\_from\_table
-
-```python
-def get_chunk_from_table(
-        url: str,
-        file_id: Union[str, int, None],
-        chunk_id: Optional[int],
-        *,
-        columns: Optional[Iterable[str]] = None) -> "gpd.GeoDataFrame"
-```
-
-Returns a chunk from a table and chunk coordinates.
-
-This can be called with file_id and chunk_id from `get_chunks_metadata`.
-
-**Arguments**:
-
-- `url` - URL of the table.
-- `file_id` - File ID to read.
-- `chunk_id` - Chunk ID to read.
-- `columns` - Read only the specified columns.
+*/}
