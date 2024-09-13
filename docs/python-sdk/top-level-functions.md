@@ -525,35 +525,6 @@ Ingest a dataset into the Fused partitioned format.
 
 
 
-
-## file\_path
-
-```python
-def file_path(file_path: str, mkdir: bool = True) -> str
-```
-
-Creates a directory in a predefined temporary directory.
-
-This gives users the ability to manage directories during the execution of a UDF. It takes a relative file_path,
-creates the corresponding directory structure, and returns its absolute path.
-
-This is useful for UDFs that temporarily store intermediate results as files,
-such as when writing intermediary files to disk when processing large datasets.
-file_path ensures that necessary directories exist.
-
-**Arguments**:
-
-- `file_path` - The file path to locate.
-- `mkdir` - If True, create the directory if it doesn't already exist. Defaults to True.
-
-
-**Returns**:
-
-  The located file path.
-
-
-
-
 ## get\_chunks\_metadata
 
 ```python
