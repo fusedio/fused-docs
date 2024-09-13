@@ -38,7 +38,7 @@ A decorator that transforms a function into a Fused UDF.
   when specifying `headers=['my_header.py']`, inside the UDF function it may be
   referenced as:
 
-        ```py
+        ```python showLineNumbers
         import my_header
         my_header.my_function()
         ```
@@ -55,7 +55,7 @@ A decorator that transforms a function into a Fused UDF.
 
   To create a simple UDF that calls a utility function to calculate the area of geometries in a GeoDataFrame:
 
-    ```py
+    ```python showLineNumbers
     @fused.udf
     def udf(bbox, table_path="s3://fused-asset/infra/building_msft_us"):
         ...
@@ -98,7 +98,7 @@ keyword arguments.
 
   Use the `@cache` decorator to cache the return value of a function in a custom path.
 
-    ```py
+    ```python showLineNumbers
     @cache(path="/tmp/custom_path/")
     def expensive_function():
         # Function implementation goes here
@@ -109,7 +109,7 @@ keyword arguments.
   it can be reset by running the function with the `reset` keyword argument. Afterward,
   the argument can be cleared.
 
-    ```py
+    ```python showLineNumbers
     @cache(path="/tmp/custom_path/", reset=True)
     def expensive_function():
         # Function implementation goes here
@@ -118,7 +118,7 @@ keyword arguments.
 
 
 ---
-## fused.load
+## load
 
 ```python showLineNumbers
 def load(url_or_udf: Union[str, Path], *, cache_key: Any = None) -> AnyBaseUdf
@@ -160,17 +160,17 @@ on the format of the input and retrieves the UDF accordingly.
 **Examples**:
 
   Load a UDF from a GitHub URL:
-    ```py
+    ```python showLineNumbers
     udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/REM_with_HyRiver/")
     ```
 
   Load a UDF from a local file:
-    ```py
+    ```python showLineNumbers
     udf = fused.load("/localpath/REM_with_HyRiver/")
     ```
 
   Load a UDF using a Fused platform-specific identifier:
-    ```py
+    ```python showLineNumbers
     udf = fused.load("username@fused.io/REM_with_HyRiver")
     ```
 
@@ -179,7 +179,7 @@ on the format of the input and retrieves the UDF accordingly.
 
 
 ---
-## fused.run
+## run
 
 ```python showLineNumbers
 def run(email_or_udf_or_token: Union[str, None, UdfJobStepConfig,
@@ -247,18 +247,18 @@ path based on the provided parameters.
 
 
   Run a UDF saved in the Fused system:
-    ```py
+    ```python showLineNumbers
     fused.run(udf_email="username@fused.io", udf_name="my_udf_name")
     ```
 
   Run a UDF saved in GitHub:
-    ```py
+    ```python showLineNumbers
     loaded_udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/Building_Tile_Example")
     fused.run(udf=loaded_udf, bbox=bbox)
     ```
 
   Run a UDF saved in a local directory:
-    ```py
+    ```python showLineNumbers
     loaded_udf = fused.load("/Users/local/dir/Building_Tile_Example")
     fused.run(udf=loaded_udf, bbox=bbox)
     ```
@@ -284,7 +284,7 @@ Because the output must be serializable and returned via an HTTP response, Fused
 :::
 
 ---
-## fused.download
+## download
 
 ```python showLineNumbers
 def download(url: str, file_path: str) -> str
@@ -327,7 +327,7 @@ def geodataframe_from_geojson():
 
 
 ---
-## fused.utils
+## utils
 
 A module to access utility functions located in the UDF called "common".
 
@@ -371,7 +371,7 @@ Public UDFs are listed at https://github.com/fusedio/udfs/tree/main/public
 
 
 ---
-## fused.ingest
+## ingest
 
 ```python showLineNumbers
 def ingest(
@@ -440,7 +440,7 @@ Ingest a dataset into the Fused partitioned format.
 
   If your point columns are named `"x"` and `"y"`, then pass:
 
-        ```py
+        ```python showLineNumbers
         fused.ingest(
             ...,
             lonlat_cols=("x", "y")
@@ -459,7 +459,7 @@ Ingest a dataset into the Fused partitioned format.
   For example, if you're ingesting a CSV file with two columns
   `"longitude"` and `"latitude"` denoting the coordinate information, pass
 
-        ```py
+        ```python showLineNumbers
         fused.ingest(
             ...,
             gdal_config={
@@ -480,7 +480,7 @@ Ingest a dataset into the Fused partitioned format.
 
 **Examples**:
 
-    ```py
+    ```python showLineNumbers
     job = fused.ingest(
         input="https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/06_CALIFORNIA/06/tl_rd22_06_bg.zip",
         output="s3://fused-sample/census/ca_bg_2022/main/",
@@ -494,7 +494,7 @@ Ingest a dataset into the Fused partitioned format.
 ---
 #### job.run\_remote
 
-```python
+```python showLineNumbers
 def run_remote(output_table: Optional[str] = ...,
                instance_type: Optional[WHITELISTED_INSTANCE_TYPES] = None,
                *,
@@ -560,7 +560,7 @@ Ingest a dataset into the Fused partitioned format.
 
 **Examples**:
 
-    ```py
+    ```python showLineNumbers
     job = fused.ingest_nongeospatial(
         input=gdf,
         output="s3://sample-bucket/file.parquet",
