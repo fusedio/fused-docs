@@ -509,12 +509,12 @@ def run_remote(output_table: Optional[str] = ...,
                overwrite: Optional[bool] = None) -> RunResponse
 ```
 
-Execute this operation
+Execute the job.
 
 **Arguments**:
 
 - `output_table` - The name of the table to write to. Defaults to None.
-- `instance_type` - The AWS EC2 instance type to use for the job. Acceptable strings are "m5.large", "m5.xlarge", "m5.2xlarge", "m5.4xlarge", "r5.large", "r5.xlarge", "r5.2xlarge", "r5.4xlarge". Defaults to None.
+- `instance_type` - The AWS EC2 instance type to use for the job. Acceptable strings are `m5.large`, `m5.xlarge`, `m5.2xlarge`, `m5.4xlarge`, `r5.large`, `r5.xlarge`, `r5.2xlarge`, `r5.4xlarge`. Defaults to None.
 - `region` - The AWS region in which to run. Defaults to None.
 - `disk_size_gb` - The disk size to specify for the job. Defaults to None.
 - `additional_env` - Any additional environment variables to be passed into the job. Defaults to None.
