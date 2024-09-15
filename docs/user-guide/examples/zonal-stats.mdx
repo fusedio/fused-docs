@@ -9,3 +9,151 @@ sidebar_custom_props:
     urlTS: "/user-guide/examples/zonal-stats"
     description: 'Geopartition your own vector table and perform zonal stats.'
 ---
+
+
+_A step-by-step guide for data scientists._
+
+## 1. Introduction to Fused
+
+Fused [Workbench](https://docs.fused.io/workbench/) is an end-to-end cloud platform for data analytics, built around User Defined Functions ([UDFs](/core-concepts/why/)) that can be invoked via HTTP requests.
+
+- Run any Python code remotely within seconds
+- Debug with instant feedback on a map
+- Work with both vector and raster data
+- Serve UDFs as HTTP endpoints
+- Easily scale horizontally to hundreds of workers
+
+The nicest thing is you don't have to set up any infrastructure because Fused takes your code and runs it in the cloud. The benefit is that there's zero configuration: you don't have to mess with clusters, Docker, or even an AWS account. Just bring your code.
+
+In this guide we'll introduce you to Fused by writing a simple zonal stats workflow. We'll explain Fused step by step: how to bring in your data, write a UDF to process the data, run the UDF remotely & in parallel, and create an app that invokes the UDF.
+
+To get started, log in at [fused.io/workbench](https://www.fused.io/workbench).
+
+## 2. Bring in your data
+
+In this walkthrough, we'll calculate zonal stats for areas defined by buffers around polygon or point geometries. You bring your own vector table into Fused with `fused.ingest`. This spatially partitions the table and writes it in your account's S3 bucket. We'll then calculate zonal stats over an array which, for simplicity, we'll load using the DSM UDF. For a deeper dive, read how to [Ingest your own data](/core-concepts/content-management/Ingest/).
+
+For this example, we'll take a ..., but you can use any vector table you'd like. You can pass to `fused.ingest` a URL to a geospatial table or a GeoDataFrame. When you kick-off an ingest job with `run_remote`, Fused spins up a server to partition your table and writes the output to your account's S3 bucket at the path specified in the `output` parameter. Open [fused.io/jobs](https://www.fused.io/jobs) to view the job status and logs.
+
+```python showLineNumber
+import fused
+
+job = fused.ingest(input="https://www2.census.gov/geo/tiger/TIGER2023/TRACT/tl_2023_49_tract.zip", output="fd://tl_2023_49_tract")
+job_id = job.run_remote()
+```
+
+If you run this in a Python environment, make sure to install the latest Fused SDK with `pip install fused` and authenticate. You can also ingest data without installing anything in this [Fused app](https://www.notion.so/fusedio/Fused-Ingest-requires-login-e7d93970713b4017b098201a1ce24596?pvs=4).
+
+Once the job completes, you can preview the output dataset in the [File Explorer](/workbench/file-explorer/).
+
+For the next step you can use the data you just ingested or, if you prefer, the data for the example which in in a publicly available path at `s3://fused-asset/...`.
+
+
+## 3. Write a UDF to process the data
+Let's first write a simple UDF that reads your data, prints a log to the console, and returns an output. To write a UDF simply wrap a Python function with `@fused.udf`. As you write code in the UDF Editor, visualization results, logs, and errors show up immediately.
+
+This UDF
+
+takes bbox as the first argument , which the UDF uses to spatially filter the data, . you can see helper functions in githuxb.
+
+```python showLineNumber
+@fused.udf
+def udf(
+    bbox: fused.types.TileGDF=None,
+    table = 's3://fused-users/fused/plinio/GFP250m/'
+):
+
+    gdf = fused.utils.common.table_to_tile(bbox, table, min_zoom=10)
+    gdf['geometry'] = gdf.geometry.buffer(0.001)
+    arr = fused.utils.DSM_JAXA_Example.dsm_to_tile(bbox)
+    gdf_zonal = fused.utils.common.geom_stats(gdf, arr)
+    print(gdf_zonal.T)
+    return gdf_zonal
+```
+
+
+For a deeper dive, read how to [Write UDFs](/core-concepts/write/).
+
+## 4. Run the UDF remotely and in parallel
+Now, let`s see three ways we can call the UDF remotely: via an HTTP endpoint, in a Python application, and in parallel. For a deeper dive, read how to [Run UDFs](/core-concepts/run/).
+
+
+### a. HTTP endpoint
+
+Create an HTTP endpoint for the UDF by clicking "Share" in the UDF Settings tab.
+
+```javascript
+https://www.fused.io/server/v1/realtime-shared/fsh_6eYdGuG95JPEmUPaHu2CQX/run/tiles/11/330/757?dtype_out_raster=png&dtype_out_vector=csv
+```
+
+#### What just happened?
+...
+#### Why does this matter?
+... You can change the UDF code and the endpoint automatically updates. You can map over more data.
+
+
+
+
+### b. Python SDK
+
+Call the UDF from another application via an HTTP endpoint.
+
+```python showLineNumber
+import fused
+fused.run("fsh_6eYdGuG95JPEmUPaHu2CQX", x=331, y=758, z=11)
+```
+
+Run for a custom AOI.
+
+```python showLineNumber
+import geopandas as gpd
+
+# Square AOI around Rainbow Mountain, CA
+bbox = gpd.GeoDataFrame.from_features({"type":"FeatureCollection","features":[{"type":"Feature","properties":{"shape":"Rectangle"},"geometry":{"type":"Polygon","coordinates":[[[-122.13372204770725,41.673334032315815],[-121.48428529992987,41.673334032315815],[-121.48428529992987,41.218423251839276],[-122.13372204770725,41.218423251839276],[-122.13372204770725,41.673334032315815]]]}}]})
+fused.run("fsh_6eYdGuG95JPEmUPaHu2CQX", bbox=bbox)
+```
+
+
+### c. Parallelization
+
+Invoke the UDF in parallel to effortlessly increase performance when you want to run it repeatedly with different input parameters (to e.g. generate chips). For a deeper dive, read how to [Call UDFs asynchronously](/core-concepts/async/).
+
+
+## 5. Create an app
+
+ The UDF HTTP endpoint you created above... on a map using the pydeck library within the Fused App Builder.
+
+
+
+import Iframe from "@site/src/components/Iframe";
+import CODE from "@site/src/app-iframe/python/example_zstats.py";
+
+<Iframe
+  id="iframe-1"
+  code={CODE}
+  requirements={[
+    "/pyarrow/pyarrow-17.0.0-cp312-cp312-pyodide_2024_0_wasm32.whl",
+    "micropip",
+    "pyodide-unix-timezones", // needed by pyarrow
+    "geopandas",
+    "requests",
+    "xarray",
+    "yarl",
+    // Commonly used in product:
+    "pydeck",
+  ]}
+>
+</Iframe>
+
+
+## 6. Conclusion and next steps
+We've shown how you can use Fused to develop a distributed Python workflow to power an app. Through simple steps we were able to load data, write analytics operations, and create an app to interact with the data. With a single click went from experimental development code to a live application.
+
+We hope this overview gives you a glimpse of what you can build with Fused. You can continue to learn how to [get data in](https://docs.fused.io/user-guide/in/), [transform data](https://docs.fused.io/user-guide/transform/), and [integrate](https://docs.fused.io/user-guide/out/) with other applications.
+
+Find inspiration for your next project, ask questions, or share your work with the Fused community.
+
+- [GitHub](https://github.com/fusedio/udfs/tree/main)
+- [Discord](https://bit.ly/fusedslack)
+- [LinkedIn](https://www.linkedin.com/company/fusedio/)
+- [Twitter](https://twitter.com/Fused_io)
