@@ -11,7 +11,6 @@ sidebar_custom_props:
 unlisted: true
 ---
 
-
 _A step-by-step guide for data scientists._
 
 ## 1. Introduction to Fused
@@ -26,13 +25,13 @@ Fused [Workbench](https://docs.fused.io/workbench/) is an end-to-end cloud platf
 
 You'll appreciate not having to set up any infrastructure because Fused takes your code and runs it in the cloud. The benefit is that there's zero configuration: you don't have to mess with clusters, Docker, or even an AWS account. Just bring your code.
 
-In this guide we'll introduce you to Fused by writing a simple zonal stats workflow. We'll explain Fused step by step: how to bring in your data, write a UDF to process the data, run the UDF remotely & in parallel, and create an app that invokes the UDF.
+In this guide, we'll introduce you to Fused by writing a simple zonal stats workflow. We'll explain Fused step by step: how to bring in your data, write a UDF to process the data, run the UDF remotely & in parallel, and create an app that invokes the UDF.
 
 To get started, log in at [fused.io/workbench](https://www.fused.io/workbench).
 
 ## 2. Bring in your data
 
-In this guide we'll calculate the average elevation of areas defined by buffers around polygon or point geometries. You'll first upload your own vector table with `fused.ingest`. This spatially partitions the table and writes it in your account's S3 bucket as a [GeoParquet](https://geoparquet.org/). You'll then calculate zonal stats over a raster array of the [Global Digital Surface Model](https://www.eorc.jaxa.jp/ALOS/en/dataset/aw3d30/aw3d30_e.htm) (DSM) dataset which, for simplicity, we'll load by calling a pre-existing UDF.
+In this guide, we'll estimate how much alfalfa growns in areas defined by buffers around polygon or point geometries. You'll first upload your own vector table with `fused.ingest`. This spatially partitions the table and writes it in your account's S3 bucket as a [GeoParquet](https://geoparquet.org/). You'll then calculate zonal stats over a raster array of Alfalfa crops in the \[USDA Cropland Data Layer\]([https://catalog.data.gov/dataset/cropscape-cropland-data-layer](https://catalog.data.gov/dataset/cropscape-cropland-data-layer)) (CDL) dataset.
 
 This example ingests polygons of [U.S. Census Block Groups](https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html) for Utah, but you can use any vector table you'd like. In this case, it's a parquet table with a `geometry` column. Read about other supported formats in [Ingest your own data](/core-concepts/content-management/Ingest/).
 
@@ -45,52 +44,71 @@ job = fused.ingest(input="https://www2.census.gov/geo/tiger/TIGER2023/BG/tl_2023
 job_id = job.run_remote()
 ```
 
-If you run this in a Python environment, make sure to install the latest Fused SDK with `pip install fused` and authenticate. You can also ingest data without installing anything in this [Fused app](https://www.fused.io/workbench#app/s/i/fa_6XEw7ACaNo7Qtxggt6Cm9e). Once the job completes, you can preview the output dataset in the [File Explorer](/workbench/file-explorer/).
+If you run this in a Python environment, make sure to install the latest Fused SDK with `pip install fused` and authenticate. You can also ingest data without installing anything in this [Fused app](https://www.fused.io/workbench#app/s/i/fa_6XEw7ACaNo7Qtxggt6Cm9e). Once the job is complete, you can preview the output dataset in the [File Explorer](/workbench/file-explorer/).
 
-For the next step you can use the data you just ingested or, if you prefer, the data for the example which in in a publicly available path at `s3://fused-asset/data/GFP250m/`.
-
+For the next step you can use the data you just ingested or, if you prefer, the data for the example which in in a publicly available path at `s3://fused-asset/data/`tl_2023_49_bg`/`.
 
 ## 3. Write a UDF to process the data
+
 Let's first write a simple UDF that reads your data, prints a log to the console, and returns an output. To [write a UDF](/core-concepts/write/) simply wrap a Python function with `@fused.udf`. As you write code in the [UDF Builder](/workbench/udf-builder/) you'll see how visualization results, logs, and errors show up immediately.
 
-The first parameter of the UDF, `bbox`, is reserved for Fused to pass a `GeoDataFrame` that defines the geometry to run the UDF for, typically a web map [tile](/core-concepts/filetile/). This enables Fused to distribute processing across multiple workers, which we'll cover below.
+The first parameter of the UDF, `bbox`, is reserved for Fused to pass a `GeoDataFrame` defining the geometry to run the UDF for, typically a web map [tile](/core-concepts/filetile/). This enables Fused to run the UDF for each tile in the viewport - effectively distributing processing across multiple workers, which we'll cover more on below.
 
-The second parameter is the path to the `table`, which is read by the `table_to_tile` utility function for each `bbox`. The third parameter is used to create a `buffer` distance around the geometry.
+The `year` parameter is used to define the path of the CDL dataset which the utility function `read_tiff` loads for a given `bbox`.  The `crop_id` parameter 36 corresponds Alfalfa crop in the CDL \[colormap\]([https://storage.googleapis.com/earthengine-stac/catalog/USDA/USDA_NASS_CDL.json](https://storage.googleapis.com/earthengine-stac/catalog/USDA/USDA_NASS_CDL.json)).
 
-You import utility Modules from other UDFs with `fused.utils`. `dsm_to_tile` loads an array of the DSM dataset for the `bbox` and `geom_stats` calculates zonal statistics for the `gdf` and `arr` inputs. Use print statements to show logs in the console.
+Fused lets you import utility Modules from other UDFs with `fused.utils`.
+
+- `read_tiff` loads an array of the CDL dataset for the specified `year` and `bbox, and creates arr`
+- `table_to_tile` loads a fraction of the geo partitioned table for a given `bbox, and creates gdf [TODO]`
+- `geom_stats` calculates zonal statistics for the `gdf` and `arr` inputs
+
+  Use print statements, such as `print(arr`) to show logs in the console.
 
 ```python showLineNumber
 @fused.udf
 def udf(
-    bbox: fused.types.TileGDF=None,
-    table: str = 's3://fused-asset/data/GFP250m/',
-    buffer: float = 0.001
+    bbox: fused.types.TileGDF=None, 
+    year="2020",
+    crop_id=75
 ):
-    gdf = fused.utils.common.table_to_tile(bbox, table, min_zoom=10)
-    gdf['geometry'] = gdf.geometry.buffer(buffer)
-    arr = fused.utils.DSM_JAXA_Example.dsm_to_tile(bbox)
+    import numpy as np
+    
+    # Load CDLS data
+    input_tiff_path = f"s3://fused-asset/data/cdls/{year}_30m_cdls.tif"
+    arr = fused.utils.common.read_tiff(bbox, input_tiff_path)
+
+    # Mask for crops
+    mask = np.isin(arr, [crop_id], invert=True)
+    arr[mask] = 0
+    
+    # Load polygons
+    table = 's3://fused-asset/data/tl_2023_49_bg/'
+    cols = ['NAMELSAD', 'MTFCC', 'FUNCSTAT', 'geometry']
+    gdf = fused.utils.common.table_to_tile(bbox, table, min_zoom=5, clip=False, use_columns=cols)
+    gdf.crs = 4326
+
+    # Calculate zonal stats
     gdf_zonal = fused.utils.common.geom_stats(gdf, arr)
-    print(gdf_zonal.T)
     return gdf_zonal
 ```
 
-Try running the UDF in the [UDF Builder](/workbench/udf-builder/) and visually inspect the output on the map. See what happens when you change `buffer` and add more `print` statements.
-
+Try running the UDF in the [UDF Builder](/workbench/udf-builder/) and visually inspect the output on the map. See what happens when you change `year` and add more `print` statements.
 
 ## 4. Run the UDF remotely and in parallel
-Now that you have a UDF, let's see three ways you can [Run UDFs](/core-concepts/run/) remotely: via an HTTP endpoint, in a Python application, and in parallel.
 
+Now that you have a UDF, let's see three ways you can [Run UDFs](/core-concepts/run/) remotely: via an HTTP endpoint, in a Python application, and in parallel.
 
 ### a. HTTP endpoint
 
 Save the UDF and greate an HTTP endpoint for the UDF by clicking "Share" in the UDF Settings tab. You'll see snippets to call the UDF from anywhere using a [shared token](/core-concepts/run/#shared-token). Try this by changing the HTTP endpoint snippet's query parameter as shown and pasting the URL in a new tab. You should see the output in GeoJSON format.
 
 ```javascript
-https://www.fused.io/server/v1/realtime-shared/fsh_6eYdGuG95JPEmUPaHu2CQX/run/tiles/11/330/757?dtype_out_vector=geojson&buffer=0.002
+https://www.fused.io/server/v1/realtime-shared/fsh_46eSFZaR3q3SnoVB28pN0g/run/tiles/{z}/{x}/{y}?dtype_out_vector=geojson&year=2021&crop_type=36
 ```
 
 #### What just happened?
-When you called the HTTP endpoint, Fused ran the UDF then sent back the output table and [debug logs](/core-concepts/write/#http-requests). In the URL above, `/11/330/757` specifies the ZXY tile index to pass through `bbox`, `dtype_out_vector=geojson` specifies the output format, and `buffer=0.002` sets the buffer distance parameter.
+
+When you called the HTTP endpoint, Fused ran the UDF then sent back the output table and [debug logs](/core-concepts/write/#http-requests). In the URL above, `/11/330/757` specifies the ZXY tile index to pass through `bbox`, `dtype_out_vector=geojson` specifies the output format, and the `year` & `crop_type` parameters let you run the UDF for different years and crop types.
 
 #### Why does this matter?
 
@@ -104,30 +122,39 @@ The share token also enables you to run the UDF in a Python environment. You can
 
 ```python showLineNumber
 import fused
-fused.run("fsh_6eYdGuG95JPEmUPaHu2CQX", x=330, y=757, z=11)
+fused.run("fsh_46eSFZaR3q3SnoVB28pN0g", x=776, y=1553, z=12)
 ```
 
 You can also explicitly define the `bbox` with a `GeoDataFrame` for an AOI.
 
 ```python showLineNumber
-import geopandas as gpd
+iimport geopandas as gpd
 
-# Square AOI around Rainbow Mountain, CA
-bbox = gpd.GeoDataFrame.from_features({"type":"FeatureCollection","features":[{"type":"Feature","properties":{"shape":"Rectangle"},"geometry":{"type":"Polygon","coordinates":[[[-122.13372204770725,41.673334032315815],[-121.48428529992987,41.673334032315815],[-121.48428529992987,41.218423251839276],[-122.13372204770725,41.218423251839276],[-122.13372204770725,41.673334032315815]]]}}]})
-fused.run("fsh_6eYdGuG95JPEmUPaHu2CQX", bbox=bbox)
+# Square AOI near Utah Lake
+bbox = gpd.GeoDataFrame.from_features({"type":"FeatureCollection","features":[{"type":"Feature","properties":{"shape":"Rectangle"},"geometry":{"type":"Polygon","coordinates":[[[-112.01315665811222,40.13628586159681],[-111.89330615564467,40.13628586159681],[-111.89330615564467,40.004073791892196],[-112.01315665811222,40.004073791892196],[-112.01315665811222,40.13628586159681]]]}}]})
+fused.run("fsh_46eSFZaR3q3SnoVB28pN0g", bbox=bbox)
 ```
-
 
 ### c. Parallelization
 
-Invoke the UDF in parallel to effortlessly increase performance when you want to run it repeatedly with different input parameters (to e.g. generate chips). For a deeper dive, read how to [Call UDFs asynchronously](/core-concepts/async/).
+Invoke the UDF in parallel with `run_pool` to effortlessly increase performance when you want to run it repeatedly with different input parameters. In this case, we'll use it to call the UDF across multiple years. For a deeper dive, read how to [Call UDFs asynchronously](/core-concepts/async/).
 
+```python
+import pandas as pd
+
+def run_udf(year):
+    gdf = fused.run("fsh_46eSFZaR3q3SnoVB28pN0g", bbox=bbox, year=year, crop_id=36)
+    gdf['year'] = year
+    return gdf
+
+gdfs = fused.utils.common.run_pool(run_udf, [2019, 2020, 2021])
+gdfs = pd.concat(gdfs)
+gdfs
+```
 
 ## 5. Create an app
 
- The UDF HTTP endpoint you created above... on a map using the pydeck library within the Fused App Builder.
-
-
+Now that you've created a UDF explored different ways to call it, you're ready to create a data app to share your results with a broader audience. We'll structure the HTTP endpoint you created above to act as a Tile server, allowing it to be called from a `pydeck` map within the Fused App Builder. We'll also create a dropdown so users can select which year to run the UDF for.
 
 import Iframe from "@site/src/components/Iframe";
 import CODE from "@site/src/app-iframe/python/example_zstats.py";
@@ -149,8 +176,8 @@ import CODE from "@site/src/app-iframe/python/example_zstats.py";
 >
 </Iframe>
 
-
 ## 6. Conclusion and next steps
+
 We've shown how you can use Fused to develop a distributed Python workflow to power an app. Through simple steps we were able to load data, write analytics operations, and create an app to interact with the data. With a single click went from experimental development code to a live application.
 
 We hope this overview gives you a glimpse of what you can build with Fused. You can continue to learn how to [get data in](https://docs.fused.io/user-guide/in/), [transform data](https://docs.fused.io/user-guide/transform/), and [integrate](https://docs.fused.io/user-guide/out/) with other applications.
