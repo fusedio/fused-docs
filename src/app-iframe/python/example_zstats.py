@@ -22,8 +22,8 @@ st.pydeck_chart(
                 pickable=True,
                 filled=True,
                 get_fill_color=[
-                    "properties.stats * 200",
-                    "properties.stats * 100",
+                    "properties.stats * 2_000",
+                    "properties.stats * 1_000",
                     10,
                     100,
                 ],
