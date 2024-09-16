@@ -80,15 +80,14 @@ def udf(
     )
 
     # Mask for crop
-    mask = np.isin(arr, [crop_id], invert=True)
-    arr[mask] = 0
+    arr = np.where(np.isin(arr, [crop_id]), 1, 0)
 
     # Load polygons
     gdf = fused.utils.common.table_to_tile(
       bbox,
       table='s3://fused-asset/data/tl_2023_49_bg/',
       min_zoom=5,
-      use_columns=['NAMELSAD', 'MTFCC', 'FUNCSTAT', 'geometry']
+      use_columns=['NAMELSAD', 'GEOID', 'MTFCC', 'FUNCSTAT', 'geometry']
     )
     gdf.crs = 4326
 
@@ -129,21 +128,21 @@ import fused
 fused.run("fsh_46eSFZaR3q3SnoVB28pN0g", x=778, y=1548, z=12)
 ```
 
-You can also pass a `GeoDataFrame` to explicitly define a custom `bbox`.
+You can also pass a `GeoDataFrame` to explicitly define a custom `bbox` and other parameters specific to the UDF.
 
 ```python showLineNumber
 iimport geopandas as gpd
 
 # Square AOI near Utah Lake
 bbox = gpd.GeoDataFrame.from_features({"type":"FeatureCollection","features":[{"type":"Feature","properties":{"shape":"Rectangle"},"geometry":{"type":"Polygon","coordinates":[[[-112.01315665811222,40.13628586159681],[-111.89330615564467,40.13628586159681],[-111.89330615564467,40.004073791892196],[-112.01315665811222,40.004073791892196],[-112.01315665811222,40.13628586159681]]]}}]})
-fused.run("fsh_46eSFZaR3q3SnoVB28pN0g", bbox=bbox)
+fused.run("fsh_46eSFZaR3q3SnoVB28pN0g", bbox=bbox, year=2020, crop_id=36)
 ```
 
 ### c. Parallelization
 
 Invoke the UDF in parallel with `run_pool` to increase performance when you want to run it repeatedly with different input parameters. In this case, we'll use it to call the UDF across a set of years. For a deeper dive, read how to [Call UDFs asynchronously](/core-concepts/async/).
 
-```python
+```python showLineNumber
 import pandas as pd
 
 def run_udf(year):
@@ -152,13 +151,20 @@ def run_udf(year):
     return gdf
 
 gdfs = fused.utils.common.run_pool(run_udf, [2019, 2020, 2021])
-gdfs = pd.concat(gdfs)
-gdfs
+gdf_final = pd.concat(gdfs)
+gdf_final
 ```
+
+These examples show how you can easily integrate Fused into your analytics workflows. For example, you can group `gdf_final` by `GEOID` and `year` and calculate aggregates of the `count` and `stats` columns.
+
+```python showLineNumber
+gdfs.groupby(['GEOID', 'year']).agg({'count':'sum', 'stats': 'mean'}).reset_index()
+```
+
 
 ## 5. Create an app
 
-Now that you've created a UDF and explored different ways to call it, you're can create a data app to share your results. We'll structure the HTTP endpoint you created above to act as a Tile server (with `/run/tiles/{z}/{x}/{y}`), allowing it to be called from a [pydeck](https://deckgl.readthedocs.io/en/latest/index.html) `TileLayer` within the Fused App Builder. We'll also create a [Streamlit dropdown](https://docs.streamlit.io/develop/api-reference/widgets/st.selectbox) for users to set the year parameter.
+Now that you've created a UDF and explored different ways to invoke it, you're can create a data app to share your results. We'll structure the HTTP endpoint you created above to act as a Tile server (with `/run/tiles/{z}/{x}/{y}`), allowing it to be called from a [pydeck](https://deckgl.readthedocs.io/en/latest/index.html) `TileLayer` within the Fused App Builder. We'll also create a [Streamlit dropdown](https://docs.streamlit.io/develop/api-reference/widgets/st.selectbox) for users to set the year parameter.
 
 import Iframe from "@site/src/components/Iframe";
 import CODE from "@site/src/app-iframe/python/example_zstats.py";
@@ -179,6 +185,8 @@ import CODE from "@site/src/app-iframe/python/example_zstats.py";
   ]}
 >
 </Iframe>
+\
+Click "Copy shareable link" to share the app with others or to embed it in Notion!
 
 ## 6. Conclusion and next steps
 
