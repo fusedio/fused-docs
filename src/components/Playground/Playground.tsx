@@ -1,9 +1,9 @@
 import React from "react";
-import clsx from "clsx";
 import Link from "@docusaurus/Link";
 import Image from "@theme/IdealImage";
 import Heading from "@theme/Heading";
 import { useCurrentSidebarCategory } from "@docusaurus/theme-common";
+import styles from "./styles.module.css";
 
 interface Props {
   name: string;
@@ -20,15 +20,13 @@ function PlaygroundCard({ name, image, url, urlTS, description }: Props) {
   return (
     <div className="col col--6 margin-bottom--lg" style={{ display: "flex" }}>
       <div
-        className={clsx(
-          "card cardContainer_node_modules-@docusaurus-theme-classic-lib-theme-DocCard-styles-module",
-        )}
+        className={` ${styles.playgroundCard}`}
       >
         <Link to={url}>
-          <div className={clsx("card__image")}>
+          <div className={`${styles.image}`}>
             <Image img={image} alt={`${name}'s image`} />
           </div>
-          <div className="card__body playground-card-body">
+          <div className={`${styles.playgroundCardBody}`}>
             <Heading as="h3">{name}</Heading>
             <p>{description}</p>
           </div>
