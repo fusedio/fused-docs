@@ -219,6 +219,12 @@ const config: Config = {
             to: "/python-sdk/contribute/#publish-a-udf-to-a-github-repository",
             from: ["/basics/utilities/connect-your-github-repository"],
           },
+          {
+            to: "/core-concepts/run/#shared-token",
+            from: [
+              "/basics/core-concepts/#create-and-manage-shared-tokens-recommended",
+            ],
+          },
         ],
         createRedirects(existingPath) {
           if (existingPath.includes("/user-guide/out")) {
