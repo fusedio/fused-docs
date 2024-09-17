@@ -223,10 +223,6 @@ const config: Config = {
             to: "/user-guide/out/",
             from: ["/basics/out/"],
           },
-          {
-            to: "/user-guide/out/",
-            from: ["/basics/out/"],
-          },
         ],
       },
     ],
