@@ -219,11 +219,13 @@ const config: Config = {
             to: "/python-sdk/contribute/#publish-a-udf-to-a-github-repository",
             from: ["/basics/utilities/connect-your-github-repository"],
           },
-          {
-            to: "/user-guide/out/",
-            from: ["/basics/out/"],
-          },
         ],
+        createRedirects(existingPath) {
+          if (existingPath.includes("/basics/out")) {
+            return [existingPath.replace("/basics/out", "/user-guide/out")];
+          }
+          return undefined;
+        },
       },
     ],
     [
