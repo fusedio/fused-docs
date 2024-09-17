@@ -10,6 +10,7 @@ import urllib.parse
 import plotly.graph_objects as go
 import base64
 import numpy
+import time
 
 # Constants
 MONTHS = [
@@ -35,7 +36,7 @@ def encode_geojson(geojson):
 
 
 def make_api_call(geojson, h3_size=5):
-    url = "https://www.fused.io/server/v1/realtime-shared/fsh_2JJ9u4L37mVHYw0JgwToKx/run/file"
+    url = "https://www.fused.io/server/v1/realtime-shared/fsh_2YYNSXQCEZnERzYB10OZ3b/run/file"
     params = {
         "dtype_out_raster": "tiff",
         "dtype_out_vector": "csv",
@@ -161,7 +162,7 @@ def generate_html_content(rainfall_data, center_lat, center_lon):
                 map.addSource('fused-vector-source', {{
                     'type': 'vector',
                     'tiles': [
-                        'https://www.fused.io/server/v1/realtime-shared/fsh_LfRybzrLngj3vZEHvBRDe/run/tiles/{{z}}/{{x}}/{{y}}?dtype_out_vector=mvt&input_array={rainfall_array_encoded}'
+                        'https://www.fused.io/server/v1/realtime-shared/fsh_3bVC7EFJLhSFVJqeuk1pcM/run/tiles/{{z}}/{{x}}/{{y}}?dtype_out_vector=mvt&input_array={rainfall_array_encoded}'
                     ],
                     'minzoom': 3,
                     'maxzoom': 14
@@ -301,7 +302,8 @@ def main():
 
             if st.session_state.drawn_shape is not None:
                 if st.button("Get Data"):
-                    with st.spinner("Fetching data..."):
+                    with st.spinner("Fetching and processing data..."):
+                        # Fetch data
                         geojson_for_api = {
                             "type": "Polygon",
                             "coordinates": st.session_state.drawn_shape["geometry"][
@@ -310,48 +312,38 @@ def main():
                         }
                         st.session_state.api_result = make_api_call(geojson_for_api)
 
-            # Display results if data has been fetched
-            if st.session_state.api_result is not None:
-                if isinstance(st.session_state.api_result, bytes):
-                    try:
-                        csv_data = io.StringIO(
-                            st.session_state.api_result.decode("utf-8")
-                        )
-                        df = pd.read_csv(csv_data)
-
-                        if "rainfall" in df.columns and isinstance(
-                            df["rainfall"].iloc[0], str
-                        ):
-                            df["rainfall"] = df["rainfall"].apply(eval)
-
-                        if "rainfall" in df.columns:
-                            st.session_state.rainfall_data = df["rainfall"].iloc[0]
-                            chart_data = pd.DataFrame(
-                                {
-                                    "Month": MONTHS,
-                                    "Rainfall (mm)": st.session_state.rainfall_data,
-                                }
-                            )
-
-                            fig = go.Figure(
-                                go.Bar(
-                                    x=chart_data["Month"],
-                                    y=chart_data["Rainfall (mm)"],
-                                    marker_color=chart_data["Rainfall (mm)"],
-                                    marker_colorscale=GREY_COLORS,
+                        # Process and display results
+                        if isinstance(st.session_state.api_result, bytes):
+                            try:
+                                csv_data = io.StringIO(
+                                    st.session_state.api_result.decode("utf-8")
                                 )
-                            )
-                            fig.update_layout(
-                                title="Monthly Rainfall for Selected Location",
-                                xaxis_title="Month",
-                                yaxis_title="Rainfall (mm)",
-                                height=350,
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-                    except Exception as e:
-                        st.error(f"Error parsing API response: {str(e)}")
-                else:
-                    st.error(st.session_state.api_result)
+                                df = pd.read_csv(csv_data)
+
+                                if "rainfall" in df.columns and isinstance(
+                                    df["rainfall"].iloc[0], str
+                                ):
+                                    df["rainfall"] = df["rainfall"].apply(eval)
+
+                                if "rainfall" in df.columns:
+                                    # Multiply by 10 and round off the rainfall data
+                                    st.session_state.rainfall_data = [
+                                        round(x * 10) for x in df["rainfall"].iloc[0]
+                                    ]
+                                    chart_data = pd.DataFrame(
+                                        {
+                                            "Month": MONTHS,
+                                            "Rainfall": st.session_state.rainfall_data,
+                                        }
+                                    )
+
+                                    st.bar_chart(
+                                        chart_data.set_index("Month")["Rainfall"]
+                                    )
+                            except Exception as e:
+                                st.error(f"Error parsing API response: {str(e)}")
+                        else:
+                            st.error(st.session_state.api_result)
 
     # Display Hex-Similarity Map if rainfall data is available
     if st.session_state.rainfall_data is not None:
