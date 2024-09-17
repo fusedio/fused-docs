@@ -224,6 +224,11 @@ const config: Config = {
           if (existingPath.includes("/user-guide/out")) {
             return [existingPath.replace("/user-guide/out", "/basics/out")];
           }
+          if (existingPath.includes("/basics/user-guide/")) {
+            return [
+              existingPath.replace("/user-guide/", "/basics/user-guide/"),
+            ];
+          }
           return undefined;
         },
       },
