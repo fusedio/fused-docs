@@ -221,7 +221,7 @@ const config: Config = {
           },
         ],
         createRedirects(existingPath) {
-          if (existingPath.includes("/basics/out")) {
+          if (existingPath.includes("/user-guide/out")) {
             return [existingPath.replace("/user-guide/out", "/basics/out")];
           }
           return undefined;
