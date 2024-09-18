@@ -250,12 +250,3 @@ const config: Config = {
 };
 
 export default config;
-// export default {
-//   baseUrl: "/",
-//   title: "Fused",
-//   url: "https://docs.fused.io",
-//   markdown: {
-//     mermaid: true,
-//   },
-//   themes: ['@docusaurus/theme-mermaid'],
-// };
