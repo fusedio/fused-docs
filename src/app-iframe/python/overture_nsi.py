@@ -2,13 +2,7 @@ import pydeck as pdk
 import streamlit as st
 
 st.title("🏢 NSI + Overture")
-st.write(
-    """
-The UDF then performs spatial join between Overture Buildings and NSI using GeoPandas with `gdf_overture.sjoin(gdf)`. This operation returns a unified table with Overture building footprints with GERS IDs enriched with NSI attributes.
 
-Coverage expands in (top right) Astoria when you add heights from the NSI dataset to Overture buildings.
-"""
-)
 url = "https://www.fused.io/server/v1/realtime-shared/fsh_3q5XyVfgw4z7X4XzdugudF/run/tiles/{z}/{x}/{y}?dtype_out_vector=geojson"
 st.pydeck_chart(
     pdk.Deck(
@@ -36,4 +30,12 @@ st.pydeck_chart(
             "style": {"backgroundColor": "steelblue", "color": "white"},
         },
     )
+)
+
+st.write(
+    """
+The UDF then performs spatial join between Overture Buildings and NSI using GeoPandas with `gdf_overture.sjoin(gdf)`. This operation returns a unified table with Overture building footprints with GERS IDs enriched with NSI attributes.
+
+Coverage expands in (top right) Astoria when you add heights from the NSI dataset to Overture buildings.
+"""
 )
