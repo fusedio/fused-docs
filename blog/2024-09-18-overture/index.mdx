@@ -1,0 +1,111 @@
+---
+slug: overture-tiles
+title: "Enrich your dataset with GERS and create a Tile server"
+authors: [jennings, plinio]
+tags: [overture]
+unlisted: true
+# image:
+keywords: [overture]
+---
+
+
+## Overview of Overture and GERS
+
+Overture is an open data project that publishes interoperable map datasets. It aims to foster an ecosystem of developers creating downstream map services around its data products. Fused emerged as a solution to enrich datasets on the fly and serve them behind XYZ Tile endpoints.
+
+### Why this matters
+
+Datasets often lack the structure required to support the creation of reliable map services and products. A dataset may reference real-world entities using its own conventions, making it challenging to integrate with other datasets. Overture promotes interoperability with GERS (Global Entity Reference System) IDs, which link dataset entities to the same real-world features. This simplifies the process of conflating multiple datasets, ensuring consistent and accurate integration.
+
+The Buildings theme provides a comprehensive collection of global building footprints, but different use cases might call for additional building-information. This could include risk assessment, census information, zoning regulations, property management details, and more. By enriching datasets with GERS IDs, users can easily link external data sources to power analytical applications.
+
+However, enriching a dataset can be computationally and memory-intensive due to the size of the data. Fused addresses this by enabling live queries and rendering data directly from the source GeoParquet files, eliminating the need to create new tiles each time the underlying data is updated.
+
+
+## Step-by-step guide
+In this post, we’ll show how to enrich your dataset by matching it with the Overture Buildings theme using GERS IDs. This makes your dataset easier to visually inspect and more accessible for others to consume and integrate with their own data.
+
+For this example, we’ll create a Fused UDF to load the NSI Structures dataset and overlay it on the Overture Buildings dataset. This will let us visualize buildings based on attributes from NSI such as structure value or height. We’ll then turn the UDF into an XYZ Tile server to create an app.
+
+
+### 1. Load Buildings data
+
+Fused UDFs let us load, process, and export Overture dataset using spatial filters. This means we can load only a subset of columns for the areas we care about, without needing to first download the entire dataset.
+
+This UDF, running on the Fused Workbench, uses the `get_overture` helper function to read from the overture dataset hosted in source coop.
+
+
+```python showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.TileGDF=None):
+    return fused.utils.Overture_Maps_Example.get_overture(bbox=bbox, theme='buildings')
+```
+
+### 2. Enrich with NSI
+
+The NSI API provides access to NSI structures as a feature collection of points, which can be queried using GeoJSON. We’ll use the same bounding box (bbox) that we used to load Overture data to query NSI, ensuring that each call to the UDF fetches data from both datasets for the spatially overlapping area.
+
+We’ll write a UDF to load data from both datasets and perform a spatial join using GeoPandas with gdf_overture.sjoin(gdf). This operation returns a unified table with Overture building footprints enriched with NSI attributes. Any duplicates, where multiple NSI points fall within the same building footprint, can be dropped. The resulting dataset will have NSI attributes enriched with GERS IDs and the building polygons.
+
+While developing the UDF, the Fused UDF Editor allows us to dynamically visualize the output on the map.
+
+
+```python showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.TileGDF=None):
+    import geopandas as gpd
+    import requests
+    from shapely.geometry import shape
+    import json
+
+    # 1. Load Overture Buildings
+    gdf_overture = fused.utils.Overture_Maps_Example.get_overture(bbox=bbox)
+
+    # 2. Load NSI from API
+    response = requests.post(
+        url = "https://nsi.sec.usace.army.mil/nsiapi/structures?fmt=fc",
+        json=bbox.__geo_interface__)
+
+    # 3. Create NSI gdf
+    gdf = gpd.GeoDataFrame.from_features(response.json()['features'])
+
+    # 4. Join Overture and NSI
+    cols = ['id', 'ftprntsrc', 'bid', 'fd_id', 'geometry', 'class', 'ground_elv', 'min_height','roof_height','ground_elv_m', 'has_parts', 'height', 'val_struct']
+    return gdf_overture.sjoin(gdf)[cols]
+
+```
+
+### 3. Create an XYZ Tile endpoint
+
+Fused UDFs can be invoked via HTTP endpoints. The UDF we created returns a GeoDataFrame of the spatially joined tables, and Fused automatically provides an XYZ Tile endpoint. This allows seamless integration with mapping clients, enabling us to generate an enriched dataset in real-time and simultaneous serve it - without the need for additional processing layers.
+
+```text
+https://www.fused.io/server/v1/realtime-shared/fsh_3q5XyVfgw4z7X4XzdugudF/run/tiles/{z}/{x}/{y}?dtype_out_vector=geojson
+```
+
+### 4. Create a web app
+
+
+import Iframe from "@site/src/components/Iframe";
+import CODE from "@site/src/app-iframe/python/overture_nsi.py";
+
+<Iframe
+  id="iframe-1"
+  code={CODE}
+  requirements={[
+    "/pyarrow/pyarrow-17.0.0-cp312-cp312-pyodide_2024_0_wasm32.whl",
+    "micropip",
+    "pyodide-unix-timezones", // needed by pyarrow
+    "geopandas",
+    "requests",
+    "xarray",
+    "yarl",
+    // Commonly used in product:
+    "pydeck",
+  ]}
+/>
+
+
+## Conclusion
+
+This walkthrough provided a practical overview of how to create a UDF enrich a dataset with GERS IDs from Overture Buildings. We also saw how to use the UDF as a tile server to dynamically enrich and serve the dataset on the fly - directly on the browser.
