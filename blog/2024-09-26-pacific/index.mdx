@@ -1,0 +1,87 @@
+---
+slug: pacific-spatial
+title: "Case study: Analyzing traffic speeds from 100 billion drive records"
+authors: [chris]
+tags: [pacific spatial]
+unlisted: true
+# image: https://fused-magic.s3.us-west-2.amazonaws.com/blog-assets/social_jennings.png
+hide_table_of_contents: false
+keywords: [pacific spatial]
+---
+
+Over the last few decades, it has become increasingly evident that passenger vehicles are by far the most dangerous way to travel. As a result, it has become more and more important to find an efficient and effective method to predict traffic risk. However, predicting traffic accidents and where they are likely to occur is a very complex problem, with large amounts of data being needed for most meaningful predictions.
+
+At Pacific Spatial Solutions, we are currently trying to tackle this problem by training a machine learning model to predict road and intersection risk in Japan nationwide. As we are trying to predict traffic risk on a national level it is only natural that the data we use cover the same area.
+
+
+
+import Image1 from '/blog/2024-09-26-pacific/image1.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={Image1} alt="File" style={{}} />
+</div>
+
+_Nationwide drive recorder data points and their spatial partitions._
+
+## Challenges when working with big data
+
+Generally, data processing and feature engineering are one of the most important steps of any ML pipeline, we are therefore working with Fused to help streamline and improve the costliest part of our data preparation stage.
+
+The data in question is drive recorder data, in other words, data that cars send every other second to describe what condition the car was in at that point in time. For example, the speed the car was traveling at and if any of the internal warning lights were activated. With a fleet of thousands of cars sending this data every other second, the data grows extremely large very quickly. The dataset in question has hundreds of billions of rows. Working with data this large presents many unique challenges as even the simplest operations can take hours and cost thousands of dollars. Consequently, the process of finding the best way to utilize this type of data becomes a very time consuming and costly process.
+
+import Image2 from '/blog/2024-09-26-pacific/image2.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={Image2} alt="File" style={{}} />
+</div>
+
+_Drive recorder data points from a single day in a specific part of downtown Tokyo._
+
+## Moving to Fused
+Specifically, what we are trying to achieve is to map the speed values from the drive recorder data points to their nearest road. Using a traditional “nearest neighbor” approach would not be feasible, as we would need to measure the distance between billions of points and thousands of roads.
+With our current cloud service provider we therefore had to rely on “clustering”, so that data points that are close location wise would be close in memory too. This definitely increases performance, but adds some randomness to the processing time and cost because depending on where the area of interest lies in memory, you might have to search through all of your data to find it. As a result, to keep cost and processing time reasonable, we had to limit the nearest neighbor search area using a very small buffer. This was the only way to make our analysis with a dataset of this magnitude feasible.
+
+In Fused however, our spatial data uses a smart spatial partitioning system so that we know exactly where to look when attempting to spatially join our data. Furthermore, we can easily analyze and in real time visualize small chunks of the data and finetune our logic before scaling our implementation. This gives us a lot of freedom during development so that we can really hone in on the best possible solution to our problem.
+
+This is very much in contrast to our cloud service provider, where we would need to move data around several times during development to visualize temporary results and do sanity checks. This made the development process very tedious and forced us into a simplified solution due to the limitations of the tool we were using.
+
+
+## Creating a scalable solution
+Our solution is divided into two main steps the first being the preparation and ingestion of the road and drive recorder data, and the second being the UDF that analyzes the data after it has been prepared. We will be using the [H3 spatial index](https://h3geo.org/) to improve performance.
+
+### Ingestion
+1. Ingest and spatially partition the point and road data directly from our data warehouse
+2. Initialize DuckDB instance and add H3 index to our points and multiple H3 Kring indexes to the road data
+3. Create metadata files to keep track of the geometry and H3 mapping
+
+The reason why we add multiple Krings to the roads is that this will act like a hexagonized buffer. This will be much faster to search through as we will be doing number on number comparisons instead of geospatial distance measurements.
+
+### UDF Design
+1. Use the current view/bbox and read the gps points and roads that intersect with it
+2. Prepare dataframes with the gps points, road krings and road geometry
+3. For each point find the road with the closest kring cell within a certain k distance, and map the speed to it.
+4. Aggregate all of the speed values
+
+```python showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.TileGDF):
+    # TODO: Show working code or pseudocode
+    return
+```
+
+We now have our result which is a DataFrame representing the road network within our bbox. All the roads have their respective aggregated speed, distance and metric values as well as how many points were used for the aggregation. This result can easily be enriched by bringing in more columns from the base data such as the timestamp. This would make it possible to create hourly speed pattern analysis or maybe even a time series visualization.
+
+import Image3 from '/blog/2024-09-26-pacific/image3.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={Image3} alt="File" style={{}} />
+</div>
+
+_UDF result of Osaka Japan. Line width shows point density. Brighter yellow colors indicate high speed and darker purple colors low speed._
+
+
+## Conclusion
+
+By leveraging the spatial partitioning that Fused does during ingestion and the flexibility of the h3 library, we have created a method to reliably map our drive recorder points to their nearest segment. The UDF is incredibly fast as well with processing taking between 15-30 seconds depending on the area and zoom level. Our testing was done on one machine, so by adding more processing power, this UDF could be made to analyze our data almost instantaneously.
+
+The natural next step is to scale the above analysis to a nationwide level. To do this we would iterate over the chunks that fused produced when ingesting our road data, instead of the maps bbox. This modification can be achieved fairly easily in Fused and we are very excited to see how well Fused will be able to perform in this case.
