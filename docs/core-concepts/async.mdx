@@ -13,29 +13,35 @@ import Tag from '@site/src/components/Tag'
 
 A UDF can be called asynchronously using the [async/await](https://docs.python.org/3/library/asyncio.html) syntax. A common implementation is to call a UDF multiple times in parallel with different parameters then combine the results.
 
-This UDF illustrates the concept. It calls `udf_to_run_async` asynchronously with the [`run_pool`](https://github.com/fusedio/udfs/blob/9bfb5d0/public/common/utils.py#L522) utility function 10 times and concatenates the results.
+This UDF illustrates the concept. It calls `udf_to_run_async` asynchronously for each date in the `dates` list and concatenates the results.
+
 
 ```python showLineNumbers
 @fused.udf
-def udf_to_run_async(n: int=1):
-    import geopandas as gpd
-    import shapely
-
-    box = shapely.box(-122.549, 37.681, -122.341, 37.818)
-    geoms = shapely.affinity.rotate(box, 3 * n)
-    return gpd.GeoDataFrame({"value": [n]}, geometry=[geoms])
-
-@fused.udf
-def udf(bbox: fused.types.TileGDF=None, n_calls: int=10):
+async def udf():
     import pandas as pd
+    import asyncio
 
-    def run_udf_async(n):
-        return fused.run(udf_to_run_async, n=n, engine="local", sync=False)
+    @fused.udf
+    def udf_to_run_async(date: str='2020-01-01'):
+        import pandas as pd
+        import time
+        time.sleep(2)
+        return pd.DataFrame({'selected_date': [date]})
 
-    output = fused.utils.common.run_pool(run_udf_async, range(n_calls))
-    return pd.concat(output)
+    # Parameter to loop through
+    dates = ['2020-01-01', '2021-01-01', '2022-01-01', '2023-01-01']
+
+    # Invoke the UDF as coroutines
+    promises_dfs = []
+    for date in dates:
+        df = fused.run(udf_to_run_async, date=date, engine='realtime', sync=False)
+        promises_dfs.append(df)
+
+    # Run concurrently and collect the results
+    dfs = await asyncio.gather(*promises_dfs)
+    return pd.concat(dfs)
 ```
-
 
 
 
