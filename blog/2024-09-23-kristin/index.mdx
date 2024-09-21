@@ -1,0 +1,88 @@
+---
+slug: the-strength-in-weak-data
+title: "The Strength in Weak Data"
+authors: [kristin]
+tags: [crop,yield,agriculture]
+unlisted: true
+# image: https://fused-magic.s3.us-west-2.amazonaws.com/blog-assets/social_jennings.png
+hide_table_of_contents: false
+keywords: [crop,yield,agriculture]
+---
+
+Ever tried to make sense of the myriad file types in spatial data science and felt like you've wandered into a linguistic labyrinth? Trust me, you're not alone. As someone who's danced between the realms of data science and mathematics for  some time, I recently embarked on what I thought would be a breezy adventure: building a simple regression model.
+
+You know, that old friend we all met back in high school math? Well it's a little tricky with spatial data and its different file types and resolutions.
+
+Here is the lineup of file types:
+
+|  | File Type | Geometry | Meters squared |
+| --- | --- | --- | --- |
+| Predictor Variable  | Net CDF | Pixel | 25,000,000 |
+| Predictor Variable Geometry | GeoTiff | Pixel  | 30 |
+| Actual Variable  | CSV | County  | 3,130,000,000 |
+| Actual Variable Geometry | Shapefile | County | 3,130,000,000 |
+
+The resolution differences are huge—going from 30 square meters up to 3 billion! Traditional tools would make this a near-impossible task, but with Fused, I turned this "weak" data into something strong.
+
+
+## The Game Plan: Merging Mismatched Data
+
+First, I needed to align the predictor variable with its geometry at the coarser level (NetCDF, about 25 million square meters per pixel). The challenge? Getting all this data on a common geometry for analysis and modeling.
+
+
+## The Spatial Data Join Saga Begins
+
+Starting with the NetCDF predictor variable, which is notoriously tricky file type, Fused simplified the process. By using Fused's open source [utility modules](/python-sdk/top-level-functions/#utils), I loaded necessary functions directly into my UDF. I used them to clip the array, convert it into an image, and add a colormap.
+
+```python showLineNumber
+@fused.udf
+def udf(bbox, path: str='s3://fused-users/fused/sina/Kristin/sif_ann_201409a.nc'):
+    xy_cols=['lon','lat']
+    # Get the data array using the constructed path
+    da = fused.utils.common.get_da(path, coarsen_factor=3, variable_index=0, xy_cols=xy_cols)
+    # Clip the array based on the bounding box
+    arr_aoi = fused.utils.common.clip_arr(da.values,
+                       bounds_aoi=bbox.total_bounds,
+                       bounds_total=fused.utils.common.get_da_bounds(da, xy_cols=xy_cols))
+    # Convert the array to an image with the specified colormap
+    img = (arr_aoi*255).astype('uint8')
+    return fused.utils.common.arr_to_plasma(arr_aoi, min_max=(0, 1), colormap="rainbow", include_opacity=False, reverse=True)
+
+```
+
+Voilà! I visualized it using Fused's app builder:
+
+import Iframe from "@site/src/components/Iframe";
+import BUFFER_CODE from "@site/src/app-iframe/python/kristin.py";
+
+<Iframe
+  id="iframe-1"
+  code={BUFFER_CODE}
+  requirements={[
+    "/pyarrow/pyarrow-17.0.0-cp312-cp312-pyodide_2024_0_wasm32.whl",
+    "micropip",
+    "pyodide-unix-timezones", // needed by pyarrow
+    "geopandas",
+    "requests",
+    "xarray",
+    "yarl",
+    // Commonly used in product:
+    "streamlit-folium",
+  ]}
+/>
+
+## One Down, More to Go
+
+Next, I merged the predictor variable with its geometry using nested UDFs in Fused. Then came the actual variable, the coarsest dataset, as a CSV paired with county shapefiles. I soon realized Fused has data assets that can quickly turn in county data to a udf. Here's where you find it.
+
+**[TODO: Image of where to find data assets]**
+
+## Bringing It All Together
+
+Now came the grand finale: aligning both the predictor and actual variables onto the same geometry. Think of it as organizing a group photo where everyone needs to squeeze in and smile at the same time.
+
+The result? I turned complex spatial data sets and a mishmash of file types into a cohesive model, thanks to Fused's power.
+
+**[app showing most predictive vs least]**
+
+So, next time you're struggling with spatial data joins, remember: the right tools can turn even the weakest data into a powerful asset.
