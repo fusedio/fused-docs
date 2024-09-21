@@ -1,20 +1,18 @@
-import folium
-import fused_app
-import geopandas as gpd
+import micropip
 import streamlit as st
-from streamlit_folium import st_folium
 
-year = option = st.selectbox(
-    "Which year?",
-    (2014, 2015, 2016, 2018, 2019, 2020),
-)
+year = option = st.selectbox("Which year?", (2014, 2015, 2016, 2018, 2019, 2020), 2)
 
-# st.write("You selected:", option)
-# year = st.slider("year", 2014, 2020, 2016)
 month = st.slider("month", 1, 12, 6)
 
 period = "a"
+
 # Create map
+await micropip.install("streamlit-folium")
+await micropip.install("folium")
+import folium
+from streamlit_folium import st_folium
+
 m = folium.Map(
     location=[39, -98], zoom_start=4, max_zoom=18, min_zoom=2, tiles="Cartodb Positron"
 )
@@ -26,7 +24,7 @@ url_raster = (
     + f"&month={str(month).zfill(2)}"
     + f"&period={period}"
 )
-# st.write(url_raster)
+
 
 # Create raster tile layer
 folium.TileLayer(tiles=url_raster, attr="Fused").add_to(m)  # Base image
