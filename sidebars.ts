@@ -10,6 +10,7 @@ const sidebars: SidebarsConfig = {
       link: { type: "doc", id: "user-guide" },
       items: [
         "user-guide/quickstart",
+        "user-guide/fused-in-10-minutes",
         {
           type: "category",
           label: "➡️ Get data in",
