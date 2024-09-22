@@ -11,8 +11,15 @@ keywords: [pacific spatial]
 
 Over the last few decades, it has become increasingly evident that passenger vehicles are by far the most dangerous way to travel. As a result, it has become more and more important to find an efficient and effective method to predict traffic risk. However, predicting traffic accidents and where they are likely to occur is a very complex problem, with large amounts of data being needed for most meaningful predictions.
 
+import ReactPlayer from 'react-player'
+
+<ReactPlayer className="video__player" playing={true} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/chris_tokyo_small.mp4" width="100%" />
+
+
+
 At Pacific Spatial Solutions, we are currently trying to tackle this problem by training a machine learning model to predict road and intersection risk in Japan nationwide. As we are trying to predict traffic risk on a national level it is only natural that the data we use cover the same area.
 
+{/* truncate */}
 
 
 import Image1 from '/blog/2024-09-25-pacific/image1.png';
@@ -41,6 +48,8 @@ _Drive recorder data points from a single day in a specific part of downtown Tok
 Specifically, what we are trying to achieve is to map the speed values from the drive recorder data points to their nearest road. Using a traditional “nearest neighbor” approach would not be feasible, as we would need to measure the distance between billions of points and thousands of roads.
 With our current cloud service provider we therefore had to rely on “clustering”, so that data points that are close location wise would be close in memory too. This definitely increases performance, but adds some randomness to the processing time and cost because depending on where the area of interest lies in memory, you might have to search through all of your data to find it. As a result, to keep cost and processing time reasonable, we had to limit the nearest neighbor search area using a very small buffer. This was the only way to make our analysis with a dataset of this magnitude feasible.
 
+<ReactPlayer className="video__player" playing={true} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/chris_osaka_small.mp4" width="100%" />
+
 In Fused however, our spatial data uses a smart spatial partitioning system so that we know exactly where to look when attempting to spatially join our data. Furthermore, we can easily analyze and in real time visualize small chunks of the data and finetune our logic before scaling our implementation. This gives us a lot of freedom during development so that we can really hone in on the best possible solution to our problem.
 
 This is very much in contrast to our cloud service provider, where we would need to move data around several times during development to visualize temporary results and do sanity checks. This made the development process very tedious and forced us into a simplified solution due to the limitations of the tool we were using.
@@ -57,16 +66,35 @@ Our solution is divided into two main steps the first being the preparation and 
 The reason why we add multiple Krings to the roads is that this will act like a hexagonized buffer. This will be much faster to search through as we will be doing number on number comparisons instead of geospatial distance measurements.
 
 ### UDF Design
-1. Use the current view/bbox and read the gps points and roads that intersect with it
-2. Prepare dataframes with the gps points, road krings and road geometry
-3. For each point find the road with the closest kring cell within a certain k distance, and map the speed to it.
-4. Aggregate all of the speed values
+1. Use `bbox` to load GPS points and roads in the viewport.
+2. Structure `DataFrame`s with the GPS points, road krings and road geometry.
+3. For each point identify the road with the closest kring cell within a certain k distance, and map the speed to it.
+4. Aggregate all of the speed values.
 
 ```python showLineNumbers
 @fused.udf
-def udf(bbox: fused.types.TileGDF):
-    # TODO: Show working code or pseudocode
-    return
+def udf(
+    bbox: fused.types.TileGDF=None,
+    base_path: str = '...'
+):
+    from utils import df_to_gdf, list_s3, run_pool, get_GPS_road_data
+
+    # Load ingested GPS and road data
+    L = list_s3(f'{base_path}/GPS_hex/')
+    df_GPS, df_road_hex, df_road_geom = get_GPS_road_data(bbox, L)
+
+    # Nearest neighbor calculation
+    df_final = df_GPS.merge(df_road_hex, on='hexk')
+    df_final['distance'] = (df_final['k']+0.5)*k
+    df_final['cnt'] = 1
+    dfg = df_final.groupby('segment_id')[['cnt', 'speed', 'distance']].sum().reset_index()
+    dfg['speed'] = dfg['speed']/dfg['cnt']
+    dfg['distance'] = dfg['distance']/dfg['cnt']
+
+    # Introduce geometry to roads
+    df = df_road_geom.merge(dfg)
+    df['width_metric'] = df['cnt']**0.5/5
+    return df.sjoin(bbox[['geometry']])
 ```
 
 We now have our result which is a DataFrame representing the road network within our bbox. All the roads have their respective aggregated speed, distance and metric values as well as how many points were used for the aggregation. This result can easily be enriched by bringing in more columns from the base data such as the timestamp. This would make it possible to create hourly speed pattern analysis or maybe even a time series visualization.
