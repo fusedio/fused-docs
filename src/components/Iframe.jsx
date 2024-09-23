@@ -76,14 +76,14 @@ export default function Iframe({
               nonce,
             },
           },
-          targetOrigin
+          targetOrigin,
         );
       }
 
       if (visible) {
         sendMessage();
 
-        for (let i = 0 ; i < SEND_EXTRA_TIMES; i++) {
+        for (let i = 0; i < SEND_EXTRA_TIMES; i++) {
           setTimeout(sendMessage, 1000 * i);
         }
       }
@@ -150,13 +150,18 @@ export default function Iframe({
     };
   }, [useResizer]);
 
-  const defaultIframe = useResizer ? undefined : useMemo(() => { 
-  return <iframe
-    src={createIframeDefaultUrl()}
-    height={height}
-    width={"100%"}
-    scrolling={"no"}
-  />}, [height]);
+  const defaultIframe = useResizer
+    ? undefined
+    : useMemo(() => {
+        return (
+          <iframe
+            src={createIframeDefaultUrl()}
+            height={height}
+            width={"100%"}
+            scrolling={"no"}
+          />
+        );
+      }, [height]);
 
   return (
     <div
@@ -166,6 +171,8 @@ export default function Iframe({
         width: "100%",
         height,
       }}
-    >{defaultIframe}</div>
+    >
+      {defaultIframe}
+    </div>
   );
 }
