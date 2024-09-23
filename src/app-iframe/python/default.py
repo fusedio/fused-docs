@@ -1,3 +1,4 @@
+# This is a sample app that shows a chart
 import numpy as np
 import pandas as pd
 import streamlit as st

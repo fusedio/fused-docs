@@ -3,8 +3,9 @@ import { DEFAULT_APP_REQUIREMENTS } from "../app-iframe/requirements";
 import { gzip } from "pako";
 import { u8aToBase64 } from "../../utils/buffer";
 
-const URL_PREFIX = "https://fused.io/workbench/apps#app/s/a";
+const URL_PREFIX = "http://localhost:3000/workbench/apps#app/s/a";
 const APP_SHARE_PREFIX = "#app/s/a";
+const SEND_EXTRA_TIMES = 10;
 
 export default function Iframe({
   id = "iframe-1",
@@ -18,11 +19,13 @@ export default function Iframe({
   const containerRef = useRef(null);
 
   function syncIframeToContainer(boundingClientRect, iframe) {
-    iframe.style.display = "block";
-    iframe.style.left = `${boundingClientRect.left + window.scrollX}px`;
-    iframe.style.top = `${boundingClientRect.top + window.scrollY}px`;
-    iframe.style.width = `${boundingClientRect.width}px`;
-    iframe.style.height = `${boundingClientRect.height}px`;
+    if (boundingClientRect) {
+      iframe.style.display = "block";
+      iframe.style.left = `${boundingClientRect.left + window.scrollX}px`;
+      iframe.style.top = `${boundingClientRect.top + window.scrollY}px`;
+      iframe.style.width = `${boundingClientRect.width}px`;
+      iframe.style.height = `${boundingClientRect.height}px`;
+    }
   }
 
   function createIframeDefaultUrl() {
@@ -62,6 +65,7 @@ export default function Iframe({
     } else {
       iframe = document.getElementById("magic-" + id);
       const targetOrigin = new URL(url).origin;
+      const nonce = `docs-${Math.random()}`;
       function sendMessage() {
         iframe.contentWindow.postMessage(
           {
@@ -69,13 +73,19 @@ export default function Iframe({
               code,
               enabled: true,
               requirements,
+              nonce,
             },
           },
           targetOrigin
         );
       }
+
       if (visible) {
         sendMessage();
+
+        for (let i = 0 ; i < SEND_EXTRA_TIMES; i++) {
+          setTimeout(sendMessage, 1000 * i);
+        }
       }
     }
 
@@ -140,12 +150,13 @@ export default function Iframe({
     };
   }, [useResizer]);
 
-  const defaultIframe = useResizer ? undefined : <iframe
+  const defaultIframe = useResizer ? undefined : useMemo(() => { 
+  return <iframe
     src={createIframeDefaultUrl()}
     height={height}
     width={"100%"}
     scrolling={"no"}
-  />;
+  />}, [height]);
 
   return (
     <div
