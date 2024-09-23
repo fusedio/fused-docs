@@ -3,7 +3,7 @@ import { DEFAULT_APP_REQUIREMENTS } from "../app-iframe/requirements";
 import { gzip } from "pako";
 import { u8aToBase64 } from "../../utils/buffer";
 
-const URL_PREFIX = "http://localhost:3000/workbench/apps#app/s/a";
+const URL_PREFIX = "https://fused.io/workbench/apps#app/s/a";
 const APP_SHARE_PREFIX = "#app/s/a";
 const SEND_EXTRA_TIMES = 10;
 
