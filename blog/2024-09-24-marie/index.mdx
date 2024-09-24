@@ -104,12 +104,13 @@ def udf(
         overview_level=overview_level,
         cred=cred,
     )
-    mask = np.ma.masked_where(mask_arr > 0, mask_arr)
-    band_arr = np.ma.masked_where(np.ma.getmask(mask), band_arr)
+    cloud_mask = (mask_arr & 0b00000010) >> 1
+    band_arr = np.where(cloud_mask == 1, np.nan, band_arr)
 
     # Filter nan's and convert to RGB values
     band_arr = np.where(band_arr == -9999, np.nan, band_arr)
     band_arr = band_arr / 10
+    band_arr += 1 # workaround for uint8 and nan values
     band_arr = band_arr.astype("uint8")
 
     return np.array(band_arr)
@@ -170,7 +171,7 @@ async def udf(
     for band in RGB_BANDS:
         for mask_url, band_url in zip(band_urls[F_MASK_BAND], band_urls[band]):
             arr_task = fused.run(
-                "fsh_...",
+                "<INSERT UDF TOKEN>",
                 bbox=bbox,
                 sync=False,
                 parameters={
@@ -183,11 +184,18 @@ async def udf(
     # Combine each band
     rgb = []
     for band in RGB_BANDS:
-        composite_values = await asyncio.gather(*tasks[band])
-        composite_values = [a.image.values.astype("uint8") for a in composite_values]
+        task_results = await asyncio.gather(*tasks[band])
+        composite_values = []
+        # Convert back to format with nan's
+        for arr in task_results:
+            arr = arr.image.values.astype("uint8")
+            arr = np.where(arr == 0, np.nan, arr)
+            arr += 1
+            composite_values.append(arr)
         band_composite = np.nanmedian(composite_values, axis=0)
         band_composite = band_composite.astype("uint8")
         rgb.append(band_composite)
+
     return np.array(rgb)
 ```
 
