@@ -28,7 +28,7 @@ const config: Config = {
   markdown: {
     mermaid: true,
   },
-  themes: ['@docusaurus/theme-mermaid'],
+  themes: ["@docusaurus/theme-mermaid"],
 
   // Even if you don't use internationalization, you can use this field to set
   // useful metadata like html lang. For example, if your site is Chinese, you
@@ -96,7 +96,7 @@ const config: Config = {
     },
     // Replace with your project's social card
     image:
-      "https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/diagram_fused_products.png",
+      "https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/diagram_nofill.png",
     navbar: {
       title: "Fused",
       logo: {
