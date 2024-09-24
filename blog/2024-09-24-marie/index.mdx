@@ -9,7 +9,7 @@ hide_table_of_contents: false
 keywords: [marie,sentinel,landsat,hls]
 ---
 
-High-quality satellite imagery is essential to assess the emissions impact of nature-based forest conservation and restoration projects. Pachama recognized the need to create an accurate conservation baseline to estimate background deforestation rates in absence of a restoration project. This demands high-quality optical imagery in tropical forests to enhance visual monitoring and provide critical input for models such as canopy height mapping.
+High-quality satellite imagery is essential to assess the carbon impact of nature-based forest conservation and restoration projects [1]. However, getting that high quality imagery is uniquely difficult in areas that need carbon financing the most: tropical forests. Tropical forests present a unique challenge for satellite imagery analysis due to persistent cloud cover, which often renders optical imagery unusable and creates data gaps.
 
 import ReactPlayer from 'react-player'
 
@@ -18,21 +18,20 @@ import ReactPlayer from 'react-player'
 {/* truncate */}
 
 
-Consistent, year-to-year imagery allows Pachama to establish dynamic baselines. However, the existing HLS dataset published by NASA presented limitations, and generating their own imagery presented significant engineering challenges.
-
-This blog post explores how Pachama's engineering team partnered with Fused to generate cloud-free seasonal composite images, enabling data analytics at spatiotemporal resolutions that were not possible before.
+This blog post explores how Pachama's engineering team partnered with Fused to generate cloud-free seasonal composites using Harmonized Landsat Sentinel-2 (HLS) data, enabling higher quality optical imagery and better canopy height map creating ML model performance.
 
 
 
-## The challenge
 
-Tropical forests present a unique challenge for satellite imagery analysis due to persistent cloud cover, which often renders images unusable and creates data gaps. Pachama data scientists need clear optical imagery for monitoring and mapping canopy height at restoration sites, where cloud-free images are crucial for accurate forest carbon assessments. However, obtaining these images in tropical regions remains a significant challenge for analytics teams.
+## Obstacles to create a cloud-free HLS image composite
 
-## Limitations of the Public HLS Dataset
+The HLS dataset is an exciting development put forward by NASA’s Satellite Needs Working Group. It provides consistent surface reflectance data with global observations every 2-3 days at a 30-meter resolution. The dataset harmonizes data from Landsats 8 & 9 with the European Space Agency's Sentinel-2A & 2B satellites such that the results are high quality, standardized, and able to be combined [2].
 
-One possible solution is to use HLS, which is advantageous because it provides consistent surface reflectance data and global observations every 2-3 days at a 30-meter resolution. [1]
+The HLS dataset consists of scene-level harmonized data, and does not create any cloud-free composite images by default. A significant amount of compute power is needed to process and combine this data, which contains multiple petabytes of data. Iteration on the compositing algorithm is also essential to quickly experiment and refine the process.
 
-However, the HLS dataset is available on Google Earth Engine (GEE) but has limited frequency due to low valid observations. Furthermore, while the methodology is public, users don't have visibility or control over the specific images that go into each composite image.
+One common solution to this problem is to use Google Earth Engine (GEE). However, only the Landsat portion of this dataset (HLS-L30) is available on GEE. Without the Sentinel-2 portion of this dataset (HLS-S30), we do not get a 2-3 day temporal resolution that is required for cloud-free imagery in frequently cloudy areas.
+
+
 
 import ImageCloud from '/blog/2024-09-24-marie/clouds.png';
 
@@ -40,27 +39,21 @@ import ImageCloud from '/blog/2024-09-24-marie/clouds.png';
 <img src={ImageCloud} alt="File" style={{}} />
 </div>
 
-_Example scenes highlight how cloud cover in the Sentinel-2 product can result in annual gaps as fewer valid observations lead to incomplete coverage. The right panel shows a cloudy image of Winter 2021 contrasted with a multi-year composite image of the same location._
+_Example composites highlight how the HLS-L30 product alone can have gaps when attempting to make a seasonal composite, as fewer cloud-free observations._
 
-## Obstacles to creating custom HLS imagery
-
-Pachama aimed to create seasonal composites from multiple images captured on different dates within a given season. To achieve this, they planned to use Landsat and Sentinel-2 data to develop a global dataset of surface reflectance, featuring a temporal resolution of two days and a spatial resolution of 30 meters. This approach would provide their analytics team with a comprehensive, cloud-free view of the forest canopy [2], enabling them to conduct analyses such as canopy height assessment and dynamic baselines at higher frequencies.
-
-They needed to fetch images across multiple dates and then average them into composite images. This process removes clouds by minimizing the influence of cloud-covered pixels, which are typically present in only a few of the images.
-
-However, creating these composite imagery presented data engineering challenges.
-
-- The total catalog contains multiple petabytes of data.
-- Data needs to be processed month by month.
-- Iteration on compositing configurations is essential to quickly experiment and refine the process.
 
 ## With Fused
 
-Pachama turned to Fused to create scalable workflows for generating HLS imagery. Fused's UDF model allowed Pachama to design algorithms that parallelize image processing, generate cloud-free composites, and run these workflows at scale.
+Pachama turned to Fused to create scalable workflows for quickly iterating on a compositing algorithm. Fused's UDF model allowed Pachama to design algorithms that parallelize image processing, generate cloud-free composites, and run these workflows at scale.
 
-### UDF workflow
 
-Here's the workflow I created with a Fused UDF to generate cloud-free composite HLS imagery.
+
+### Pachama’s UDF workflow
+
+Here's the workflow we created with a Fused UDF to generate cloud-free composite HLS imagery.
+
+
+
 
 <div style={{ textAlign: 'center' }}>
 ```mermaid
@@ -79,58 +72,123 @@ graph LR
 This sample UDF loads data for the Landsat and Sentinel2 data products in [GEE](/user-guide/in/gee/). It queries for a specific date range and does a first pass at filtering out images with too many clouds.
 
 ```python showLineNumber
+# To Get your username and password, Please visit https://urs.earthdata.nasa.gov
 @fused.udf
-def udf(bbox: fused.types.TileGDF=None, target_variable='TARGET_VARIABLE'):
-    import ee
-    import xarray
+def udf(
+    bbox: fused.types.TileGDF,
+    mask_url: str,
+    band_url: str,
+    username="<INSERT USERNAME>",
+    password="<INSERT PASSWORD>",
+    env="earthdata",
+):
+    import numpy as np
+    utils = fused.load("https://github.com/fusedio/udfs/tree/f928ee1/public/common/").utils
+    # Authenticate
+    aws_session = utils.earth_session(cred={"env": env, "username": username, "password": password})
+    cred = {"env": env, "username": username, "password": password}
+    overview_level = max(0, 12 - bbox.z[0])
 
-    # Authenticate to GEE
-    fused.utils.common.ee_initialize(
-        service_account_name='my_account@account.iam.gserviceaccount.com',
-        key_path="/mnt/cache/gee_creds.json"
+    # Read band data
+    band_arr = utils.read_tiff(
+        bbox,
+        band_url,
+        overview_level=overview_level,
+        cred=cred,
     )
 
-    # Load ImageCollection
-    ic = ee.ImageCollection("COLLECTION").filter(ee.Filter.date("2019-01-01", "2022-01-01"))
+    # Read and apply cloud mask
+    mask_arr = utils.read_tiff(
+        bbox,
+        mask_url,
+        overview_level=overview_level,
+        cred=cred,
+    )
+    mask = np.ma.masked_where(mask_arr > 0, mask_arr)
+    band_arr = np.ma.masked_where(np.ma.getmask(mask), band_arr)
 
-    # Filter the collection by cloud cover
-    ic = ic.filter(ee.Filter.eq('CLOUD_COVER', 20))
+    # Filter nan's and convert to RGB values
+    band_arr = np.where(band_arr == -9999, np.nan, band_arr)
+    band_arr = band_arr / 10
+    band_arr = band_arr.astype("uint8")
 
-    # Get the image for the `bbox` geometry
-    ds = xarray.open_dataset(
-        ic,
-        engine='ee',
-        geometry=ee.Geometry.Rectangle(*bbox.total_bounds),
-        scale=1/2**max(0,bbox.z[0])
-    ).isel(time=0)
-
-    return ds[target_variable].values.astype('uint8').T
+    return np.array(band_arr)
 ```
 
-### 2. Call the UDF asynchronously and combine an array of images
+### 2. Call the UDF asynchronously
 
-This UDF calls the previous one [asynchronously](/core-concepts/async/) in parallel to fetch multiple images across a set of parameters. It then combines the outputs, averaging them to create a cloud-free composite.
+This UDF queries the LP DAAC STAC catalog for data that matches the time and location of interest. This UDF then calls the previous one in parallel [asynchronously](/core-concepts/async/) to fetch each cloud-free image in parallel. It then combines the outputs, taking the median of each band to create a cloud-free composite.
+
 
 ```python showLineNumber
+import numpy as np
+import asyncio
+from pystac_client import Client
+from collections import defaultdict
+
+RGB_BANDS = ["B04", "B03", "B02"]
+F_MASK_BAND = "Fmask"
+
+@fused.cache
+def get_band_urls(bbox, date_range):
+    # Search STAC Catalog
+    collection_names = ["HLSL30_2.0", "HLSS30_2.0"]
+    catalog = Client.open("https://cmr.earthdata.nasa.gov/stac/LPCLOUD/")
+    search = catalog.search(
+        collections=collection_names,
+        bbox=bbox.total_bounds,
+        datetime=date_range,
+        limit=100,
+    )
+    item_collection = search.get_all_items()
+
+    # Collect S3 paths
+    band_urls = defaultdict(list)
+    for i in item_collection:
+        for band in [F_MASK_BAND] + RGB_BANDS:
+            if (
+                i.collection_id in collection_names
+                and band in i.assets
+            ):
+                # Convert URL => S3 path
+                url = i.assets[band].href.replace(
+                    "https://data.lpdaac.earthdatacloud.nasa.gov/", "s3://"
+                )
+                band_urls[band].append(url)
+    return band_urls
+
 @fused.udf
-async def udf():
-    import pandas as pd
-    import asyncio
+async def udf(
+    bbox: fused.types.TileGDF,
+    date_range="2023-05/2023-06"
+):
+    # Query STAC catalog
+    band_urls = get_band_urls(bbox, date_range)
 
-    # Parameter to loop through
-    dates = ['2020-01-01', '2021-01-01', '2022-01-01']
+    # Call the image loading/masking UDF in parallel
+    tasks = defaultdict(list)
+    for band in RGB_BANDS:
+        for mask_url, band_url in zip(band_urls[F_MASK_BAND], band_urls[band]):
+            arr_task = fused.run(
+                "fsh_...",
+                bbox=bbox,
+                sync=False,
+                parameters={
+                    "mask_url": mask_url,
+                    "band_url": band_url,
+                    "date_range": date_range,
+                })
+            tasks[band].append(arr_task)
 
-    # Invoke the UDF as coroutines
-    arr_promises = []
-    for date in dates:
-        arr = fused.run('UDF_TOKEN', date=date, engine='realtime', sync=False)
-        arr_promises.append(df)
-
-    # Run concurrently and collect the results
-    arrs = await asyncio.gather(*arr_promises)
-
-    # Combine the arrays
-    return np.mean(arrs, axis=0).astype(np.uint8)
+    # Combine each band
+    rgb = []
+    for band in RGB_BANDS:
+        composite_values = await asyncio.gather(*tasks[band])
+        composite_values = [a.image.values.astype("uint8") for a in composite_values]
+        band_composite = np.nanmedian(composite_values, axis=0)
+        band_composite = band_composite.astype("uint8")
+        rgb.append(band_composite)
+    return np.array(rgb)
 ```
 
 import ImageWb2 from '/blog/2024-09-24-marie/marie_workbench2.png';
@@ -142,16 +200,17 @@ import ImageWb2 from '/blog/2024-09-24-marie/marie_workbench2.png';
 
 ## Benefits of using Fused
 
-The best part about Fused's UDF Editor is that our Data Science team can design UDF while looking at a specific area, and run it for a different region by simply changing the input bounding box. The team can easily experiment and generate composites for different date ranges by adjusting the input parameters. Once we are happy with the UDF algorithm, we can easily create individual image tiles for any location worldwide.
+The best part is that Pachama’s Data Science team can design UDF while looking at a specific area, and to run it for a different region by simply changing the input bounding box (bbox). This flexibility allows Pachama to create individual image tiles for any location worldwide. They can easily experiment and generate composites for different date ranges by adjusting the input parameters.
 
-- UDF calls UDF, Write the 2 UDFs in the same editor
 - Easy parallelization with simple Python function calls, no need to manage clusters
+- Iterate on both UDFs in the same editor
 - Instant feedback during algorithm development, no need to wait for pipelines to run
 - Invoke UDF and load its data into a Jupyter Notebook with `fused.run` for downstream analysis
 
+
 ## Conclusion
 
-Thanks to Fused, Pachama's data scientists can quickly iterate and experiment with different configurations to optimize their image composites. Fused also enables their engineering team to simplify data workflows to produce higher-resolution imagery. This improves model accuracy for forest carbon monitoring. The result is better insights and more efficient tracking of restoration projects.
+Thanks to Fused, Pachama’s scientists and engineers can quickly iterate and experiment with different algorithms to optimize their image composites. Scaling the algorithm to apply to a larger area also becomes trivial by using Fused. Pachama can more efficiently improve transparency into forest carbon projects through better data and better insights, faster.
 
 ## References
 
