@@ -11,9 +11,16 @@ keywords: [marie,sentinel,landsat,hls]
 
 High-quality satellite imagery is essential to assess the carbon impact of nature-based forest conservation and restoration projects [1]. However, getting that high quality imagery is uniquely difficult in areas that need carbon financing the most: tropical forests. Tropical forests present a unique challenge for satellite imagery analysis due to persistent cloud cover, which often renders optical imagery unusable and creates data gaps.
 
-import ReactPlayer from 'react-player'
 
-<ReactPlayer className="video__player" playing={true} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/blog-assets/marie_udf2.mp4" width="100%" />
+import ImageCloud from '/blog/2024-09-24-marie/clouds.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImageCloud} alt="File" style={{}} />
+</div>
+
+_Example composites highlight how the HLS-L30 product alone can have gaps when attempting to make a seasonal composite, as fewer cloud-free observations._
+
+
 
 {/* truncate */}
 
@@ -29,22 +36,21 @@ The HLS dataset is an exciting development put forward by NASA’s Satellite Nee
 
 The HLS dataset consists of scene-level harmonized data, and does not create any cloud-free composite images by default. A significant amount of compute power is needed to process and combine this data, which contains multiple petabytes of data. Iteration on the compositing algorithm is also essential to quickly experiment and refine the process.
 
-One common solution to this problem is to use Google Earth Engine (GEE). However, only the Landsat portion of this dataset (HLS-L30) is available on GEE. Without the Sentinel-2 portion of this dataset (HLS-S30), we do not get a 2-3 day temporal resolution that is required for cloud-free imagery in frequently cloudy areas.
-
-
-
-import ImageCloud from '/blog/2024-09-24-marie/clouds.png';
+import ImageCloud2 from '/blog/2024-09-24-marie/mcloud.png';
 
 <div style={{textAlign: 'center'}}>
-<img src={ImageCloud} alt="File" style={{}} />
+<img src={ImageCloud2} alt="File" style={{}} />
 </div>
+_Example of HLS image for a region in Brazil with clouds._
 
-_Example composites highlight how the HLS-L30 product alone can have gaps when attempting to make a seasonal composite, as fewer cloud-free observations._
+One common solution to this problem is to use Google Earth Engine (GEE). However, only the Landsat portion of this dataset (HLS-L30) is available on GEE. Without the Sentinel-2 portion of this dataset (HLS-S30), we do not get a 2-3 day temporal resolution that is required for cloud-free imagery in frequently cloudy areas.
+
 
 
 ## With Fused
 
 Pachama turned to Fused to create scalable workflows for quickly iterating on a compositing algorithm. Fused's UDF model allowed Pachama to design algorithms that parallelize image processing, generate cloud-free composites, and run these workflows at scale.
+
 
 
 
@@ -122,47 +128,19 @@ This UDF queries the LP DAAC STAC catalog for data that matches the time and loc
 
 
 ```python showLineNumber
-import numpy as np
-import asyncio
-from pystac_client import Client
-from collections import defaultdict
-
-RGB_BANDS = ["B04", "B03", "B02"]
-F_MASK_BAND = "Fmask"
-
-@fused.cache
-def get_band_urls(bbox, date_range):
-    # Search STAC Catalog
-    collection_names = ["HLSL30_2.0", "HLSS30_2.0"]
-    catalog = Client.open("https://cmr.earthdata.nasa.gov/stac/LPCLOUD/")
-    search = catalog.search(
-        collections=collection_names,
-        bbox=bbox.total_bounds,
-        datetime=date_range,
-        limit=100,
-    )
-    item_collection = search.get_all_items()
-
-    # Collect S3 paths
-    band_urls = defaultdict(list)
-    for i in item_collection:
-        for band in [F_MASK_BAND] + RGB_BANDS:
-            if (
-                i.collection_id in collection_names
-                and band in i.assets
-            ):
-                # Convert URL => S3 path
-                url = i.assets[band].href.replace(
-                    "https://data.lpdaac.earthdatacloud.nasa.gov/", "s3://"
-                )
-                band_urls[band].append(url)
-    return band_urls
 
 @fused.udf
 async def udf(
     bbox: fused.types.TileGDF,
     date_range="2023-05/2023-06"
 ):
+    import numpy as np
+    import asyncio
+    from collections import defaultdict
+
+    RGB_BANDS = ["B04", "B03", "B02"]
+    F_MASK_BAND = "Fmask"
+
     # Query STAC catalog
     band_urls = get_band_urls(bbox, date_range)
 
@@ -186,12 +164,15 @@ async def udf(
     for band in RGB_BANDS:
         task_results = await asyncio.gather(*tasks[band])
         composite_values = []
+
         # Convert back to format with nan's
         for arr in task_results:
             arr = arr.image.values.astype("uint8")
             arr = np.where(arr == 0, np.nan, arr)
             arr += 1
             composite_values.append(arr)
+
+        # Take median of the composite values
         band_composite = np.nanmedian(composite_values, axis=0)
         band_composite = band_composite.astype("uint8")
         rgb.append(band_composite)
@@ -199,11 +180,16 @@ async def udf(
     return np.array(rgb)
 ```
 
-import ImageWb2 from '/blog/2024-09-24-marie/marie_workbench2.png';
+The UDF above generates a cloud-free composite image and gives Pachama control and transparency over the image inputs.
+
+
+import ImageClear2 from '/blog/2024-09-24-marie/mclear.png';
 
 <div style={{textAlign: 'center'}}>
-<img src={ImageWb2} alt="File" style={{}} />
+<img src={ImageClear2} alt="File" style={{}} />
 </div>
+
+_Example of cloud-free HLS image composite for the same region in Brazil._
 
 
 ## Benefits of using Fused
