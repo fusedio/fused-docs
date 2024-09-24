@@ -66,31 +66,29 @@ export default function Iframe({
       document.body.appendChild(iframe);
     } else {
       iframe = document.getElementById("magic-" + id);
-      // TODO: Using postMessage is not working as expected
-      iframe.src = createIframeDefaultUrl();
-      // const targetOrigin = new URL(url).origin;
-      // const nonce = `docs-${Math.random()}`;
-      // function sendMessage() {
-      //   iframe.contentWindow.postMessage(
-      //     {
-      //       appRunner: {
-      //         code,
-      //         enabled: true,
-      //         requirements,
-      //         nonce,
-      //       },
-      //     },
-      //     targetOrigin,
-      //   );
-      // }
+      const targetOrigin = new URL(url).origin;
+      const nonce = `docs-${Math.random()}`;
+      function sendMessage() {
+        iframe.contentWindow.postMessage(
+          {
+            appRunner: {
+              code,
+              enabled: true,
+              requirements,
+              nonce,
+            },
+          },
+          targetOrigin,
+        );
+      }
 
-      // if (visible) {
-      //   sendMessage();
+      if (visible) {
+        sendMessage();
 
-      //   for (let i = 0; i < SEND_EXTRA_TIMES; i++) {
-      //     setTimeout(sendMessage, 1000 * i);
-      //   }
-      // }
+        for (let i = 0; i < SEND_EXTRA_TIMES; i++) {
+          setTimeout(sendMessage, 1000 * i);
+        }
+      }
     }
 
     iframe.style.position = "absolute";
