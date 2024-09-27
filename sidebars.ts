@@ -11,6 +11,7 @@ const sidebars: SidebarsConfig = {
       items: [
         "user-guide/quickstart",
         "user-guide/fused-in-10-minutes",
+        "user-guide/login",
         {
           type: "category",
           label: "➡️ Get data in",
