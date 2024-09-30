@@ -226,7 +226,7 @@ const config: Config = {
             from: ["/basics/utilities/connect-your-github-repository"],
           },
           {
-            to: "/python-sdk/setup/",
+            to: "/python-sdk/get-started/",
             from: ["/python-sdk/authentication/"],
           },
         ],
