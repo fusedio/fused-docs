@@ -30,18 +30,9 @@ else:
 
 NOTEBOOK_CONFIG_PATHS = [
     {
-        "config": Path("docs/basics/tutorials/tutorials.json"),
-        "tutorials_dir": Path("docs/basics/tutorials"),
-    },
-    {"config": Path("docs/basics/in/in.json"), "tutorials_dir": Path("docs/basics/in")},
-    {
-        "config": Path("docs/basics/out/out.json"),
-        "tutorials_dir": Path("docs/basics/out"),
-    },
-    {
-        "config": Path("docs/basics/transform/transform.json"),
-        "tutorials_dir": Path("docs/basics/transform"),
-    },
+        "config": Path("docs/python-sdk/python-sdk.json"),
+        "tutorials_dir": Path("docs/python-sdk"),
+    }
 ]
 
 # Data display priority. Below lists the priority for displaying data from cell outputs.
