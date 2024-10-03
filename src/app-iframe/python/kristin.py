@@ -1,5 +1,4 @@
 import folium
-import fused_app
 import geopandas as gpd
 import streamlit as st
 from streamlit_folium import st_folium

@@ -4,7 +4,7 @@ import random
 
 import altair as alt
 import folium
-import fused_app
+import fused
 import pandas as pd
 import streamlit as st
 from folium.plugins import Draw
@@ -155,7 +155,7 @@ def func(token, json_str_list, start_year, end_year):
     results = []
     for json_str in json_str_list:
         out = asyncio.Task(
-            fused_app.run(
+            fused.run(
                 token,
                 json_str=json_str,
                 start_year=start_year,

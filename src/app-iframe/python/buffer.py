@@ -19,26 +19,26 @@ import micropip
 await micropip.install("geopandas")
 await micropip.install("requests")
 await micropip.install("pydeck")
-import fused_app
+import fused
 import pydeck as pdk
 
 
 # Run UDF
 @st.cache_data
 def load_data(n_points=15, buffer=0.0025):
-    gdf_points = fused_app.run(
+    gdf_points = fused.run(
         "46bd457dddfbc47dbddaa703a2603d95ef06ed5d4d9c43bf8225758a3192955d",
         n_points=n_points,
         buffer=buffer,
         return_object="points",
     )
-    gdf_linestring = fused_app.run(
+    gdf_linestring = fused.run(
         "46bd457dddfbc47dbddaa703a2603d95ef06ed5d4d9c43bf8225758a3192955d",
         n_points=n_points,
         buffer=buffer,
         return_object="linestring",
     )
-    buffered_polygon = fused_app.run(
+    buffered_polygon = fused.run(
         "46bd457dddfbc47dbddaa703a2603d95ef06ed5d4d9c43bf8225758a3192955d",
         n_points=n_points,
         buffer=buffer,
