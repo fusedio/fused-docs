@@ -7,46 +7,153 @@ unlisted: true
 [Geemap](https://geemap.org/) is a Python package to visually analyze geospatial data
 with [Google Earth Engine (GEE)](https://earthengine.google.com/).
 
-This snippet shows how to render a `GeoDataFrame` returned by a UDF in geemap, in a Jupyter Notebook. The workflow calls the [Overture Buildings UDF](https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example) to load polygons, converts them to a GEE [FeatureCollection](https://developers.google.com/earth-engine/apidocs/ee-featurecollection), then renders them on the map as vectors.
-
-![geemap](https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/geemap.png)
+The following examples show how to use Geemap with Fused to create a raster tile layer, a vector tile layer, and an EE Object layer.
 
 
-## 1. Authenticate into Google Earth Engine on a Jupyter Notebook
+## Install
 
-Running this command should initiate the authentication process.
+Install Geemap, Fused, and ipyleaflet with pip.
+
+```bash
+pip install geemap fused ipyleaflet
+```
+
+## Authenticate Google Earth Engine
+
+Run this script to [authenticate Google Earth Engine](https://book.geemap.org/chapters/01_introduction.html#earth-engine-authentication).
 
 ```python showLineNumbers
 import ee
-import fused
-import geemap
 
-# ee.Authenticate()
+ee.Authenticate()
 ee.Initialize()
 ```
 
-## 2. Run Overture UDF to get Buildings GeoDataFrame
+
+
+
+## Create a Raster Tile Layer
+
+Create a [TileLayer](https://ipyleaflet.readthedocs.io/en/latest/layers/tile_layer.html) to load raster tiles from the [Cropland Data Layer (CDL) UDF](https://www.fused.io/workbench/catalog/CDLs_Tile_Example-a9f78d6d-4820-44ac-9032-5d19591e1a55) HTTP endpoint.
 
 ```python showLineNumbers
-# Load UDF
-udf = fused.load(
-    "https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example"
-)
+import geemap
+from ipyleaflet import Map, TileLayer
 
-# Run UDF
-gdf_buildings = fused.run(udf=udf, x=10484, y=25324, z=16, engine="local")
-gdf_buildings = gdf_buildings.set_crs("WGS84")
-gdf_buildings.head()
+# Create map
+Map = geemap.Map(center=(37.8798, -121.2423), zoom=12, basemap="CartoDB.DarkMatter")
+
+# Create Raster Tile
+crop_type = "corn"
+tiles = TileLayer(
+    url=f"https://www.fused.io/server/v1/realtime-shared/UDF_CDLs_Tile_Example/run/tiles/{{z}}/{{x}}/{{y}}?dtype_out_raster=png&crop_type={crop_type}",
+    name="CDLs Raster Tiles",
+)
+Map.add_layer(tiles)
+
+Map
+
 ```
 
-## Render on `geemap` map
+import ImgCdl from '@site/static/img/geemap_cdl.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgCdl} alt="File" style={{width: 800}} />
+</div>
+
+
+## Create a Vector Tile Layer
+
+Create a [VectorTileLayer](https://ipyleaflet.readthedocs.io/en/latest/layers/vector_tile.html) to load Vector Tiles from the Public [Overture Maps Example UDF](https://www.fused.io/workbench/catalog/Overture_Maps_Example-64071fb8-2c96-4015-adb9-596c3bac6787) HTTP endpoint.
 
 ```python showLineNumbers
-# Create a map centered at the given location
-Map = geemap.Map(center=(37.8, -122.4), zoom=14)
+import geemap
+import requests
+from ipyleaflet import Map, VectorTileLayer
 
-# Render buildings on map
-fc = geemap.geopandas_to_ee(gdf_buildings)
-Map.addLayer(fc, {"color": "red"}, "Default Overture Buildings")
+# Create map
+Map = geemap.Map(center=(51.5129,-0.1241), zoom=15, basemap="CartoDB.DarkMatter")
+
+# Create Overture Buildings VectorTileLayer
+vector_layer = VectorTileLayer(
+    url="https://staging.fused.io/server/v1/realtime-shared/UDF_Overture_Maps_Example/run/tiles/{z}/{x}/{y}?dtype_out_vector=mvt",
+    name="Overture Buildings Vector Tiles",
+)
+Map.add_layer(vector_layer)
+
 Map
 ```
+
+import ImgOverture from '@site/static/img/geemap_overture.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgOverture} alt="File" style={{width: 800}} />
+</div>
+
+
+## Create an EE Object Layer from a custom UDF
+
+Define and run a custom UDF to buffer the geometry of a GeoDataFrame and display it as an EE Object using [geopandas_to_ee](https://geemap.org/common/#geemap.common.geopandas_to_ee). This will run in the local Python process by default and if the environment is [authenticated](/python-sdk/authentication/) it may run on the Fused server.
+
+```python showLineNumbers
+import geemap
+from ipyleaflet import Map
+import fused
+
+# Create map
+Map = geemap.Map(center=(38.8938,-77.0146), zoom=11)
+
+# Define UDF
+@fused.udf
+def udf(url="https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_COLUMBIA/11/tl_rd22_11_bg.zip"):
+    import geopandas as gpd
+
+    gdf = gpd.read_file(url)
+    gdf.geometry = gdf.geometry.buffer(0.0001)
+    return gdf
+
+# Run UDF
+gdf = fused.run(udf)
+
+# Create EE Object GeoJSON layer
+ee_object = geemap.geopandas_to_ee(gdf)
+Map.add_layer(ee_object, {"color": "blue"}, "EE Object GeoJSON")
+
+Map
+```
+
+import ImgDc from '@site/static/img/geemap_dc.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgDc} alt="File" style={{width: 800}} />
+</div>
+
+
+
+## Create an EE Object Layer from a public UDF
+
+Run the Public [Isochrone UDF](https://www.fused.io/workbench/catalog/Get_Isochrone-15dcecd8-c401-42a8-b9f0-a9dac3d7ddc3) and display the returned GeoDataFrame using [geopandas_to_ee](https://geemap.org/common/#geemap.common.geopandas_to_ee). Public UDFs run on the Fused server for free.
+
+```python showLineNumbers
+import geemap
+from ipyleaflet import Map
+import fused
+
+# Create map
+Map = geemap.Map(center=(40.8072,-73.8469), zoom=10)
+
+# Run UDF
+gdf = fused.run("UDF_Get_Isochrone",  lat=40.776732, lng=-73.73708).set_crs("WGS84")
+
+# Create EE Object GeoJSON layer
+ee_object = geemap.geopandas_to_ee(gdf)
+Map.add_layer(ee_object, {"color": "red"}, "EE Object GeoJSON")
+
+Map
+```
+
+import ImgIsochrone from '@site/static/img/geemap_isochrone.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgIsochrone} alt="File" style={{width: 800}} />
+</div>
