@@ -95,8 +95,7 @@ const config: Config = {
       insights: true,
     },
     // Replace with your project's social card
-    image:
-      "https://fused-magic.s3.us-west-2.amazonaws.com/main_marketing_website/product_diagram_october2024_bg_small.png",
+    // image: "https://fused-magic.s3.us-west-2.amazonaws.com/main_marketing_website/product_diagram_october2024_bg_small.png",
     navbar: {
       title: "Fused",
       logo: {
