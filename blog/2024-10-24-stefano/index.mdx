@@ -2,29 +2,37 @@
 slug: duckdb-fused-and-your-data-warehouse
 title: "DuckDB, Fused, and your data warehouse"
 authors: [stefano]
-# image: https://fused-magic.s3.us-west-2.amazonaws.com/blog-assets/
+image: https://fused-magic.s3.us-west-2.amazonaws.com/blog-assets/social_stefano.png
 unlisted: true
 ---
 
 
 [GLS](https://gls-group.com/GROUP/landing_page) (General Logistics Systems) is an international parcel delivery service provider, primarily operating in Europe and North America. To stay ahead in the fast-paced logistics industry, GLS launched GLS Studio—an innovation lab aimed at optimising and modernising its depots and processes through cutting-edge technology.
 
-Stefano co-founded GLS Studio to build the next generation of data-driven products. In this post, he shares how GLS Studio uses Fused.io to overcome complex data challenges, driving efficiency and innovation in parcel delivery.
+Stefano co-founded GLS Studio to build the next generation of data-driven products. In this post, he shares how GLS Studio uses Fused to drive efficiency and innovation in parcel delivery.
+
+import ReactPlayer from 'react-player'
+
+<ReactPlayer className="video__player" playing={true} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/blog-assets/stefanolong.mp4" width="100%" />
+
+
+
+In this blog post, Stefano shows how his team powers GLS's ParcelPlanner app, which helps GLS evaluate delivery routes efficiently. The app uses Fused to query Snowflake and serve H3-partitioned geospatial data to the frontend, which is powered by Honeycomb Maps and DuckDB WASM.
 
 
 {/* truncate */}
 
 ## Querying Snowflake
 
-At GLS Studio, we faced a challenge when querying Snowflake to serve H3-partitioned geospatial data for our map frontend powered by Honeycomb Maps using DuckDB WASM. While precomputing Parquet files seemed like the most straightforward solution—which is the case for companies already equipped with a data lake and necessary tooling—it wasn't ideal for us because our existing applications required most of the data to remain warehoused in Snowflake. This forced us to become creative about finding a solution that could maintain Snowflake as our primary data warehouse while avoiding the inefficiencies of precomputing files and reduce query costs without compromising performance.
+At GLS Studio, we faced a challenge when querying Snowflake to serve H3-partitioned geospatial data for our map frontend - which is powered by [Honeycomb Maps](https://honeycombmaps.com/) and [DuckDB WASM](https://duckdb.org/docs/api/wasm/overview.html). While precomputing Parquet files seemed like the most straightforward solution—which is the case for companies already equipped with a data lake and necessary tooling—it wasn't ideal for us because our existing applications required most of the data to remain warehoused in Snowflake. This forced us to become creative about finding a solution that could maintain Snowflake as our primary data warehouse while avoiding the inefficiencies of precomputing files and reduce query costs without compromising performance.
 
 To address this, we needed to tackle three key issues:
 
-- File-based Output: Serving data to DuckDB on the frontend required loading it from remote file endpoints. Switching to a traditional REST API would have added unnecessary complexity.
-- Performance: Updating data based on user interactions required querying the database with minimal latency.
-- Cost: Repeated queries to Snowflake were prohibitively expensive, making it crucial to find a more cost-effective approach.
+- **File-based Output:** Serving data to DuckDB on the frontend required loading it from remote file endpoints. Switching to a traditional REST API would have added unnecessary complexity.
+- **Performance:** Updating data based on user interactions required querying the database with minimal latency.
+- **Cost:** Repeated queries to Snowflake were prohibitively expensive, making it crucial to find a more cost-effective approach.
 
-Using Fused, we found a solution that bridged the gap between our client applications and our data warehouse seamlessly. Fused's User Defined Functions (UDFs) enabled us to read from Snowflake and deliver data behind remote Parquet file endpoints that DuckDB can consume directly.
+Using Fused, we found a solution that bridged the gap between our client applications and our data warehouse seamlessly. Fused's [User Defined Functions](/core-concepts/write/) (UDFs) enabled us to read from Snowflake and deliver data behind remote Parquet file endpoints for DuckDB to consume directly and render on the Honeycomb map.
 
 import ImgS1 from '/blog/2024-10-24-stefano/stefano1.png';
 
@@ -35,19 +43,17 @@ import ImgS1 from '/blog/2024-10-24-stefano/stefano1.png';
 
 ## The Power of Caching
 
-Additionally, to avoid putting too much strain on our Snowflake cluster (or breaking the bank), we leverage Fused's built-in caching mechanism. This ensures that repeated queries are efficiently handled without draining resources.
+Additionally, to avoid straining on our Snowflake cluster (or breaking the bank), we leverage Fused's built-in caching mechanism. This ensures that repeated queries are efficiently handled without draining resources.
 
-We then created two key UDFs within Fused.io. These work in tandem to handle authentication, caching, and efficient data retrieval for our DuckDB-powered map:
+We then created two key UDFs within Fused. These work in tandem to handle authentication, caching, and efficient data retrieval for our DuckDB-powered map:
 
-- The "Public" UDF (Hammer): This UDF isn't cached and serves as the entry point. It handles authentication and collects the full date range requested by the customer.
-- The "Private" UDF (Nail): This cached UDF takes a single date and returns the necessary data for that specific day.
+- **The "Public" UDF (Hammer):** This UDF isn't cached and serves as the entry point. It handles authentication and collects the full date range requested by the customer.
+- **The "Private" UDF (Nail):** This cached UDF takes a single date and returns the necessary data for that specific day.
 
-The "Hammer" UDF spawns up to 1,000 asynchronous Fused workers, each fetching data for a single date from the cached "Nail" UDF. Once the data is retrieved, it is stitched together into a single GeoPandas DataFrame, ready for use.
+The "Hammer" UDF spawns up to 1,000 asynchronous Fused workers, each running an instance of the "Nail" UDF to fetch data for an individual date, as specified with a parameter. Once the data is retrieved, it is stitched together into a single GeoPandas DataFrame, ready for use.
 
-For today's data, where data completeness is an issue, we handle caching differently. While we can't cache incomplete data for long periods, we still apply a one-hour cache to optimise performance.
-
-
+With this approach, historical data only needs to be read once from Snowflake. For the present date, which is subject to updates, we handle caching differently and apply a one-hour cache to optimise performance.
 
 ## Conclusion
 
-In the end, Fused allowed us to bridge our Honeycomb maps directly with Snowflake, handling caching and security concerns. This approach saved us significant backend development and data engineering work—all with just a few dozen lines of Python.
+In the end, Fused allowed us to integrate our Honeycomb maps directly with Snowflake, handling caching and security concerns. This approach saved us significant backend development and data engineering work—all with just a few dozen lines of Python.
