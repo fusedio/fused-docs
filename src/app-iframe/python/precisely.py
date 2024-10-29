@@ -1,10 +1,4 @@
-#'https://altair-viz.github.io/gallery/index.html#maps'
-
-# to do:
-# get rid of lower cumulative plot
-# figure out why the sim_norm on cumulative plot doesn't go up to 1.0
-
-
+import altair as alt
 import streamlit as st
 
 st.title("NYC Chronotypes")
@@ -23,22 +17,13 @@ df2 = pd.read_csv(
 # print(df.columns)
 
 
-s = df.sort_values(
-    ["sim_norm"], ascending=True
-)  # .reset_index()#[24800:25000]#.head(100).reset_index()
-# s=s[s['jsd']>0]
-# print(s.columns)
-# print(df.shape)
-# print(df2.shape) # fewer hexes overall... not sure how...
-# print(s.shape)
+s = df.sort_values(["sim_norm"], ascending=True)
 
 s["dummy"] = 1
 s["cumulative_count"] = s.groupby(["dummy"]).cumcount(ascending=True)
 s["location"] = "city hall"
 
-s2 = df2.sort_values(
-    ["sim_norm"], ascending=True
-)  # .reset_index()#[24800:25000]#.head(100).reset_index()
+s2 = df2.sort_values(["sim_norm"], ascending=True)
 s2["dummy"] = 1
 s2["cumulative_count"] = s2.groupby(["dummy"]).cumcount(ascending=True)
 s2["location"] = "LES"
@@ -46,8 +31,7 @@ s2["location"] = "LES"
 lines = pd.concat([s2, s]).reset_index()
 
 st.markdown("### Cumulative counts")
-import altair as alt
-from vega_datasets import data
+
 
 source = lines  # data.sp500.url
 
@@ -168,13 +152,7 @@ hists_L = (
     )
     .encode(order=alt.condition(selector, alt.value(1), alt.value(0)))
 )
-# ).transform_filter(
-#     selector
-# )
 
-# points | hists
 hists
 hists_L
 st.divider()
-
-##could add something about discriminability
