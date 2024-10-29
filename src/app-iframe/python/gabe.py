@@ -21,6 +21,7 @@ from shapely.geometry import box, shape
 from streamlit_folium import st_folium
 
 await micropip.install("geopandas")
+await micropip.install("fused")
 
 # =====================================
 # Helper Functions
