@@ -82,11 +82,12 @@ export default function Root({ children }) {
   return (
     <>
       {children}
-      <BrowserOnly>
+      {/* Disabled */}
+      {/* <BrowserOnly>
         {() => {
           return <RootIframeComponent />;
         }}
-      </BrowserOnly>
+      </BrowserOnly> */}
     </>
   );
 }
