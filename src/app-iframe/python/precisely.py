@@ -1,10 +1,3 @@
-#'https://altair-viz.github.io/gallery/index.html#maps'
-
-# to do:
-# get rid of lower cumulative plot
-# figure out why the sim_norm on cumulative plot doesn't go up to 1.0
-
-
 import streamlit as st
 
 st.title("NYC Chronotypes")
@@ -15,22 +8,13 @@ await micropip.install("vega_datasets")
 import pandas as pd
 
 df = pd.read_csv(
-    "https://www.fused.io/server/v1/realtime-shared/fsh_4J5HBuUmbREtPSQQssYniq/run/file?dtype_out_raster=png&dtype_out_vector=csv&lat=40.7128&lng=-74.0061&threshold=0"
+    "https://www.fused.io/server/v1/realtime-shared/fsh_4J5HBuUmbREtPSQQssYniq/run/file?dtype_out_raster=png&dtype_out_vector=csv&lat=40.7128&lng=-74.0061&threshold=0.0"
 )
 df2 = pd.read_csv(
-    "https://www.fused.io/server/v1/realtime-shared/fsh_4J5HBuUmbREtPSQQssYniq/run/file?dtype_out_raster=png&dtype_out_vector=csv&lat=40.7229&lng=-73.9883&threshold=0"
+    "https://www.fused.io/server/v1/realtime-shared/fsh_4J5HBuUmbREtPSQQssYniq/run/file?dtype_out_raster=png&dtype_out_vector=csv&lat=40.7229&lng=-73.9883&threshold=0.0"
 )
-# print(df.columns)
 
-
-s = df.sort_values(
-    ["sim_norm"], ascending=True
-)  # .reset_index()#[24800:25000]#.head(100).reset_index()
-# s=s[s['jsd']>0]
-# print(s.columns)
-# print(df.shape)
-# print(df2.shape) # fewer hexes overall... not sure how...
-# print(s.shape)
+s = df.sort_values(["sim_norm"], ascending=True)
 
 s["dummy"] = 1
 s["cumulative_count"] = s.groupby(["dummy"]).cumcount(ascending=True)
@@ -68,7 +52,15 @@ upper = base.encode(
     alt.Color("location:N").scale(scheme="category20b"),
 )
 
-lower = base.properties(height=60).add_params(brush)
+lower = (
+    base.encode(
+        alt.X("sim_norm:Q").scale(domain=brush),
+        alt.Y("cumulative_count:Q").scale(domain=brush),
+        alt.Color("location:N").scale(scheme="category20b"),
+    )
+    .properties(height=60)
+    .add_params(brush)
+)
 
 upper & lower
 st.divider()
@@ -77,7 +69,7 @@ st.divider()
 ############
 ############
 
-st.markdown("### Most and least similar hexes")
+st.markdown("### Most and least similar hexes: Lower East Side")
 import altair as alt
 import numpy as np
 import pandas as pd
@@ -101,7 +93,7 @@ dist2L = top_dp2.groupby("daypart").metric.mean().reset_index()
 bot_dec22 = sim_a.sort_values(["sim_norm"], ascending=True).head(dec_ct).hex
 bot_dp2 = h.merge(bot_dec22, on="hex")
 #
-# print(top_dp2)
+# print(dist2L)
 ##print(h[h['hex']=='8a2a100e0787fff'])
 # 8a2a100c4cf7fff
 
@@ -121,7 +113,11 @@ dist2 = bot_dp.groupby("daypart").metric.mean().reset_index()
 dist2["decile"] = "bottom"
 dist["decile"] = "top"
 les = pd.concat([dist, dist2])
-# print(top_dp)
+# print(dist)
+
+
+# print(dist)
+# print(dist2L)
 
 selector = alt.selection_point(fields=["decile"], on="pointerover")
 
@@ -141,7 +137,7 @@ hists = (
         alt.X("daypart")
         .bin(step=1)  # step keeps bin size the same
         .scale(domain=[0, 23]),
-        alt.Y("metric").stack(None).scale(domain=[0, 3000]),
+        alt.Y("metric").stack(None).scale(domain=[0, 4000]),
         alt.Color("decile:N").scale(color_scale),
         # color=color,
     )
@@ -164,17 +160,12 @@ hists_L = (
         .scale(domain=[0, 23]),
         alt.Y("metric").stack(None).scale(domain=[0, 8500]),
         alt.Color("decile:N").scale(color_scale),
-        # color=color,
     )
     .encode(order=alt.condition(selector, alt.value(1), alt.value(0)))
 )
-# ).transform_filter(
-#     selector
-# )
 
-# points | hists
 hists
+st.markdown("### Most and least similar hexes: City Hall")
+
 hists_L
 st.divider()
-
-##could add something about discriminability
