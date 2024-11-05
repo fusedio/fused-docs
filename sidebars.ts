@@ -4,12 +4,17 @@ const sidebars: SidebarsConfig = {
   tutorialSidebar: [
     "index",
     {
+      type: "doc",
+      id: 'quickstart',
+      label: "Quickstart",
+    },
+    {
       type: "category",
       label: "User guide",
       collapsed: false,
       link: { type: "doc", id: "user-guide" },
       items: [
-        "user-guide/quickstart",
+        // "quickstart",
         "user-guide/fused-in-10-minutes",
         "user-guide/login",
         {
