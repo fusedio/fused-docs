@@ -18,7 +18,7 @@ const PATHS_WITH_ONE_IFRAME = [
   "/user-guide/transform/geospatial/raster-h3/",
   "/user-guide/transform/geospatial/zonal_stats/",
   "/workbench/app-builder/",
-  "/user-guide/quickstart/",
+  "/quickstart/",
   "/blog/global-vegetation-segmentation/",
 ];
 
