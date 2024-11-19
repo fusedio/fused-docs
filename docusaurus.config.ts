@@ -15,7 +15,7 @@ const config: Config = {
   // // baseUrl: '/fused-docs/', // needed for GitHub pages
   // baseUrl: "/",
   url: process.env.DEPLOYMENT_URL || 'https://docs.fused.io',
-  baseUrl: process.env.BASE_URL || '/',
+  baseUrl: process.env.BASE_URL || '/pr/247',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
