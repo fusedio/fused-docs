@@ -23,10 +23,11 @@ export default function Iframe({
   function syncIframeToContainer(boundingClientRect, iframe) {
     if (boundingClientRect) {
       iframe.style.display = "block";
-      iframe.style.left = `${boundingClientRect.left + window.scrollX}px`;
-      iframe.style.top = `${boundingClientRect.top + window.scrollY}px`;
-      iframe.style.width = `${boundingClientRect.width}px`;
-      iframe.style.height = `${boundingClientRect.height}px`;
+      iframe.style.position = "relative";
+      iframe.style.left = "0";
+      iframe.style.top = "0";
+      iframe.style.width = "100%";
+      iframe.style.height = "100%";
     }
   }
 
@@ -62,8 +63,9 @@ export default function Iframe({
       iframe.width = "100%";
       iframe.scrolling = "no";
       iframe.id = "magic-" + id;
+      iframe.style.position = "relative";
 
-      document.body.appendChild(iframe);
+      containerRef.current.appendChild(iframe);
     } else {
       iframe = document.getElementById("magic-" + id);
       const targetOrigin = new URL(url).origin;
