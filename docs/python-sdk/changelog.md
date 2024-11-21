@@ -14,7 +14,7 @@ sidebar_position: 8
 - Workbench layers apply visualization changes immediately when the map is paused.
 - Show the user that started a job for the team jobs list.
 - Fix for running nested UDFs with utils modules.
-- Fix for xarray UDF results.
+- Fix for returning xarray results from UDFs.
 - Fix for listing files from within UDFs.
 - Upgraded to GeoPandas v1.
 
