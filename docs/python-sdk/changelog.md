@@ -7,6 +7,17 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.11.5 (2024-11-20)
+
+- Show message for keyword arguments in UDFs that are reserved.
+- Added reset kernel button.
+- Workbench layers apply visualization changes immediately when the map is paused.
+- Show the user that started a job for the team jobs list.
+- Fix for running nested UDFs with utils modules.
+- Fix for xarray UDF results.
+- Fix for listing files from within UDFs.
+- Upgraded to GeoPandas v1.
+
 ## v1.8.0 (2024-06-25) :package:
 
 - Added Workbench tour for first-time users.
