@@ -17,7 +17,7 @@ const PATHS_WITH_ONE_IFRAME = [
   "/user-guide/transform/geospatial/point-in-polygon/",
   "/user-guide/transform/geospatial/raster-h3/",
   "/user-guide/transform/geospatial/zonal_stats/",
-  "/app-builder/",
+  "workbench/app-builder/",
   "/quickstart/",
   "/blog/global-vegetation-segmentation/",
 ];
