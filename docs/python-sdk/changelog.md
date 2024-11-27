@@ -7,6 +7,18 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.11.6 (2024-11-26)
+
+- Added Format with Black (Alt+Shift+f) to Workbench.
+- Fix the CRS of DataFrame's returned by get_chunk_from_table.
+- Added a human readable ID to batch jobs.
+- Fused will send an email when a batch job finishes.
+- Fix for opening larger files in Kepler.gl.
+- Fix for accessing UDFs in a team.
+- Improved messages for UDF recursion, UDF geometry arguments, and returning geometry columns.
+- Adjusted the UDF list styling and behavior in Workbench.
+- Fix for secrets in shared tokens.
+
 ## v1.11.5 (2024-11-20)
 
 - Show message for keyword arguments in UDFs that are reserved.
