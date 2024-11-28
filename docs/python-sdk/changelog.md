@@ -7,6 +7,12 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.11.7 (2024-11-27)
+
+- Decluttered the interface on mobile browsers by default.
+- Fixed redo (Cmd-Shift-z or Ctrl-Shift-z) sometimes being bound to the wrong key.
+- Tweaked the logic for showing the selected object in Workbench.
+
 ## v1.11.6 (2024-11-26)
 
 - Added Format with Black (Alt+Shift+f) to Workbench.
