@@ -1,6 +1,6 @@
 import micropip
 
-await micropip.install(["streamlit-folium", "fused", "plotly"])
+await micropip.install(["streamlit-folium", "fused", "plotly", "shapely"])
 import json
 
 import folium
@@ -74,9 +74,7 @@ initial_location = [
 st.title("🌍 NEON Hyperspectral Signature Explorer")
 st.markdown("<br>", unsafe_allow_html=True)
 
-spacer1, col1, spacer2, col2, spacer3, col3, spacer4 = st.columns(
-    [0.1, 1.2, 0.2, 4, 0.2, 2.2, 0.1]
-)
+col1, col2 = st.columns([2, 4])
 
 # Site and Year Selection
 with col1:
@@ -174,7 +172,7 @@ with col2:
    """,
         unsafe_allow_html=True,
     )
-    map_data = st_folium(m, width=None, height=500)
+    map_data = st_folium(m, width=None, height=250)
 
 # Handle click events
 if map_data and map_data.get("last_clicked"):
@@ -209,7 +207,7 @@ if (
     and st.session_state.current_data is not None
 ):
     att = st.session_state.current_data
-    with col3:
+    with st.container():
         st.markdown("### Hyperspectral Signature")
         if st.session_state.last_clicked:
             st.markdown(
