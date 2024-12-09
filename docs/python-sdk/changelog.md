@@ -7,6 +7,13 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.11.8 (2024-12-04)
+
+- New File Explorer interface, with support for managing Google Cloud Storage (GCS) and `/mnt/cache` files.
+- Workbench will show an error when trying to save a UDF with a duplicate name.
+- Fixed a few bugs with Github integration, including the wrong repository being selected by default when creating a PR.
+- Updated `fsspec` and `pyogrio` packages.
+
 ## v1.11.7 (2024-11-27)
 
 - Decluttered the interface on mobile browsers by default.
