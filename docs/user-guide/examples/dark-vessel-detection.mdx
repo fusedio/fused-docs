@@ -12,6 +12,10 @@ sidebar_custom_props:
 
 _A complete example show casing how to use Fused to ingest data into a geo-partitioned, cloud friendly format, process images & vectors and use UDFs to produce an analysis_
 
+:::note
+    This tutorial assumes you have [access to Fused](/user-guide/login/) & [installed the `fused` Python package](/python-sdk/#install) locally
+:::
+
 ## 1. The problem: Detecting illegal boats
 
 {/* Start by showing what the end result looks like: "this is what we're going to do in this example"*/}
@@ -91,6 +95,12 @@ import ImgAISNoaa from '@site/docs/user-guide/examples/AIS_noaa_coast_portal.png
 
 ## 3. Ingesting AIS data
 
+{/* 
+Topics:
+- Sentinel 1 already in COG + STAC -> No need to do ingest it ourselves
+- AIS is in zip files on a server somewhere -> we're going to re-ingest it ourselves to make it cloud native (i.e. on cloud on S3 bucket) + geo-partitioned (i.e. in a format that's fast to read - parquet + chunked accordingly) 
+ */}
+
 Since our AIS dataset is not in a geo-partitioned, cloud native format, our first step is to ingest it into a tiled format and put it on a cloud bucket. Thankfully we can do all of this in Fused.
 
 By the end of this ingestion process we'll have:
@@ -98,11 +108,99 @@ By the end of this ingestion process we'll have:
 - In a GeoParquet format so it's fast to read
 - Tiled & Chunked so we can read only a small portion at a time, making it even faster
 
-{/* 
-Topics:
-- Sentinel 1 already in COG + STAC -> No need to do ingest it ourselves
-- AIS is in zip files on a server somewhere -> we're going to re-ingest it ourselves to make it cloud native (i.e. on cloud on S3 bucket) + geo-partitioned (i.e. in a format that's fast to read - parquet + chunked accordingly) 
- */}
+To get this done we'll:
+1. Get a location to store our partitioned AIS data on (this can be any AWS S3 bucket, we'll use one managed by Fused to make this simpler)
+{/* Link to UDF docs */}
+2. Write a simple UDF to unzip each AIS data over a given date range, read it and save it as a parquet file on S3
+{/* Link to batch job doc */}
+3. Run this UDF as a batch job to run this across all of the 2024 AIS archive
+4. Ingest all of the monthly AIS `.parquet` files into geo-partitioned files to speed up their read time over small areas
+
+### 3.1 - Deciding on where to store out partitioned data
+
+We first need to unzip & read our AIS data before ingesting in as a geo-partitioned cloud native format. One simple way to do this is to write a UDF that reads a zip file and saves it as `.parquet` file on a mounted disk.
+
+:::note
+    Fused UDFs by default run on serverless instances, so their local storage changes at every run. To keep data persistent across runs we use shared mounted storage across all the instances of your team
+:::
+
+`fused.file_path()` returns the mount path of any file we'd like to create
+
+```python showLineNumbers
+import fused
+
+datestr='2023_03_29'
+
+url=f'https://coast.noaa.gov/htdata/CMSP/AISDataHandler/{datestr[:4]}/AIS_{datestr}.zip'
+path=fused.file_path(f'/AIS/{datestr[:7]}/{datestr[-2:]}')
+```
+
+We would then get:
+
+```bash
+'/tmp/fused/AIS/2023_03/29'
+```
+
+AIS datapoint from NOAA's platform are available per day but we'll aggregate them per month to make it simpler to manage:
+
+```
+- /tmp/fused/AIS/2024_01/
+    - 01.parquet
+    - 02.parquet
+    ...
+- /tmp/fused/AIS/2024_02/
+    - 01.parquet
+    - 02.parquet
+...
+```
+
+### 3.2 - Writing a UDF to open each AIS dataset
+
+The rest of the logic is to open each file, read it as a CSV and write it to parquet.
+
+Read more about how to [write UDFs here](/core-concepts/write/)
+
+```python showLineNumbers
+@fused.udf()
+def read_ais_from_noaa_udf(datestr='2023_03_29', overwrite=False):
+    import os
+    import requests
+    import io
+    import zipfile
+    import pandas as pd
+    import s3fs
+    # This is the specific URL where daily AIS data is available
+    url=f'https://coast.noaa.gov/htdata/CMSP/AISDataHandler/{datestr[:4]}/AIS_{datestr}.zip'
+    # This is our local mount file path, 
+    path=fused.file_path(f'/AIS/{datestr[:7]}/')
+    daily_ais_parquet = f'{path}/{datestr[-2:]}.parquet'
+
+    # Skipping any existing files
+    if os.path.exists(daily_ais_parquet) and not overwrite:
+        print('exist')
+        return pd.DataFrame({'status':['exist']})
+
+    # Download ZIP file to mounted disk
+    r=requests.get(url)
+    if r.status_code == 200:
+        with zipfile.ZipFile(io.BytesIO(r.content), 'r') as z:
+            with z.open(f'AIS_{datestr}.csv') as f:
+                df = pd.read_csv(f)
+                # MMSI is the unique identifier of each boat. This is a simple clean up for demonstration
+                df['MMSI'] = df['MMSI'].astype(str)
+                df.to_parquet(daily_ais_parquet)      
+        return pd.DataFrame({'status':['Done']})
+    else:
+        return pd.DataFrame({'status':[f'read_error_{r.status_code}']})
+```
+
+{/* Running this UDF 1 time to try it out */}
+
+### 3.3 - Run this UDF over a year of AIS data
+
+_🚧 Under construction_
+
+### 3.4 - Ingest 1 year of AIS data into a geo-partitioned format
 
 _🚧 Under construction_
 
