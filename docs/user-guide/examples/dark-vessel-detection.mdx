@@ -122,8 +122,6 @@ We first need to unzip & read our AIS data before ingesting in as a geo-partitio
 
 :::note
     Fused UDFs by default run on serverless instances, so their local storage changes at every run. To keep data persistent across runs we use shared mounted storage across all the instances of your team
-
-    Keep in mind: These mount are wiped every 24h so don't rely on it for long term storage
 :::
 
 `fused.file_path()` returns the mount path of any file we'd like to create
@@ -262,11 +260,55 @@ import ImgGetResultsAll from '@site/docs/user-guide/examples/run_get_results_all
 
 We've now unzipped, opened & saved 30 days of data!
 
-### 3.4 - Ingest 1 year of AIS data into a geo-partitioned format
+### 3.4 - Ingest 1 month of AIS data into a geo-partitioned format
 
-Once this is done running we can list all the files on our mounted disk
+{/* TODO: This section (and the docs in general) are missing info about number of chunks*/}
 
-_🚧 Under construction_
+These individual parquet files are now store on our mount disk. We could save them directly onto cloud storage but before that we can geo-partition them to make them even faster to read
+
+:::tip
+    You can read more about why Cloud Native formats are so interesting on [the Cloud Native Geo website](https://guide.cloudnativegeo.org/)
+:::
+
+Fused provides a simple way to do this with the [ingestion process](/core-concepts/content-management/Ingest/). Our ingestion pipeline will then slice the dataset in order to make 
+
+import ImgGeoParquet from '@site/docs/user-guide/examples/geoparquet_overview.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgGeoParquet} alt="A simple overview of Geoparquet benefits" style={{width: 800}} />
+</div>
+
+_Image credit from the [Cloud Native Geo slideshow](https://guide.cloudnativegeo.org/overview.html#/geoparquet)_
+
+To do this we need a few things:
+- **Our input dataset**: in this case our month of AIS data.
+    - We need to refer to the files directly so we'll use the 
+- **A target cloud bucket**: We're going to create a bucket to store our month of geo-partitioned AIS data in parquet files
+- A target number of chunks to partition our data in. For now we're going to keep it at 500
+- Latitude / Longitude columns to determine the location of each point
+
+```python showLineNumbers
+ais_daily_parquets = [f'file:///mnt/cache/AIS/{day[:-3]}/AIS_{day[-2:]}.parquet' for day in range_of_ais_dates]
+```
+
+```python showLineNumbers
+job = fused.ingest(
+    ais,
+    's3://fused-users/fused/demo_user/AIS_2023_ingester/prod_2023_09',
+    target_num_chunks=500,
+    lonlat_cols=('LON','LAT')
+)
+```
+
+{/* TODO: Link to offline run remote */}
+To run this job we're going to use the "offline" `job.run_remote()` as we latency doesn't matter much (we can wait a few extra seconds) and we'd rather have a larger machine & a larger storage:
+
+```python showLineNumbers
+j.run_remote(
+    instance_type='r5.8xlarge', # We want why big beafy machine to do the partitioning in parallel, so large amounts of CPUs
+    disk_size_gb=999 # need a large amount of disk because this job will open each output parquet file to calculate centroid 
+)
+```
 
 ## 4. Retrieving Sentinel 1 images
 
