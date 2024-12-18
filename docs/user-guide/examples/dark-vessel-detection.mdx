@@ -122,6 +122,8 @@ We first need to unzip & read our AIS data before ingesting in as a geo-partitio
 
 :::note
     Fused UDFs by default run on serverless instances, so their local storage changes at every run. To keep data persistent across runs we use shared mounted storage across all the instances of your team
+
+    Keep in mind: These mount are wiped every 24h so don't rely on it for long term storage
 :::
 
 `fused.file_path()` returns the mount path of any file we'd like to create
@@ -135,11 +137,15 @@ url=f'https://coast.noaa.gov/htdata/CMSP/AISDataHandler/{datestr[:4]}/AIS_{dates
 path=fused.file_path(f'/AIS/{datestr[:7]}/{datestr[-2:]}')
 ```
 
-We would then get:
+{/* 
+NOTE: This might be confusing: `fused.file_path()` returns different values when run locally or when run inside a UDF
+TODO: Decide whether or not it's worth it to go on a tangent explaining this to people?
+*/}
+{/* We would then get:
 
 ```bash
 '/tmp/fused/AIS/2023_03/29'
-```
+``` */}
 
 AIS datapoint from NOAA's platform are available per day but we'll aggregate them per month to make it simpler to manage:
 
@@ -188,19 +194,77 @@ def read_ais_from_noaa_udf(datestr='2023_03_29', overwrite=False):
                 df = pd.read_csv(f)
                 # MMSI is the unique identifier of each boat. This is a simple clean up for demonstration
                 df['MMSI'] = df['MMSI'].astype(str)
-                df.to_parquet(daily_ais_parquet)      
-        return pd.DataFrame({'status':['Done']})
+                df.to_parquet(daily_ais_parquet)
+                print(f"Saved {daily_ais_parquet}")
+        return pd.DataFrame({'status':['Done'], "file_path": [daily_ais_parquet]})
     else:
         return pd.DataFrame({'status':[f'read_error_{r.status_code}']})
 ```
 
 {/* Running this UDF 1 time to try it out */}
 
+We can run this UDF a single time to make sure it works:
+
+```python showLineNumbers
+single_ais_month = fused.run(read_ais_from_noaa_udf, datestr="2023_03_30")
+```
+
+Which returns:
+```bash
+Saved /mnt/cache/AIS/2023_03/30.parquet
+```
+
+To recap what we've done so far:
+- Build a UDF that takes a date, fetches a `.zip` file from NOAA's AISDataHandler portal and saves it to our UDFs' mount (so other UDFs can access it)
+- Run this UDF 1 time for a specific date
+
 ### 3.3 - Run this UDF over a year of AIS data
 
-_🚧 Under construction_
+Next step: Run this for a whole period!
+
+:::note
+    You can read more on how to run UDFs multiple time in the dedicated section
+:::
+
+Since each UDF takes a few seconds to run per date, we're going to use the experimental `PoolRunner` to call a large pool of UDFs all at once with a large date range
+
+With a bit of Python gymnastics we can create a list of all the dates we'd like to process. Preparing to get all of September 2023 would look like this:
+
+```python showLineNumbers
+import pandas as pd
+range_of_ais_dates = [str(i)[:10].replace('-','_') for i in pd.date_range('2023-09','2023-10')[:-1]]
+```
+
+Giving us a list of date ranges:
+
+```bash
+['2023_09_01', '2023_09_02', '2023_09_03', '2023_09_04', '2023_09_05', '2023_09_06', '2023_09_07', '2023_09_08', '2023_09_09', '2023_09_10', '2023_09_11', '2023_09_12', '2023_09_13', '2023_09_14', '2023_09_15', '2023_09_16', '2023_09_17', '2023_09_18', '2023_09_19', '2023_09_20', '2023_09_21', '2023_09_22', '2023_09_23', '2023_09_24', '2023_09_25', '2023_09_26', '2023_09_27', '2023_09_28', '2023_09_29', '2023_09_30']
+```
+
+{/* TODO: Again link to PoolRunner docs */}
+We can create a simple `lamda` function that takes each value and sends it to a `PoolRunner` job:
+
+```python showLineNumbers
+runs = fused.utils.common.PoolRunner(lambda datestr: fused.run(read_ais_from_noaa_udf(datestr=datestr, overwrite=False)), range_of_ais_dates)
+```
+
+Since `PoolRunner` is running on a "real-time" instance, we can also query the status in a notebook as the job is executing:
+
+```python showLineNumbers
+runs.get_result_all()
+```
+
+import ImgGetResultsAll from '@site/docs/user-guide/examples/run_get_results_all_notebook_output.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgGetResultsAll} alt="Pool Runner live results" style={{width: 400}} />
+</div>
+
+We've now unzipped, opened & saved 30 days of data!
 
 ### 3.4 - Ingest 1 year of AIS data into a geo-partitioned format
+
+Once this is done running we can list all the files on our mounted disk
 
 _🚧 Under construction_
 
