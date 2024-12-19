@@ -129,26 +129,30 @@ We first need to unzip & read our AIS data before ingesting in as a geo-partitio
 ```python showLineNumbers
 import fused
 
-datestr='2023_03_29'
+datestr='2024_09_01'
 
 url=f'https://coast.noaa.gov/htdata/CMSP/AISDataHandler/{datestr[:4]}/AIS_{datestr}.zip'
 path=fused.file_path(f'/AIS/{datestr[:7]}/{datestr[-2:]}')
 ```
 
-We would then get:
+{/* 
+NOTE: This might be confusing: `fused.file_path()` returns different values when run locally or when run inside a UDF
+TODO: Decide whether or not it's worth it to go on a tangent explaining this to people?
+*/}
+{/* We would then get:
 
 ```bash
 '/tmp/fused/AIS/2023_03/29'
-```
+``` */}
 
 AIS datapoint from NOAA's platform are available per day but we'll aggregate them per month to make it simpler to manage:
 
 ```
-- /tmp/fused/AIS/2024_01/
+- /tmp/fused/AIS/2024_08/
     - 01.parquet
     - 02.parquet
     ...
-- /tmp/fused/AIS/2024_02/
+- /tmp/fused/AIS/2024_09/
     - 01.parquet
     - 02.parquet
 ...
@@ -188,22 +192,161 @@ def read_ais_from_noaa_udf(datestr='2023_03_29', overwrite=False):
                 df = pd.read_csv(f)
                 # MMSI is the unique identifier of each boat. This is a simple clean up for demonstration
                 df['MMSI'] = df['MMSI'].astype(str)
-                df.to_parquet(daily_ais_parquet)      
-        return pd.DataFrame({'status':['Done']})
+                df.to_parquet(daily_ais_parquet)
+                print(f"Saved {daily_ais_parquet}")
+        return pd.DataFrame({'status':['Done'], "file_path": [daily_ais_parquet]})
     else:
         return pd.DataFrame({'status':[f'read_error_{r.status_code}']})
 ```
 
 {/* Running this UDF 1 time to try it out */}
 
+We can run this UDF a single time to make sure it works:
+
+```python showLineNumbers
+single_ais_month = fused.run(read_ais_from_noaa_udf, datestr="2024_09_01")
+```
+
+Which returns:
+```bash
+Saved /mnt/cache/AIS/2024_09/01.parquet
+```
+
+To recap what we've done so far:
+- Build a UDF that takes a date, fetches a `.zip` file from NOAA's AISDataHandler portal and saves it to our UDFs' mount (so other UDFs can access it)
+- Run this UDF 1 time for a specific date
+
 ### 3.3 - Run this UDF over a year of AIS data
 
-_🚧 Under construction_
+Next step: Run this for a whole period!
 
-### 3.4 - Ingest 1 year of AIS data into a geo-partitioned format
+:::note
+    You can read more on how to run UDFs multiple time in the dedicated section
+:::
 
-_🚧 Under construction_
+Since each UDF takes a few seconds to run per date, we're going to use the experimental `PoolRunner` to call a large pool of UDFs all at once with a large date range
 
+With a bit of Python gymnastics we can create a list of all the dates we'd like to process. Preparing to get all of September 2023 would look like this:
+
+```python showLineNumbers
+import pandas as pd
+range_of_ais_dates = [str(i)[:10].replace('-','_') for i in pd.date_range('2024-09','2024-10')[:-1]]
+```
+
+Giving us a list of date ranges:
+
+```bash
+['2024_09_01', '2024_09_02', '2024_09_03', '2024_09_04', '2024_09_05', '2024_09_06', '2024_09_07', '2024_09_08', '2024_09_09', '2024_09_10', '2024_09_11', '2024_09_12', '2024_09_13', '2024_09_14', '2024_09_15', '2024_09_16', '2024_09_17', '2024_09_18', '2024_09_19', '2024_09_20', '2024_09_21', '2024_09_22', '2024_09_23', '2024_09_24', '2024_09_25', '2024_09_26', '2024_09_27', '2024_09_28', '2024_09_29', '2024_09_30']
+```
+
+{/* TODO: Again link to PoolRunner docs */}
+We can create a simple `lamda` function that takes each value and sends it to a `PoolRunner` job:
+
+```python showLineNumbers
+runs = fused.utils.common.PoolRunner(lambda datestr: fused.run(read_ais_from_noaa_udf(datestr=datestr, overwrite=False)), range_of_ais_dates)
+```
+
+Since `PoolRunner` is running on a "real-time" instance, we can also query the status in a notebook as the job is executing:
+
+```python showLineNumbers
+runs.get_result_all()
+```
+
+import ImgGetResultsAll from '@site/docs/user-guide/examples/run_get_results_all_notebook_output.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgGetResultsAll} alt="Pool Runner live results" style={{width: 400}} />
+</div>
+
+We've now unzipped, opened & saved 30 days of data!
+
+One handy way to make sure our data is in the right place is to check it in [File Explorer](/workbench/file-explorer/) in [Workbench](/workbench/). In the search bar type: `efs://AIS/2024_09/`:
+
+import ImgEFSWorkbench from '@site/docs/user-guide/examples/fused_workbench_file_explorer_efs.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgEFSWorkbench} alt="Pool Runner live results" style={{width: 600}} />
+</div>
+
+You'll see all our daily files! Notice how each file is a few 100 Mb. These files are still big individual files, i.e. would take a little while to read.
+
+### 3.4 - Ingest 1 month of AIS data into a geo-partitioned format
+
+{/* TODO: This section (and the docs in general) are missing info about number of chunks*/}
+
+These individual parquet files are now store on our mount disk. We could save them directly onto cloud storage but before that we can geo-partition them to make them even faster to read
+
+:::tip
+    You can read more about why Cloud Native formats are so interesting on [the Cloud Native Geo website](https://guide.cloudnativegeo.org/)
+:::
+
+Fused provides a simple way to do this with the [ingestion process](/core-concepts/content-management/Ingest/). Our ingestion pipeline will then slice the dataset in order to make 
+
+import ImgGeoParquet from '@site/docs/user-guide/examples/geoparquet_overview.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgGeoParquet} alt="A simple overview of Geoparquet benefits" style={{width: 800}} />
+</div>
+
+_Image credit from the [Cloud Native Geo slideshow](https://guide.cloudnativegeo.org/overview.html#/geoparquet)_
+
+To do this we need a few things:
+- **Our input dataset**: in this case our month of AIS data.
+    - We need to refer to the files directly so we'll use the 
+- **A target cloud bucket**: We're going to create a bucket to store our month of geo-partitioned AIS data in parquet files
+- A target number of chunks to partition our data in. For now we're going to keep it at 500
+- Latitude / Longitude columns to determine the location of each point
+
+```python showLineNumbers
+ais_daily_parquets = [f'file:///mnt/cache/AIS/{day[:-3]}/{day[-2:]}.parquet' for day in range_of_ais_dates]
+```
+
+```python showLineNumbers
+job = fused.ingest(
+    ais_daily_parquets,
+    's3://fused-users/fused/demo_user/AIS_2024_ingester/prod_2024_09',
+    target_num_chunks=500,
+    lonlat_cols=('LON','LAT')
+)
+```
+
+{/* TODO: Link to offline run remote */}
+To run this job we're going to use the "offline" `job.run_remote()` as we latency doesn't matter much (we can wait a few extra seconds) and we'd rather have a larger machine & a larger storage:
+
+```python showLineNumbers
+j.run_remote(
+    instance_type='r5.8xlarge', # We want why big beafy machine to do the partitioning in parallel, so large amounts of CPUs
+    disk_size_gb=999 # need a large amount of disk because this job will open each output parquet file to calculate centroid 
+)
+```
+
+Running this in a notebook gives us a link to logs so we can follow the progress of the job on the offline machine:
+
+import ImgRunRemoteLogs from '@site/docs/user-guide/examples/ingest_run_remote_job_logs.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgRunRemoteLogs} alt="Notebook run remote print" style={{width: 800}} />
+</div>
+
+Following the link shows us the live logs of what our job is doing:
+
+import ImgWorkbenchRunRemoteLogs from '@site/docs/user-guide/examples/workbench_run_remote_logs.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgWorkbenchRunRemoteLogs} alt="Workbench run remote logs" style={{width: 800}} />
+</div>
+
+We can once again check that our geo-partitioned images are available using [File Explorer](/workbench/file-explorer/). This time because our files are a lot faster to read we can even see the preview in the map view:
+
+<ReactPlayer playsinline={true} className="video__player" playing={true} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/dark-vessel-detection/geopartioned_AIS_file_explorer.mp4" width="100%" />
+
+
+Our AIS data is ready to be use for the entire month of September 2024. To narrow down our search, we now need to get a Sentinel 1 image. Since these images are taken every 6 to 12 days depending on the region, we'll find a Sentinel 1 image and then narrow our AIS data to just a few minutes before and after the acquisition time of the Sentinel 1 image
+
+{/* 
+TODO:
+- Show in Workbench / File Explorer that we can see all the data for the month
+*/}
 ## 4. Retrieving Sentinel 1 images
 
 _🚧 Under construction_
