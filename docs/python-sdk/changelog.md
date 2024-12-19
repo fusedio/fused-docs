@@ -7,6 +7,25 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.11.9 (2024-12-19)
+
+- Accounts now have a *handle* assigned to them, which can be used when loading UDFs and pushing to community UDFs
+- Account handle can be changed once by the user (for more changes please contact the Fused team.)
+- Added a command palette to the Workbench, which can be opened with Cmd-k or Ctrl-k.
+- When creating a PR for a community UDF or to update a public UDF, it will be under your account if you log in to Fused with Github.
+- Bug fixes for pushing to Github, e.g. when pushing a saved UDF, and for listing the Fused bot account as an author.
+- Batch (`run_remote`) jobs can call back to the Fused API.
+- Team UDFs can be pinned to the end of the featured list.
+- Speed improvements in ingestion.
+- Ingestion will detect `.pq` files as Parquet.
+- Format code shortcut in Workbench is shown in the keyboard shortcut list and command palette.
+- Workbench will hide the map tooltip when dragging the map by default.
+- Workbench will now look for a `hexLayer` visualization preset for tabular results that do not contain `geometry`.
+- Workbench file explorer can now handle larger lists of files.
+- Fix for browsing disk cache (`/mnt/cache`) in Workbench file explorer.
+- Teams with multiple realtime instances can now set one as their default.
+- Fix for saving UDFs with certain names. Workbench will show more descriptive error messages in more cases for issues saving UDFs.
+
 ## v1.11.8 (2024-12-04)
 
 - New File Explorer interface, with support for managing Google Cloud Storage (GCS) and `/mnt/cache` files.
