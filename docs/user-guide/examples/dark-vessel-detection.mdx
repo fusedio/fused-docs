@@ -129,26 +129,30 @@ We first need to unzip & read our AIS data before ingesting in as a geo-partitio
 ```python showLineNumbers
 import fused
 
-datestr='2023_03_29'
+datestr='2024_09_01'
 
 url=f'https://coast.noaa.gov/htdata/CMSP/AISDataHandler/{datestr[:4]}/AIS_{datestr}.zip'
 path=fused.file_path(f'/AIS/{datestr[:7]}/{datestr[-2:]}')
 ```
 
-We would then get:
+{/* 
+NOTE: This might be confusing: `fused.file_path()` returns different values when run locally or when run inside a UDF
+TODO: Decide whether or not it's worth it to go on a tangent explaining this to people?
+*/}
+{/* We would then get:
 
 ```bash
 '/tmp/fused/AIS/2023_03/29'
-```
+``` */}
 
 AIS datapoint from NOAA's platform are available per day but we'll aggregate them per month to make it simpler to manage:
 
 ```
-- /tmp/fused/AIS/2024_01/
+- /tmp/fused/AIS/2024_08/
     - 01.parquet
     - 02.parquet
     ...
-- /tmp/fused/AIS/2024_02/
+- /tmp/fused/AIS/2024_09/
     - 01.parquet
     - 02.parquet
 ...
@@ -188,25 +192,329 @@ def read_ais_from_noaa_udf(datestr='2023_03_29', overwrite=False):
                 df = pd.read_csv(f)
                 # MMSI is the unique identifier of each boat. This is a simple clean up for demonstration
                 df['MMSI'] = df['MMSI'].astype(str)
-                df.to_parquet(daily_ais_parquet)      
-        return pd.DataFrame({'status':['Done']})
+                df.to_parquet(daily_ais_parquet)
+                print(f"Saved {daily_ais_parquet}")
+        return pd.DataFrame({'status':['Done'], "file_path": [daily_ais_parquet]})
     else:
         return pd.DataFrame({'status':[f'read_error_{r.status_code}']})
 ```
 
 {/* Running this UDF 1 time to try it out */}
 
+We can run this UDF a single time to make sure it works:
+
+```python showLineNumbers
+single_ais_month = fused.run(read_ais_from_noaa_udf, datestr="2024_09_01")
+```
+
+Which returns:
+```bash
+Saved /mnt/cache/AIS/2024_09/01.parquet
+```
+
+To recap what we've done so far:
+- Build a UDF that takes a date, fetches a `.zip` file from NOAA's AISDataHandler portal and saves it to our UDFs' mount (so other UDFs can access it)
+- Run this UDF 1 time for a specific date
+
 ### 3.3 - Run this UDF over a year of AIS data
 
-_🚧 Under construction_
+Next step: Run this for a whole period!
 
-### 3.4 - Ingest 1 year of AIS data into a geo-partitioned format
+:::note
+    You can read more on how to run UDFs multiple time in the dedicated section
+:::
 
-_🚧 Under construction_
+Since each UDF takes a few seconds to run per date, we're going to use the experimental `PoolRunner` to call a large pool of UDFs all at once with a large date range
+
+With a bit of Python gymnastics we can create a list of all the dates we'd like to process. Preparing to get all of September 2023 would look like this:
+
+```python showLineNumbers
+import pandas as pd
+range_of_ais_dates = [str(i)[:10].replace('-','_') for i in pd.date_range('2024-09','2024-10')[:-1]]
+```
+
+Giving us a list of date ranges:
+
+```bash
+['2024_09_01', '2024_09_02', '2024_09_03', '2024_09_04', '2024_09_05', '2024_09_06', '2024_09_07', '2024_09_08', '2024_09_09', '2024_09_10', '2024_09_11', '2024_09_12', '2024_09_13', '2024_09_14', '2024_09_15', '2024_09_16', '2024_09_17', '2024_09_18', '2024_09_19', '2024_09_20', '2024_09_21', '2024_09_22', '2024_09_23', '2024_09_24', '2024_09_25', '2024_09_26', '2024_09_27', '2024_09_28', '2024_09_29', '2024_09_30']
+```
+
+{/* TODO: Again link to PoolRunner docs */}
+We can create a simple `lamda` function that takes each value and sends it to a `PoolRunner` job:
+
+```python showLineNumbers
+runs = fused.utils.common.PoolRunner(lambda datestr: fused.run(read_ais_from_noaa_udf(datestr=datestr, overwrite=False)), range_of_ais_dates)
+```
+
+Since `PoolRunner` is running on a "real-time" instance, we can also query the status in a notebook as the job is executing:
+
+```python showLineNumbers
+runs.get_result_all()
+```
+
+import ImgGetResultsAll from '@site/docs/user-guide/examples/run_get_results_all_notebook_output.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgGetResultsAll} alt="Pool Runner live results" style={{width: 400}} />
+</div>
+
+We've now unzipped, opened & saved 30 days of data!
+
+One handy way to make sure our data is in the right place is to check it in [File Explorer](/workbench/file-explorer/) in [Workbench](/workbench/). In the search bar type: `efs://AIS/2024_09/`:
+
+import ImgEFSWorkbench from '@site/docs/user-guide/examples/fused_workbench_file_explorer_efs.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgEFSWorkbench} alt="Pool Runner live results" style={{width: 600}} />
+</div>
+
+You'll see all our daily files! Notice how each file is a few 100 Mb. These files are still big individual files, i.e. would take a little while to read.
+
+### 3.4 - Ingest 1 month of AIS data into a geo-partitioned format
+
+{/* TODO: This section (and the docs in general) are missing info about number of chunks*/}
+
+These individual parquet files are now store on our mount disk. We could save them directly onto cloud storage but before that we can geo-partition them to make them even faster to read
+
+:::tip
+    You can read more about why Cloud Native formats are so interesting on [the Cloud Native Geo website](https://guide.cloudnativegeo.org/)
+:::
+
+Fused provides a simple way to do this with the [ingestion process](/core-concepts/content-management/Ingest/). Our ingestion pipeline will then slice the dataset in order to make 
+
+import ImgGeoParquet from '@site/docs/user-guide/examples/geoparquet_overview.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgGeoParquet} alt="A simple overview of Geoparquet benefits" style={{width: 800}} />
+</div>
+
+_Image credit from the [Cloud Native Geo slideshow](https://guide.cloudnativegeo.org/overview.html#/geoparquet)_
+
+To do this we need a few things:
+- **Our input dataset**: in this case our month of AIS data.
+    - We need to refer to the files directly so we'll use the 
+- **A target cloud bucket**: We're going to create a bucket to store our month of geo-partitioned AIS data in parquet files
+- A target number of chunks to partition our data in. For now we're going to keep it at 500
+- Latitude / Longitude columns to determine the location of each point
+
+```python showLineNumbers
+ais_daily_parquets = [f'file:///mnt/cache/AIS/{day[:-3]}/{day[-2:]}.parquet' for day in range_of_ais_dates]
+```
+
+```python showLineNumbers
+job = fused.ingest(
+    ais_daily_parquets,
+    's3://fused-users/fused/demo_user/AIS_2024_ingester/prod_2024_09',
+    target_num_chunks=500,
+    lonlat_cols=('LON','LAT')
+)
+```
+
+{/* TODO: Link to offline run remote */}
+To run this job we're going to use the "offline" `job.run_remote()` as we latency doesn't matter much (we can wait a few extra seconds) and we'd rather have a larger machine & a larger storage:
+
+```python showLineNumbers
+j.run_remote(
+    instance_type='r5.8xlarge', # We want why big beafy machine to do the partitioning in parallel, so large amounts of CPUs
+    disk_size_gb=999 # need a large amount of disk because this job will open each output parquet file to calculate centroid 
+)
+```
+
+Running this in a notebook gives us a link to logs so we can follow the progress of the job on the offline machine:
+
+import ImgRunRemoteLogs from '@site/docs/user-guide/examples/ingest_run_remote_job_logs.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgRunRemoteLogs} alt="Notebook run remote print" style={{width: 800}} />
+</div>
+
+Following the link shows us the live logs of what our job is doing:
+
+import ImgWorkbenchRunRemoteLogs from '@site/docs/user-guide/examples/workbench_run_remote_logs.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgWorkbenchRunRemoteLogs} alt="Workbench run remote logs" style={{width: 800}} />
+</div>
+
+We can once again check that our geo-partitioned images are available using [File Explorer](/workbench/file-explorer/). This time because our files are a lot faster to read we can even see the preview in the map view:
+
+<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="60%" width="80%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/dark-vessel-detection/geopartioned_AIS_file_explorer.mp4"/>
+
+
+Our AIS data is ready to be use for the entire month of September 2024. To narrow down our search, we now need to get a Sentinel 1 image. Since these images are taken every 6 to 12 days depending on the region, we'll find a Sentinel 1 image and then narrow our AIS data to just a few minutes before and after the acquisition time of the Sentinel 1 image
 
 ## 4. Retrieving Sentinel 1 images
 
+Sentinel 1 images are free & open, so thankfully for us others have already done the work of turning the archive into cloud native formats (and continue to maintain the ingestion as new data comes in).
+
+We're going to use the [Microsoft Planetary Computer Sentinel-1 Ground Range Detected](https://planetarycomputer.microsoft.com/dataset/sentinel-1-grd) dataset, because it offers:
+- Access through a [STAC Catalog](https://stacspec.org/en/) helping us only get the data we need and nothing else
+- Images are in [Cloud Optimized Geotiff](https://cogeo.org/) giving us tiled images that load even faster
+- [Examples of how to access the data](https://planetarycomputer.microsoft.com/dataset/sentinel-1-grd#Example-Notebook) so most of our work will be copy pasta
+
+:::tip
+    Most of the following section was written in Workbench's [UDF Builder](/workbench/udf-builder/) rather than in jupyter notebooks
+    
+    We'll have the code in code blocks, you can run these anywhere but as we're looking at images, it's helpful to have UDF Builders' [live map](/workbench/udf-builder/map/) updated as you write your code
+
+    {/* TODO: Should also add a link to the best practices for writing UDFs in Workbench once we have that section */}
+:::
+
+Let's start with a basic UDF just returning our area of interest:
+
+```python showLineNumbers
+@fused.udf
+def s1_udf(
+    bbox: fused.types.ViewportGDF,
+):
+
+    return bbox
+```
+
+This UDF simply returns our Map viewport as a `gpd.GeoDataFrame`, this is a good starting point for our UDF returning Sentinel 1 images
+
+While you can do this anywhere around the continental US (our AIS dataset covered shores around the US, so we want to limit oursleves there), if you want to follow along this is the area of interest we'll be using. You can overwrite this in the UDF directly:
+
+```python showLineNumbers
+@fused.udf
+def s1_udf(
+    bbox: fused.types.ViewportGDF,
+):
+    #highlight-next-line
+    bbox = gpd.GeoDataFrame({}, geometry=[shapely.box(-93.90425364,  29.61879782, -93.72767384,  29.7114987 )], crs=4326)
+    return bbox
+```
+
+Following the [Microsoft Planetary Computer examples for getting Sentinel-1](https://planetarycomputer.microsoft.com/dataset/sentinel-1-grd#Example-Notebook) we can add a few of the imports we need and call the STAC catalog:
+
+{/* TODO: Remove odc for now */}
+
+```python {5-6,10-14} showLineNumbers
+@fused.udf
+def s1_udf(
+    bbox: fused.types.ViewportGDF,
+):
+    import planetary_computer
+    import pystac_client
+
+    bbox = gpd.GeoDataFrame({}, geometry=[shapely.box(-93.90425364,  29.61879782, -93.72767384,  29.7114987 )], crs=4326)
+
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+        modifier=planetary_computer.sign_inplace,
+    )
+
+    return bbox
+```
+
+We already have a bounding box, but let's narrow down our search to the first week of September:
+
+```python {8,17-23} showLineNumbers
+@fused.udf
+def s1_udf(
+    bbox: fused.types.ViewportGDF,
+):
+    import planetary_computer
+    import pystac_client
+
+    time_of_interest="2024-09-03/2024-09-04"
+    bbox = gpd.GeoDataFrame({}, geometry=[shapely.box(-93.90425364,  29.61879782, -93.72767384,  29.7114987 )], crs=4326)
+
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+        modifier=planetary_computer.sign_inplace,
+    )
+
+    items = catalog.search(
+        collections=["sentinel-1-grd"],
+        bbox=bbox.total_bounds,
+        datetime=time_of_interest,
+        query=None,
+    ).item_collection()
+    print(f"{len(items=)}")
+
+    return bbox
+```
+
+This print statement should return something like:
+
+```bash
+Returned 15 Items
+```
+
+This will be the number of unique Sentinel 1 images covering our `bbox` and `time_of_interest` 
+
+We can now use the [`odc` package](https://odc-stac.readthedocs.io/en/latest/intro.html) to load the first image & we'll use the VV polarisation from Sentinel 1 (VH could also work, and it would be good to iterate on this to visually assess which one would work best. We're keeping it simple for now, but feel free to test out both!).
+
+We'll get an [`xarray.Dataset` object](https://docs.xarray.dev/en/stable/generated/xarray.Dataset.html) back that we can simply open & return as a `uint8` array:
+
+```python {5,10,27-33,35-36,38} showLineNumbers
+@fused.udf
+def s1_udf(
+    bbox: fused.types.ViewportGDF,
+):
+    import odc
+    import planetary_computer
+    import pystac_client
+
+    time_of_interest="2024-09-03/2024-09-04"
+    bands = ["vv"]
+    bbox = gpd.GeoDataFrame({}, geometry=[shapely.box(-93.90425364,  29.61879782, -93.72767384,  29.7114987 )], crs=4326)
+
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+        modifier=planetary_computer.sign_inplace,
+    )
+
+    items = catalog.search(
+        collections=["sentinel-1-grd"],
+        bbox=bbox.total_bounds,
+        datetime=time_of_interest,
+        query=None,
+    ).item_collection()
+    print(f"{len(items=)}")
+
+    ds = odc.stac.load(
+        items,
+        crs="EPSG:3857",
+        bands=bands,
+        resolution=resolution,
+        bbox=bbox.total_bounds,
+    ).astype(float)
+
+    da =  ds[bands[0]].isel(time=0)
+    image = da.values * 1.0
+
+    return image.astype('uint8')
+```
+
+Which gives us a Sentinel 1 image over our area of interest:
+
+import ImgS1Uint8 from '@site/docs/user-guide/examples/S1_da_return.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgS1Uint8} alt="Notebook run remote print" style={{width: 800}} />
+</div>
+
+We've simplified the process quite a bit here, you could also:
+- Instead of loading `image.astype('uint8')`, do a more [controlled calibration and conversation to dB](https://www.mdpi.com/2504-3900/18/1/11)
+- Select a more specific image rather than the 1st one in our stack 
+- Use a different band or band combination
+- Use [Radiometrically Terrain Corrected](https://planetarycomputer.microsoft.com/dataset/sentinel-1-rtc) images
+
+### 4.1 Cleaning our Sentinel 1 UDF
+
 _🚧 Under construction_
+
+{/* 
+TODO: Cleaning up to make this a simpler UDF to read & re-use
+- Moving functions to utils
+- Wrapping blocks into function + using @fused.cache
+- Adding if / else statements around resolution <10m and len(items) < 1 to catch errors
+ */}
 
 ## 5. Simple boat detection in Sentinel 1 radar images
 
