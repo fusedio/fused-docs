@@ -338,18 +338,181 @@ import ImgWorkbenchRunRemoteLogs from '@site/docs/user-guide/examples/workbench_
 
 We can once again check that our geo-partitioned images are available using [File Explorer](/workbench/file-explorer/). This time because our files are a lot faster to read we can even see the preview in the map view:
 
-<ReactPlayer playsinline={true} className="video__player" playing={true} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/dark-vessel-detection/geopartioned_AIS_file_explorer.mp4" width="100%" />
+<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="60%" width="80%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/dark-vessel-detection/geopartioned_AIS_file_explorer.mp4"/>
 
 
 Our AIS data is ready to be use for the entire month of September 2024. To narrow down our search, we now need to get a Sentinel 1 image. Since these images are taken every 6 to 12 days depending on the region, we'll find a Sentinel 1 image and then narrow our AIS data to just a few minutes before and after the acquisition time of the Sentinel 1 image
 
-{/* 
-TODO:
-- Show in Workbench / File Explorer that we can see all the data for the month
-*/}
 ## 4. Retrieving Sentinel 1 images
 
-_🚧 Under construction_
+Sentinel 1 images are free & open, so thankfully for us others have already done the work of turning the archive into cloud native formats (and continue to maintain the ingestion as new data comes in).
+
+We're going to use the [Microsoft Planetary Computer Sentinel-1 Ground Range Detected](https://planetarycomputer.microsoft.com/dataset/sentinel-1-grd) dataset, because it offers:
+- Access through a [STAC Catalog](https://stacspec.org/en/) helping us only get the data we need and nothing else
+- Images are in [Cloud Optimized Geotiff](https://cogeo.org/) giving us tiled images that load even faster
+- [Examples of how to access the data](https://planetarycomputer.microsoft.com/dataset/sentinel-1-grd#Example-Notebook) so most of our work will be copy pasta
+
+:::tip
+    Most of the following section was written in Workbench's [UDF Builder](/workbench/udf-builder/) rather than in jupyter notebooks
+    
+    We'll have the code in code blocks, you can run these anywhere but as we're looking at images, it's helpful to have UDF Builders' [live map](/workbench/udf-builder/map/) updated as you write your code
+
+    {/* TODO: Should also add a link to the best practices for writing UDFs in Workbench once we have that section */}
+:::
+
+Let's start with a basic UDF just returning our area of interest:
+
+```python showLineNumbers
+@fused.udf
+def s1_udf(
+    bbox: fused.types.ViewportGDF,
+):
+
+    return bbox
+```
+
+This UDF simply returns our Map viewport as a `gpd.GeoDataFrame`, this is a good starting point for our UDF returning Sentinel 1 images
+
+While you can do this anywhere around the continental US (our AIS dataset covered shores around the US, so we want to limit oursleves there), if you want to follow along this is the area of interest we'll be using. You can overwrite this in the UDF directly:
+
+```python showLineNumbers
+@fused.udf
+def s1_udf(
+    bbox: fused.types.ViewportGDF,
+):
+    #highlight-next-line
+    bbox = gpd.GeoDataFrame({}, geometry=[shapely.box(-93.90425364,  29.61879782, -93.72767384,  29.7114987 )], crs=4326)
+    return bbox
+```
+
+Following the [Microsoft Planetary Computer examples for getting Sentinel-1](https://planetarycomputer.microsoft.com/dataset/sentinel-1-grd#Example-Notebook) we can add a few of the imports we need and call the STAC catalog:
+
+{/* TODO: Remove odc for now */}
+
+```python {5-6,10-14} showLineNumbers
+@fused.udf
+def s1_udf(
+    bbox: fused.types.ViewportGDF,
+):
+    import planetary_computer
+    import pystac_client
+
+    bbox = gpd.GeoDataFrame({}, geometry=[shapely.box(-93.90425364,  29.61879782, -93.72767384,  29.7114987 )], crs=4326)
+
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+        modifier=planetary_computer.sign_inplace,
+    )
+
+    return bbox
+```
+
+We already have a bounding box, but let's narrow down our search to the first week of September:
+
+```python {8,17-23} showLineNumbers
+@fused.udf
+def s1_udf(
+    bbox: fused.types.ViewportGDF,
+):
+    import planetary_computer
+    import pystac_client
+
+    time_of_interest="2024-09-03/2024-09-04"
+    bbox = gpd.GeoDataFrame({}, geometry=[shapely.box(-93.90425364,  29.61879782, -93.72767384,  29.7114987 )], crs=4326)
+
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+        modifier=planetary_computer.sign_inplace,
+    )
+
+    items = catalog.search(
+        collections=["sentinel-1-grd"],
+        bbox=bbox.total_bounds,
+        datetime=time_of_interest,
+        query=None,
+    ).item_collection()
+    print(f"{len(items=)}")
+
+    return bbox
+```
+
+This print statement should return something like:
+
+```bash
+Returned 15 Items
+```
+
+This will be the number of unique Sentinel 1 images covering our `bbox` and `time_of_interest` 
+
+We can now use the [`odc` package](https://odc-stac.readthedocs.io/en/latest/intro.html) to load the first image & we'll use the VV polarisation from Sentinel 1 (VH could also work, and it would be good to iterate on this to visually assess which one would work best. We're keeping it simple for now, but feel free to test out both!).
+
+We'll get an [`xarray.Dataset` object](https://docs.xarray.dev/en/stable/generated/xarray.Dataset.html) back that we can simply open & return as a `uint8` array:
+
+```python {5,10,27-33,35-36,38} showLineNumbers
+@fused.udf
+def s1_udf(
+    bbox: fused.types.ViewportGDF,
+):
+    import odc
+    import planetary_computer
+    import pystac_client
+
+    time_of_interest="2024-09-03/2024-09-04"
+    bands = ["vv"]
+    bbox = gpd.GeoDataFrame({}, geometry=[shapely.box(-93.90425364,  29.61879782, -93.72767384,  29.7114987 )], crs=4326)
+
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+        modifier=planetary_computer.sign_inplace,
+    )
+
+    items = catalog.search(
+        collections=["sentinel-1-grd"],
+        bbox=bbox.total_bounds,
+        datetime=time_of_interest,
+        query=None,
+    ).item_collection()
+    print(f"{len(items=)}")
+
+    ds = odc.stac.load(
+        items,
+        crs="EPSG:3857",
+        bands=bands,
+        resolution=resolution,
+        bbox=bbox.total_bounds,
+    ).astype(float)
+
+    da =  ds[bands[0]].isel(time=0)
+    image = da.values * 1.0
+
+    return image.astype('uint8')
+```
+
+Which gives us a Sentinel 1 image over our area of interest:
+
+import ImgS1Uint8 from '@site/docs/user-guide/examples/S1_da_return.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgS1Uint8} alt="Notebook run remote print" style={{width: 800}} />
+</div>
+
+We've simplified the process quite a bit here, you could also:
+- Instead of loading `image.astype('uint8')`, do a more [controlled calibration and conversation to dB](https://www.mdpi.com/2504-3900/18/1/11)
+- Select a more specific image rather than the 1st one in our stack 
+- Use a different band or band combination
+- Use [Radiometrically Terrain Corrected](https://planetarycomputer.microsoft.com/dataset/sentinel-1-rtc) images
+
+### 4.1 Cleaning our Sentinel 1 UDF
+
+{/* 
+TODO: Cleaning up to make this a simpler UDF to read & re-use
+- Moving functions to utils
+- Wrapping blocks into function + using @fused.cache
+- Adding if / else statements around resolution <10m and len(items) < 1 to catch errors
+ */}
 
 ## 5. Simple boat detection in Sentinel 1 radar images
 
