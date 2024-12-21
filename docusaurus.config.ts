@@ -14,8 +14,8 @@ const config: Config = {
   // // For GitHub pages deployment, it is often '/<projectName>/'
   // // baseUrl: '/fused-docs/', // needed for GitHub pages
   // baseUrl: "/",
-  url: process.env.DEPLOYMENT_URL || 'https://docs.fused.io',
-  baseUrl: process.env.BASE_URL || '/',
+  url: process.env.DEPLOYMENT_URL || "https://docs.fused.io",
+  baseUrl: process.env.BASE_URL || "/",
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
@@ -166,6 +166,10 @@ const config: Config = {
             {
               label: "GitHub",
               href: "https://github.com/fusedio/udfs",
+            },
+            {
+              label: "YouTube",
+              href: "https://www.youtube.com/@FusedIO",
             },
           ],
         },
