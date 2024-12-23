@@ -661,7 +661,155 @@ We can make this even simpler by moving the `get_data` function under [the `Modu
 
 ## 5. Simple boat detection in Sentinel 1 radar images
 
-_🚧 Under construction_
+Now that we have a Sentinel 1 image over a Area of Interest and time range, we can write a simple algorithm to return bounding boxes of the boats in the image. We're going to keep this very basic as we're optimizing for:
+- **Speed of execution**: We want our boat detection algorithm to run in a few seconds at most while we're iterating. Especially at first when we're developing our pipeline, we want a fast feedback loop
+- **Simplicity**: We're focused on demo-ing how to build an end-to-end pipeline with Fused in this example, not making the most thorough analysis possible. This should be a baseline for you to build upon!
+
+Radar images over calm water tend to look black (as all the radar signal is reflect _away_ from the sensor), while (mostly metallic) boats reflect back to the sensor appearing like bright spots in our image. A simple "boat detecting" algorithm is thus to do a 2D convolution and threshold the output to a certain pixel value:
+
+```python {17,21-41} showLineNumbers
+# In the UDF editor
+@fused.udf
+def udf(
+    bbox: fused.types.ViewportGDF,
+    bands=["vv"],
+    resolution=10,
+    time_of_interest="2024-09-03/2024-09-10",
+):
+    import pandas as pd
+    import geopandas as gpd
+    import numpy as np
+    from local_utils import get_data
+
+    da = get_data(bbox, time_of_interest, resolution, bands)
+    image = da.values * 1.0
+
+    convoled_image = quick_convolution(np.array(image), kernel_size=2)
+
+    return convoled_image.astype('uint8')
+
+def quick_convolution(input_array, kernel_size):
+    import numpy as np
+    shifted_images = []
+    
+    # Shifting the image in all combinations of directions (x, y) with padding
+    for x in [-kernel_size, 0, kernel_size]:  # Shift left (kernel_size), no shift (0), right (kernel_size)
+        for y in [-kernel_size, 0, kernel_size]:  # Shift up (kernel_size), no shift (0), down (kernel_size)
+            shifted = pad_and_shift_image(input_array, x, y, pad_value=0, kernel_size=kernel_size)
+            shifted_images.append(shifted)
+
+    stacked_image = np.stack(shifted_images)
+    return stacked_image.std(axis=0)
+
+def pad_and_shift_image(img, x_shift, y_shift, pad_value=0, kernel_size: int = 3):
+    import numpy as np
+    """Pad and shift an image by x_shift and y_shift with specified pad_value."""
+
+    padded_img = np.pad(img, pad_width=kernel_size, mode='constant', constant_values=pad_value)
+    shifted_img = np.roll(np.roll(padded_img, y_shift, axis=0), x_shift, axis=1)
+    
+    return shifted_img[kernel_size:-kernel_size, kernel_size:-kernel_size]
+
+```
+
+This returns a filtered image highlighting the brightest spots and reducing the natural speckle of the radar image
+
+import ImgConvolvedS1 from '@site/docs/user-guide/examples/convoled_s1_image.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgConvolvedS1} alt="Workbench run remote logs" style={{width: 800}} />
+</div>
+
+This is now relatively simple to vectorise (turn into a vector object, from image to polygons):
+
+```python {18-34,61-81} showLineNumbers
+@fused.udf
+def udf(
+    bbox: fused.types.ViewportGDF,
+    bands=["vv"],
+    resolution=10,
+    time_of_interest="2024-09-03/2024-09-10",
+):
+    import pandas as pd
+    import geopandas as gpd
+    import numpy as np
+    from local_utils import get_data
+
+    da = get_data(bbox, time_of_interest, resolution, bands)
+    image = da.values * 1.0
+
+    convoled_image = quick_convolution(np.array(image), kernel_size=2)
+    
+    gdf_predictions = vectorise_raster(
+        raster=convoled_image.astype("uint8"),
+        bbox=bbox, 
+        threshold=200 # Taking a high threshold in 0-255 range to keep only very bright spots
+    )
+
+    # Merging close polygons together into a single polygon so 1 polygon <-> 1 boat
+    buffer_distance = 0.0001  # eyeballed a few meters in EPSG:4326 (degrees are annoying to work with ¯\_(ツ)_/¯)
+    merged = gdf_predictions.geometry.buffer(buffer_distance).unary_union.buffer(
+        -buffer_distance/2
+    )
+    merged_gdf = gpd.GeoDataFrame(geometry=[merged], crs=bbox.crs).explode()
+
+    return merged_gdf
+
+
+def quick_convolution(input_array, kernel_size):
+    import numpy as np
+    shifted_images = []
+    
+    # Shifting the image in all combinations of directions (x, y) with padding
+    for x in [-kernel_size, 0, kernel_size]:  # Shift left (kernel_size), no shift (0), right (kernel_size)
+        for y in [-kernel_size, 0, kernel_size]:  # Shift up (kernel_size), no shift (0), down (kernel_size)
+            shifted = pad_and_shift_image(input_array, x, y, pad_value=0, kernel_size=kernel_size)
+            shifted_images.append(shifted)
+
+    stacked_image = np.stack(shifted_images)
+    return stacked_image.std(axis=0)
+
+
+def pad_and_shift_image(img, x_shift, y_shift, pad_value=0, kernel_size: int = 3):
+    import numpy as np
+    """Pad and shift an image by x_shift and y_shift with specified pad_value."""
+
+    padded_img = np.pad(img, pad_width=kernel_size, mode='constant', constant_values=pad_value)
+    shifted_img = np.roll(np.roll(padded_img, y_shift, axis=0), x_shift, axis=1)
+    
+    return shifted_img[kernel_size:-kernel_size, kernel_size:-kernel_size]
+
+
+@fused.cache
+def vectorise_raster(raster, bbox, threshold: float = 0.5):
+    from rasterio import features
+    import rasterio
+    import geopandas as gpd
+    import shapely
+    import numpy as np
+
+    transform = rasterio.transform.from_bounds(*bbox.total_bounds, raster.shape[1], raster.shape[0])
+    
+    shapes = features.shapes(
+        source=raster.astype(np.uint8),
+        mask = (raster > threshold).astype('uint8'),
+        transform=transform
+    )
+    
+    gdf = gpd.GeoDataFrame(
+        geometry=[shapely.geometry.shape(shape) for shape, shape_value in shapes],
+        crs=bbox.crs
+    )
+    return gdf
+```
+
+And that's how we have turned our Sentinel 1 image into a vector `gpd.GeoDataFrame` of bright objects:
+
+import ImgVectorBoats from '@site/docs/user-guide/examples/vector_boats.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgVectorBoats} alt="Workbench run remote logs" style={{width: 800}} />
+</div>
 
 ## 6. Retrieving AIS data for our time of Interest
 
