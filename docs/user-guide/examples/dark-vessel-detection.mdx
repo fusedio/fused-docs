@@ -811,9 +811,47 @@ import ImgVectorBoats from '@site/docs/user-guide/examples/vector_boats.png';
 <img src={ImgVectorBoats} alt="Workbench run remote logs" style={{width: 800}} />
 </div>
 
+You can then move all those functions into the 'Utils Module' to have a simpler, cleaner UDF:
+
+```python {11,} showLineNumbers
+@fused.udf
+def udf(
+    bbox: fused.types.ViewportGDF,
+    bands=["vv"],
+    resolution=10,
+    time_of_interest="2024-09-03/2024-09-10",
+):
+    import pandas as pd
+    import geopandas as gpd
+    import numpy as np
+    from local_utils import get_data, quick_convolution, pad_and_shift_image, vectorise_raster
+
+    da = get_data(bbox, time_of_interest, resolution, bands)
+    image = da.values * 1.0
+
+    convoled_image = quick_convolution(np.array(image), kernel_size=2)
+    
+    gdf_predictions = vectorise_raster(
+        raster=convoled_image.astype("uint8"),
+        bbox=bbox, 
+        threshold=200 # Using higher threshold to make sure only bright spots are taken
+    )
+
+    # Merging close polygons together
+    buffer_distance = 0.0001  # eyeballed value in EPSG:4326 so need to use degrees. I don't like degrees
+    merged = gdf_predictions.geometry.buffer(buffer_distance).unary_union.buffer(
+        -buffer_distance/2
+    )
+    merged_gdf = gpd.GeoDataFrame(geometry=[merged], crs=bbox.crs).explode()
+
+    return merged_gdf
+```
+
 ## 6. Retrieving AIS data for our time of Interest
 
-_🚧 Under construction_
+To get our AIS data, we can now 
+
+{/* TODO: Add retrieval of date into merged_gdf, pass that to AIS UDF and run in notebook */}
 
 ## 7. Merging the 2 datasets together
 
