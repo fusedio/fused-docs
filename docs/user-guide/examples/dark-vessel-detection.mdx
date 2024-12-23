@@ -849,13 +849,235 @@ def udf(
 
 ## 6. Retrieving AIS data for our time of Interest
 
-To get our AIS data, we can now 
+To get our AIS data, we now need to retrieve the exact moment our Sentinel 1 images were acquired. We can use this information to only keep AIS points within just a few minutes around that time.
 
-{/* TODO: Add retrieval of date into merged_gdf, pass that to AIS UDF and run in notebook */}
+```python {30-31} showLineNumbers@fused.udf
+def udf(
+    bbox: fused.types.ViewportGDF,
+    bands=["vv"],
+    resolution=10,
+    time_of_interest="2024-09-03/2024-09-10",
+):
+    import pandas as pd
+    import geopandas as gpd
+    import numpy as np
+    from local_utils import get_data, quick_convolution, pad_and_shift_image, vectorise_raster
+
+    da = get_data(bbox, time_of_interest, resolution, bands)
+    image = da.values * 1.0
+
+    convoled_image = quick_convolution(np.array(image), kernel_size=2)
+    
+    gdf_predictions = vectorise_raster(
+        raster=convoled_image.astype("uint8"),
+        bbox=bbox, 
+        threshold=200 # Using higher threshold to make sure only bright spots are taken
+    )
+
+    # Merging close polygons together
+    buffer_distance = 0.0001  # eyeballed value in EPSG:4326 so need to use degrees. I don't like degrees
+    merged = gdf_predictions.geometry.buffer(buffer_distance).unary_union.buffer(
+        -buffer_distance/2
+    )
+    merged_gdf = gpd.GeoDataFrame(geometry=[merged], crs=bbox.crs).explode()
+
+    # Keeping metadata close by for merging with AIS data
+    merged_gdf['S1_acquisition_time'] = da['time'].values
+
+    return merged_gdf
+```
+
+`merged_gdf` now returns a column called `S1_acquisition_time` with the time the Sentinel 1 image was taken. 
+
+If we call this UDF with a [token](/core-concepts/run-udfs/run-single-udfs/#token) we can call it from anywhere, from a jupyter notebook or from another UDF. Let's create a new UDF in Workbench:
+
+```python showLineNumbers
+# This is a new UDF
+@fused.udf
+def udf(
+    bbox: fused.types.ViewportGDF=None,
+    time_of_interest="2024-09-03/2024-09-10",
+):
+    import fused
+
+    @fused.cache()
+    def get_s1_detection(
+        time_of_interest=time_of_interest, 
+        bbox=bbox):
+        
+        return fused.run(
+            "fsh_673giUH9R6KqWFCOQtRfb3",
+            time_of_interest=time_of_interest,
+            bbox=bbox,
+        )
+
+    s1_detections = get_s1_detection()
+    print(f"Found {s1_detections.shape[0]} Unique Sentinel 1 detections")
+
+    # We want to keep AIS data only right around the time the S1 image was acquired
+    s1_acquisition_date = s1_detections['S1_acquisition_time'].values[0]
+    s1_acquisition_month = str(s1_acquisition_date.astype('datetime64[M]'))
+    s1_acquisition_month_day_hour_min = s1_acquisition_date.astype('datetime64[s]').astype(str).replace('T', ' ')
+    print(f"Sentinel 1 image was acquired at : {s1_acquisition_month_day_hour_min}")
+        
+    return s1_detections
+```
+
+This prints out:
+
+```bash
+Found 16 Unique Sentinel 1 detections
+Sentinel 1 image was acquired at : 2024-09-04 00:19:09
+```
+
+We can now create another UDF that will take this `s1_acquisition_month_day_hour_min` date + a bounding box in input and returns all the AIS points in that time + area.
+
+We're going to leverage code from the community for this part, namely reading the AIS data from a geo-partitioned GeoParquet. Fused allows us to easily re-use any code we want and freeze it to a specific commit so it doesn't break our pipelines ([read more about this here](/core-concepts/run-udfs/run-single-udfs/#git-commit-hash-recommended-for-most-stable-use-cases))
+
+We can use [this bit of code called `tile_to_table`](https://github.com/fusedio/udfs/blob/f8f0c0f5f5565c4f8be599c9fcb43368352f145f/public/common/utils.py#L163) which will either load the AIS data or the bounding box depending on our zoom level to keep our UDF fast & responsive. 
+
+:::note
+    You could write a GeoParquet reader from scratch or call a UDF that you have that already does this, you don't have to use this option. But we want to show you how you can re-use bits of code from others here.
+:::
+
+```python showLineNumbers
+@fused.udf 
+def udf(
+    bbox: fused.types.TileGDF = None,
+    s1_acquisition_month_day_hour_min = '2024-09-04T00:19:09.175874',
+    time_delta_in_hours: float = 0.1, # by default 6min (60min * 0.1)
+    min_zoom_to_load_data = 14,
+    ais_table_path = "s3://fused-users/fused/demo_user/AIS_2024_ingester/prod_2024_09", # This is the location where we had ingested our geo-partitioned AIS data
+):
+    """Reading AIS data from Fused partitioned AIS data from NOAA (data only available in US)"""
+    import pandas as pd
+    from datetime import datetime, timedelta
+    local_utils = fused.load(
+        "https://github.com/fusedio/udfs/tree/f8f0c0f/public/common/"
+    ).utils
+
+    sentinel1_time = pd.to_datetime(s1_acquisition_month_day_hour_min)
+    time_delta_in_hours = timedelta(hours=time_delta_in_hours)
+    # This is based on our own ingestion process, we partitioned the data per month
+    # This could have been done any other way, so this reader does depend on how we created the ingestion in the first place
+
+    month_date = sentinel1_time.strftime('%Y_%m')
+    monthly_ais_table = f"{ais_table_path}prod_{month_date}/"
+    print(f"{monthly_ais_table=}")
+    if type(bbox) == fused.types.TileGDF:
+        # This is only for workbench, doesn't work on fused.run() in notebook 
+        print(f"{bbox.z=}")
+
+    @fused.cache
+    def getting_ais_from_s3(bbox, monthly_table):
+        return local_utils.table_to_tile(
+            bbox,
+            table=monthly_ais_table, 
+            use_columns=None, 
+            min_zoom=min_zoom_to_load_data # Loading AIS takes a little while, so keeping it to only a very close range
+        )
+
+    ais_df = getting_ais_from_s3(bbox, monthly_ais_table)
+
+    if ais_df.shape[0] == 0:
+        print("No AIS data within this bbox & timeframe. Change bbox or timeframe")
+        return ais_df
+    
+    if type(bbox) == fused.types.TileGDF:
+        if bbox.z > min_zoom_to_load_data:
+            print(f"Zoom is {bbox.z=} | Only showing bbox")
+            return ais_df
+
+    print(f"{ais_df['BaseDateTime'].iloc[0]=}")
+    ais_df['datetime'] = pd.to_datetime(ais_df['BaseDateTime'])
+
+    mask = (ais_df['datetime'] >= sentinel1_time - time_delta_in_hours) & (ais_df['datetime'] <= sentinel1_time + time_delta_in_hours)
+    filtered_ais_df = ais_df[mask]
+    print(f'{filtered_ais_df.shape=}')
+    return filtered_ais_df
+```
+
+In workbench UDF builder we can now see the output of both of our UDF:
+
+import ImgAISandS1 from '@site/docs/user-guide/examples/AIS_and_Sentinel1.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgAISandS1} alt="Notebook run remote print" style={{width: 800}} />
+</div>
+
+We can now see that 1 of these boats doesn't have an associated AIS point (in red)
+
+:::tip
+    You can change the styling of your layers in [the Visualise tab](/workbench/udf-builder/styling/) to make them look like the screenshot above
+:::
+
+Now all we need to do is merge these 2 datasets together and keep all the boats that don't match an AIS point
 
 ## 7. Merging the 2 datasets together
 
-_🚧 Under construction_
+We can expand the UDF we had started in [section 6.](/user-guide/examples/dark-vessel-detection/#6-retrieving-ais-data-for-our-time-of-interest) to call our AIS UDF by passing a bounding box + `s1_acquisition_month_day_hour_min`.
+
+We'll get the AIS data and join it with the Sentinel 1 detected boats by using [geopandas `sjoin_nearest`](https://geopandas.org/en/stable/docs/reference/api/geopandas.sjoin_nearest.html) to get the nearest distance of each boat to an AIS point.
+
+Any point with the cloest AIS point > 100m from the Sentinel 1 boat will be considered a potentiel "dark vessel"
+
+```python {5,29-53} showLineNumbers
+@fused.udf
+def udf(
+    bbox: fused.types.ViewportGDF=None,
+    time_of_interest="2024-09-03/2024-09-10",
+    ais_search_distance_in_meters=100,
+):
+    import fused
+
+    @fused.cache()
+    def get_s1_detection(
+        time_of_interest=time_of_interest, 
+        bbox=bbox):
+        
+        return fused.run(
+            "fsh_673giUH9R6KqWFCOQtRfb3",
+            time_of_interest=time_of_interest,
+            bbox=bbox,
+        )
+
+    s1_detections = get_s1_detection()
+    print(f"Found {s1_detections.shape[0]} Unique Sentinel 1 detections")
+
+    # We want to keep AIS data only right around the time the S1 image was acquired
+    s1_acquisition_date = s1_detections['S1_acquisition_time'].values[0]
+    s1_acquisition_month = str(s1_acquisition_date.astype('datetime64[M]'))
+    s1_acquisition_month_day_hour_min = s1_acquisition_date.astype('datetime64[s]').astype(str).replace('T', ' ')
+    print(f"Sentinel 1 image was acquired at : {s1_acquisition_month_day_hour_min}")
+
+    @fused.cache()
+    def get_ais_from_s1_date(s1_acquisition_month_day_hour_min=s1_acquisition_month_day_hour_min, bbox=bbox):
+        return fused.run("fsh_FI1FTq2CVK9sEiX0Uqakv", s1_acquisition_month_day_hour_min=s1_acquisition_month_day_hour_min, bbox=bbox)
+
+    ais_gdf = get_ais_from_s1_date()
+    
+    # Making sure both have the same CRS
+    s1_detections.set_crs(ais_gdf.crs, inplace=True)
+
+    # Buffering AIS points to leverage spatial join
+    ais_gdf['geometry'] = ais_gdf.geometry.buffer(0.005)
+
+    joined = s1_detections.to_crs(s1_detections.estimate_utm_crs()).sjoin_nearest(
+        ais_gdf.to_crs(s1_detections.estimate_utm_crs()), 
+        how="inner", # Using left, i.e. s1 as keys
+        distance_col='distance_in_meters',
+    )
+
+    # Dark vessels will be unique S1 points that don't have an AIS point within 100m
+    potential_dark_vessels = joined[joined['distance_in_meters'] > ais_search_distance_in_meters]
+    print(f"Found {potential_dark_vessels.shape[0]} potential dark vessels")
+
+    # back to EPSG:4326
+    potential_dark_vessels.to_crs(s1_detections.crs, inplace=True)
+    return potential_dark_vessels
+```
+
+
 
 ## Limitations & Next steps
 
