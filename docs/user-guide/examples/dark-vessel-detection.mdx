@@ -507,14 +507,157 @@ We've simplified the process quite a bit here, you could also:
 
 ### 4.1 Cleaning our Sentinel 1 UDF
 
-_🚧 Under construction_
+Before adding any new functionality, we're going to clean our UDF up a bit more:
+- Move some of the functionality into separate functions 
+- Adding common error catching (so our UDF doesn't fail if no Sentinel 1 images are found within our AOI + date range if it's too narrow)
+- Add a [cache decorator](/core-concepts/content-management/cache/) to code functions that retrieve data to speed up the UDF & reduce costs.
 
-{/* 
-TODO: Cleaning up to make this a simpler UDF to read & re-use
-- Moving functions to utils
-- Wrapping blocks into function + using @fused.cache
-- Adding if / else statements around resolution <10m and len(items) < 1 to catch errors
- */}
+This will allow us to keep our UDF more readable (by abstracting code away) and more responsive. Cached functions store their result to disk, which makes a common query a lot more responsive and less expensive by using less compute
+
+Here's our cleaned up UDF:
+
+```python {11,16,26-29,43-46} showLineNumbers
+@fused.udf
+def udf(
+    bbox: fused.types.ViewportGDF,
+    bands=["vv"],
+    resolution=10,
+    time_of_interest="2024-09-03/2024-09-10",
+):
+    import pandas as pd
+    import geopandas as gpd
+
+    da = get_data(bbox, time_of_interest, resolution, bands)
+    
+    image = da.values * 1.0
+    return image.astype('uint8')
+
+@fused.cache
+def get_data(bbox, time_of_interest, resolution, bands, data_name="sentinel-1-grd"):
+    """
+    Getting Sentinel Data from MPC 
+    Resolution is defined in meters as we're using EPSG:3857 
+    """
+    import odc.stac
+    import planetary_computer
+    import pystac_client
+
+    if resolution < 10:
+        print("Resolution shouldn't be lower than Sentinel 1 or 2 native resolution. Bumping to 10m")
+        resolution = 10
+        print(f"{resolution=}")
+
+    catalog = pystac_client.Client.open(
+            "https://planetarycomputer.microsoft.com/api/stac/v1",
+            # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+            modifier=planetary_computer.sign_inplace,
+        )
+    items = catalog.search(
+        collections=[data_name],
+        bbox=bbox.total_bounds,
+        datetime=time_of_interest,
+        query=None,
+    ).item_collection()
+
+    if len(items) < 1:
+        print(f'No items found. Please either zoom out or move to a different area')
+    else:
+        print(f"Returned {len(items)} Items")
+
+        def odc_load(bbox,resolution, time_of_interest):
+            ds = odc.stac.load(
+                    items,
+                    crs="EPSG:3857",
+                    bands=bands,
+                    resolution=resolution,
+                    bbox=bbox.total_bounds,
+                ).astype(float)
+            return ds
+            
+        ds=odc_load(bbox,resolution, time_of_interest)
+        da = ds[bands[0]].isel(time=0)
+
+        return da
+```
+
+We can make this even simpler by moving the `get_data` function under [the `Module` tab in the Workbench UDF Editor](/workbench/udf-builder/code-editor/#module):
+
+<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/dark-vessel-detection/using_utils_module.mp4" width="100%" />
+
+<details>
+  <summary>Expand to see code split between Code Editor & Utils Module</summary>
+
+    In code editor:
+
+    ```python {10} showLineNumbers
+    @fused.udf
+    def udf(
+        bbox: fused.types.ViewportGDF,
+        bands=["vv"],
+        resolution=10,
+        time_of_interest="2024-09-03/2024-09-10",
+    ):
+        import pandas as pd
+        import geopandas as gpd
+        from local_utils import get_data
+
+        da = get_data(bbox, time_of_interest, resolution, bands)
+        image = da.values * 1.0
+        
+        return image.astype('uint8')
+    ```
+
+    In Utils Module (and renaming the "Module Name" to `local_utils`):
+    ```python showLineNumbers
+    @fused.cache
+    def get_data(bbox, time_of_interest, resolution, bands, data_name="sentinel-1-grd"):
+        """
+        Getting Sentinel Data from MPC 
+        Resolution is defined in meters as we're using EPSG:3857 
+        """
+        import odc.stac
+        import planetary_computer
+        import pystac_client
+
+        if resolution < 10:
+            print("Resolution shouldn't be lower than Sentinel 1 or 2 native resolution. Bumping to 10m")
+            resolution = 10
+            print(f"{resolution=}")
+
+        catalog = pystac_client.Client.open(
+                "https://planetarycomputer.microsoft.com/api/stac/v1",
+                # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+                modifier=planetary_computer.sign_inplace,
+            )
+        items = catalog.search(
+            collections=[data_name],
+            bbox=bbox.total_bounds,
+            datetime=time_of_interest,
+            query=None,
+        ).item_collection()
+
+        if len(items) < 1:
+            print(f'No items found. Please either zoom out or move to a different area')
+        else:
+            print(f"Returned {len(items)} Items")
+
+            def odc_load(bbox,resolution, time_of_interest):
+                ds = odc.stac.load(
+                        items,
+                        crs="EPSG:3857",
+                        bands=bands,
+                        resolution=resolution,
+                        bbox=bbox.total_bounds,
+                    ).astype(float)
+                return ds
+                
+            ds=odc_load(bbox,resolution, time_of_interest)
+            da =  ds[bands[0]].isel(time=0)
+
+            return da
+    ```
+
+</details>
 
 ## 5. Simple boat detection in Sentinel 1 radar images
 
