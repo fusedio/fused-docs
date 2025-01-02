@@ -5,7 +5,7 @@
 
 ## 1. Generate a signed URL for a UDF
 
-First create a UDF and generate an [HTTP endpoint](/core-concepts/run/#http-requests).
+First create a UDF and generate an [HTTP endpoint](/core-concepts/run-udfs/run-single-udfs/#http-requests).
 
 ## 2. Install and load `httpfs`
 
