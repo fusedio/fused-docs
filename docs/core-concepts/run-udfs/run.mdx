@@ -1,17 +1,25 @@
 ---
-id: run-single-udfs
-title: Single UDF
+id: run-small-udfs
+title: Small UDF run
 tags: [write, endpoints, api, http, file, tile]
 sidebar_position: 1
 toc_min_heading_level: 2
 toc_max_heading_level: 4
 ---
 
-Fused UDF functions really shine once you start calling them from anywhere. You can do so in 2 main ways:
+Fused UDF functions really shine once you start calling them from anywhere. You can call small jobs in 2 main ways:
 1.  `fused.run()` in Python. All you need is the [`fused` Python](/python-sdk/) package installed
     - Useful when wanting to run UDF as part of another pipeline, inside another UDF or anywhere in Python / code.
 2.  [**HTTP call**](/core-concepts/run-udfs/run-single-udfs/#http-requests) from *anywhere*
     - Useful when you want to call a UDF outside of Python. For example receiving a [dataframe into Google Sheets](/user-guide/out/googlesheets/) or plotting points and images in a [Felt map](/user-guide/out/felt/)
+
+### Defining "Small" job
+
+"Small" jobs are defined as any job being:
+- Less than 120s to execute
+- Using less than a few Gb of RAM to run
+
+These jobs run in "real-time" with no start-up time so are quick to run, but with limited resources and time-out if taking too long. 
 
 ## `fused.run()`
 
@@ -212,6 +220,53 @@ Need to write how to pass arguments
 */}
 
 🚧 Under construction
+
+## Running multiple small `fused.run()` jobs in parallel
+
+Sometimes you want to run a UDF over a list of inputs (for example running a [UDF that unzips a file over a list of files](/user-guide/examples/dark-vessel-detection/#33---run-this-udf-over-a-year-of-ais-data)). If each run itself is quite small, than you can run all a batch of UDFs over a list of inputs.
+
+Let's use a simple UDF to demonstrate:
+
+```python showLineNumbers
+@fused.udf
+def udf(val):
+    import pandas as pd
+    return pd.DataFrame({'val':[val]})
+```
+
+#### [Experimental] Using `run_pool` and `PoolRunner`
+
+:::note
+    This is not a feature directly implemented in `fused`. Instead we're going to use a code from the `fused.public.common` utils module, that might change over time
+    
+    You can learn more about import utils from UDFs [here](/core-concepts/write/#import-utils-from-other-udfs)
+:::
+
+If you want to quickly run a UDF a few times over a dataset or a list of inputs, you can use `PoolRunner`. Using a `lambda` function you can map the function to pass to `PoolRunner`:
+
+```python showLineNumbers
+runner = fused.utils.common.PoolRunner(lambda val: fused.run(udf, val=val), range(10))
+runner.get_result_all()
+```
+
+In a notebook `runner.get_result_all()` prints the progress status over time until the job is done:
+
+import ImgPoolRunner from '@site/docs/core-concepts/run-udfs/poolrunner-get_results_all.png';
+
+<div style={{textAlign: 'center'}}>
+    <img src={ImgPoolRunner} alt="Pool Runner" style={{width: 600}} />
+</div>
+
+#### Getting "real-time" results
+
+You can then get all your results by concatinating them:
+
+```python showLineNumbers
+# In this example udf() returns a Pandas DataFrame so `.get_concat()` 
+result = runner.get_concat()
+```
+
+with `type(result)` being a `pandas.core.frame.DataFrame`
 
 ## HTTP requests
 
