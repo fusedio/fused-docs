@@ -1,0 +1,107 @@
+---
+slug: how-pilot-fiber-creates-internal-tools-to-support-telecom-operations
+title: "How Pilot Fiber creates internal tools to support telecom operations"
+authors: [kyle,nelina]
+tags: [introduction]
+unlisted: true
+image: https://fused-magic.s3.us-west-2.amazonaws.com/blog-assets/pittman_social.png
+hide_table_of_contents: false
+keywords: [introduction]
+---
+
+[Pilot Fiber](https://www.pilotfiber.com/) is a commercial [Internet Service Provider](https://en.wikipedia.org/wiki/Internet_service_provider) primarily serving customers in New York City. Our primary value proposition in competing with national-scale ISPs is our commitment to customer service– we prioritize when incidents interrupt your service and will immediately jump into action to address the cause.
+
+
+
+{/* truncate */}
+
+### The Problem
+
+
+
+Almost all fiber optic cables in Manhattan run through a shared manhole-and-duct system. As such, road construction or work by other providers in a manhole has the potential to damage the equipment of multiple providers. Because of this, Pilot uses an active fiber monitoring system across our network: devices located in our data centers are constantly shooting light down the fibers in our network and looking for any anomalies by comparing with a reference a “snapshot” created when that fiber was initially installed to a building.
+
+
+When an anomaly is registered, it immediately fires an alert giving a fiber route and distance to the potential problem (i.e. “There is a light loss on the fiber running to 1234 5th Ave at a distance of 2.351 kilometers from the data center.”). When this happens, our engineering and support teams analyze the data within minutes to determine the exact location of the issue and, if necessary, get crews headed to the site to begin repairs.
+
+
+## The Process
+
+Historically, this process would require the attention of an Outside Plant engineer with access to specialized software and network knowledge, regardless of the time of day or day of the week. This process had known friction and a single point of failure. Today we use  Fused to make this information accessible to more support team members and automate the creation of the reports field crews need to address the issue when they arrive on site.
+
+
+Using Fused as a back-end glue layer, we built a web app that allows a less technical user to select a route and distance and map where the system says the fault occurred, view nearby network infrastructure, and automatically generate the necessary field reports based on that nearby infrastructure.
+
+
+The workflow requires a series of calls to UDFs that act as intermediaries to a Postgres/PostGIS database, which in turn is sourcing data from other internal sources. This structure allows us to easily keep the business logic organized at the UDF layer while limiting the scope of data access and security via Postgres and internal processes maintaining the sync.
+
+
+The basic process is seen below:
+
+import Image1 from '/blog/2025-01-14-kyle/kyle1.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={Image1} alt="File" style={{}} />
+</div>
+
+_Workflow diagram._
+
+
+When the user selects a route and a distance to process, two separate processes are initiated. One retrieves the selected route to load onto the Mapbox-based map within the app, while the second kicks off a processing chain. This chain is utilizing UDFs that both assist in isolating the location of the fault and relevant nearby infrastructure as well as adding elements to the map display to assist the user in visualizing what may be occurring.
+
+UDF - returning the route itself that will show up on the map.
+UDF  get fault point php
+UDF - putting the red dot on the map.
+UDF - generate the splice report.
+
+When the user selects a route and a distance to process, two separate processes are initiated. One retrieves the selected route to load onto the Mapbox-based map within the app, while the second kicks off a processing chain. This chain calls UDFs that assist in isolating the location of the fault and relevant nearby infrastructure as well as adding elements to the map display to assist the user in visualizing what may be occurring.
+
+
+import Image2 from '/blog/2025-01-14-kyle/kyle2.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={Image2} alt="File" style={{}} />
+</div>
+_UDF to find fault location._
+
+
+After calculating the likely fault location, the tool loads splice cases and fiber slack loops along that route that point to where problems are most likely to have occurred and capacity enabling faster repair of more significant damage, we next determine which splice cases are closest to the likely damage point and if any of those are within 150m of the automated distance calculation.
+
+
+Once we have determined the relevant splice cases, we use Fused to build a CSV that reproduces what a splice report export looks like from our primary fiber mapping software and are able to submit that CSV to further processing to generate the Excel file that ultimately goes to the field teams detailing for them what to expect when working with the case– what cables enter the case, what fibers on which cables are spliced to which fibers on other cables, and what building and/or customer circuits are being carried along which fibers. This gives them the confidence to quickly address issues while minimizing the risk of damaging other circuits, as well as giving them the information needed to monitor services in the case while they work.
+
+import Image3 from '/blog/2025-01-14-kyle/kyle3.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={Image3} alt="File" style={{}} />
+</div>
+_UDF to create splice report._
+
+
+## The Impact Fused
+
+The impact of Fused across this process is many-fold:
+- The ability to easily work with data across several systems.
+- Centralizing business logic to the UDFs involved, eliminating the tendency for this logic to be spread across client-side processes, server-side processes, and possibly the database itself.
+- Modularization of operations into UDFs. For example, the UDF that generates the splice reports for this process can easily be reused in any other process that requires the same functionality.
+- The easy ability for the same UDF to simultaneously serve as a modular processing unit where needed in one workflow and a map service for display in another.
+- The ability to use Python and standard libraries to enable developers who may not be spatial data experts to read, understand, and modify UDFs as necessary.
+
+To illustrate the composition of UDFs, this image shows a map generated by 4 UDFs:
+- UDF to returnin the route itself that will show up on the map
+- UDF to get fault point php
+- UDF to place the red dot on the map
+- UDF to generate the splice report
+
+import Image4 from '/blog/2025-01-14-kyle/kyle4.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={Image4} alt="File" style={{}} />
+</div>
+_Composed map view._
+
+## Conclusion
+
+Providing non-technical users a way to have access to the data in Postgres enables anybody at the company to gather the information to get the splice team headed in the right direction as fast as possible with the latest information on what they're looking for and what they're looking at when they get there. All this person would need to input is the distance along the fiber and the affected building. By using these different UDFs and Postgress the tool will figure out the point and if relevant, it will generate the documentation that they need to give to the field crew. This improves the turnaround time of dispatching crew to the site.
+
+Traditionally, I could do a lot of this just with Python but there were no visual maps to work with in these scenarios. Fused works so easily with the map viewer and the calculations also give a lot of context to the person running it. So even our more technical personnel can visually explore the data to immediately gain situational awareness.
