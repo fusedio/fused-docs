@@ -9,7 +9,7 @@ To follow along, you'll need a Motherduck account - which you can [create for fr
 
 ## 1. Generate a signed URL for a UDF
 
-First, create an [HTTP endpoint](/core-concepts/run-udfs/run-single-udfs/#http-requests) for a UDF. Set [`dtype_out_vector`](/core-concepts/run-udfs/run-single-udfs/#http-requests) to `parquet`. You can optionally pass UDF parameters as URL-encoded strings, which can be configured to change based on query input.
+First, create an [HTTP endpoint](/core-concepts/run-udfs/run-small-udfs/#http-requests) for a UDF. Set [`dtype_out_vector`](/core-concepts/run-udfs/run-small-udfs/#http-requests) to `parquet`. You can optionally pass UDF parameters as URL-encoded strings, which can be configured to change based on query input.
 
 This example uses an instance of the [DEM Raster to Vector](https://github.com/fusedio/udfs/blob/main/public/DEM_Raster_to_Vector_Example/DEM_Raster_to_Vector_Example.py) public UDF.
 
