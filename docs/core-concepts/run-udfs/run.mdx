@@ -1,26 +1,32 @@
 ---
-id: run-single-udfs
-title: Single UDF
+id: run-small-udfs
+title: Small UDF run
 tags: [write, endpoints, api, http, file, tile]
 sidebar_position: 1
 toc_min_heading_level: 2
 toc_max_heading_level: 4
 ---
 
-Fused UDF functions really shine once you start calling them from anywhere. You can do so in 2 main ways:
-1.  `fused.run()` in Python. All you need is the [`fused` Python](/python-sdk/) package installed
+Fused UDF functions really shine once you start calling them from anywhere. You can call small jobs in 2 main ways:
+1.  `fused.run()` in Python. All you need is the [`fused` Python](/python-sdk/#install) package installed
     - Useful when wanting to run UDF as part of another pipeline, inside another UDF or anywhere in Python / code.
-2.  [**HTTP call**](/core-concepts/run-udfs/run-single-udfs/#http-requests) from *anywhere*
+2.  [**HTTP call**](/core-concepts/run-udfs/run-small-udfs/#http-requests) from *anywhere*
     - Useful when you want to call a UDF outside of Python. For example receiving a [dataframe into Google Sheets](/user-guide/out/googlesheets/) or plotting points and images in a [Felt map](/user-guide/out/felt/)
+
+### Defining "Small" job
+
+"Small" jobs are defined as any job being:
+- Less than 120s to execute
+- Using less than a few Gb of RAM to run
+
+These jobs run in "real-time" with no start-up time so are quick to run, but with limited resources and time-out if taking too long. 
 
 ## `fused.run()`
 
 All you need to run a UDF within Python is:
 - [`fused` package](/python-sdk/#install) installed
-{/* We should probably have a team written "for teams" */}
-- Access to your team projects to run private UDFs
 
-The simplest way to call a UDF is using a [public UDF name](/core-concepts/run-udfs/run-single-udfs/#public-udf-name) and calling it as: `UDF_` + name. Let's take this UDF that returns [the location of the Eiffel Tower](https://github.com/fusedio/udfs/tree/main/public/Single_point_Eiffel_Tower) in a `GeoDataFrame` as an example:
+The simplest way to call a public UDF is using a [public UDF name](/core-concepts/run-udfs/run-small-udfs/#public-udf-name) and calling it as: `UDF_` + name. Let's take this UDF that returns [the location of the Eiffel Tower](https://github.com/fusedio/udfs/tree/main/public/Single_point_Eiffel_Tower) in a `GeoDataFrame` as an example:
 
 ```python showLineNumbers
 import fused
@@ -34,12 +40,12 @@ import ImgSimpleETUDF from '@site/static/img/core-concepts/run-udfs/running_simp
 </div>
 
 There are a few other ways to run a UDF:
-- [By name from your account](/core-concepts/run-udfs/run-single-udfs/#name-from-your-account)
-- [By public UDF name](/core-concepts/run-udfs/run-single-udfs/#public-udf-name)
-- [Using a token](/core-concepts/run-udfs/run-single-udfs/#token)
-- [Using a `udf` object](/core-concepts/run-udfs/run-single-udfs/#udf-object)
-- [From Github URL](/core-concepts/run-udfs/run-single-udfs/#github-url)
-- [From git commit hash (most recommended for teams)](/core-concepts/run-udfs/run-single-udfs/#git-commit-hash-recommended-for-most-stable-use-cases)
+- [By name from your account](/core-concepts/run-udfs/run-small-udfs/#name-from-your-account)
+- [By public UDF name](/core-concepts/run-udfs/run-small-udfs/#public-udf-name)
+- [Using a token](/core-concepts/run-udfs/run-small-udfs/#token)
+- [Using a `udf` object](/core-concepts/run-udfs/run-small-udfs/#udf-object)
+- [From Github URL](/core-concepts/run-udfs/run-small-udfs/#github-url)
+- [From git commit hash (most recommended for teams)](/core-concepts/run-udfs/run-small-udfs/#git-commit-hash-recommended-for-most-stable-use-cases)
 
 ### _Name_ (from your account)
 
@@ -159,7 +165,7 @@ fused.run(gh_udf)
     
     Especially using a URL pointing to a `main` branch means that your UDF will change if someone else pushes towards it, in a way that isn't visible to you.
 
-    For that reason we recommend using [git commit hash](/core-concepts/run-udfs/run-single-udfs/#git-commit-hash-recommended-for-most-stable-use-cases) instead
+    For that reason we recommend using [git commit hash](/core-concepts/run-udfs/run-small-udfs/#git-commit-hash-recommended-for-most-stable-use-cases) instead
 :::
 
 ### _Git commit hash_ (recommended for most stable use cases)
@@ -213,6 +219,98 @@ Need to write how to pass arguments
 
 🚧 Under construction
 
+## Running multiple small `fused.run()` jobs in parallel
+
+Sometimes you want to run a UDF over a list of inputs (for example running a [UDF that unzips a file over a list of files](/user-guide/examples/dark-vessel-detection/#33---run-this-udf-over-a-year-of-ais-data)). If each run itself is quite small, than you can run all a batch of UDFs over a list of inputs.
+
+Let's use a simple UDF to demonstrate:
+
+```python showLineNumbers
+@fused.udf
+def udf(val):
+    import pandas as pd
+    return pd.DataFrame({'val':[val]})
+```
+
+Say we wanted to run this `udf` 10 times over `inputs = [0,1,2,3,4,5,6,7,8,9]`:
+
+#### [Experimental] Using `run_pool` and `PoolRunner`
+
+:::note
+    This is not a feature directly implemented in `fused`. Instead we're going to use a code from the [`udfs.public.common`](https://github.com/fusedio/udfs/tree/main/public/common) utils module, that might change over time
+    
+    You can learn more about import utils from UDFs [here](/core-concepts/write/#import-utils-from-other-udfs)
+:::
+
+[`PoolRunner`](https://github.com/fusedio/udfs/blob/main/public/common/utils.py#L2164) allows to quickly run a UDF a few times over a dataset or a list of inputs. Using a `lambda` function you can map the function to pass to `PoolRunner`:
+
+```python showLineNumbers
+runner = fused.utils.common.PoolRunner(lambda val: fused.run(udf, val=val), range(10))
+runner.get_result_all()
+```
+
+In a notebook `runner.get_result_all()` prints the progress status over time until the job is done:
+
+import ImgPoolRunner from '@site/docs/core-concepts/run-udfs/poolrunner-get_results_all.png';
+
+<div style={{textAlign: 'center'}}>
+    <img src={ImgPoolRunner} alt="Pool Runner" style={{width: 600}} />
+</div>
+
+#### Getting "real-time" results
+
+You can then get all your results by concatinating them:
+
+```python showLineNumbers
+# In this example udf() returns a Pandas DataFrame so `.get_concat()` 
+result = runner.get_concat()
+```
+
+with `type(result)` being a `pandas.core.frame.DataFrame`
+
+import ImgSingleUDFTime from '@site/docs/core-concepts/run-udfs/PoolRunner_timer_single_udf.png';
+import Img10UDFTime from '@site/docs/core-concepts/run-udfs/PoolRunner_timer_10_udfs.png';
+
+<details>
+  <summary>Simple `PoolRunner` Benchmark</summary>
+
+    `PoolRunner` runs all the UDF calls in parallel, making it a helpful tool to run multiple UDFs all at once.
+
+    We can demonstrate this by adding a simple `time.sleep(1)` in our original UDF:
+    ```python {4-5} showLineNumbers
+    @fused.udf
+    def udf(val):
+        import pandas as pd
+        import time
+        time.sleep(1)
+        return pd.DataFrame({'val':[val]})
+    ```
+
+    In a notebook, we can time how long each cell takes to execute with the [`%%time` magic command](https://ipython.readthedocs.io/en/stable/interactive/magics.html#magic-time)
+
+    ```python showLineNumbers
+    # In a jupyter notebook
+    %%time
+    fused.run(udf, val=1)
+    ```
+
+    <div style={{textAlign: 'center'}}>
+        <img src={ImgSingleUDFTime} alt="Pool Runner" style={{width: 600}} />
+    </div>
+
+    This takes 1.8s: A few ms of overhead to send the UDF to Fused server & run + 1s of `time.sleep(1)`
+
+    Now using `PoolRunner` to run this over `range(10)`:
+
+    <div style={{textAlign: 'center'}}>
+        <img src={Img10UDFTime} alt="Pool Runner" style={{width: 600}} />
+    </div>
+
+    This takes a few more seconds, but not 10s. `PoolRunner` is a helpful way to scale a single UDF to many inputs in a timely manner.
+
+
+</details>
+
 ## HTTP requests
 
 {/* Need to showcase this in video */}
@@ -245,7 +343,7 @@ curl -XGET "https://app.fused.io/server/v1/realtime/fused/api/v1/run/udf/saved/u
 
 ### Specify parameters
 
-When UDF endpoints are called via HTTP requests argument values are specified with [query parameters](https://www.branch.io/glossary/query-parameters/), which require input parameters to be serializable. As such, the UDF should specify the types to cast them to. Read more about [supported types for UDF parameters](/python-sdk/#typing).
+When UDF endpoints are called via HTTP requests argument values are specified with [query parameters](https://www.branch.io/glossary/query-parameters/), which require input parameters to be serializable. As such, the UDF should specify the types to cast them to. Read more about [supported types for UDF parameters](/core-concepts/write/#supported-types).
 
 ### Response data types
 
