@@ -56,13 +56,77 @@ Topics:
 - Or for specifying running with larger instance
  */}
 
-To run UDFs on a larger instance, we need to define the UDFs to run and then send them to a remote instance:
+Running a UDF over a large instance is done in 2 steps:
+1. Creating a job with the UDF to run and [passing input parameters](/core-concepts/run-udfs/run_large/#passing-udf-parameters-with-arg_list) to run the UDF over
+2. Send the job to a remote instance and (optionally) [defining the instance arguments](/core-concepts/run-udfs/run_large/#run_remote-instance-arguments)
 
 ```python showLineNumbers
-# We'll run this UDF 10 times
-job = udf(arg_list=range(10))
+# We'll run this UDF 5 times with 5 different inputs
+job = udf(arg_list=[0,1,2,3,4])
 job.run_remote()
 ```
+
+### Passing UDF parameters with `arg_list`
+
+**Single Parameter**
+
+As mentioned [above](/core-concepts/run-udfs/run_large/#running-a-large-job-job-jobrun_remote) to pass UDF arguments to a remote job, use `arg_list` to specify a `list` of inputs to run your job over:
+
+```python showLineNumbers
+job = udf(arg_list=[0,1,2,3,4])
+job.run_remote()
+```
+
+**Multiple Parameters**
+
+Currently `arg_list` only supports giving 1 input variables to each UDF. We can work around this by aggregating multiple variables into a `dict` and having a UDF take a `dict` as input:
+
+```python showLineNumbers
+@fused.udf
+def udf(variables: dict = {'val1':1, 'val2':2}):
+    import pandas as pd
+    import fused
+
+    # Retrieving each variables from the dictionary
+    val1 = variables['val1']
+    val2 = variables['val2']
+
+    # Some simple boilerplate logic
+    output_value = int(val1)*int(val2)
+    df = pd.DataFrame(data={'output':[output_value]})
+    
+    # Saving output to shared file location to access results later
+    # `/mnt/cache` is the shared file location for all small & large jobs
+    df.to_csv(f"/mnt/cache/demo_multiple_arg_list_run/output_{str(output_value)}.csv")
+
+    return df
+```
+
+:::note
+  You do need to type the input variable for this to work. If we had defined `variables` without typing it as a `dict`:
+  ```python showLineNumbers
+  @fused.udf
+  def udf(variables = {}):
+    # Notice the lack of `variables: dict = {}`
+    ...
+    return df
+  ```
+  our remote job run would have fail as Fused server has no way of knowing what to expect from `variables`
+:::
+
+We can then call this UDF as a remote job by passing a list of dictionaries to `arg_list`:
+```python showLineNumbers
+job = udf(arg_list=[{"val1": 5, "val2": 2}, {"val1": 3, "val2": 4}])
+job.run_remote()
+```
+
+We can confirm this worked by viewing our results by browsing [File Explorer](/workbench/file-explorer/):
+
+import ImgRunRemoteMultiArgList from '@site/docs/core-concepts/run-udfs/efs_results_run_remote_multiple_args.png';
+
+<div style={{textAlign: 'center'}}>
+  <img src={ImgRunRemoteMultiArgList} alt="Multiple arg list run remote output on File Explorer" style={{width: 800}} />
+</div>
 
 ### `run_remote` instance arguments
 
@@ -102,42 +166,7 @@ job.run_remote(instance_type="m5.4xlarge", disk_size_gb=100)
 
 </details>
 
-#### Passing UDF parameters with `arg_list`
-
-**Single Parameter**
-
-To pass UDF arguments to a remote job, use `arg_list`. At the moment this only supports UDFs with a single parameter:
-
-```python showLineNumbers
-job = udf(arg_list=range(10))
-job.run_remote()
-```
-
-**Multiple Parameters**
-
-We're working on adding support for multiple parameters
-
-🚧 Under construction
-
-{/* TODO: This actually doesn't work, need to figure out why before mentioning it
-At the moment jobs can only be defined with a single variable. We can work around this by passing a dictionary to `arg_list` as so:
-
-```python showLineNumbers
-@fused.udf
-def udf(variables = {'val1':1, 'val2':2}):
-    import pandas as pd
-    val1 = variables['val1']
-    val2 = variables['val2']
-    return pd.DataFrame(data={'output':[int(val1)*int(val2)]})
-```
-
-Which allows to then call this UDF in a large instance with:
-```python showLineNumbers
-job = udf(arg_list=[{"val1": 1, "val2": 2}, {"val1": 3, "val2": 4}])
-job.run_remote()
-``` */}
-
-### Accessing job logs
+## Accessing job logs
 
 You can view the logs of all your on-going and past `run_remote()` jobs either:
 
@@ -177,7 +206,7 @@ import ImgRunRemoteEmail from '@site/docs/core-concepts/run-udfs/run-remote-emai
 </details>
 
 
-### Getting results
+## Getting results
 
 To get data back from your `run_remote()` jobs is a bit more complicated than for ["real-time"](/core-concepts/run-udfs/run-small-udfs/#getting-real-time-results). Our recommendation is to have your UDF write data directly to disk or cloud storage and access it after
 
@@ -201,7 +230,7 @@ To get data back from your `run_remote()` jobs is a bit more complicated than fo
 
         url=f'https://coast.noaa.gov/htdata/CMSP/AISDataHandler/{datestr[:4]}/AIS_{datestr}.zip'
         # This is our local mount file path, 
-        path=fused.file_path(f'/AIS/{datestr[:7]}/')
+        path=f'/mnt/cache/AIS_demo/{datestr[:7]}/'
         daily_ais_parquet = f'{path}/{datestr[-2:]}.parquet'
 
         # Download ZIP file to mounted disk
@@ -220,9 +249,14 @@ To get data back from your `run_remote()` jobs is a bit more complicated than fo
 
     Since our data is written to cloud storage, it can now be accessed anywhere else, through another UDF or any other application with access to cloud storage.
 
+    :::tip
+      You can use [File Explorer](/workbench/file-explorer/) to easily see your outputs! In this case of the above example typing `efs://AIS_{datestr}.csv` (and replacing `datestr` with your date) will show the results directly in File Explorer!
+    :::
+
 </details>
 
-{/* Need example here */}
+{/* TODO: Need example here */}
+{/* TODO: Show output on File Explorer */}
 
 
 ### Large jobs trade-offs
