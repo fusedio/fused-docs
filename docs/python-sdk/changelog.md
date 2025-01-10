@@ -7,6 +7,20 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.12.0 (2025-01-10)
+
+- (Beta) Added an App catalog in Workbench, and a new type of URL for sharing apps.
+- Added `/mount` as an alias for `/mnt/cache`.
+- More consistently coerce the type of inputs to UDFs.
+- Added more visualization presets to UDF builder in Workbench.
+- Fixed an issue where the tab icon in Workbench could unintentionally change.
+- Fixed bugs in Workbench File Explorer for `/mnt/cache` when browsing directories with many files.
+- Fixed bugs in `fused` Python API not being able to list all files that should be accessible.
+- Fixed bugs in the Github integration, command palette, and file explorer in Workbench.
+- Fixed bugs in caching some UDF outputs.
+- The shareable URL for public and community UDFs will now show in the settings tab for those UDFs.
+- UDFs can customize their data return with `Response` objects.
+
 ## v1.11.9 (2024-12-19)
 
 - Accounts now have a *handle* assigned to them, which can be used when loading UDFs and pushing to community UDFs
