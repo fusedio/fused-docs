@@ -9,19 +9,6 @@ sidebar_position: 1
 
 _This page will give you all the tools to make your data fast to read to make your UDFs more responsive._
 
-{/*
-Topics:
-- Why do we need to do ingestion?
-    - Cloud native
-    - But also partitioned correctly
-- How to do this ingestion?
-    - Running `job = fused.ingest()` + `job.run_remote()`
-- When is this needed
-    - There's a section in the FAQ about when to ingest or not. This should be addressed in the ingestion page instead. 
-- What happens after?
-    - 
- */}
-
 ## What is this page about?
 
 The whole purpose of Fused is to speed up data science pipelines. 
@@ -35,13 +22,92 @@ One solution to this is to build data around **Cloud Optimized formats**: Data l
 
 This makes it fast to read for any UDF (and any other cloud operation), so developing UDFs in [Workbench UDF Builder](/workbench/udf-builder/) & [running UDFs](/core-concepts/run-udfs/) is a lot faster & responsive!
 
+## Benchmark & Demo
+
+{/* 
+Topics:
+- High level 2 sentence of what AIS data is
+- Explain dataset (7.3M rows for 1 day, in zipped CSV originally)
+- Benchmark different options
+- Link towards `fused.ingest()` and Dark Vessel Detection
+ */}
+
+We're going to use a real-world example to show the impact of using different file formats & partitioning to make data a lot faster to access. For this demo, we'll be using similar data as for our [Dark Vessel Detection example](/user-guide/examples/dark-vessel-detection/), AIS (Automatic Identification System) data.
+These are points which represent the location of boats at any given time. We'll be using free & open data from [NOAA Digital Coast](https://www.coast.noaa.gov/digitalcoast/tools/ais.html).
+
+import ImgAISNoaa from '@site/docs/user-guide/examples/AIS_noaa_coast_portal.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgAISNoaa} alt="Dark Vessel Detection data pipeline" style={{width: 600}} />
+</div>
+
+The NOAA Digital Coast platform gives us 1 zip file per day with the location of every boat with an AIS transponder as CSV (once unzipped).
+
+We'll download 1 day and upload it as a CSV to Fused server with [`fused.upload()`](/python-sdk/api-reference/api/#upload):
+
+```python showLineNumbers
+@fused.udf
+def save_ais_csv_to_fused_udf():
+    """Downloading a single day of data to Fused server"""
+    import requests
+    import zipfile
+    import pandas as pd
+    
+    response = requests.get("https://coast.noaa.gov/htdata/CMSP/AISDataHandler/2024/AIS_2024_01_01.zip")
+
+    with open("data.zip", "wb") as f:
+        f.write(response.content)
+    
+    with zipfile.ZipFile("data.zip", "r") as zip_ref:
+        zip_ref.extractall("./data")
+
+    csv_df = fused.api.upload("./data/AIS_2024_01_01.csv", "fd://demo_reading_ais/AIS_2024_01_01.csv")
+    print(f"Saved data to fd://demo_reading_ais/")
+
+    return pd.DataFrame({"status": 'Done'})
+```
+
+And simply running this UDF:
+
+```python
+fused.run(save_ais_csv_to_fused_udf)
+```
+
+We can check that our CSV was properly ingested with File Explorer by navigating to `fd://demo_reading_ais/`:
+
+import ImgFileExplVerification from '@site/docs/core-concepts/data ingestion/FileExplorer_Demo_AIS.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgFileExplVerification} alt="Our AIS CSV properly uploaded on File Explorer" style={{width: 600}} />
+</div>
+
+That's one big CSV, 7.3M rows. But opening it on its own doesn't do all that much for us. We're going to create 3 [UDFs](/core-concepts/write/) to showcase a more real-world example: Opening the dataset and return a subset inside a bounding box, and compare their execution time:
+- 1. From the default CSV
+- 2. From the same data but saved a GeoParquet
+- 3. Ingesting this data with `fused.ingest()` and reading it from our ingested data
+
+Since our AIS data covers the waters around the US, we'll use a simple bounding box covering a small portion of water 
+
+### 1. Reading directly from CSV
+
+{/* TODO: Upload data to File Explorer */}
+
+### 2. Reading directly from CSV
+
+{/* TODO: Save as parquet & Upload data to File Explorer */}
+
+### 3. Reading directly from CSV
+
+{/* TODO: Run fused.ingest from uploaded original CSV */}
+
+
 ## When is ingestion needed?
 
 You don't _always_ need to ingest your file into a cloud, geo-partitioned format. There are a few situation when it might be simpler & faster to just load your data. 
 Small files (< 100Mb ) that are fast to open (already in `.parquet` for example) that you only read once (note that it might be read 1x in your UDF but your UDF might be run many times)
 
 Example of data you should ingest: 1Gb `.zip` of shapefile
-- `.zip` means you need to unzip your file each time you open it and then read it. This slows down working with the data
+- `.zip` means you need to unzip your file each time you open it and then read it. This slows down working with the data _every minute_. This results in each individual files (a CSV when unzipped) containing millions of points. 
 - shapefile contains multiple files, it isn't the fastest to read
 
 Example of data you don't need to ingest: 50Mb `.parquet`
