@@ -1,18 +1,210 @@
 ---
-slug: template overture
-title: "Template overture"
+slug: create-a-workflow-to-enrich-your-datasets-with-overture-maps-data
+title: "Create a workflow to enrich your datasets with Overture Maps data"
 authors: [plinio]
-tags: [introduction]
+tags: [overture, spatial, join]
 unlisted: true
-image: https://fused-magic.s3.us-west-2.amazonaws.com/blog-assets/social_jennings.png
+# image: https://fused-magic.s3.us-west-2.amazonaws.com/blog-assets/social_jennings.png
 hide_table_of_contents: false
-keywords: [introduction]
+keywords: [overture, spatial, join]
 ---
 
-Intro
+Fused has been working with the team at The [Overture Maps Foundation](https://overturemaps.org/) to enable direct access to their data through Fused UDFs. We are excited to share that the [Overture docs](https://docs.overturemaps.org/getting-data/fused/) now show examples on how to see how to integrate any Overture data into your workflows using Fused.
+
+
+
+
+import Image3 from '/blog/2025-01-14-overture/overture_docs.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={Image3} alt="File" style={{}} />
+</div>
+
+
+Overture Maps aims to provide foundational building blocks of data across various themes designed to be broadly applicable across industries. Our goal at Fused is to make it easy to work with Overture data and adopt standards (such as [GERS](https://docs.overturemaps.org/gers/)). To this end, we are creating easy abstractions to access data, tools to perform foundational operations such as conflation and enrichment, and example workflows to inspire and help you understand how to leverage this data.
+
+
+In this tutorial we will showcase 2 simple Python workflows to "enrich" datasets with Overture Buildings data using a spatial join. This is an example of a simple enrichment operation that will help you understand how to work with Overture data in your own workflows.
+
 
 {/* truncate */}
 
-### Introduction
+:::info
 
-Content
+To follow along, check out the:
+- [Overture Maps Docs "Getting Data" Page](https://docs.overturemaps.org/getting-data/fused/)
+- [Overture Maps Docs "Examples" Page](https://docs.overturemaps.org/examples/fused/)
+- [Overture Maps Example UDF](https://www.fused.io/workbench/catalog/Overture_Maps_Example-64071fb8-2c96-4015-adb9-596c3bac6787)
+- [Overture + NSI UDF](https://www.fused.io/workbench/catalog/Overture_Nsi-dd89972c-ce30-4544-ba0f-81fc09f5bbef)
+:::
+
+## Overview
+
+The Overture Buildings dataset is dividen into themes. Two key themes are:
+- [Buildings](https://docs.overturemaps.org/guides/buildings/#14/32.58453/-117.05154/0/60) is composed of building footprints represented as polygons
+- [Places](https://docs.overturemaps.org/guides/places/#14/32.58453/-117.05154/0/60) is composed of business establishment locations and associated metadata, represented with point coordinates.
+
+We'll first show how you can load Overture data by reusing an existing Fused UDF, then write a User Defined Function (UDF) with custom logic to perform enrichment with a spatial join. You'll be able to run the resulting UDF for any custom area of interest (AOI).
+
+
+
+## Step 1: Load data with the Overture Maps UDF
+
+
+Fused has a catalog of pre-made UDFs you can easily copy and repurpose for your own data analysis workflows. In the catalog, you'll find the Fused Overture UDF which enables you to quickly load Overture data from any of the themes for an area of interest (AOI). You can run the UDF with `fused.run` and specify an AOI to load data for using the bbox parameter. You may also pass optional parameters to select between Overture releases, themes, and columns - that way you can fetch only the data you need. In this example, we can specify the 'building' theme by setting the `overture_type` parameter.
+
+```python showLineNumbers
+import fused
+import geopandas as gpd
+import shapely
+
+bbox = gpd.GeoDataFrame(
+    geometry=[shapely.box(-73.9847, 40.7666, -73.9810, 40.7694)],
+    crs=4326
+)
+
+fused.run('UDF_Overture_Maps_Example', bbox=bbox, overture_type='building')
+```
+
+
+The output should look like this:
+
+```python showLineNumbers
+
+        id	                                geometry	                                        class   ...
+24134	08b2a100d65a6fff0200b45ce7e2b99b	POLYGON ((-73.98552 40.76736, -73.98557 40.767...	apartments  ...
+24135	08b2a1008b259fff02007917db1c32d3	POLYGON ((-73.98441 40.76703, -73.98431 40.767...	apartments  ...
+24178	08b2a100d6516fff0200ded2bf849c8a	POLYGON ((-73.98375 40.76693, -73.98381 40.766...	apartments  ...
+24179	08b2a100d6516fff02006dc174022a7e	POLYGON ((-73.98346 40.76623, -73.98327 40.766...	commercial  ...
+24180	08b2a1008b248fff0200315983940aa8	POLYGON ((-73.98407 40.76749, -73.98402 40.767...	None    ...
+
+```
+
+
+
+By browsing the UDF's [catalog page](https://www.fused.io/workbench/catalog/Overture_Maps_Example-64071fb8-2c96-4015-adb9-596c3bac6787), you can see its code and even copy it to run it interactively on the Fused Workbench. You'll notice that the UDF uses the `get_overture` helper function to read from spatially partitioned parquets of the overture data releases, hosted in a Source Cooperative S3 bucket. The source code of the helper function is fully open and hosted on GitHub [here](https://github.com/fusedio/udfs/blob/main/public/Overture_Maps_Example/utils.py).
+
+Here's a simplified version to show the core of what's going on in `get_overture`. It constructs the table path on S3 and then uses the [table_to_tile](https://github.com/fusedio/udfs/blob/main/public/common/utils.py#L258) helper function from Fused to load data that falls within the specified bounding box. This approach allows you to efficiently perform spatial queries on a large dataset and load only the records within the given area.
+
+```python showLineNumbers
+# Structure the table path with input parameters
+table_path = f"s3://us-west-2.opendata.source.coop/fused/overture/{release}/theme={theme}/type={overture_type}"
+
+# Load the data within the bounding box
+df = utils.table_to_tile(bbox, table=part_path)
+```
+
+
+## Step 2: Write a Custom UDF to join Places with Buildings
+The example above shows how to run an existing UDF to load Overture data, but it's likely you want to write your own data transformations. You can borrow `get_overture` to load data into your own UDFs. As an example, here is a UDF to load Overture Buildings polygons and Overture Places points. The UDF perform a spatial join between them to determine which points fall within each building.
+
+
+```python showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.TileGDF = None):
+
+    # 1. Load Buildings
+    gdf_buildings = fused.utils.Overture_Maps_Example.get_overture(bbox=bbox, theme='buildings')
+
+    # 2. Load Places
+    gdf_places = fused.utils.Overture_Maps_Example.get_overture(bbox=bbox, theme='places')
+
+    # 3. Create a column with the Buliding Name
+    gdf_buildings['primary_name'] = gdf_buildings['names'].apply(lambda x: x.get('primary') if isinstance(x, dict) else None)
+
+    # 4. Spatial join between Places and Buildings
+    gdf_joined = gdf_places.sjoin(gdf_buildings[['geometry', 'primary_name']])[['id', 'names', 'primary_name', 'geometry']]
+
+    return gdf_joined
+```
+
+To run this UDF, you simply call it with your AOI. Fused will execute the code with the given parameter then return the UDF's output.
+
+```python showLineNumbers
+import fused
+import geopandas as gpd
+import shapely
+
+bbox = gpd.GeoDataFrame(geometry=[shapely.box(-73.9847, 40.7666, -73.9810, 40.7694)], crs=4326)
+
+fused.run(udf, bbox=bbox)
+````
+
+This will return a GeoDataFrame with the geometry of the Place, the `primary_name` of the building it falls within, and other attributes as defined in the UDF's return statement.
+
+The output should look like this:
+
+
+```python showLineNumbers
+        id	                                names                                                   primary_name	    geometry
+3883	08f2a100d65160860308e7269804dcb7	{'common': None, 'primary': 'Alamo Rent A Car'...	The Sheffield 57    POINT (-73.98404 40.76661)
+3884	08f2a100d65160860306e05f63f3cbaf	{'common': None, 'primary': 'National Car Rent...	The Sheffield 57    POINT (-73.98403 40.76661)
+3896	08f2a100d6516b110387be8074670bfa	{'common': None, 'primary': 'Quality Fashion',...	Hearst Tower	    POINT (-73.98370 40.76660)
+3898	08f2a100d65147290359c345582a702e	{'common': None, 'primary': 'House Beautiful M...	Hearst Tower	    POINT (-73.98338 40.76664)
+```
+
+
+import ReactPlayer from 'react-player'
+
+<ReactPlayer playsinline={true} className="video__player" playing={true} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/blog-assets/join_places.mp4" width="100%" />
+
+
+
+## Step 3: Write a Custom UDF to join Buildings with the NSI dataset
+
+As a second example, you can also enrich the Overture Buildings dataset with metadata data from the National Structure Inventory (NSI) API. The NSI API offers point data on buildings in the U.S. that is relevant to hazard analyses.
+
+This UDF loads the Overture and NSI datasets, performs a spatial join to enrich the building polygons with hazard metadata, and returns the enriched GeoDataFrame. It can be used within a larger analysis workflow to enrich building polygons to calculate risk indices. You can read more about performing a point in polygon operation to enrich Overture Buildings with NSI [here](/user-guide/transform/geospatial/point-in-polygon/).
+
+
+```python showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.TileGDF = None):
+    import geopandas as gpd
+    import pandas as pd
+    import requests
+
+    # 1. Load Overture Buildings
+    gdf_overture = fused.utils.Overture_Maps_Example.get_overture(bbox=bbox)
+
+    # 2. Load NSI from API
+    response = requests.post(
+        url="https://nsi.sec.usace.army.mil/nsiapi/structures?fmt=fc",
+        json=bbox.__geo_interface__,
+    )
+
+    # 3. Create NSI gdf
+    gdf = gpd.GeoDataFrame.from_features(response.json()["features"])
+
+    # 4. Join Overture and NSI
+    cols = ["id","geometry","metric","ground_elv_m","height","num_floors","num_story"]
+    join = gdf_overture.sjoin(gdf, how='left')
+    join["metric"] = join.apply(lambda row: row.height if pd.notnull(row.height) else row.num_story*3, axis=1)
+    return join[cols]
+
+```
+
+
+The output should look like this:
+
+
+```python showLineNumbers
+
+	    id	                                geometry	                                        val_struct      med_yr_blt  ...
+24178	08b2a100d6516fff0200ded2bf849c8a	POLYGON ((-73.98375 40.76693, -73.98381 40.766...	378633.733	1939	...
+24178	08b2a100d6516fff0200ded2bf849c8a	POLYGON ((-73.98375 40.76693, -73.98381 40.766...	348190.820	1939	...
+24178	08b2a100d6516fff0200ded2bf849c8a	POLYGON ((-73.98375 40.76693, -73.98381 40.766...	378633.733	1939	...
+```
+
+
+
+
+<ReactPlayer playsinline={true} className="video__player" playing={true} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/blog-assets/overture_nsi_2025.mp4" width="100%" />
+
+
+
+
+
+## Conclusion
+
+In this short tutorial, we outlined how you can integrate Overture data into your workflows using Fused. We saw how you can use Fused to load the data, write a custom Python workflow, and run it for a custom AOI. We hope the these foundational pieces help you see how you can unlock the full potential of Overture Maps and start creating your own workflows to enrich your own datasets.
