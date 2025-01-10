@@ -89,22 +89,129 @@ That's one big CSV, 7.3M rows. But opening it on its own doesn't do all that muc
 Since our AIS data covers the waters around the US, we'll use a simple bounding box covering a small portion of water:
 
 ```python showLineNumbers
-bbox = gpd.GeoDataFrame({}, geometry=[
-    shapely.box(-94.40153775153141,26.602447653245353,-88.10974503062327,31.513106889428343)
-], crs=4326)
+import shapely
+
+bbox = gpd.GeoDataFrame({}, geometry=[shapely.box(-81.47717632893792,30.46235012285108,-81.33723531132267,30.58447317149745)])
 ```
+
+This `bbox` is purposefully small (`print(smaller_bbox.iloc[0].geometry.area)` returns `0.02`) to highlight loading a very large dataset and recover only a small portion of data 
 
 ### 1. Reading directly from CSV
 
-{/* TODO: Upload data to File Explorer */}
+Here's a simple UDF to read our CSV in memory and return only points in within our bounding box:
 
-### 2. Reading from GeoParquet
+```python showLineNumbers
+@fused.udf
+def from_csv_df_udf(
+    bbox: fused.types.ViewportGDF,
+    path: str="fd://demo_reading_ais/AIS_2024_01_01.csv"
+):
+    import geopandas as gpd
+    import pandas as pd
+    df = pd.read_csv(path)
+    gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.LON, df.LAT))
+    bbox_ais = gdf[gdf.geometry.within(bbox.iloc[0].geometry)]
 
-{/* TODO: Save as parquet & Upload data to File Explorer */}
+    return bbox_ais
+```
+
+### 2. Reading from Parquet
+
+{/* TODO: Write another UDF to save CSV as parquet to another file */}
+
+Here's our updated UDF to read a `.parquet` file:
+
+```python {4,8-9} showLineNumbers
+@fused.udf
+def from_parquet_udf(
+    bbox: fused.types.ViewportGDF,
+    path: str="fd://demo_reading_ais/AIS_2024_01_01.parquet"
+):
+    import geopandas as gpd
+    import pandas as pd
+    # Sticking to pyarrow over fastparquet as that's not installed by default on fused it seems
+    df = pd.read_parquet(path, engine="pyarrow")
+    gpd = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.LON, df.LAT))
+    bbox_ais = gpd[gpd.geometry.within(bbox.iloc[0].geometry)]
+
+    return bbox_ais
+```
 
 ### 3. Reading from Fused Ingested GeoParquet
 
-{/* TODO: Run fused.ingest from uploaded original CSV */}
+Now, we're going to ingest the parquet file we have to create geo-partitioned files, using `fused.ingest()`. We'll go in more details on how to ingest your own data in [the following section](/core-concepts/data%20ingestion/ingestion-your-data/).
+
+```python showLineNumbers
+job = fused.ingest(
+    "fd://demo_reading_ais/AIS_2024_01_01.parquet",
+    "fd://demo_reading_ais/ingested/",
+    target_num_chunks=500, # 500 is a rough default to use in most cases. We're not optimizing this value for now
+    lonlat_cols=('LON','LAT')
+)
+```
+
+Ingestion jobs are quite memory hungry so we'll run this on a remote machine as a [large run](/core-concepts/run-udfs/run_large/):
+
+```python
+job.run_remote(
+    instance_type='r5.8xlarge', # We're using a machine with a large amounts of CPUs to do the partitioning in parallel
+)
+```
+
+Again using [File Explorer](/workbench/file-explorer/) to inspect our data we can see `fused.ingest()` didn't create 1 file but rather multiple:
+
+{/* TODO: Show File explorer  */}
+
+Our ingestion process broke down our dataset into smaller files (making each file easier to access) and a `_sample.parquet` file containing the bounding box of each individual file. This allows us to first intersect our `bbox` with `_sample` and then only open the smaller `.parquet` files we need:
+
+```python showLineNumbers
+@fused.udf
+def read_ingested_parquet_udf(
+    bbox: fused.types.TileGDF,
+    path: str = "s3://fused-users/fused/file_format_demo/ingested/",
+    preview: bool = False,
+):
+    import fused
+    import pandas as pd
+    bbox = bbox.reset_index(drop=True)
+
+    # Build in fused method to reach the `_sample` file and return only bounding box of each parquet holding our points
+    df = fused.get_chunks_metadata(path)
+
+    # Only keeping the tiles where our bbox is -> Only need to load actual data inside / touching our bbox
+    df = df[df.intersects(bbox.geometry[0])]
+    
+    # This is based on Fused's ingestion process
+    chunk_values = df[["file_id", "chunk_id"]].values
+
+    # We only need to now load the parquet files that were kept that touched our bbox
+    rows_df = pd.concat([
+                fused.get_chunk_from_table(
+                    path, fc[0], fc[1], columns=['geometry']
+                ) for fc in chunk_values
+        ])
+
+    df = rows_df[rows_df.intersects(bbox.geometry[0])]
+    df.crs = bbox.crs
+    
+    return df
+```
+
+### Comparing all 3 runs
+
+We'll run each of these 3 methods in a Jupyter notebook using the [`%%time` magic command](https://ipython.readthedocs.io/en/stable/interactive/magics.html#magic-time) to compare their run time:
+
+import ImgComparingAISReadMethods from '@site/docs/core-concepts/data ingestion/comparing_opening_ais_methods.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgComparingAISReadMethods} alt="Comparing all 3 methods of reading AIS" style={{width: 600}} />
+</div>
+
+There are a few conclusions to draw here:
+- simply saving a CSV to `.parquet` makes files smaller & significantly faster to read just by itself (4x speed gain in this example)
+- But proper geo-partitioning takes those gains ever higher (additional 8x speed gain in this specific example)
+
+In short, by ingesting our data with `fused.ingest()` we're trading some up-front processing time for much faster read time. We only need to ingest our data once and every subsequent read will be fast and responsive.
 
 
 ## When is ingestion needed?
@@ -119,3 +226,4 @@ Example of data you should ingest: 1Gb `.zip` of shapefile
 Example of data you don't need to ingest: 50Mb `.parquet`
 - Even if the data isn't geo-partitioned, loading this data should be fast enough to make any UDF fast 
 
+{/* NOTE: Could also mention using @fused.cache to show how to make a CSV read a lot faster when wanting to do a quick visual analysis of a CSV for 1 time. With caveat of /mnt/cache (dissapears after a day & cache has to rerun on each change and slow the first time) */}
