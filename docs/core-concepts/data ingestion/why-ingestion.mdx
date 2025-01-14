@@ -232,4 +232,42 @@ Example of data you should ingest: 1Gb `.zip` of shapefile
 Example of data you don't need to ingest: 50Mb `.parquet`
 - Even if the data isn't geo-partitioned, loading this data should be fast enough to make any UDF fast 
 
-{/* TODO: Could also mention using @fused.cache to show how to make a CSV read a lot faster when wanting to do a quick visual analysis of a CSV for 1 time. With caveat of /mnt/cache (dissapears after a day & cache has to rerun on each change and slow the first time) */}
+### Using cache as a single-use "ingester"
+
+We could actually significantly speed up the above example where we loaded the AIS data as a CSV without running `fused.ingest()`, by using [cache](/core-concepts/content-management/cache/):
+
+```python {9-13} showLineNumbers
+@fused.udf
+def from_csv_df_udf(
+    bbox: fused.types.ViewportGDF,
+    path: str="s3://your-bucket/your-dir/demo_reading_ais/AIS_2024_01_01.csv"
+):
+    import geopandas as gpd
+    import pandas as pd
+
+    @fused.cache
+    def load_csv(path):
+        import pandas as pd
+        return pd.read_csv(path)
+    df = load_csv(path)
+
+    gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.LON, df.LAT))
+    bbox_ais = gdf[gdf.geometry.within(bbox.iloc[0].geometry)]
+
+    return bbox_ais
+```
+
+The first run of this would still be very slow, but running this a second time would give us a much faster result:
+
+import ImgCSVCached from '@site/docs/core-concepts/data ingestion/cached_csv_comparison.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgCSVCached} alt="Comparing all 3 methods of reading AIS" style={{width: 600}} />
+</div>
+
+We're using [`@fused.cache`](/core-concepts/content-management/cache/) to cache the result of `load_csv()` which is the same regardless of our `bbox`, so this allows us to save an 'intermediate' result on disk. 
+There are some limitations to this approach though:
+- This cache is emptied after 24h.
+- This cache is overwritten any time you change the cached function or its inputs
+
+This approach is only helpful if you want to 1 time explore a new dataset in [UDF Builder](/workbench/udf-builder/) and don't want to wait around for the ingestion run to be done. Beyond that, this will end up being slower (and more frustrating)
