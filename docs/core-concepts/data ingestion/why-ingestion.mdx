@@ -13,10 +13,10 @@ _This page will give you all the tools to make your data fast to read to make yo
 
 The whole purpose of Fused is to speed up data science pipelines. 
 To make this happen we need the data we're working with to be responsive, regardless of the dataset. The ideal solution is to have all of our data sitting in RAM right next to our compute, but in real-world applications:
-- Datasets (especially geospatial data) can be in the Tb or Pb range which rarely in storage, let alone RAM
+- Datasets (especially geospatial data) can be in the Tb or Pb range which rarely fit in storage, let alone RAM
 - Compute needs to be scaled up and down depending on workloads.
 
-One solution to this is to build data around **Cloud Optimized formats**: Data lives in the cloud but also leverages file formats that are fast to access. Just putting a `.zip` file than needs to be uncompressed every time on an S3 bucket still makes reading it very slow. Our ingested data should be:
+One solution to this is to build data around **Cloud Optimized formats**: Data lives in the cloud but also leverages file formats that are fast to access. Just putting a `.zip` file that needs to be uncompressed at every read on an S3 bucket is still very slow. Our ingested data should be:
 - **On the cloud** so dataset size doesn't matter (AWS S3, Google Cloud Storage, etc.)
 - **Partitioned** (broken down into smaller pieces that are fast to retrieve so we can load only sections of the dataset we need)
 
@@ -160,13 +160,17 @@ Ingestion jobs are quite memory hungry so we'll run this on a remote machine as 
 
 ```python
 job.run_remote(
-    instance_type='r5.8xlarge', # We're using a machine with a large amounts of CPUs to do the partitioning in parallel
+    instance_type='r5.8xlarge', # 256GiB RAM machine
 )
 ```
 
 Again using [File Explorer](/workbench/file-explorer/) to inspect our data we can see `fused.ingest()` didn't create 1 file but rather multiple:
 
-{/* TODO: Show File explorer  */}
+import ImgFileExplorerIngested from '@site/docs/core-concepts/data ingestion/ingested_file_explorer.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgFileExplorerIngested} alt="Comparing all 3 methods of reading AIS" style={{width: 600}} />
+</div>
 
 Our ingestion process broke down our dataset into smaller files (making each file easier to access) and a `_sample.parquet` file containing the bounding box of each individual file. This allows us to first intersect our `bbox` with `_sample` and then only open the smaller `.parquet` files we need:
 
@@ -202,6 +206,20 @@ def read_ingested_parquet_udf(
     
     return df
 ```
+
+:::tip
+    We've implemented a utils function that allows you to more simply read Fused ingested data: [table_to_tile](https://github.com/fusedio/udfs/blob/ca262bef10b2774c4b4b58fc04548863efff2364/public/common/utils.py#L272)
+
+    So instead of re-implementing the above in 2 lines of code you can read your ingested data:
+    ```python showLineNumbers
+    @fused.udf
+    def udf(
+        bbox: fused.types.TileGDF, path: str='s3://your-bucket/your-dir/demo_reading_ais/ingested/'):
+        utils = fused.load('https://github.com/fusedio/udfs/tree/19b5240/public/common/').utils
+        df = utils.table_to_tile(bbox, table=path)
+        return df
+    ```
+:::
 
 ### Comparing all 3 runs
 
