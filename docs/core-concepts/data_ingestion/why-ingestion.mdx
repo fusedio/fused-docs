@@ -13,10 +13,12 @@ _This page will give you all the tools to make your data fast to read to make yo
 
 The whole purpose of Fused is to speed up data science pipelines. 
 To make this happen we need the data we're working with to be responsive, regardless of the dataset. The ideal solution is to have all of our data sitting in RAM right next to our compute, but in real-world applications:
+
 - Datasets (especially geospatial data) can be in the Tb or Pb range which rarely fit in storage, let alone RAM
 - Compute needs to be scaled up and down depending on workloads.
 
 One solution to this is to build data around **Cloud Optimized formats**: Data lives in the cloud but also leverages file formats that are fast to access. Just putting a `.zip` file that needs to be uncompressed at every read on an S3 bucket is still very slow. Our ingested data should be:
+
 - **On the cloud** so dataset size doesn't matter (AWS S3, Google Cloud Storage, etc.)
 - **Partitioned** (broken down into smaller pieces that are fast to retrieve so we can load only sections of the dataset we need)
 
@@ -286,3 +288,69 @@ There are some limitations to this approach though:
 - This cache is overwritten any time you change the cached function or its inputs
 
 This approach is only helpful if you want to 1 time explore a new dataset in [UDF Builder](/workbench/udf-builder/) and don't want to wait around for the ingestion run to be done. Beyond that, this will end up being slower (and more frustrating)
+=======
+## When is ingestion needed?
+
+You don't _always_ need to ingest your file into a cloud, geo-partitioned format. There are a few situation when it might be simpler & faster to just load your data. 
+Small files (< 100Mb ) that are fast to open (already in `.parquet` for example) that you only read once (note that it might be read 1x in your UDF but your UDF might be run many times)
+
+Example of data you should ingest: 1Gb `.zip` of shapefile
+- `.zip` means you need to unzip your file each time you open it and then read it. This slows down working with the data
+- shapefile contains multiple files, it isn't the fastest to read
+
+Example of data you don't need to ingest: 50Mb `.parquet`
+- Even if the data isn't geo-partitioned, loading this data should be fast enough to make any UDF fast 
+
+## File Formats
+
+### For rasters (images)
+
+For images (like satellite images) we recommend using **Cloud Optimized GeoTiffs** (COGs). To paraphrase [the Cloud Native Geo guide on them](https://guide.cloudnativegeo.org/cloud-optimized-geotiffs/intro.html):
+
+> Cloud-Optimized GeoTIFF (COG), a raster format, is a variant of the TIFF image format that specifies a particular layout of internal data in the GeoTIFF specification to allow for optimized (subsetted or aggregated) access over a network for display or data reading
+
+:::warning
+    Fused does not (yet) have a build-in tool to ingest raster data. We suggest you create COGs yourself, for example by using `gdal`'s [built-in options](https://gdal.org/en/stable/drivers/raster/cog.html#examples) or [`cogger`](https://github.com/airbusgeo/cogger?tab=readme-ov-file#usage)
+    {/* TODO: Link to how to run CLI commands in Fused once we have this up and running */}
+:::
+
+Cloud Optimized GeoTiffs have multiple different features making them particularly interesting for cloud native applications, namely:
+- **Tiling**: Images are split into smaller tiles that can be individually accessed, making getting only parts of data a lot faster.
+- **Overviews**: Pre-rendered images of lower zoom levels of images. This makes displaying images at different zoom levels a lot faster
+
+import ImgCOGE84 from '@site/docs/core-concepts/data_ingestion/e84_cog_smiley_tiled.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgCOGE84} alt="A simple overview of Geoparquet benefits" style={{width: 400}} />
+</div>
+_A simple visual of COG tiling: If we only need the top left part of the image we can fetch only those tiles (green arrows). Image courtesy of [Element 84's blog on COGs](https://element84.com/software-engineering/remote-sensing/cloud-optimized-geotiff-vs-the-meta-raster-format)_
+
+- Element84 wrote a [simple explainer of what Cloud Optimized GeoTiffs are](https://element84.com/software-engineering/remote-sensing/cloud-optimized-geotiff-vs-the-meta-raster-format) with great visuals
+- [Cloud Optimized Geotiff spec dedicated website](https://cogeo.org/)
+- [Cloud Optimized Geotiff page on Cloud Native Geo guide](https://guide.cloudnativegeo.org/cloud-optimized-geotiffs/intro.html)
+
+### For vectors (tables)
+
+To handle vector data such as `pandas` `DataFrames` or `geopandas` `GeoDataFrames` we recommend using **[GeoParquet](https://github.com/opengeospatial/geoparquet)** files. To (once again) paraphrase the [Cloud Native Geo guide](https://guide.cloudnativegeo.org/geoparquet/):
+
+> GeoParquet is an encoding for how to store geospatial vector data (point, lines, polygons) in Apache Parquet, a popular columnar storage format for tabular data.
+
+import ImgGeoParquet from '@site/docs/user-guide/examples/geoparquet_overview.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={ImgGeoParquet} alt="A simple overview of Geoparquet benefits" style={{width: 800}} />
+</div>
+
+_Image credit from the [Cloud Native Geo slideshow](https://guide.cloudnativegeo.org/overview.html#/geoparquet)_
+
+:::tip
+    Refer to the [next section](/core-concepts/data_ingestion/ingestion-your-data/) to see all the details of how to ingest your data with Fused's built-in `fused.ingest()` to make the most out of geoparquet
+:::
+
+- [`geoparquet` Github repo](https://github.com/opengeospatial/geoparquet)
+- [GeoParquet page on Cloud Native Geo guide](https://guide.cloudnativegeo.org/geoparquet/)
+
+### Additional resources
+
+- Read the [Cloud-Optimized Geospatial Formats Guide](https://guide.cloudnativegeo.org/) written by the [Cloud Native Geo Org](https://cloudnativegeo.org/) about why we need Cloud Native formats
+- Friend of Fused Kyle Barron did an [interview about Cloud Native Geospatial Formats](https://cloudnativegeo.org/blog/2024/12/interview-with-kyle-barron-on-geoarrow-and-geoparquet-and-the-future-of-geospatial-data-analysis/). Kyle provides simple introductions to some cloud native formats like `GeoParquet`
