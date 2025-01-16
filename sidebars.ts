@@ -108,6 +108,11 @@ const sidebars: SidebarsConfig = {
         "python-sdk/contribute",
       ],
     },
+    {
+      type: "doc",
+      id: 'faq',
+      label: "FAQ",
+    },
   ],
 };
 
