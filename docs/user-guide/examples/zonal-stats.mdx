@@ -17,10 +17,21 @@ sidebar_custom_props:
 
 _A step-by-step guide for data scientists._
 
+
+### Requirements
+
+- [access to Fused](/user-guide/login/)
+- the following Python packages installed locally:
+  - [`fused`](/python-sdk/#install)
+  - `pandas`
+  - `geopandas`
+
+
 ## 1. Using Fused for a Zonal Statistics Example
 
-In this guide, we'll show you how to:
-- Bring in your data, 
+In this guide, we'll estimate how much alfalfa grows in zones defined by polygon geometries. 
+This will show you how to:
+- Bring in your data
 - Write a UDF to process the data
 - Run the UDF remotely & in parallel
 - Create an app that shows your results and can be shared with anyone
@@ -42,7 +53,8 @@ graph LR
 - This doesn't explain _why_ we need to use `fused.ingest` -> What if my vector file is already on a S3 bucket?
 - We should also provide users with some sample data so they can replicate the whole process. Then explain how to reproduce with their own data
 */}
-In this guide, we'll estimate how much alfalfa grows in areas defined by polygon geometries. You'll first upload your own vector table with `fused.ingest`. This spatially partitions the table and writes it in your specified S3 bucket as a [GeoParquet](https://geoparquet.org/) file. You'll then calculate zonal stats over a raster array of alfalfa crops in the [USDA Cropland Data Layer](https://catalog.data.gov/dataset/cropscape-cropland-data-layer) (CDL) dataset.
+
+You'll first upload your own vector table with `fused.ingest`. This spatially partitions the table and writes it in your specified S3 bucket as a [GeoParquet](https://geoparquet.org/) file. You'll then calculate zonal stats over a raster array of alfalfa crops in the [USDA Cropland Data Layer](https://catalog.data.gov/dataset/cropscape-cropland-data-layer) (CDL) dataset.
 
 This example shows how to geo partition polygons of [Census Block Groups](https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html) for Utah, which is a Parquet table with a `geometry` column. You can follow along with this file or any vector table you'd like. Read about other supported formats in [Ingest your own data](/core-concepts/data_ingestion/).
 
@@ -50,23 +62,30 @@ This example shows how to geo partition polygons of [Census Block Groups](https:
 - We assume here that we're doing this locally? We need to explain this if so, not clear until now
 - Why not do this in workbench? I like offering people to do it locally, but then we should explain why, and that they can do it in workbench
  */}
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 First, set up a Python environment, install the latest Fused SDK with `pip install fused`, and [authenticate](/python-sdk/authentication/).
 
 Now, write the following script to geo partition your data. Pass the URL of the table to `fused.ingest`. When you kick off an ingest job with `run_remote`, Fused spins up a server to geo partition your table and writes the output to the path specified by the `output` parameter. In the codeblock below, `fd://tl_2023_49_bg/` is the base path to your account's S3 bucket.
 
-```python showLineNumber
-import fused
+<Tabs className="unique-tabs">
+  <TabItem value="local" label="Local">
+    ```python showLineNumbers
+      import fused
 
-job = fused.ingest(
-  input="https://www2.census.gov/geo/tiger/TIGER2023/BG/tl_2023_49_bg.zip",
-  output="fd://tl_2023_49_bg/"
-)
-job_id = job.run_remote()
-```
+      job = fused.ingest(
+        input="https://www2.census.gov/geo/tiger/TIGER2023/BG/tl_2023_49_bg.zip",
+        output="fd://tl_2023_49_bg/"
+      )
+      job_id = job.run_remote()
+      ```
+  </TabItem>
+</Tabs>
 
 {/* TODO: Needs visuals / screenshots. Tell people, and show them. */}
 After running the preceeding code, open [fused.io/jobs](https://www.fused.io/jobs) to view the job status and logs.
-
 
 Once the job is complete, you can preview the output dataset in the [File Explorer](/workbench/file-explorer/).
 
@@ -78,12 +97,18 @@ You can also ingest data without installing anything by using this [Fused App](h
 
 For the next step you can use the path to the data you just ingested or, if you prefer, this public sample table: `s3://fused-asset/data/tl_2023_49_bg/`.
 
+import ImageDataPipeline from '@site/docs/user-guide/examples/zonal_stats_file_explorer.png';
+
+<div style={{textAlign: 'center'}}>
+  <img src={ImageDataPipeline} alt="Zonal Stats Parquet Files in Workbench File Explorer" style={{width: 1000}} />
+</div>
+
+
 ## 3. Write a UDF to process the data
 
-Now we will write a UDF that reads your data, prints a log to the console, and returns an output. To [write a UDF](/core-concepts/write/) simply wrap a Python function with the decorator `@fused.udf`.
+To see the data as we process it, we will write a UDF in the [Fused Workbench](https://www.fused.io/workbench). As you write code in the [UDF Builder](/workbench/udf-builder/) you'll see how visualization results, logs, and errors show up immediately.
 
-{/* TODO: Why are we going to workbench now? We started locally, why the change now? */}
-To run this, first log in at [fused.io/workbench](https://www.fused.io/workbench). As you write code in the [UDF Builder](/workbench/udf-builder/) you'll see how visualization results, logs, and errors show up immediately.
+To [write a UDF](/core-concepts/write/) simply wrap a Python function with the decorator `@fused.udf`.
 
 The first parameter of this UDF, `bbox`. It is reserved for Fused to pass a `GeoDataFrame` which the UDF may use to spatially filter datasets, and usually corresponds to a web map [tile](/core-concepts/filetile/). This enables Fused to run the UDF for each tile in the viewport to distribute processing across multiple workers.
 
@@ -95,38 +120,56 @@ Fused lets you import utility Modules from other UDFs with `fused.utils`. Their 
 - `table_to_tile` loads the table you geo partitioned for the specified `bbox` extent
 - `geom_stats` calculates zonal statistics by aggregating the `arr` variable over the geometries specified by the `gdf`
 
-```python showLineNumber
-@fused.udf
-def udf(
-    bbox: fused.types.TileGDF = None,
-    year: int = 2020,
-    crop_id: int = 36
-):
-    import numpy as np
 
-    # Load CDLS data
-    arr = fused.utils.common.read_tiff(
-      bbox,
-      input_tiff_path=f"s3://fused-asset/data/cdls/{year}_30m_cdls.tif"
-    )
+<Tabs className="unique-tabs">
+  <TabItem value="workbench" label="Workbench">
+    ```python showLineNumbers
+    @fused.udf
+    def udf(
+        bbox: fused.types.TileGDF = None,
+        year: int = 2020,
+        crop_id: int = 36
+    ):
+        import numpy as np
 
-    # Mask for crop
-    arr = np.where(np.isin(arr, [crop_id]), 1, 0)
+        # Load CDLS data
+        arr = fused.utils.common.read_tiff(
+          bbox,
+          input_tiff_path=f"s3://fused-asset/data/cdls/{year}_30m_cdls.tif"
+        )
 
-    # Load polygons
-    gdf = fused.utils.common.table_to_tile(
-      bbox,
-      table='s3://fused-asset/data/tl_2023_49_bg/',
-      min_zoom=5,
-      use_columns=['NAMELSAD', 'GEOID', 'MTFCC', 'FUNCSTAT', 'geometry']
-    )
-    gdf.crs = 4326
+        # Mask for crop
+        arr = np.where(np.isin(arr, [crop_id]), 1, 0)
 
-    # Calculate zonal stats
-    return fused.utils.common.geom_stats(gdf, arr)
-```
+        # Load polygons
+        gdf = fused.utils.common.table_to_tile(
+          bbox,
+          table='s3://fused-asset/data/tl_2023_49_bg/',
+          min_zoom=5,
+          use_columns=['NAMELSAD', 'GEOID', 'MTFCC', 'FUNCSTAT', 'geometry']
+        )
+        gdf.crs = 4326
+
+        # Calculate zonal stats
+        return fused.utils.common.geom_stats(gdf, arr)
+    ```
+  </TabItem>
+</Tabs>
 
 Try running the UDF in the [UDF Builder](/workbench/udf-builder/) and visually inspect the output on the map. See what happens when you change `year`. Try introducing print statements such as `print(arr)` and `print(gdf)` to show logs in the console.
+
+
+import SLC_stats from '@site/docs/user-guide/examples/zonal_stats_map.png';
+
+<div style={{textAlign: 'center'}}>
+  <img src={SLC_stats} alt="Zonal Stats Map near Heliotrope Mountain" style={{width: 1000}} />
+</div>
+
+:::note
+
+You might receive a [timeout error](core-concepts/run-udfs/run-small-udfs/#defining-small-job) in the `stdout` tab. Try zooming into Utah on the map where the zonal areas are highlighted, to reduce the [size of the tile](/core-concepts/filetile/#map-tiles) being passed into the UDF from the map. 
+
+:::
 
 You can also [style the map layer](/workbench/udf-builder/styling/) by setting this JSON in the [Visualize tab](/workbench/udf-builder/code-editor/#visualize).
 
@@ -134,7 +177,7 @@ import Details from '@theme/MDXComponents/Details';
 
 <Details open={false}>
 
-```json showLineNumber
+```json showLineNumbers
 {
   "tileLayer": {
     "@@type": "TileLayer",
@@ -202,24 +245,30 @@ When you called the HTTP endpoint, Fused ran the UDF then sent back the output t
 
 You called the HTTP endpoint with a shared token, which means any application may call the UDF and get data back without needing to configure credentials. You also passed parameters to the UDF, which enables you to dynamically generate data and define its output format.
 
-To start seeing the full power of Fused, change the UDF code and call the endpoint again. You'll see the UDF automatically updates. When you call the UDF again it should run even faster.
+To start seeing the full power of Fused, change the UDF code, save it, and call the endpoint again. You'll see the UDF automatically updates. When you call the UDF again it should run even faster.
 
 ### b. Python SDK
 
 The share token also enables you to run the UDF in a Python environment. You can specify `bbox` as the same map tile as above by passing `x`, `y`, and `z` parameters.
 
-```python showLineNumber
+```python showLineNumbers
 import fused
 fused.run("fsh_46eSFZaR3q3SnoVB28pN0g", x=778, y=1548, z=12)
 ```
 
+:::note
+
+If you haven't installed GeoPandas at this point, the data in the `geometries` column may appear as unparsed binary values from the GeoParquet file. 
+
+:::
+
 You can also pass a `GeoDataFrame` to explicitly define a custom `bbox` and other parameters specific to the UDF.
 
-```python showLineNumber
+```python showLineNumbers
 import geopandas as gpd
 
 # Square AOI near Utah Lake
-bbox = gpd.GeoDataFrame.from_features({"type":"FeatureCollection","features":[{"type":"Feature","properties":{"shape":"Rectangle"},"geometry":{"type":"Polygon","coordinates":[[[-112.01315665811222,40.13628586159681],[-111.89330615564467,40.13628586159681],[-111.89330615564467,40.004073791892196],[-112.01315665811222,40.004073791892196],[-112.01315665811222,40.13628586159681]]]}}]})
+bbox = gpd.GeoDataFrame.from_features({"type":"FeatureCollection","features":[{"type":"Feature","properties":{"shape":"Rectangle"},"geometry":{"type":"Polygon","coordinates":[[[-112.01315665811222,40.13628586159681],[-111.89330615564467,40.13628586159681],[-111.89330615564467,40.004073791892196],[-112.01315665811222,40.004073791892196],[-112.01315665811222,40.13628586159681]]]}}]}).to_json()
 fused.run("fsh_46eSFZaR3q3SnoVB28pN0g", bbox=bbox, year=2020, crop_id=36)
 ```
 
@@ -227,7 +276,7 @@ fused.run("fsh_46eSFZaR3q3SnoVB28pN0g", bbox=bbox, year=2020, crop_id=36)
 
 Invoke the UDF in parallel with `run_pool` to increase performance when you want to run it repeatedly with different input parameters. In this case, we'll use it to call the UDF across a set of years. For a deeper dive, read how to [Call UDFs asynchronously](/core-concepts/async/).
 
-```python showLineNumber
+```python showLineNumbers
 import pandas as pd
 
 def run_udf(year):
@@ -242,7 +291,7 @@ gdf_final
 
 These examples show how you can easily integrate Fused into your analytics workflows. For example, you can group `gdf_final` by `GEOID` and `year` and calculate aggregates of the `count` and `stats` columns.
 
-```python showLineNumber
+```python showLineNumbers
 gdfs.groupby(['GEOID', 'year']).agg({'count':'sum', 'stats': 'mean'}).reset_index()
 ```
 
