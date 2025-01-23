@@ -13,7 +13,7 @@ sidebar_custom_props:
 _A complete example show casing how to use Fused to ingest data into a geo-partitioned, cloud friendly format, process images & vectors and use UDFs to produce an analysis_
 
 :::note
-    This tutorial assumes you have [access to Fused](/user-guide/login/) & [installed the `fused` Python package](/python-sdk/#install) locally
+    This tutorial assumes you have [access to Fused](/user-guide/login/), [installed the `fused` Python package](/python-sdk/#install) locally, and an S3 bucket connected to your Fused account
 :::
 
 ## 1. The problem: Detecting illegal boats
@@ -65,27 +65,24 @@ import ImageDataPipeline from '@site/docs/user-guide/examples/dark_vessel_data_b
 
 ## 2. Data for our analysis
 
-We need 2 main datasets:
-- [Sentinel 1 radar images](https://sentinel.esa.int/web/sentinel/copernicus/sentinel-1)
-- [AIS data](https://en.wikipedia.org/wiki/Automatic_identification_system)
+{/* Need a blogpost / docs page about "why cloud native" or something along those lines */}
 
-Both of which are free & open data sources. Since we want our analysis to take only a few seconds at most to run our data needs to be **fast to read** & **scalable to access**.
-
-{/* Need a link towards cloud native so people can read more about this somewhere else */}
-This is why we want both of our datasets to in a Cloud Native format. At the highest level and in practice this means that our data is:
+We will be using radar images and AIS data from free and open data sources for this study. Since we want to process and visualize this data, and iterate quickly, we want our datasets in a Cloud Native format.
+At the highest level and in practice this means that our data is:
 - On a cloud storage (i.e. on S3 buckets)
 - In a format that's fast to read and allows loading only small areas at a time ([Cloud Optimized GeoTiff](https://cogeo.org/) or [GeoParquet](https://geoparquet.org/))
 
-{/* Need a blogpost / docs page about "why cloud native" or something along those lines */}
-
-After looking around at different options we're going to use:
-- Sentinel 1 data from the [Microsoft Planetary Computer Data Catalog](https://planetarycomputer.microsoft.com/dataset/sentinel-1-grd)
-
-    For the nerds out there, we're using the Ground Range Detected product, not the [Radiometrically Terrain Corrected](https://planetarycomputer.microsoft.com/dataset/sentinel-1-rtc) because we're looking at boats in the middle of the ocean, so terrain shouldn't be any issue.
-    - This dataset is available as Cloud Optimized GeoTiff through a [STAC Catalog](https://stacspec.org/en/), meaning we can directly use this data as is.
+The datasets we'll be accessing:
+- [Sentinel 1](https://sentinel.esa.int/web/sentinel/copernicus/sentinel-1) radar images from [Microsoft Planetary Computer Data Catalog](https://planetarycomputer.microsoft.com/dataset/sentinel-1-grd)
+    <details>
+    <summary>Details about the Sentinel data</summary>
+        For the nerds out there, we're using the Ground Range Detected product, not the [Radiometrically Terrain Corrected](https://planetarycomputer.microsoft.com/dataset/sentinel-1-rtc) because we're looking at boats in the middle of the ocean, so terrain shouldn't be any issue.
+        - This dataset is available as Cloud Optimized GeoTiff through a [STAC Catalog](https://stacspec.org/en/), meaning we can directly use this data as is.
+    </details>
 
 - AIS data from the [NOAA Digital Coast](https://www.coast.noaa.gov/digitalcoast/tools/ais.html). We have data all around the continental US [per day as individual `.zip` files](https://coast.noaa.gov/htdata/CMSP/AISDataHandler/2024/index.html)
     - This dataset is not in a cloud native format. If we were to use this directly, every time we were to make a change to our analysis or look at a new area we'd have to find the correct `.zip` file, decompress it, read the entire AIS data for any given day then query only around our area of interest. This is possible, but brings out iteration speed from seconds to minutes.
+
 
 import ImgAISNoaa from '@site/docs/user-guide/examples/AIS_noaa_coast_portal.png';
 
@@ -102,11 +99,7 @@ Topics:
  */}
 
 Since our AIS dataset is not in a geo-partitioned, cloud native format, our first step is to [ingest](/core-concepts/data_ingestion/) it into a tiled format and put it on a cloud bucket. Thankfully we can [do all of this in Fused](/core-concepts/data_ingestion/ingestion-your-data/).
-
-By the end of this ingestion process we'll have:
-- AIS data for 2024 on a cloud storage (AWS S3 bucket)
-- In a GeoParquet format so it's fast to read
-- Tiled & Chunked so we can read only a small portion at a time, making it even faster
+This will give us our 2014 AIS data on cloud storage in a GeoParquet format, allowing us to read data from small portions at a time.
 
 To get this done we'll:
 1. Get a location to store our partitioned AIS data on (this can be any AWS S3 bucket, we'll use one managed by Fused to make this simpler)
@@ -119,6 +112,7 @@ To get this done we'll:
 ### 3.1 - Deciding on where to store out partitioned data
 
 We first need to unzip & read our AIS data before ingesting in as a geo-partitioned cloud native format. One simple way to do this is to write a UDF that reads a zip file and saves it as `.parquet` file on a mounted disk.
+AIS datapoint from NOAA's platform are available per day but we'll aggregate them per month to make it simpler to manage. WE can run all of the code in this section locally, since we don't need to visualize any data.
 
 :::note
     Fused UDFs by default run on serverless instances, so their local storage changes at every run. To keep data persistent across runs we use shared mounted storage across all the instances of your team
@@ -130,9 +124,11 @@ We first need to unzip & read our AIS data before ingesting in as a geo-partitio
 import fused
 
 datestr='2024_09_01'
-
-url=f'https://coast.noaa.gov/htdata/CMSP/AISDataHandler/{datestr[:4]}/AIS_{datestr}.zip'
 path=fused.file_path(f'/AIS/{datestr[:7]}/{datestr[-2:]}')
+```
+
+```
+/tmp/fused/AIS/2024_09/01.parquet
 ```
 
 {/* NOTE: As of Jan 2024, fused.file_path() doesn't work reliably across real time, local & run_remote() */}
@@ -146,24 +142,10 @@ TODO: Decide whether or not it's worth it to go on a tangent explaining this to 
 '/tmp/fused/AIS/2023_03/29'
 ``` */}
 
-AIS datapoint from NOAA's platform are available per day but we'll aggregate them per month to make it simpler to manage:
-
-```
-- /tmp/fused/AIS/2024_08/
-    - 01.parquet
-    - 02.parquet
-    ...
-- /tmp/fused/AIS/2024_09/
-    - 01.parquet
-    - 02.parquet
-...
-```
 
 ### 3.2 - Writing a UDF to open each AIS dataset
 
-The rest of the logic is to open each file, read it as a CSV and write it to parquet.
-
-Read more about how to [write UDFs here](/core-concepts/write/)
+The rest of the logic is [write a UDF](/core-concepts/write/) to open each file, read it as a CSV and write it to parquet.
 
 ```python showLineNumbers
 @fused.udf()
@@ -174,15 +156,17 @@ def read_ais_from_noaa_udf(datestr='2023_03_29', overwrite=False):
     import zipfile
     import pandas as pd
     import s3fs
+
     # This is the specific URL where daily AIS data is available
     url=f'https://coast.noaa.gov/htdata/CMSP/AISDataHandler/{datestr[:4]}/AIS_{datestr}.zip'
+
     # This is our local mount file path, 
     path=fused.file_path(f'/AIS/{datestr[:7]}/')
     daily_ais_parquet = f'{path}/{datestr[-2:]}.parquet'
 
     # Skipping any existing files
     if os.path.exists(daily_ais_parquet) and not overwrite:
-        print('exist')
+        print(f'{daily_ais_parquet} exist')
         return pd.DataFrame({'status':['exist']})
 
     # Download ZIP file to mounted disk
@@ -200,13 +184,13 @@ def read_ais_from_noaa_udf(datestr='2023_03_29', overwrite=False):
         return pd.DataFrame({'status':[f'read_error_{r.status_code}']})
 ```
 
-{/* Running this UDF 1 time to try it out */}
-
 We can run this UDF a single time to make sure it works:
 
 ```python showLineNumbers
 single_ais_month = fused.run(read_ais_from_noaa_udf, datestr="2024_09_01")
 ```
+
+{/*  we have /mnt/cache/ here but /tmp/fused in 3.1 */}
 
 Which returns:
 ```bash
@@ -217,15 +201,12 @@ To recap what we've done so far:
 - Build a UDF that takes a date, fetches a `.zip` file from NOAA's AISDataHandler portal and saves it to our UDFs' mount (so other UDFs can access it)
 - Run this UDF 1 time for a specific date
 
-### 3.3 - Run this UDF over a year of AIS data
+### 3.3 - Run this UDF over a month of AIS data
 
 Next step: Run this for a whole period!
 
-:::tip
-    You can read more on how to run multiple small UDFs in [the dedicated section](/core-concepts/run-udfs/run-small-udfs/#running-multiple-small-fusedrun-jobs-in-parallel)
-:::
-
-Since each UDF takes a few seconds to run per date, we're going to use the experimental `PoolRunner` to call a large pool of UDFs all at once with a large date range
+Since each UDF takes a few seconds to run per date, we're going to use the experimental `PoolRunner` to call a large pool of UDFs all at once with a large date range.
+You can also [run multiple small UDFs](/core-concepts/run-udfs/run-small-udfs/#running-multiple-small-fusedrun-jobs-in-parallel) in parallel.
 
 With a bit of Python gymnastics we can create a list of all the dates we'd like to process. Preparing to get all of September 2023 would look like this:
 
@@ -275,13 +256,10 @@ You'll see all our daily files! Notice how each file is a few 100 Mb. These file
 
 {/* TODO: This section (and the docs in general) are missing info about number of chunks*/}
 
-These individual parquet files are now store on our mount disk. We could save them directly onto cloud storage but before that we can geo-partition them to make them even faster to read
+These individual parquet files are now store on our mount disk. We could save them directly onto cloud storage but before that we can geo-partition them to make them even faster to read. This will make our reduce the time it takes to access our data from [minutes to seconds](/core-concepts/data_ingestion/why-ingestion/).
+Fused provides a simple way to do this with the [ingestion process](/core-concepts/data_ingestion/).
 
-:::tip
-    You can read more about why we need to ingest data [in the dedicated section](/core-concepts/data_ingestion/why-ingestion/)
-:::
-
-Fused provides a simple way to do this with the [ingestion process](/core-concepts/data_ingestion/). Our ingestion pipeline will then slice the dataset in order to make 
+{/* not sure what this sentence was going for... Our ingestion pipeline will then slice the dataset in order to make */}
 
 import ImgGeoParquet from '@site/docs/user-guide/examples/geoparquet_overview.png';
 
@@ -293,16 +271,14 @@ _Image credit from the [Cloud Native Geo slideshow](https://guide.cloudnativegeo
 
 To do this we need a few things:
 - **Our input dataset**: in this case our month of AIS data.
-    - We need to refer to the files directly so we'll use the 
+   {/*- We need to refer to the files directly so we'll use the */}
 - **A target cloud bucket**: We're going to create a bucket to store our month of geo-partitioned AIS data in parquet files
 - A target number of chunks to partition our data in. For now we're going to keep it at 500
 - Latitude / Longitude columns to determine the location of each point
 
 ```python showLineNumbers
 ais_daily_parquets = [f'file:///mnt/cache/AIS/{day[:-3]}/{day[-2:]}.parquet' for day in range_of_ais_dates]
-```
 
-```python showLineNumbers
 job = fused.ingest(
     ais_daily_parquets,
     's3://fused-users/fused/demo_user/AIS_2024_ingester/prod_2024_09',
@@ -315,7 +291,7 @@ We'll send this job to a [large instance using `job.run_remote()`](/core-concept
 
 ```python showLineNumbers
 j.run_remote(
-    instance_type='r5.8xlarge', # We want why big beafy machine to do the partitioning in parallel, so large amounts of CPUs
+    instance_type='r5.8xlarge', # We want why big beefy machine to do the partitioning in parallel, so large amounts of CPUs
     disk_size_gb=999 # need a large amount of disk because this job will open each output parquet file to calculate centroid 
 )
 ```
@@ -362,9 +338,11 @@ We're going to use the [Microsoft Planetary Computer Sentinel-1 Ground Range Det
 
 Let's start with a basic UDF just returning our area of interest:
 
+{/* why was this function named s1_udf */}
+
 ```python showLineNumbers
 @fused.udf
-def s1_udf(
+def udf(
     bbox: fused.types.ViewportGDF,
 ):
 
@@ -373,7 +351,7 @@ def s1_udf(
 
 This UDF simply returns our Map viewport as a `gpd.GeoDataFrame`, this is a good starting point for our UDF returning Sentinel 1 images
 
-While you can do this anywhere around the continental US (our AIS dataset covered shores around the US, so we want to limit oursleves there), if you want to follow along this is the area of interest we'll be using. You can overwrite this in the UDF directly:
+While you can do this anywhere around the continental US (our AIS dataset covered shores around the US, so we want to limit ourselves there), if you want to follow along this is the area of interest we'll be using. You can overwrite this in the UDF directly:
 
 ```python showLineNumbers
 @fused.udf
@@ -389,13 +367,15 @@ Following the [Microsoft Planetary Computer examples for getting Sentinel-1](htt
 
 {/* TODO: Remove odc for now */}
 
-```python {5-6,10-14} showLineNumbers
+```python {5-8,12-16} showLineNumbers
 @fused.udf
 def s1_udf(
     bbox: fused.types.ViewportGDF,
 ):
     import planetary_computer
     import pystac_client
+    import geopandas as gpd
+    import shapely
 
     bbox = gpd.GeoDataFrame({}, geometry=[shapely.box(-93.90425364,  29.61879782, -93.72767384,  29.7114987 )], crs=4326)
 
@@ -433,7 +413,7 @@ def s1_udf(
         datetime=time_of_interest,
         query=None,
     ).item_collection()
-    print(f"{len(items=)}")
+    print(f"{len(items)=}")
 
     return bbox
 ```
@@ -455,7 +435,7 @@ We'll get an [`xarray.Dataset` object](https://docs.xarray.dev/en/stable/generat
 def s1_udf(
     bbox: fused.types.ViewportGDF,
 ):
-    import odc
+    import odc.stac
     import planetary_computer
     import pystac_client
 
@@ -475,13 +455,13 @@ def s1_udf(
         datetime=time_of_interest,
         query=None,
     ).item_collection()
-    print(f"{len(items=)}")
+    print(f"{len(items)=}")
 
     ds = odc.stac.load(
         items,
         crs="EPSG:3857",
         bands=bands,
-        resolution=resolution,
+        resolution=10,
         bbox=bbox.total_bounds,
     ).astype(float)
 
@@ -584,11 +564,11 @@ We can make this even simpler by moving the `get_data` function under [the `Modu
 
 <ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/dark-vessel-detection/using_utils_module.mp4" width="100%" />
 
-<details>
-  <summary>Expand to see code split between Code Editor & Utils Module</summary>
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
-    In code editor:
-
+<Tabs className="unique-tabs">
+  <TabItem value="editor" label="Editor" default>
     ```python {10} showLineNumbers
     @fused.udf
     def udf(
@@ -606,8 +586,10 @@ We can make this even simpler by moving the `get_data` function under [the `Modu
         
         return image.astype('uint8')
     ```
+  </TabItem>
+  <TabItem value="module" label="Module" default>
+    Rename the "Module name" to `local_utils`:
 
-    In Utils Module (and renaming the "Module Name" to `local_utils`):
     ```python showLineNumbers
     @fused.cache
     def get_data(bbox, time_of_interest, resolution, bands, data_name="sentinel-1-grd"):
@@ -656,8 +638,9 @@ We can make this even simpler by moving the `get_data` function under [the `Modu
 
             return da
     ```
+  </TabItem>
+</Tabs>
 
-</details>
 
 ## 5. Simple boat detection in Sentinel 1 radar images
 
