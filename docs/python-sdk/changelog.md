@@ -10,8 +10,8 @@ sidebar_position: 8
 ## v1.13.0 (2025-01-22)
 
 - Fixed shared UDFs not respecting the Cache Enabled setting.
-- Added a cache TTL setting when running a UDF via a shared token endpoint.
-- When editing a UDF's tags, tags you have already used or your team has used will be suggested.
+- Added a cache TTL (time-to-live) setting when running a UDF via a shared token endpoint.
+- Tags you or your team have already used will be suggested when editing a UDF's tags.
 - Team UDFs will be shown as read-only in Workbench, similar to Public UDFs.
 - File Explorer shows deletion in progress.
 - File Explorer can accept more S3 URLs, and uses `/mount/` instead of `/mnt/cache`.
@@ -20,10 +20,10 @@ sidebar_position: 8
 - Fixed the browser location bar in Workbench updating on a delay.
 - Fixed writing Shapefile or GPKG files to S3.
 - (Beta) New [fusedio/apps](https://github.com/fusedio/apps) repository for public Fused Apps.
-- Navigating to Team UDFs in the UDF Catalog will now prompt for login.
+- Navigating to Team UDFs or Saved UDFs in the UDF Catalog will now prompt for login.
 - Fixed the "Select..." environment button in Workbench settings.
 - UDF Builder will no longer replace all unaccepted characters with `_` (underscore).
-- Fixed reading team UDFs when running a UDF with a shared token.
+- Fixed loading team UDFs when running a UDF with a shared token.
 - Batch jobs that use `print` will now have that output appear in the job logs.
 - Apps in the shared token list show an app icon.
 - Removed some deprecated batch job options.
