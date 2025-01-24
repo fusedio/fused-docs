@@ -27,7 +27,7 @@ sidebar_position: 8
 - Batch jobs that use `print` will now have that output appear in the job logs.
 - Apps in the shared token list show an app icon.
 - Removed some deprecated batch job options.
-- Installed `vega-datasets` package, upgraded `GDAL` package.
+- Installed `vega-datasets` package.
 
 ## v1.12.0 (2025-01-10)
 
