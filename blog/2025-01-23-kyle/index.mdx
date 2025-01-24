@@ -1,0 +1,115 @@
+---
+slug: how-pilot-fiber-creates-internal-tools-to-support-telecom-operations
+title: "How Pilot Fiber creates internal tools to support telecom operations"
+authors: [kyle,nelina]
+tags: [postgres,postgis,csv,integrations]
+image: https://fused-magic.s3.us-west-2.amazonaws.com/blog-assets/pittman_social.png
+hide_table_of_contents: false
+keywords: [postgres,postgis,csv,integrations]
+---
+
+**TL;DR Pilot Fiber creates apps with Fused to quickly identify and resolve service interruptions for its New York City customers.**
+
+[Pilot Fiber](https://www.pilotfiber.com/) is a commercial [Internet Service Provider](https://en.wikipedia.org/wiki/Internet_service_provider) primarily in New York City. Our primary value proposition in competing with national-scale ISPs is our commitment to customer experience–we are fast and flexible in responding to customer needs in all aspects of the business:
+
+
+- During the sales process, we aim to answer customer questions quickly and accurately, including technical details and routing.
+- When designing our deployment into new buildings, we equip our engineers with as much detail as possible before they arrive on-site to maximize the efficiency of time spent with building engineers.
+- When an incident interrupts a service we will immediately jump into action to address the cause and restore connectivity.
+
+
+We use Fused to support all of these areas, and this post focuses on the last one: incident management.
+- What happens when a service interruption occurs?
+- How do we identify the likely location of an issue and get to a solution as quickly as possible?
+
+
+
+
+
+import ReactPlayer from 'react-player'
+
+<ReactPlayer playsinline={true} className="video__player" playing={true} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/blog-assets/pilotfiber_video.mp4" width="100%" />
+
+
+
+
+{/* truncate */}
+
+### The Problem: Why Speed Matters
+
+
+
+One of the most common ways a customer's service can be impacted is through damage to the physical fiber cables connecting them back to a data center and the internet. Almost all fiber optic cables in Manhattan run through a shared manhole-and-duct system beneath the streets. As such, road construction or work by other providers in a manhole has the potential to damage the equipment of multiple providers. When that damage occurs, it is first come, first served to get your network repaired and customers back online. Field teams from multiple providers can't work in the same manhole simultaneously, so being onsite first and ready to repair can mean a difference of hours in customer downtime.
+
+
+Because of this, Pilot uses an active fiber monitoring system across our network. Sophisticated devices in our data centers are constantly shooting light down the fibers in our network looking for potential damage. Those devices return a reflectance signature from the fiber and compare it with a reference “snapshot” created when that fiber was initially installed in a building.
+
+
+When an anomaly is registered, it immediately fires an alert giving a fiber route and distance to the potential problem (i.e. “There is unexpected light loss on the fiber serving 1234 5th Avenue at a distance of 2.351 kilometers from the data center.”). When this happens, our engineering and support teams analyze the data within minutes to determine the issue's exact location and, if necessary, get crews headed to the site to begin repairs.
+
+
+
+
+## The Process: Fused As The Glue-Layer
+
+Historically, this analysis has required the attention of an Outside Plant engineer with access to specialized software and network knowledge, regardless of the time of day or day of the week. This bottleneck is not ideal when time is of the essence, even at 3 a.m. So today, we are creating a more sophisticated future using Fused to make this information accessible to more support team members and make our response times even faster.
+
+
+Using Fused as a back-end glue layer, we built a web app allowing users to select a route and distance and calculate where the system has registered the fault. We also created a simple user interface that provides the user a view of nearby network infrastructure and automatically generates the reports field crews would need to complete repairs based on that nearby infrastructure.
+
+
+The workflow requires a series of calls to UDFs that act as intermediaries to a [Postgres](https://www.postgresql.org/)/[PostGIS](https://postgis.net/) database, which in turn is sourcing data from other internal sources. This structure allows us to easily keep the business logic organized at the UDF layer while limiting the scope of data access and security via Postgres and internal processes maintaining the sync.
+
+
+
+
+The basic process is seen below:
+
+import Image1 from '/blog/2025-01-23-kyle/kyle1.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={Image1} alt="File" style={{}} />
+</div>
+
+_Workflow diagram._
+
+
+Two separate flows are initiated when the user inputs a route and a distance to process. One retrieves the selected route to load onto the Mapbox-based map within the app, while the second kicks off a processing chain to analyze the fault information. This chain utilizes UDFs that assist in isolating the location of the fault and relevant nearby infrastructure and adding elements to the map display to assist the user in visualizing what may be occurring.
+
+
+import Image2 from '/blog/2025-01-23-kyle/kyle2.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={Image2} alt="File" style={{}} />
+</div>
+_UDF to find fault location._
+
+
+If you consider the cables you see strung along utility poles, they are not perfectly straight: they can sag, bend, go up and down, and have coils of extra cable along the way. The same is true of our cables under the streets. All of those variations add distance to the run, which needs to be considered when determining where a fault is likely to be located.
+
+
+Taking those variables into account, we use Fused to apply [GeoPandas](http://geopandas.org/) and PostGIS spatial functionality to assess where the fault is most likely to be located. After calculating that location, the tool loads splice cases along that route that point to where problems are most likely to have occurred, and slack loops built into the route to make the user aware of nearby capacity that could enable faster repair of more significant damage. We next determine which splice cases are closest to the likely damage point and if any of those are within 150m of the automated distance calculation. These manholes would be the first locations our field teams would be sent to investigate.
+
+
+Once we have determined the relevant nearby splice cases, we use another UDF to build a CSV that reproduces what a splice report export looks like from our primary fiber mapping software. This report details what cables enter the case, what fibers on which cables are spliced to which fibers on other cables, and what building and/or customer circuits are being carried along which fibers. Fused then integrates with a separate process we previously built to process that CSV into the final file that goes to the field teams. This gives them the confidence to quickly address issues while minimizing the risk of damaging other circuits, as well as giving them the information needed to monitor the status of other services in the case while they work.
+
+
+
+
+
+## The Impact of Fused
+
+The impact of Fused across this process is many-fold:
+- The ability to easily work with data across several systems.
+- Centralizing business logic to the UDFs involved eliminates the tendency for this logic to be spread across client-side processes, server-side processes, and possibly the database itself.
+- Modularization of operations into UDFs. For example, the UDF that generates the splice reports for this process can easily be reused in any other method that requires the same functionality.
+- The effortless ability for the same UDF to simultaneously serve as a modular processing unit where needed in one workflow and a map service for display in another.
+- Using Python and standard libraries enables developers who may not be spatial data experts to read, understand, and modify UDFs as necessary.
+
+
+
+## Conclusion
+
+Pilot's success in the market is largely based on our flexibility and responsiveness to customer needs, which is never more important than when physical damage to the network is impacting their service. Within this scenario, Fused is providing a critical layer enabling us to offer more non-technical users access to data in multiple systems through a simple UI that will result in repair teams moving to restore service to our customers as quickly as possible.
+
+Fused is an ideal product for Pilot Fiber in that we can increasingly make highly technical information available in a usable format to additional teams throughout the company in support of our drive to be fast, flexible, and accurate in delivering service to our customers in all aspects of the business.
