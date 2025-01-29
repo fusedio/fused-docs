@@ -84,6 +84,8 @@ The first time Fused sees the function code and parameters, Fused runs the funct
 
 ## Advanced
 
+### Caching & [`bbox`](/core-concepts/filetile/#the-bbox-object)
+
 Pass [`bbox`](/core-concepts/filetile/#the-bbox-object) to make the output unique to each [Tile](/core-concepts/filetile/#tile).
 
 ```python showLineNumbers
@@ -97,42 +99,71 @@ def udf(bbox: fused.types.TileGDF=None):
     return fn(bbox)
 ```
 
+Note that this means that if you're running your Tile UDF in Workbench, every time you pan around on the [map](/workbench/udf-builder/map/) you will cache a new file
+
+For this reason, it's recommend to keep cache for tasks that _aren't_ dependent on your `bbox` when possible, for example:
+
+```python {5} showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.TileGDF):
+
+    @fused.cache
+    def loading_slow_geodataframe(data_path):
+        ...
+        return gdf
+
+    # Loading of our slow data does not depend on bbox so can be cached even if we pan around
+    gdf = loading_slow_geodataframe()
+    gdf_in_bbox = gdf[gdf.geometry.within(bbox.iloc[0].geometry)]
+
+    return gdf_in_bbox
+```
+
 ### Defining a `ttl`: How long to keep your cache for
+
+You can define how long to keep your cache data for with `ttl`:
+
+```python showLineNumbers
+@fused.udf
+def udf():
+
+    @fused.cache(
+        ttl=24 # Your cache will stay available for 24h
+    )
+    def loading_slow_geodataframe(data_path):
+        ...
+        return gdf
+
+    return gdf
+```
+
+::: tip
+    Read more about this in the [Python SDK page on `@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
+:::
 
 ### Saving on `local` or `mount`
 
+Your cache is by default saved to `mount/`. This means if you or a team mate runs the same function with the same input they can also leverage your previously cached functions
 
-{/* NOTE: Commenting this out for now, as we haven't come across use cases where anyone would use this for now */}
-{/* Set a custom cache directory with the optional `path` parameter.
+You can however decide to only have this available to each individual instance by passing `storage="local"`:
 
-```python showLineNumbers
+```python {5} showLineNumbers
 @fused.udf
 def udf():
-    import pandas as pd
 
-    @fused.cache(path='optional_cache_dir')
-    def fn():
-        return pd.DataFrame()
+    @fused.cache(
+        storage="local"
+    )
+    def loading_slow_geodataframe(data_path):
+        ...
+        return gdf
 
-    return fn()
-``` */}
+    return gdf
+```
 
-
-
-{/* NOTE: Same, commenting this out for now as it doesn't add much so far */}
-{/* Reset the cache by running the function once with `reset=True`.
-
-```python showLineNumbers
-@fused.udf
-def udf():
-    import pandas as pd
-
-    @fused.cache(reset=True)
-    def fn():
-        return pd.DataFrame()
-
-    return fn()
-``` */}
+::: tip
+    Read more about this in the [Python SDK page on `@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
+:::
 
 ## Best practices
 
@@ -142,7 +173,7 @@ Here are 2 simple UDFs to demonstrate the impact:
 - `without_cache_loading_udf` -> Doesn't use cache
 - `with_cache_loading_udf` -> Caches the loading of a CSV
 
-```python showLineNumbers
+```python {6} showLineNumbers
 @fused.udf
 def without_cache_loading_udf( 
     ship_length_meters: int = 100, 
@@ -159,13 +190,12 @@ def without_cache_loading_udf(
 ```
 
 and the same:
-```python {7} showLineNumbers
+```python {6} showLineNumbers
 @fused.udf
 def with_cache_loading_udf(
     ship_length_meters: int = 100, 
     ais_path: str = "s3://fused-users/fused/file_format_demo/AIS_2024_01_01_100k_points.csv"
 ):
-    
     @fused.cache
     def load_ais_data(ais_path: str):
         import pandas as pd
@@ -195,6 +225,10 @@ Works best when caching repetitive queries where function AND input don't change
  */}
 
 ## Caching a UDF
+
+While [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) allows you to cache functions _inside_ UDFs, UDFs themselves are cached by default.
+
+This means that UDFs that are repeatably called with `fused.run(udf)` become much more responsive (if they have the same inputs)
 
 {/* 
 TODO:
