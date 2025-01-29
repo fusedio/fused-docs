@@ -63,7 +63,7 @@ Fused uses a few different types of cache, but they all work in this same manner
 
 ## Caching a function inside a UDF: [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
 
-Any function inside a UDF can cached using [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache).
+Any function inside a UDF can cached using [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) decorator around it:
 
 ```python showLineNumbers
 @fused.udf
@@ -82,11 +82,9 @@ def udf():
 The first time Fused sees the function code and parameters, Fused runs the function and stores the return value in a cache. The next time the function is called with the same parameters and code, Fused skips running the function and returns the cached value.
 
 
-### Advanced
-
+## Advanced
 
 Pass [`bbox`](/core-concepts/filetile/#the-bbox-object) to make the output unique to each [Tile](/core-concepts/filetile/#tile).
-
 
 ```python showLineNumbers
 @fused.udf
@@ -98,6 +96,10 @@ def udf(bbox: fused.types.TileGDF=None):
 
     return fn(bbox)
 ```
+
+### Defining a `ttl`: How long to keep your cache for
+
+### Saving on `local` or `mount`
 
 
 {/* NOTE: Commenting this out for now, as we haven't come across use cases where anyone would use this for now */}
@@ -132,7 +134,56 @@ def udf():
     return fn()
 ``` */}
 
-### Best practices
+## Best practices
+
+Using `@fused.cache` is mostly helpful to cache functions that have long, repetitive calls like loading data from slow file formats for example.
+
+Here are 2 simple UDFs to demonstrate the impact:
+- `without_cache_loading_udf` -> Doesn't use cache
+- `with_cache_loading_udf` -> Caches the loading of a CSV
+
+```python showLineNumbers
+@fused.udf
+def without_cache_loading_udf( 
+    ship_length_meters: int = 100, 
+    ais_path: str = "s3://fused-users/fused/file_format_demo/AIS_2024_01_01_100k_points.csv"
+):    
+    # @fused.cache
+    def load_ais_data(ais_path: str):
+        import pandas as pd
+        return pd.read_csv(ais_path)
+
+    ais = load_ais_data(ais_path)
+
+    return ais[ais.Length > ship_length_meters]
+```
+
+and the same:
+```python {7} showLineNumbers
+@fused.udf
+def with_cache_loading_udf(
+    ship_length_meters: int = 100, 
+    ais_path: str = "s3://fused-users/fused/file_format_demo/AIS_2024_01_01_100k_points.csv"
+):
+    
+    @fused.cache
+    def load_ais_data(ais_path: str):
+        import pandas as pd
+        return pd.read_csv(ais_path)
+    
+    ais = load_ais_data(ais_path)
+
+    return ais[ais.Length > ship_length_meters]
+```
+
+Comparing the 2:
+
+import BenchmarkCache from '@site/static/img/core-concepts/caching/caching_benchmark.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={BenchmarkCache} alt="Function + Input run" style={{width: 800,}} />
+</div>
+
 
 {/* 
 TODO:
