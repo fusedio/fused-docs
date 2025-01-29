@@ -17,8 +17,8 @@ m = folium.Map(
     tiles="Cartodb Darkmatter",
 )
 
+geo_json_data = fused.run("UDF_Crop_Mask_Zonal_Statistics")
 
-geo_json_data = fused.run("fsh_1ElB1rKZ3NyjWPajQ4T6uh")
 
 colormap1 = branca.colormap.linear.OrRd_09.colors  # .scale(0, 1)#.reverse()
 # colormap1.reverse()
