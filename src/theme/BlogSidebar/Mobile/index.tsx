@@ -1,6 +1,6 @@
 import React from "react";
 import Link from "@docusaurus/Link";
-import { useVisibleBlogSidebarItems } from "@docusaurus/theme-common/internal";
+import { useVisibleBlogSidebarItems } from "@docusaurus/plugin-content-blog/client";
 import { NavbarSecondaryMenuFiller } from "@docusaurus/theme-common";
 import type { Props } from "@theme/BlogSidebar/Mobile";
 
