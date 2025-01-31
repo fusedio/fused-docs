@@ -56,7 +56,7 @@ Create an `.html` file following this template. This code creates a DeckGL map t
 
       new DeckGL({
         mapboxApiAccessToken:
-          "pk.eyJ1IjoiZXN0b3JudWRhbWUiLCJhIjoiY2xneTh0Y3czMDczODNmcG11ZTNuazZvbSJ9.QFTdgqDlAFQKaJ_QLA35ew",
+          "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
         mapStyle: "mapbox://styles/mapbox/dark-v10",
         initialViewState: {
           longitude: -122.417759,
@@ -121,7 +121,7 @@ The layer in the sample map comes from [Overture Buildings UDF](https://github.c
 new TileLayer({
   // Use geojsonlayer inside of tilelayer. This is instead of MVT Layer, which has optimizations that can cause clipping when polygon extends beyond Tile area.
   id: "VectorTileLayer",
-  data: "https://www.fused.io/server/v1/realtime-shared/3aadf7a892ace2f6efab8da9720f1da241fc4403e7722f501ab45503e094a13d/run/tiles/{z}/{x}/{y}?dtype_out_vector=geojson",
+  data: "https://www.fused.io/server/v1/realtime-shared/UDF_Overture_Maps_Example/run/tiles/{z}/{x}/{y}?dtype_out_vector=geojson",
   maxZoom: 19,
   minZoom: 0,
 
@@ -157,7 +157,7 @@ Raster Tile layers are created by placing a [`BitmapLayer`](https://deck.gl/docs
 ```js
 new TileLayer({
   id: "RasterTileLayer",
-  data: "https://staging.fused.io/server/v1/realtime-shared/3a6030eb4fa9c70780bba1b62cdfffe2eca24745db78aba62ddd96ebb0f6e0cc/run/tiles/{z}/{x}/{y}?dtype_out_raster=png",
+  data: `https://www.fused.io/server/v1/realtime-shared/UDF_Arcgis_Rgb/run/tiles/{z}/{x}/{y}?dtype_out_raster=png`,
   maxZoom: 19,
   minZoom: 0,
 
