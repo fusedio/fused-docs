@@ -15,7 +15,7 @@ Fused has 2 main cache types:
         - Incredibly helpful for making workbench more responsive: query data 1 time and then make operations on it
         - Can be used as "1 time ingestion" for non partioned files
     - Mention limits
-        - 24h limit
+        - 5 days limit (currently, will change to 48h later)
         - Changes on each code or input change, so quite brittle
 - UDF caching 
     - Demonstrate (also in notebook probably: call same UDF 1 first time, then make same call again -> Should be faster)
@@ -81,92 +81,13 @@ def udf():
 
 The first time Fused sees the function code and parameters, Fused runs the function and stores the return value in a cache. The next time the function is called with the same parameters and code, Fused skips running the function and returns the cached value.
 
+A function cached with `@fused.cache` currently is:
+- Cached for 5 days from the creation time
+- Stored as pickle file on `mount/`
 
-## Advanced
+### Benchmark: With / without [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
 
-### Caching & [`bbox`](/core-concepts/filetile/#the-bbox-object)
-
-Pass [`bbox`](/core-concepts/filetile/#the-bbox-object) to make the output unique to each [Tile](/core-concepts/filetile/#tile).
-
-```python showLineNumbers
-@fused.udf
-def udf(bbox: fused.types.TileGDF=None):
-
-    @fused.cache
-    def fn(bbox):
-        return bbox
-
-    return fn(bbox)
-```
-
-Note that this means that if you're running your Tile UDF in Workbench, every time you pan around on the [map](/workbench/udf-builder/map/) you will cache a new file
-
-For this reason, it's recommend to keep cache for tasks that _aren't_ dependent on your `bbox` when possible, for example:
-
-```python {5} showLineNumbers
-@fused.udf
-def udf(bbox: fused.types.TileGDF):
-
-    @fused.cache
-    def loading_slow_geodataframe(data_path):
-        ...
-        return gdf
-
-    # Loading of our slow data does not depend on bbox so can be cached even if we pan around
-    gdf = loading_slow_geodataframe()
-    gdf_in_bbox = gdf[gdf.geometry.within(bbox.iloc[0].geometry)]
-
-    return gdf_in_bbox
-```
-
-### Defining a `ttl`: How long to keep your cache for
-
-You can define how long to keep your cache data for with `ttl`:
-
-```python showLineNumbers
-@fused.udf
-def udf():
-
-    @fused.cache(
-        ttl=24 # Your cache will stay available for 24h
-    )
-    def loading_slow_geodataframe(data_path):
-        ...
-        return gdf
-
-    return gdf
-```
-
-:::tip
-    Read more about this in the [Python SDK page on `@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
-:::
-
-### Caching on `local` or `mount` storage
-
-Your cache is by default saved to `mount/`. This means if you or a team mate runs the same function with the same input they can also leverage your previously cached functions
-
-You can however decide to only have this available to each individual instance by passing `storage="local"`. There are a few benefits / reasons to do this:
-- Using `@fused.cache` on regular Python functions when developing locally:
-    - You don't need to even use [`fused.run()`](/core-concepts/run-udfs/run-small-udfs/#fusedrun), you could use `@fused.cache` without ever using any other Fused functionality 
-
-```python {5} showLineNumbers
-@fused.cache(
-    storage="local"
-)
-def local_function_load(data_path):
-    ...
-    return gdf
-
-gdf = local_function_load()
-```
-
-:::tip
-    Read more about this in the [Python SDK page on `@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
-:::
-
-## Best practices
-
-Using `@fused.cache` is mostly helpful to cache functions that have long, repetitive calls like loading data from slow file formats for example.
+Using [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) is mostly helpful to cache functions that have long, repetitive calls like loading data from slow file formats for example.
 
 Here are 2 simple UDFs to demonstrate the impact:
 - `without_cache_loading_udf` -> Doesn't use cache
@@ -213,15 +134,99 @@ import BenchmarkCache from '@site/static/img/core-concepts/caching/caching_bench
 <img src={BenchmarkCache} alt="Function + Input run" style={{width: 800,}} />
 </div>
 
+### Best Practices
 
-{/* 
-TODO:
-Works best when caching repetitive queries where function AND input don't change so:
-- Want to cache loading data function, especially for slow data (pd.read_csv() for example or `rio.open()`)
-    -> Allows to load data 1 time, but do different operations on it as you explore your data
-- Repetitive operations that can take long amount of processing
-- But not the best to rely for large data, at this point ingest might make more sense
- */}
+Caching inside a UDF works best for:
+- Loading data from slow formats (CSV, Shapefile)
+- Repetitive operations that can take a long amount of processing
+
+However, do not rely on [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) to load very large (>10Gb) datasets as cache is only stored for a short amount of time (in days) and is over-written each time you change the cached function or inputs
+
+Look into [ingesting your data](/core-concepts/data_ingestion/) in partitioned, [cloud native formats](/core-concepts/data_ingestion/file-formats/) if you're working with large datasets
+
+
+### Advanced
+
+#### Caching & [`bbox`](/core-concepts/filetile/#the-bbox-object)
+
+Pass [`bbox`](/core-concepts/filetile/#the-bbox-object) to make the output unique to each [Tile](/core-concepts/filetile/#tile).
+
+```python showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.TileGDF=None):
+
+    @fused.cache
+    def fn(bbox):
+        return bbox
+
+    return fn(bbox)
+```
+
+Note that this means that if you're running your Tile UDF in Workbench, every time you pan around on the [map](/workbench/udf-builder/map/) you will cache a new file
+
+For this reason, it's recommend to keep cache for tasks that _aren't_ dependent on your `bbox` when possible, for example:
+
+```python {5} showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.TileGDF):
+
+    @fused.cache
+    def loading_slow_geodataframe(data_path):
+        ...
+        return gdf
+
+    # Loading of our slow data does not depend on bbox so can be cached even if we pan around
+    gdf = loading_slow_geodataframe()
+    gdf_in_bbox = gdf[gdf.geometry.within(bbox.iloc[0].geometry)]
+
+    return gdf_in_bbox
+```
+
+{/* TODO: Commenting this out for now, will add back once these are implemented */}
+{/* ### Defining a `ttl`: How long to keep your cache for
+
+You can define how long to keep your cache data for with `ttl`:
+
+```python showLineNumbers
+@fused.udf
+def udf():
+
+    @fused.cache(
+        ttl=24 # Your cache will stay available for 24h
+    )
+    def loading_slow_geodataframe(data_path):
+        ...
+        return gdf
+
+    return gdf
+```
+
+:::tip
+    Read more about this in the [Python SDK page on `@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
+:::
+
+### Caching on `local` or `mount` storage
+
+Your cache is by default saved to `mount/`. This means if you or a team mate runs the same function with the same input they can also leverage your previously cached functions
+
+You can however decide to only have this available to each individual instance by passing `storage="local"`. There are a few benefits / reasons to do this:
+- Using `@fused.cache` on regular Python functions when developing locally:
+    - You don't need to even use [`fused.run()`](/core-concepts/run-udfs/run-small-udfs/#fusedrun), you could use `@fused.cache` without ever using any other Fused functionality 
+
+```python {5} showLineNumbers
+@fused.cache(
+    storage="local"
+)
+def local_function_load(data_path):
+    ...
+    return gdf
+
+gdf = local_function_load()
+```
+
+:::tip
+    Read more about this in the [Python SDK page on `@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
+::: */}
 
 ## Caching UDFs run with a [token](/core-concepts/run-udfs/run-small-udfs/#token)
 
@@ -247,9 +252,6 @@ This means that UDFs that are repeatably called with `fused.run(udf)` become muc
 
 {/* 
 TODO:
-- UDFs are directly cached by default, so calling `fused.run(my_udf)` again without any change will not change anything
-    - especially true if this is a File UDF (and inputs don't change that much)
-    - For tile -> does change frequently as every `bbox` is different
-- In workbench can turn this off (show screenshot). On by default
+Add section on doing this in `fused-py` once this is implemented
  */}
 
