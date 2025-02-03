@@ -1,0 +1,244 @@
+---
+id: cache
+title: Caching
+tags: [cache]
+sidebar_position: 5
+---
+
+# Caching
+
+_This pages explains how caching makes Fused more responsive & some best practices for making the best use of it_
+
+## Caching Basics
+
+The goal of Fused is to make developing & running code faster for data scientists. This is done by using [efficient file formats](/core-concepts/data_ingestion/file-formats/) and making [UDFs simple to run](/core-concepts/run-udfs/). On top of those, Fused relies heavily on caching to make recurring calls much faster.
+
+At a high level, caching is storing the output of a function run with some input so we can directly access the result next time that function is called with the same input, rather than re-computing it to save time & processing cost.
+
+import FunctionRun from '@site/static/img/core-concepts/caching/function_input_run_cache.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={FunctionRun} alt="Function + Input run" style={{width: 800,}} />
+</div>
+
+_The first run of a [Function + Input] is processed, but the next time that same combination is called, the result is retrieved much faster_
+
+As soon as either the function or the inputs change however, the output needs to be processed (as the result of this new combination has not been computed before)
+
+import DifferentFct from '@site/static/img/core-concepts/caching/running_different_function.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={DifferentFct} alt="Different Function + Input run" style={{width: 800,}} />
+</div>
+
+Fused uses a few different types of cache, but they all work in this same manner
+
+
+## Caching a function inside a UDF: [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
+
+Any function inside a UDF can be cached using the [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) decorator around it:
+
+```python {5} showLineNumbers
+@fused.udf
+def udf():
+    import pandas as pd
+
+    @fused.cache
+    def load_data(i):
+        # Do heavy processing here
+        return pd.DataFrame({'id': [i]})
+
+    df_first = load_data(i=1)
+    df_first_repeat = load_data(i=1)
+    df_second = load_data(i=2)
+
+    return pd.concat([df_first, df_first_repeat, df_second])
+```
+
+Under the hood:
+- The first time Fused sees the function code and parameters, Fused runs the function and stores the return value in a cache. 
+    - This is what happens in our example above, line 10: `load_data(i=1)`
+- The next time the function is called with the same parameters and code, Fused skips running the function and returns the cached value
+    - Example above: line 11, `df_first_repeat` is the same call as `df_first` so the function is simply retrieved from cache, not computed
+- As soon as the function _or_ the input changes, Fused re-computes the function
+    - Example above: line 12 as `i=2`, which is different from the previous calls
+
+**Implementation Details**
+
+A function cached with [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) is:
+- Cached for 5 days from the creation time
+- Stored as pickle file on `mount/`
+
+### Benchmark: With / without [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
+
+Using [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) is mostly helpful to cache functions that have long, repetitive calls like for example loading data from slow file formats.
+
+Here are 2 simple UDFs to demonstrate the impact:
+- `without_cache_loading_udf` -> Doesn't use cache
+- `with_cache_loading_udf` -> Caches the loading of a CSV
+
+```python {6} showLineNumbers
+@fused.udf
+def without_cache_loading_udf( 
+    ship_length_meters: int = 100, 
+    ais_path: str = "s3://fused-users/fused/file_format_demo/AIS_2024_01_01_100k_points.csv"
+):    
+    # @fused.cache
+    def load_ais_data(ais_path: str):
+        import pandas as pd
+        return pd.read_csv(ais_path)
+
+    ais = load_ais_data(ais_path)
+
+    return ais[ais.Length > ship_length_meters]
+```
+
+and the same:
+```python {6} showLineNumbers
+@fused.udf
+def with_cache_loading_udf(
+    ship_length_meters: int = 100, 
+    ais_path: str = "s3://fused-users/fused/file_format_demo/AIS_2024_01_01_100k_points.csv"
+):
+    @fused.cache
+    def load_ais_data(ais_path: str):
+        import pandas as pd
+        return pd.read_csv(ais_path)
+    
+    ais = load_ais_data(ais_path)
+
+    return ais[ais.Length > ship_length_meters]
+```
+
+Comparing the 2:
+
+import BenchmarkCache from '@site/static/img/core-concepts/caching/caching_benchmark.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={BenchmarkCache} alt="Function + Input run" style={{width: 800,}} />
+</div>
+
+### Best Practices
+
+Caching inside a UDF works best for:
+- Loading data from slow formats (CSV, Shapefile)
+- Repetitive operations that can take a long amount of processing
+
+However, do not rely on [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) to load very large (>10Gb) datasets as cache is only stored for a short amount of time (in days) and is over-written each time you change the cached function or inputs
+
+Look into [ingesting your data](/core-concepts/data_ingestion/) in partitioned, [cloud native formats](/core-concepts/data_ingestion/file-formats/) if you're working with large datasets
+
+:::tip
+The line between when to ingest your data or use `@fused.cache` is a bit blurry. Check [this section](/core-concepts/data_ingestion/why-ingestion/#using-cache-as-a-single-use-ingester) for more
+:::
+
+### Advanced
+
+#### Caching & [`bbox`](/core-concepts/filetile/#the-bbox-object)
+
+Pass [`bbox`](/core-concepts/filetile/#the-bbox-object) to make the output unique to each [Tile](/core-concepts/filetile/#tile).
+
+```python showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.TileGDF=None):
+
+    @fused.cache
+    def fn(bbox):
+        return bbox
+
+    return fn(bbox)
+```
+
+Note that this means that if you're running your Tile UDF in Workbench, every time you pan around on the [map](/workbench/udf-builder/map/) you will cache a new file
+
+For this reason, it's recommend to keep cache for tasks that _aren't_ dependent on your `bbox` when possible, for example:
+
+```python {5} showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.TileGDF):
+
+    @fused.cache
+    def loading_slow_geodataframe(data_path):
+        ...
+        return gdf
+
+    # Loading of our slow data does not depend on bbox so can be cached even if we pan around
+    gdf = loading_slow_geodataframe()
+    gdf_in_bbox = gdf[gdf.geometry.within(bbox.iloc[0].geometry)]
+
+    return gdf_in_bbox
+```
+
+{/* TODO: Commenting this out for now, will add back once these are implemented */}
+{/* ### Defining a `ttl`: How long to keep your cache for
+
+You can define how long to keep your cache data for with `ttl`:
+
+```python showLineNumbers
+@fused.udf
+def udf():
+
+    @fused.cache(
+        ttl=24 # Your cache will stay available for 24h
+    )
+    def loading_slow_geodataframe(data_path):
+        ...
+        return gdf
+
+    return gdf
+```
+
+:::tip
+    Read more about this in the [Python SDK page on `@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
+:::
+
+### Caching on `local` or `mount` storage
+
+Your cache is by default saved to `mount/`. This means if you or a team mate runs the same function with the same input they can also leverage your previously cached functions
+
+You can however decide to only have this available to each individual instance by passing `storage="local"`. There are a few benefits / reasons to do this:
+- Using `@fused.cache` on regular Python functions when developing locally:
+    - You don't need to even use [`fused.run()`](/core-concepts/run-udfs/run-small-udfs/#fusedrun), you could use `@fused.cache` without ever using any other Fused functionality 
+
+```python {5} showLineNumbers
+@fused.cache(
+    storage="local"
+)
+def local_function_load(data_path):
+    ...
+    return gdf
+
+gdf = local_function_load()
+```
+
+:::tip
+    Read more about this in the [Python SDK page on `@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
+::: */}
+
+## Caching UDFs run with a [token](/core-concepts/run-udfs/run-small-udfs/#token)
+
+While [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) allows you to cache functions _inside_ UDFs, UDFs ran with [tokens](/core-concepts/run-udfs/run-small-udfs/#token) are cached by default.
+
+This is enabled by default when sharing a token from Workbench:
+
+import WorkbenchToken from '@site/static/img/core-concepts/caching/workbench_token_caching.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={WorkbenchToken} alt="Workbench token saving" style={{width: 600,}} />
+</div>
+
+We can demonstrate this with this UDF, that has a `time.sleep(5)` in it. In Workbench we can get the Python token and run it 2 times:
+
+import TokenCache from '@site/static/img/core-concepts/caching/cached_token_udf.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={TokenCache} alt="Token fused.run() caching" style={{width: 800,}} />
+</div>
+
+This means that UDFs that are repeatably called with `fused.run(udf)` become much more responsive (if they have the same inputs)
+
+{/* 
+TODO:
+Add section on doing this in `fused-py` once this is implemented
+ */}
+
