@@ -38,29 +38,40 @@ Fused uses a few different types of cache, but they all work in this same manner
 
 Any function inside a UDF can be cached using the [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) decorator around it:
 
-```python showLineNumbers
+```python {5} showLineNumbers
 @fused.udf
 def udf():
     import pandas as pd
 
     @fused.cache
     def load_data(i):
+        # Do heavy processing here
         return pd.DataFrame({'id': [i]})
 
     df_first = load_data(i=1)
+    df_first_repeat = load_data(i=1)
     df_second = load_data(i=2)
-    return pd.concat([df_first, df_second])
+
+    return pd.concat([df_first, df_first_repeat, df_second])
 ```
 
-The first time Fused sees the function code and parameters, Fused runs the function and stores the return value in a cache. The next time the function is called with the same parameters and code, Fused skips running the function and returns the cached value.
+Under the hood:
+- The first time Fused sees the function code and parameters, Fused runs the function and stores the return value in a cache. 
+    - This is what happens in our example above, line 10: `load_data(i=1)`
+- The next time the function is called with the same parameters and code, Fused skips running the function and returns the cached value
+    - Example above: line 11, `df_first_repeat` is the same call as `df_first` so the function is simply retrieved from cache, not computed
+- As soon as the function _or_ the input changes, Fused re-computes the function
+    - Example above: line 12 as `i=2`, which is different from the previous calls
 
-A function cached with `@fused.cache` currently is:
+**Implementation Details**
+
+A function cached with [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) is:
 - Cached for 5 days from the creation time
 - Stored as pickle file on `mount/`
 
 ### Benchmark: With / without [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
 
-Using [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) is mostly helpful to cache functions that have long, repetitive calls like loading data from slow file formats for example.
+Using [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) is mostly helpful to cache functions that have long, repetitive calls like for example loading data from slow file formats.
 
 Here are 2 simple UDFs to demonstrate the impact:
 - `without_cache_loading_udf` -> Doesn't use cache
@@ -117,6 +128,9 @@ However, do not rely on [`@fused.cache`](/python-sdk/top-level-functions/#fusedc
 
 Look into [ingesting your data](/core-concepts/data_ingestion/) in partitioned, [cloud native formats](/core-concepts/data_ingestion/file-formats/) if you're working with large datasets
 
+:::tip
+The line between when to ingest your data or use `@fused.cache` is a bit blurry. Check [this section](/core-concepts/data_ingestion/why-ingestion/#using-cache-as-a-single-use-ingester) for more
+:::
 
 ### Advanced
 
