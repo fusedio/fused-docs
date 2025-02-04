@@ -104,7 +104,7 @@ const config: Config = {
         alt: "Fused Logo",
         src: "img/Symbol-text-black-bg-transparent.svg",
         href: "https://www.fused.io",
-        width: 72, // this value is added manually for what looks nice. No specific logic behind it
+        width: 68, // this value is added manually for what looks nice. No specific logic behind it
       },
       items: [
         // {
