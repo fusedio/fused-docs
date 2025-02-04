@@ -99,11 +99,12 @@ const config: Config = {
     // Replace with your project's social card
     // image: "https://fused-magic.s3.us-west-2.amazonaws.com/main_marketing_website/product_diagram_october2024_bg_small.png",
     navbar: {
-      title: "Fused",
+      // title: "Fused",
       logo: {
         alt: "Fused Logo",
-        src: "img/logo-black-bg-transparent.svg",
+        src: "img/Symbol-text-black-bg-transparent.svg",
         href: "https://www.fused.io",
+        width: 72, // this value is added manually for what looks nice. No specific logic behind it
       },
       items: [
         // {
