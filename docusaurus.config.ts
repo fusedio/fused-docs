@@ -53,6 +53,8 @@ const config: Config = {
           exclude: [
             // '**/_*.{js,jsx,ts,tsx,md,mdx}',
             // '**/_*/**',
+            // '**/*_unlisted/',
+            // '**/*_unlisted.mdx',
             "**/*.test.{js,jsx,ts,tsx}",
             "**/__tests__/**",
           ],
