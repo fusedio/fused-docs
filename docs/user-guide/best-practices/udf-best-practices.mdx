@@ -57,7 +57,7 @@ UDFs run on Python serverless compute, but [quickly timeout](/core-concepts/run-
 
         df = pd.read_csv(data_path)
         # Some complicated processing logic to create df_processed
-        # ...
+        processed_df = ... 
 
         return processed_df
     ```
@@ -75,8 +75,10 @@ UDFs run on Python serverless compute, but [quickly timeout](/core-concepts/run-
     @fused.udf
     def process_data_udf(df):
         import pandas as pd
+
         # Some complicated processing logic to create df_processed
-        # ...
+        processed_df = ... 
+
         return processed_df
     ```
 
@@ -104,9 +106,99 @@ UDFs run with [`fused.run()`](/core-concepts/run-udfs/run-small-udfs/#fusedrun) 
 
 ### [Cache](/core-concepts/cache/) as much as you can
 
+Fused relies heavily on [caching](/core-concepts/cache/) repetitive tasks to make recurring calls much faster (and more compute efficient)
+
+✅ You want to use caching for functions with inputs that are recurring:
+- Loading a dataset
+- Computing a recurring operation with default variables 
+- Intermediate results 
+
+❌ When not to use caching:
+- In most cases, for functions taking `bbox` as an argument -> your function + input would get overwritten for each new `bbox` which probably changes for each new call
+
+<details>
+    <summary>Example: Caching a repetitive task</summary>
+
+    Re-using the example from [keeping things small](/user-guide/best-practices/udf-best-practices/#keep-things-small):
+
+    ❌ Not recommended:
+
+    ```python showLineNumbers
+    @fused.udf
+    def inefficient_pipeline_udf(data_path):
+        import pandas as pd
+
+        df = pd.read_csv(data_path)
+        # Some complicated processing logic to create df_processed
+        processed_df = ... 
+
+        return processed_df
+    ```
+
+    ✅ Instead, break it down AND cache the calls:
+
+    ```python showLineNumbers
+    @fused.udf
+    def load_data_udf(data_path):
+        import pandas as pd
+        return pd.read_csv(data_path)
+    ```
+
+    ```python showLineNumbers
+    @fused.udf
+    def process_data_udf(df):
+        import pandas as pd
+        # Some complicated processing logic to create df_processed
+        # ...
+        return processed_df
+    ```
+
+    ```python {5-7,9-11} showLineNumbers
+    @fused.udf
+    def pipeline_udf(data_path):
+        import pandas as pd
+
+        @fused.cache
+        def load_data(data_path):
+            return fused.run(load_data_udf, data_path=data_path)
+
+        @fused.cache
+        def process_data(df):
+            return fused.run(process_data_udf, df=df)
+
+        df = load_data(data_path)
+        processed_df = process_data(df)
+
+        return processed_df
+    ```
+</details>
+
+:::tip
+Read more about the caching details:
+- [in the dedicated section](/core-concepts/cache/)
+- How you can use cache to [speed up exploration of slow to read datasets](/core-concepts/data_ingestion/why-ingestion/#using-cache-as-a-single-use-ingester)
+:::
+
 ### Prepare your large datasets
 
+Fused works at its best with data that's fast to read and can be read in tiles or chunks. We know that most of the data out there isn't in the most [efficient file formats](/core-concepts/data_ingestion/file-formats/) which is why we provide tools to [ingest your own data](/core-concepts/data_ingestion/ingestion-your-data/) into cloud-optimized, partitioned formats
+
+We have a [dedicated page](/core-concepts/data_ingestion/why-ingestion/#when-is-ingestion-needed) for when you should consider ingesting your own data. As a rule of thumb you want to consider ingesting your data when:
+- Files are read multiple times and >100Mb should
+- Files that are slow or require some processing to open (`.zip` for example)
+
 ### Don't start from scratch: [UDF Catalog](/workbench/udf-catalog/)
+
+Just like using libraries in Python to leverage existing tools, you don't need to start from scratch in Fused. We have a [Catalog of existing UDFs](/workbench/udf-catalog/) built & maintained by us and the community
+
+You can find a host of different UDFs that can serve as a starting point or as inspiration to create your own UDFs:
+- Open datasets from common open repository [like STAC catalogs](https://www.fused.io/workbench/catalog/Sentinel_Tile_Example_2-ddb4c495-40e3-48ba-849c-256487f8a9cb)
+- Run [on the fly ML prediction](https://www.fused.io/workbench/catalog/Dl4eo_Airplane_Detection_Global-91f81c0c-08f6-4a0c-82f9-bd2e0322b4e7) on satellite images
+- Compute a [spatial join](https://www.fused.io/workbench/catalog/Overture_Nsi-dd89972c-ce30-4544-ba0f-81fc09f5bbef) between 2 datasets
+
+![UDF Catalog](/img/udfcatalog_august.png)
+
+You can also contribute your own UDFs to the community!
 
 ## Debugging UDFs 
 
