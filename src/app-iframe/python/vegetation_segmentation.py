@@ -1,11 +1,12 @@
 import streamlit as st
+
 # Sidebar sliders for parameters
 # st.header("Model Parameters")
 
 available_indices = [
-    'VARI: Visible Atmospherically Resistant Index',  # Visible Atmospherically Resistant Index
-    'GLI: Green Leaf Index',  # Green Leaf Index
-    'RGRI: Red-Green Ratio Index (>0.9 for buildings)',  # Red-Green Ratio Index
+    "VARI: Visible Atmospherically Resistant Index",  # Visible Atmospherically Resistant Index
+    "GLI: Green Leaf Index",  # Green Leaf Index
+    "RGRI: Red-Green Ratio Index (>0.9 for buildings)",  # Red-Green Ratio Index
     # 'ExG: Excess Green Index',     # Excess Green Index
     # 'NGRDI: Normalized Green-Red Difference Index',    # Normalized Green-Red Difference Index
 ]
@@ -14,13 +15,16 @@ selected_name = st.selectbox("Select Vegetation Index", available_indices)
 index_method = available_indices.index(selected_name)
 
 # Slider for morphological kernel size
-index_min, index_max = st.slider("Thresholding Index Values",
-                                 min_value=0.0,
-                                 max_value=1.0,
-                                 value=(0.1, 0.9),
-                                 step=0.01)
+index_min, index_max = st.slider(
+    "Thresholding Index Values",
+    min_value=0.0,
+    max_value=1.0,
+    value=(0.1, 0.9),
+    step=0.01,
+)
 mask = st.checkbox("Show Mask", value=True)
-st.components.v1.html(f"""<!DOCTYPE html>
+st.components.v1.html(
+    f"""<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8" />
@@ -56,7 +60,7 @@ st.components.v1.html(f"""<!DOCTYPE html>
 
       new DeckGL({{
         // mapboxApiAccessToken:
-        //   "pk.eyJ1IjoiZXN0b3JudWRhbWUiLCJhIjoiY2xneTh0Y3czMDczODNmcG11ZTNuazZvbSJ9.QFTdgqDlAFQKaJ_QLA35ew",
+        //   "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
         // mapStyle: "mapbox://styles/mapbox/dark-v10",
         initialViewState: {{
           longitude: -122.837838,
@@ -73,7 +77,7 @@ st.components.v1.html(f"""<!DOCTYPE html>
 
             renderSubLayers: props => {{
               const {{boundingBox}} = props.tile;
-            
+
               return new BitmapLayer(props, {{
                 data: null,
                 image: props.data,
@@ -89,7 +93,7 @@ st.components.v1.html(f"""<!DOCTYPE html>
 
             renderSubLayers: props => {{
               const {{boundingBox}} = props.tile;
-            
+
               return new BitmapLayer(props, {{
                 data: null,
                 image: props.data,
@@ -103,4 +107,5 @@ st.components.v1.html(f"""<!DOCTYPE html>
   </body>
 </html>
 """,
-                      height=600)
+    height=600,
+)

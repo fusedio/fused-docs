@@ -53,6 +53,8 @@ const config: Config = {
           exclude: [
             // '**/_*.{js,jsx,ts,tsx,md,mdx}',
             // '**/_*/**',
+            // '**/*_unlisted/',
+            // '**/*_unlisted.mdx',
             "**/*.test.{js,jsx,ts,tsx}",
             "**/__tests__/**",
           ],
@@ -127,6 +129,11 @@ const config: Config = {
         {
           href: "https://www.fused.io/workbench",
           label: "Workbench",
+          position: "right",
+        },
+        {
+          href: "https://fused.instatus.com/",
+          label: "Status",
           position: "right",
         },
       ],
