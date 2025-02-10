@@ -233,10 +233,6 @@ const config: Config = {
             to: "/workbench/udf-builder/styling/",
             from: ["/workbench/viz-styling/"],
           },
-          {
-            to: "/python-sdk/contribute/#publish-a-udf-to-a-github-repository",
-            from: ["/basics/utilities/connect-your-github-repository"],
-          },
         ],
         createRedirects(existingPath) {
           if (existingPath.includes("/user-guide/out")) {
