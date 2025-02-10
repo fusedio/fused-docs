@@ -105,7 +105,6 @@ const sidebars: SidebarsConfig = {
         "python-sdk/authentication",
         "python-sdk/dependencies",
         "python-sdk/changelog",
-        "python-sdk/contribute",
       ],
     },
     {
