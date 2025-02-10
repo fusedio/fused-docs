@@ -1,0 +1,66 @@
+name: Update API Documentation
+# This workflow is currently parked 🚧, we would start working on it again soon
+
+on:
+  # pull_request:
+  schedule:
+    # Check at 00:00 UTC on Monday
+    - cron: "0 0 * * 1"
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  check-and-update-docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pydoc-markdown requests fused
+
+      - name: Get latest PyPI version
+        id: pypi-version
+        run: |
+          LATEST_VERSION=$(pip index versions fused | grep fused | awk -F '[()]' '{print $2}')
+          echo "latest_version=${LATEST_VERSION}" >> $GITHUB_OUTPUT
+          echo "Latest version on PyPI: ${LATEST_VERSION}"
+
+      - name: Extract package files
+        run: |
+          PACKAGE_PATH=$(pip show --files fused | grep "Location:" | cut -d' ' -f2)
+          FUSED_PATH="${PACKAGE_PATH}/fused"
+          echo "Package path: ${FUSED_PATH}"
+          mkdir -p source_code
+          cp -r ${FUSED_PATH}/* source_code/
+
+      - name: Generate documentation
+        run: |
+          pydoc-markdown pydoc-markdown.yml
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "docs: update API documentation for fused v${{ steps.pypi-version.outputs.latest_version }}"
+          title: "docs: update API documentation for fused v${{ steps.pypi-version.outputs.latest_version }}"
+          body: |
+            This PR updates the API documentation for the latest version of fused package.
+
+            - Version: ${{ steps.pypi-version.outputs.latest_version }}
+            - Generated using pydoc-markdown
+
+            Please review the changes and merge if everything looks correct.
+          branch: update-api-docs
+          delete-branch: true
+          labels: fused-py-updates
