@@ -131,6 +131,11 @@ const config: Config = {
           label: "Workbench",
           position: "right",
         },
+        {
+          href: "https://fused.instatus.com/",
+          label: "Status",
+          position: "right",
+        },
       ],
     },
     footer: {
