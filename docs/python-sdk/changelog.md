@@ -12,12 +12,10 @@ sidebar_position: 8
 **`fused-py`**
 
 <!-- Unsure about changes yet: cache, ttl, fused.run() & fused.submit() -->
-<!-- Embed object? Prob no need to mention -->
 <!-- Q: workbench: Only apps can be shared by team (#3028) -> Not sure what this is? -->
 - `pandas` & `geopandas` are now optional for running non-spatial UDF locally
 - Removed hardcoded `nodata=0` value for serializing raster data
 - Improvement to [UDF caching](/core-concepts/cache/#caching-a-udf)
-<!-- - Bug fixes to shared token  -->
 
 **Workbench**
 
@@ -28,7 +26,7 @@ General:
 - Ability to upload images for UDF Preview in [Settings Page](/workbench/udf-builder/code-editor/#settings)
 - Adding “Fullscreen” toggle in [Map View](/workbench/udf-builder/map/)
 - Improved `colorContinuous` in [Visualize Tab](/workbench/udf-builder/styling/)
-<!-- Not sure if this is still in? -->
+<!-- I think this is out, please confirm -->
 - Allowing users to configure public/team access scopes for share tokens 
 - No longer able to edit UDF & App name in read-only mode
 - Fixing job loading logs
