@@ -20,19 +20,24 @@ sidebar_position: 8
 <!-- - Bug fixes to shared token  -->
 
 **Workbench**
-- Adding “Fullscreen” toggle in [Map View](/workbench/udf-builder/map/)
+
+General:
 - Improvements to Navigation in [Command Pallette](/user-guide/best-practices/workbench-best-practices/#using-keyboard-shortcuts-command-palette). Try it out in Workbench by doing `Cmd + K` (`Ctrl + K` on Windows / Linux)
 - 1st implementation of Autocomplete in [Code Editor](/workbench/udf-builder/code-editor/) with `Tab`
-- Improved `colorContinuous` in [Visualize Tab](/workbench/udf-builder/styling/)
-- Download directories as `zip` in [File Explorer](/workbench/file-explorer/)
 - Added a Delete Button in the Shared Tokens page (under [Account page](/workbench/account/))
 - Ability to upload images for UDF Preview in [Settings Page](/workbench/udf-builder/code-editor/#settings)
-<!-- Bug: Seems to be broken? - Opening `.parquet` files with Kepler.GL is now possible from Map View -->
+- Adding “Fullscreen” toggle in [Map View](/workbench/udf-builder/map/)
+- Improved `colorContinuous` in [Visualize Tab](/workbench/udf-builder/styling/)
 <!-- Not sure if this is still in? -->
 - Allowing users to configure public/team access scopes for share tokens 
 - No longer able to edit UDF & App name in read-only mode
 - Fixing job loading logs
-- Adding favourites to file path input search results 
+
+[File Explorer](/workbench/file-explorer/):
+- Download directories as `zip`
+- Adding favorites to file path input search results 
+- Ability to open `.parquet` files with Kepler.GL
+
 
 ## v1.13.0 (2025-01-22)
 
