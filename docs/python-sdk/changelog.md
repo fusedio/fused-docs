@@ -7,6 +7,20 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.14.0 (2025-02-14)
+
+### Feature Improvements
+
+**`fused-py`**
+
+**Workbench**
+- Adding “Fullscreen” toggle in Map View
+- Improvements to Navigation in [Command Pallette](https://docs.fused.io/user-guide/best-practices/workbench-best-practices/#using-keyboard-shortcuts-command-palette). Try it out in Workbench by doing `Cmd + K` (`Ctrl + K` on Windows / Linux)
+- 1st implementation of Autocomplete in Editor with `Tab`
+- Improved `colorContinuous` in Visualise Tab
+- Download directories as `zip` in File Explorer
+- Added a Delete Button in the Shared Tokens page
+
 ## v1.13.0 (2025-01-22)
 
 - Fixed shared UDFs not respecting the Cache Enabled setting.
