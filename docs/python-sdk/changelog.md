@@ -9,17 +9,30 @@ sidebar_position: 8
 
 ## v1.14.0 (2025-02-14)
 
-### Feature Improvements
-
 **`fused-py`**
 
+<!-- Unsure about changes yet: cache, ttl, fused.run() & fused.submit() -->
+<!-- Embed object? Prob no need to mention -->
+<!-- Q: workbench: Only apps can be shared by team (#3028) -> Not sure what this is? -->
+- `pandas` & `geopandas` are now optional for running non-spatial UDF locally
+- Removed hardcoded `nodata=0` value for serializing raster data
+- Improvement to [UDF caching](/core-concepts/cache/#caching-a-udf)
+<!-- - Bug fixes to shared token  -->
+
 **Workbench**
-- Adding “Fullscreen” toggle in Map View
-- Improvements to Navigation in [Command Pallette](https://docs.fused.io/user-guide/best-practices/workbench-best-practices/#using-keyboard-shortcuts-command-palette). Try it out in Workbench by doing `Cmd + K` (`Ctrl + K` on Windows / Linux)
-- 1st implementation of Autocomplete in Editor with `Tab`
-- Improved `colorContinuous` in Visualise Tab
-- Download directories as `zip` in File Explorer
-- Added a Delete Button in the Shared Tokens page (under [Account page](https://docs.fused.io/workbench/account/))
+- Adding “Fullscreen” toggle in [Map View](/workbench/udf-builder/map/)
+- Improvements to Navigation in [Command Pallette](/user-guide/best-practices/workbench-best-practices/#using-keyboard-shortcuts-command-palette). Try it out in Workbench by doing `Cmd + K` (`Ctrl + K` on Windows / Linux)
+- 1st implementation of Autocomplete in [Code Editor](/workbench/udf-builder/code-editor/) with `Tab`
+- Improved `colorContinuous` in [Visualize Tab](/workbench/udf-builder/styling/)
+- Download directories as `zip` in [File Explorer](/workbench/file-explorer/)
+- Added a Delete Button in the Shared Tokens page (under [Account page](/workbench/account/))
+- Ability to upload images for UDF Preview in [Settings Page](/workbench/udf-builder/code-editor/#settings)
+<!-- Bug: Seems to be broken? - Opening `.parquet` files with Kepler.GL is now possible from Map View -->
+<!-- Not sure if this is still in? -->
+- Allowing users to configure public/team access scopes for share tokens 
+- No longer able to edit UDF & App name in read-only mode
+- Fixing job loading logs
+- Adding favourites to file path input search results 
 
 ## v1.13.0 (2025-01-22)
 
