@@ -19,7 +19,7 @@ sidebar_position: 8
 - 1st implementation of Autocomplete in Editor with `Tab`
 - Improved `colorContinuous` in Visualise Tab
 - Download directories as `zip` in File Explorer
-- Added a Delete Button in the Shared Tokens page
+- Added a Delete Button in the Shared Tokens page (under [Account page](https://docs.fused.io/workbench/account/))
 
 ## v1.13.0 (2025-01-22)
 
