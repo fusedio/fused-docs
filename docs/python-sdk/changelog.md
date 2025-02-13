@@ -7,6 +7,36 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.14.0 (2025-02-14)
+
+**`fused-py`**
+
+<!-- Unsure about changes yet: cache, ttl, fused.run() & fused.submit() -->
+<!-- Q: workbench: Only apps can be shared by team (#3028) -> Not sure what this is? -->
+- `pandas` & `geopandas` are now optional for running non-spatial UDF locally
+- Removed hardcoded `nodata=0` value for serializing raster data
+- Improvement to [UDF caching](/core-concepts/cache/#caching-a-udf)
+
+**Workbench**
+
+General:
+- Improvements to Navigation in [Command Pallette](/user-guide/best-practices/workbench-best-practices/#using-keyboard-shortcuts-command-palette). Try it out in Workbench by doing `Cmd + K` (`Ctrl + K` on Windows / Linux)
+- Autocomplete now works with `Tab` in [Code Editor](/workbench/udf-builder/code-editor/) with `Tab`
+- Added a Delete Button in the Shared Tokens page (under [Account page](/workbench/account/))
+- Ability to upload images for UDF Preview in [Settings Page](/workbench/udf-builder/code-editor/#settings)
+- Adding “Fullscreen” toggle in [Map View](/workbench/udf-builder/map/)
+- Improved `colorContinuous` in [Visualize Tab](/workbench/udf-builder/styling/)
+<!-- I think this is out, please confirm -->
+- Allowing users to configure public/team access scopes for share tokens 
+- No longer able to edit UDF & App name in read-only mode
+- Fixing job loading logs
+
+[File Explorer](/workbench/file-explorer/):
+- Download directories as `zip`
+- Adding favorites to file path input search results 
+- Ability to open `.parquet` files with Kepler.gl
+
+
 ## v1.13.0 (2025-01-22)
 
 - Fixed shared UDFs not respecting the Cache Enabled setting.
