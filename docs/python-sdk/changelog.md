@@ -21,7 +21,7 @@ sidebar_position: 8
 
 General:
 - Improvements to Navigation in [Command Pallette](/user-guide/best-practices/workbench-best-practices/#using-keyboard-shortcuts-command-palette). Try it out in Workbench by doing `Cmd + K` (`Ctrl + K` on Windows / Linux)
-- 1st implementation of Autocomplete in [Code Editor](/workbench/udf-builder/code-editor/) with `Tab`
+- Initial implementation of Autocomplete in [Code Editor](/workbench/udf-builder/code-editor/) with `Tab`
 - Added a Delete Button in the Shared Tokens page (under [Account page](/workbench/account/))
 - Ability to upload images for UDF Preview in [Settings Page](/workbench/udf-builder/code-editor/#settings)
 - Adding “Fullscreen” toggle in [Map View](/workbench/udf-builder/map/)
