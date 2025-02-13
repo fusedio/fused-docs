@@ -34,7 +34,7 @@ General:
 [File Explorer](/workbench/file-explorer/):
 - Download directories as `zip`
 - Adding favorites to file path input search results 
-- Ability to open `.parquet` files with Kepler.GL
+- Ability to open `.parquet` files with Kepler.gl
 
 
 ## v1.13.0 (2025-01-22)
