@@ -13,6 +13,9 @@ sidebar_position: 8
 
 <!-- Unsure about changes yet: cache, ttl, fused.run() & fused.submit() -->
 <!-- Q: workbench: Only apps can be shared by team (#3028) -> Not sure what this is? -->
+
+<!-- TODO: Link to `fused.submit()` docs before releasing  -->
+- Introducing `fused.submit()` method for multiple job run 
 - `pandas` & `geopandas` are now optional for running non-spatial UDF locally
 - Removed hardcoded `nodata=0` value for serializing raster data
 - Improvement to [UDF caching](/core-concepts/cache/#caching-a-udf)
