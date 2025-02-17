@@ -1,0 +1,198 @@
+---
+sidebar_label: "EmberWatch Dashboard"
+title: "EmberWatch Dashboard"
+tags: ['example', 'nasa firms', 'fire detection', 'real-time monitoring']
+sidebar_custom_props:
+    name: "EmberWatch Dashboard"
+    image: 'https://fused-magic.s3.us-west-2.amazonaws.com/thumbnails/udfs-staging/Fused_Logo.png'
+    url: "/user-guide/examples/emberwatch-dashboard"
+    urlTS: "/user-guide/examples/emberwatch-dashboard"
+    description: 'Building a real-time fire monitoring system using NASA FIRMS data with efficient data processing and aggregation'
+---
+
+_A complete tutorial on building a real-time fire detection dashboard using NASA FIRMS data, with efficient processing and spatial aggregation using H3_
+
+### Requirements
+- [access to Fused Staging*](/user-guide/login/)
+
+## 1. The Problem: Real-time Fire Monitoring
+
+Monitoring active fires across large geographical areas presents significant challenges for emergency response and public safety. While satellite-based fire detection systems provide valuable data, this information needs to be processed, visualized, and made accessible in real-time.
+
+In this tutorial, we'll build a complete pipeline for accessing and processing fire detection data directly from NASA FIRMS (Fire Information for Resource Management System) in the UDF itself . We'll cover everything from data acquisition to spatial aggregation, creating a foundation for real-time fire monitoring applications.
+
+Here's what we'll accomplish:
+- Set up direct data access to multiple NASA FIRMS satellite sources in the UDF
+- Learn how to pre-process the data and use the fused caching functionality
+- Implement spatial aggregation using H3.
+- Build a dashboard to visualise the data
+
+:::note
+    This implementation focuses on data processing and aggregation, providing a solid foundation for building monitoring applications. The processing pipeline is designed to be efficient and scalable, handling multiple satellite data sources simultaneously.
+:::
+
+## 2. Understanding the Data Sources
+
+We're working with NASA FIRMS data from four different satellites, each providing unique perspectives on fire detection:
+
+- Suomi NPP VIIRS
+- NOAA-20 VIIRS
+- NOAA-21 VIIRS
+- Landsat
+
+<details>
+    <summary>Understanding FIRMS Data Format</summary>
+
+    The KMZ files contain:
+    - Precise fire detection locations (latitude/longitude)
+    - Confidence levels for each detection
+    - Fire Radiative Power (FRP) measurements
+    - Acquisition timestamps
+    - Each satellite provides different coverage patterns and detection characteristics
+</details>
+
+## 3. Building the UDF
+
+### 3.1 Setting Up the Base UDF
+
+First, let's create our main UDF that will handle data fetching and processing. This function acts as the first step to building our dashboard:
+
+```python showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.TileGDF = None, time_period: str = '48h'):
+    """
+    Fetch fire detection data and aggregate into H3 hexagons
+    
+    Parameters:
+    bbox: Bounding box for spatial filtering
+    time_period: Time period for data fetch ('24h', '48h', '72h', '7d')
+    """
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.geometry import Point, Polygon
+    import requests
+    import xml.etree.ElementTree as ET
+    from datetime import datetime
+    import re
+    
+    # Define source URLs with dynamic time period
+    sources = {
+        'snpp-viirs': f'https://firms.modaps.eosdis.nasa.gov/usfs/api/kml_fire_footprints/usa_contiguous_and_hawaii/{time_period}/suomi-npp-viirs-c2/FirespotArea_usa_contiguous_and_hawaii_suomi-npp-viirs-c2_{url_period}.kmz',
+        'noaa20-viirs': f'https://firms.modaps.eosdis.nasa.gov/usfs/api/kml_fire_footprints/usa_contiguous_and_hawaii/{time_period}/noaa-20-viirs-c2/FirespotArea_usa_contiguous_and_hawaii_noaa-20-viirs-c2_{url_period}.kmz',
+        'noaa21-viirs': f'https://firms.modaps.eosdis.nasa.gov/usfs/api/kml_fire_footprints/usa_contiguous_and_hawaii/{time_period}/noaa-21-viirs-c2/FirespotArea_usa_contiguous_and_hawaii_noaa-21-viirs-c2_{url_period}.kmz',
+        'landsat': f'https://firms.modaps.eosdis.nasa.gov/usfs/api/kml_fire_footprints/usa_contiguous_and_hawaii/{time_period}/landsat/FirespotArea_usa_contiguous_and_hawaii_landsat_{url_period}.kmz'
+    }
+```
+
+### 3.2 Implementing Fused Cache
+
+To optimize performance and reduce API calls, we implement a fused caching in the UDF:
+
+```python showLineNumbers
+@fused.cache
+def download_kmz(url: str, cache_key: str):
+    """
+    Download and cache KMZ file
+    """
+    print(f"Downloading fresh data for {cache_key}...")
+    response = requests.get(url, timeout=30, verify=False)
+    if response.status_code != 200:
+        return None
+    return response.content
+
+@fused.cache
+def process_kmz_content(kmz_content: bytes, source_name: str):
+    """
+    Process KMZ content and extract fire data
+    """
+    # Processing logic here
+    return pd.DataFrame(fires)
+```
+
+### 3.3 Processing KMZ Data
+
+The heart of our pipeline is the KMZ processing function that extracts and structures the fire detection data:
+
+```python showLineNumbers
+def process_kmz_content(kmz_content: bytes, source_name: str):
+    """
+    Process KMZ content and extract fire data
+    """
+    with zipfile.ZipFile(BytesIO(kmz_content)) as z:
+        kml_name = next(name for name in z.namelist() if name.endswith('.kml'))
+        with z.open(kml_name) as kml_file:
+            kml_content = kml_file.read()
+
+    ns = {'kml': 'http://earth.google.com/kml/2.1'}
+    root = ET.fromstring(kml_content)
+    
+    placemarks = root.findall('.//kml:Folder/kml:Placemark', ns)
+    fires = []
+    
+    for placemark in placemarks:
+        # Extract coordinates and metadata
+        coords_elem = placemark.find('.//kml:coordinates', ns)
+        desc = placemark.find('kml:description', ns)
+        
+        # Parse coordinates and metadata
+        lon, lat = points[0]
+        confidence = re.search(r'[Cc]onfidence.*?(\d+\.?\d*)', desc_text)
+        frp = re.search(r'[Ff][Rr][Pp].*?(\d+\.?\d*)', desc_text)
+        
+        fires.append({
+            'latitude': lat,
+            'longitude': lon,
+            'confidence': confidence,
+            'frp': frp,
+            'source': source_name
+        })
+    
+    return pd.DataFrame(fires)
+```
+
+### 3.4 Spatial Aggregation
+
+Finally, we implement spatial aggregation using H3 , with dynamic resolution based on zoom level:
+
+```python showLineNumbers
+@fused.cache
+def aggregate_to_hexagons(df: pd.DataFrame, bounds, zoom: int):
+    """
+    Aggregate fire data to H3 hexagons and convert to GeoJSON
+    """
+    # Calculate H3 resolution based on zoom level
+    res = max(min(int(2 + zoom/1.5), 8), 2)
+    
+    # Use DuckDB for efficient aggregation
+    query = f'''
+    WITH aggregated AS (
+        SELECT 
+            h3_latlng_to_cell(latitude, longitude, {res}) as hex,
+            COUNT(*) as fire_count,
+            AVG(confidence) as avg_confidence,
+            AVG(frp) as avg_frp,
+            STRING_AGG(DISTINCT source, ', ') as sources,
+            MIN(acq_date) as earliest_detection,
+            MAX(acq_date) as latest_detection
+        FROM fires
+        GROUP BY 1
+    )
+    SELECT 
+        h3_cell_to_boundary_wkt(hex) as geometry,
+        fire_count,
+        avg_confidence,
+        avg_frp,
+        sources,
+        earliest_detection,
+        latest_detection,
+        hex as h3_index
+    FROM aggregated
+    '''
+    
+    return gpd.GeoDataFrame(
+        result_df,
+        geometry=gpd.GeoSeries.from_wkt(result_df['geometry']),
+        crs="EPSG:4326"
+    )
+```
+
