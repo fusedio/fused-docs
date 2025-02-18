@@ -52,11 +52,12 @@ return arr, [xmin, ymin, xmax, ymax]
 
 ## The `bbox` object
 
-A UDF may use the `bbox` parameter to spatially filter datasets and load into memory only the data that corresponds to the `bbox` spatial bounds. This reduces latency and data transfer costs. [Cloud-optimized formats](https://guide.cloudnativegeo.org/) are particularly suited for these operations - they include [Cloud Optimized GeoTiff](https://www.cogeo.org/), [Geoparquet](https://geoparquet.org/), and [GeoArrow](https://geoarrow.org/format.html).
+A UDF may use the `bbox` parameter to spatially filter datasets and load into memory only the data that corresponds to the `bbox` spatial bounds. This reduces latency and data transfer costs. 
+[Cloud-optimized formats](https://guide.cloudnativegeo.org/) are particularly suited for these operations - they include [Cloud Optimized GeoTiff](https://www.cogeo.org/), [Geoparquet](https://geoparquet.org/), and [GeoArrow](https://geoarrow.org/format.html).
 
 ### `bbox` object types
 
-The `bbox` object defines the spatial bounds of the Tile, which can be represented as a geometry object or XYZ index. For convenience, a user writing a UDF can select from 4 `bbox` object structures using a [parameter type](/core-concepts/write/#typed-parameters).
+The `bbox` object defines the spatial bounds of the Tile, which can be represented as a geometry object or XYZ index.
 
 #### `fused.types.Tile`
 
@@ -66,7 +67,6 @@ This is a [geopandas.geodataframe.GeoDataFrame](https://geopandas.org/en/stable/
 @fused.udf
 def udf(bbox: fused.types.Tile=None):
     print(bbox)
-    return bbox
 
 >>>      x    y   z                                           geometry
 >>> 0  327  790  11  POLYGON ((-122.0 37.0, -122.0 37.1, -122.1 37.1, -122.1 37.0, -122.0 37.0))
@@ -76,14 +76,44 @@ def udf(bbox: fused.types.Tile=None):
 
 This is a `list` of 4 points representing the bounds (extent) of a geometry. The 4 points represent `[xmin, ymin, xmax, ymax]` of the bounds.
 
+{/* TODO: Rename input to `bounds` here? If so then change this doc section away from `bbox`, and called something else */}
 ```python showLineNumbers
 @fused.udf
 def udf(bbox: fused.types.Bounds=None):
     print(bbox)
-    return bbox
 
->>> [-1.52244399 48.62747869 -1.50004107 48.64359255]
+>>> [-1.52244399, 48.62747869, -1.50004107, 48.64359255]
 ```
+
+:::note
+As `fused.types.Bounds` is a list of 4 points it cannot be returned in a UDF directly. The simplest way to return it is to convert it to a `GeoDataFrame`:
+
+```python showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.Bounds=None):
+    import shapely
+    import geopandas as gpd
+
+    print(bbox)
+
+    bbox = gpd.GeoDataFrame(geometry=[shapely.box(*bbox)], crs=4326)
+    return bbox
+```
+
+`fused` also comes with many [handy utils functions](https://github.com/fusedio/udfs/blob/58288bff7b5f34bff100b24b0edd226cbada4970/public/common/utils.py#L1891) that allow you to quickly access these common operations:
+
+```python showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.Bounds=None):
+    bbox = fused.utils.common.bounds_to_gdf(bbox)
+    return bbox
+```
+
+:::
+
+### Legacy types
+
+These types are still currently supported in `fused` though only for legacy reasons and will soon be deprecated. 
 
 {/* #### `fused.types.Bbox`
 
@@ -111,7 +141,11 @@ def udf(bbox: fused.types.TileXYZ=None):
 >>> Tile(x=328, y=790, z=11)
 ``` */}
 
-{/* #### `fused.types.ViewportGDF`
+#### [Legacy] `fused.types.TileGDF`
+
+This behaves the same as [`fused.types.Tile`](/core-concepts/filetile/#fusedtypestile). 
+
+#### [Legacy] `fused.types.ViewportGDF`
 
 This is a [geopandas.geodataframe.GeoDataFrame](https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.html) with a `geometry` column corresponding to the coordinates of the current viewport in the Map.
 ```python showLineNumbers
@@ -137,7 +171,7 @@ import viewportImage from '@site/docs/core-concepts/viewportGDF.png';
     <div style={{textAlign: 'center'}}>
     <img src={viewportImage} alt="The ViewportGDF" style={{width: 1000}} />
     </div>
-</details> */}
+</details>
 
 ## Call HTTP endpoints
 
