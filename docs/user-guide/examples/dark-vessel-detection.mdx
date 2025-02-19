@@ -376,9 +376,10 @@ Let's start with a basic UDF just returning our area of interest:
 ```python showLineNumbers
 @fused.udf
 def udf(
-    bbox: fused.types.ViewportGDF,
+    bbox: fused.types.Bounds,
 ):
-
+    # Convert bounds to GeoDataFrame using Fused utility function
+    bbox = fused.utils.common.bounds_to_gdf(bbox)
     return bbox
 ```
 
@@ -389,10 +390,11 @@ While you can do this anywhere around the continental US (our AIS dataset covere
 ```python showLineNumbers
 @fused.udf
 def udf(
-    bbox: fused.types.ViewportGDF,
+    bbox: fused.types.Bounds,
 ):
-    #highlight-next-line
-    bbox = gpd.GeoDataFrame({}, geometry=[shapely.box(-93.90425364,  29.61879782, -93.72767384,  29.7114987 )], crs=4326)
+    # Define our specific bounds
+    specific_bounds = [-93.90425364, 29.61879782, -93.72767384, 29.7114987]
+    bbox = fused.utils.common.bounds_to_gdf(specific_bounds)
     return bbox
 ```
 
@@ -403,22 +405,23 @@ Following the [Microsoft Planetary Computer examples for getting Sentinel-1](htt
 ```python {5-8,12-16} showLineNumbers
 @fused.udf
 def udf(
-    bbox: fused.types.ViewportGDF,
+   bbox: fused.types.Bounds,
 ):
-    import planetary_computer
-    import pystac_client
-    import geopandas as gpd
-    import shapely
-
-    bbox = gpd.GeoDataFrame({}, geometry=[shapely.box(-93.90425364,  29.61879782, -93.72767384,  29.7114987 )], crs=4326)
-
-    catalog = pystac_client.Client.open(
-        "https://planetarycomputer.microsoft.com/api/stac/v1",
-        # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
-        modifier=planetary_computer.sign_inplace,
-    )
-
-    return bbox
+   import planetary_computer
+   import pystac_client
+   import geopandas as gpd
+   import shapely
+   # Define our specific bounds and convert to GeoDataFrame
+   specific_bounds = [-93.90425364, 29.61879782, -93.72767384, 29.7114987]
+   bbox = fused.utils.common.bounds_to_gdf(specific_bounds)
+   
+   catalog = pystac_client.Client.open(
+       "https://planetarycomputer.microsoft.com/api/stac/v1",
+       # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+       modifier=planetary_computer.sign_inplace,
+   )
+   
+   return bbox
 ```
 
 We already have a bounding box, but let's narrow down our search to the first week of September:
@@ -426,29 +429,29 @@ We already have a bounding box, but let's narrow down our search to the first we
 ```python {8,17-23} showLineNumbers
 @fused.udf
 def udf(
-    bbox: fused.types.ViewportGDF,
+   bbox: fused.types.Bounds,
 ):
-    import planetary_computer
-    import pystac_client
+   import planetary_computer
+   import pystac_client
 
-    time_of_interest="2024-09-03/2024-09-04"
-    bbox = gpd.GeoDataFrame({}, geometry=[shapely.box(-93.90425364,  29.61879782, -93.72767384,  29.7114987 )], crs=4326)
+   time_of_interest="2024-09-03/2024-09-04"
+   specific_bounds = [-93.90425364, 29.61879782, -93.72767384, 29.7114987]
+   bbox = fused.utils.common.bounds_to_gdf(specific_bounds)
 
-    catalog = pystac_client.Client.open(
-        "https://planetarycomputer.microsoft.com/api/stac/v1",
-        # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
-        modifier=planetary_computer.sign_inplace,
-    )
+   catalog = pystac_client.Client.open(
+       "https://planetarycomputer.microsoft.com/api/stac/v1",
+       # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+       modifier=planetary_computer.sign_inplace,
+   )
 
-    items = catalog.search(
-        collections=["sentinel-1-grd"],
-        bbox=bbox.total_bounds,
-        datetime=time_of_interest,
-        query=None,
-    ).item_collection()
-    print(f"{len(items)=}")
-
-    return bbox
+   items = catalog.search(
+       collections=["sentinel-1-grd"],
+       bbox=bbox.total_bounds,
+       datetime=time_of_interest,
+       query=None,
+   ).item_collection()
+   print(f"{len(items)=}")
+   return bbox
 ```
 
 This print statement should return something like:
@@ -466,42 +469,45 @@ We'll get an [`xarray.Dataset` object](https://docs.xarray.dev/en/stable/generat
 ```python {5,10,27-33,35-36,38} showLineNumbers
 @fused.udf
 def udf(
-    bbox: fused.types.ViewportGDF,
+   bbox: fused.types.Bounds,
 ):
-    import odc.stac
-    import planetary_computer
-    import pystac_client
+   import odc.stac
+   import planetary_computer
+   import pystac_client
 
-    time_of_interest="2024-09-03/2024-09-04"
-    bands = ["vv"]
-    bbox = gpd.GeoDataFrame({}, geometry=[shapely.box(-93.90425364,  29.61879782, -93.72767384,  29.7114987 )], crs=4326)
 
-    catalog = pystac_client.Client.open(
-        "https://planetarycomputer.microsoft.com/api/stac/v1",
-        # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
-        modifier=planetary_computer.sign_inplace,
-    )
+   time_of_interest="2024-09-03/2024-09-04"
+   bands = ["vv"]
+   
+   # Convert bounds to GeoDataFrame for STAC operations
+   specific_bounds = [-93.90425364, 29.61879782, -93.72767384, 29.7114987]
+   bbox = fused.utils.common.bounds_to_gdf(specific_bounds)
 
-    items = catalog.search(
-        collections=["sentinel-1-grd"],
-        bbox=bbox.total_bounds,
-        datetime=time_of_interest,
-        query=None,
-    ).item_collection()
-    print(f"{len(items)=}")
+   catalog = pystac_client.Client.open(
+       "https://planetarycomputer.microsoft.com/api/stac/v1",
+       # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+       modifier=planetary_computer.sign_inplace,
+   )
 
-    ds = odc.stac.load(
-        items,
-        crs="EPSG:3857",
-        bands=bands,
-        resolution=10, # We want to use the native Sentinel 1 resolution which is 10m
-        bbox=bbox.total_bounds,
-    ).astype(float)
+   items = catalog.search(
+       collections=["sentinel-1-grd"],
+       bbox=bbox.total_bounds,
+       datetime=time_of_interest,
+       query=None,
+   ).item_collection()
+   print(f"{len(items)=}")
 
-    da =  ds[bands[0]].isel(time=0)
-    image = da.values * 1.0
+   ds = odc.stac.load(
+       items,
+       crs="EPSG:3857",
+       bands=bands,
+       resolution=10, # We want to use the native Sentinel 1 resolution which is 10m
+       bbox=bbox.total_bounds,
+   ).astype(float)
 
-    return image.astype('uint8')
+   da = ds[bands[0]].isel(time=0)
+   image = da.values * 1.0
+   return image.astype('uint8')
 ```
 
 Which gives us a Sentinel 1 image over our area of interest:
@@ -532,71 +538,72 @@ Here's our cleaned up UDF:
 ```python {11,16,26-29,43-46} showLineNumbers
 @fused.udf
 def udf(
-    bbox: fused.types.ViewportGDF,
-    bands: list=["vv"],
-    resolution: int=10,
-    time_of_interest: str="2024-09-03/2024-09-10",
+   bbox: fused.types.Bounds,
+   bands: list=["vv"],
+   resolution: int=10,
+   time_of_interest: str="2024-09-03/2024-09-10",
 ):
-    import pandas as pd
-    import geopandas as gpd
-
-    da = get_data(bbox, time_of_interest, resolution, bands)
-    
-    image = da.values * 1.0
-    return image.astype('uint8')
+   import pandas as pd
+   da = get_data(bbox, time_of_interest, resolution, bands)
+   
+   image = da.values * 1.0
+   return image.astype('uint8')
 
 @fused.cache
 def get_data(
-    bbox: fused.types.ViewportGDF, 
-    time_of_interest: str, 
-    resolution: int, 
-    bands: list, 
-    data_name: str="sentinel-1-grd"
+   bbox: fused.types.Bounds, 
+   time_of_interest: str, 
+   resolution: int, 
+   bands: list, 
+   data_name: str="sentinel-1-grd"
 ):
-    """
-    Getting Sentinel Data from MPC 
-    Resolution is defined in meters as we're using EPSG:3857 
-    """
-    import odc.stac
-    import planetary_computer
-    import pystac_client
+   """
+   Getting Sentinel Data from MPC 
+   Resolution is defined in meters as we're using EPSG:3857 
+   """
+   import odc.stac
+   import planetary_computer
+   import pystac_client
 
-    if resolution < 10:
-        print("Resolution shouldn't be lower than Sentinel 1 or 2 native resolution. Bumping to 10m")
-        resolution = 10
-        print(f"{resolution=}")
+   # Convert bounds to GeoDataFrame
+   bbox = fused.utils.common.bounds_to_gdf(bbox)
 
-    catalog = pystac_client.Client.open(
-            "https://planetarycomputer.microsoft.com/api/stac/v1",
-            # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
-            modifier=planetary_computer.sign_inplace,
-        )
-    items = catalog.search(
-        collections=[data_name],
-        bbox=bbox.total_bounds,
-        datetime=time_of_interest,
-        query=None,
-    ).item_collection()
+   if resolution < 10:
+       print("Resolution shouldn't be lower than Sentinel 1 or 2 native resolution. Bumping to 10m")
+       resolution = 10
+       print(f"{resolution=}")
 
-    if len(items) < 1:
-        print(f'No items found. Please either zoom out or move to a different area')
-    else:
-        print(f"Returned {len(items)} Items")
+   catalog = pystac_client.Client.open(
+           "https://planetarycomputer.microsoft.com/api/stac/v1",
+           # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+           modifier=planetary_computer.sign_inplace,
+       )
 
-        def odc_load(bbox,resolution, time_of_interest):
-            ds = odc.stac.load(
-                    items,
-                    crs="EPSG:3857",
-                    bands=bands,
-                    resolution=resolution,
-                    bbox=bbox.total_bounds,
-                ).astype(float)
-            return ds
-            
-        ds=odc_load(bbox,resolution, time_of_interest)
-        da = ds[bands[0]].isel(time=0)
+   items = catalog.search(
+       collections=[data_name],
+       bbox=bbox.total_bounds,
+       datetime=time_of_interest,
+       query=None,
+   ).item_collection()
 
-        return da
+   if len(items) < 1:
+       print(f'No items found. Please either zoom out or move to a different area')
+   else:
+       print(f"Returned {len(items)} Items")
+
+       def odc_load(bbox,resolution, time_of_interest):
+           ds = odc.stac.load(
+                   items,
+                   crs="EPSG:3857",
+                   bands=bands,
+                   resolution=resolution,
+                   bbox=bbox.total_bounds,
+               ).astype(float)
+           return ds
+           
+       ds=odc_load(bbox,resolution, time_of_interest)
+       da = ds[bands[0]].isel(time=0)
+       return da
 ```
 
 We can make this even simpler by moving the `get_data` function under [the `Module` tab in the Workbench UDF Editor](/workbench/udf-builder/code-editor/#module):
@@ -607,19 +614,18 @@ We can make this even simpler by moving the `get_data` function under [the `Modu
 <Tabs className="unique-tabs">
   <TabItem value="editor" label="Editor" default>
     ```python {8} showLineNumbers
-    @fused.udf
-    def udf(
-        bbox: fused.types.ViewportGDF,
-        bands: list=["vv"],
-        resolution: int=10,
-        time_of_interest: str="2024-09-03/2024-09-10",
-    ):
-        from local_utils import get_data
-
-        da = get_data(bbox, time_of_interest, resolution, bands)
-        image = da.values * 1.0
-        
-        return image.astype('uint8')
+   @fused.udf
+   def udf(
+      bbox: fused.types.Bounds,
+      bands: list=["vv"],
+      resolution: int=10,
+      time_of_interest: str="2024-09-03/2024-09-10",
+   ):
+      from local_utils import get_data
+      da = get_data(bbox, time_of_interest, resolution, bands)
+      image = da.values * 1.0
+   
+      return image.astype('uint8')
     ```
   </TabItem>
   <TabItem value="module" label="Module" default>
@@ -628,7 +634,7 @@ We can make this even simpler by moving the `get_data` function under [the `Modu
     ```python showLineNumbers
     @fused.cache
     def get_data(
-        bbox: fused.types.TileGDF, 
+        bbox: fused.types.Tile,  
         time_of_interest: str, 
         resolution: int, 
         bands: list, 
@@ -641,6 +647,11 @@ We can make this even simpler by moving the `get_data` function under [the `Modu
         import odc.stac
         import planetary_computer
         import pystac_client
+        import geopandas as gpd
+
+        # Convert tile to GeoDataFrame if needed
+        if not isinstance(bbox, gpd.GeoDataFrame):
+            bbox = fused.utils.common.bounds_to_gdf(bbox)
 
         if resolution < 10:
             print("Resolution shouldn't be lower than Sentinel 1 or 2 native resolution. Bumping to 10m")
@@ -652,6 +663,7 @@ We can make this even simpler by moving the `get_data` function under [the `Modu
                 # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
                 modifier=planetary_computer.sign_inplace,
             )
+
         items = catalog.search(
             collections=[data_name],
             bbox=bbox.total_bounds,
@@ -675,8 +687,7 @@ We can make this even simpler by moving the `get_data` function under [the `Modu
                 return ds
                 
             ds=odc_load(bbox,resolution, time_of_interest)
-            da =  ds[bands[0]].isel(time=0)
-
+            da = ds[bands[0]].isel(time=0)
             return da
     ```
   </TabItem>
@@ -697,11 +708,12 @@ Radar images over calm water tend to look black (as all the radar signal is refl
     ```python {8,15,17} showLineNumbers
     @fused.udf
     def udf(
-        bbox: fused.types.ViewportGDF,
+        bbox: fused.types.Bounds,
         bands: list=["vv"],
         resolution: int=10,
         time_of_interest: str="2024-09-03/2024-09-10",
     ):
+        import numpy as np
         from local_utils import get_data, quick_convolution
 
         da = get_data(bbox, time_of_interest, resolution, bands)
@@ -715,80 +727,82 @@ Radar images over calm water tend to look black (as all the radar signal is refl
   <TabItem value="module" label="Module" default>
   
     ```python {48-68} showLineNumbers
-    @fused.cache
-    def get_data(
-        bbox: fused.types.ViewportGDF, 
-        time_of_interest: str,
-        resolution: int, 
-        bands: list, 
-        data_name: str="sentinel-1-grd"
-    ):
-        """
-        Getting Sentinel Data from MPC 
-        Resolution is defined in meters as we're using EPSG:3857 
-        """
-        import odc.stac
-        import planetary_computer
-        import pystac_client
+   @fused.cache
+   def get_data(
+      bbox: fused.types.Bounds,
+      time_of_interest: str,
+      resolution: int, 
+      bands: list, 
+      data_name: str="sentinel-1-grd"
+   ):
+      """
+      Getting Sentinel Data from MPC 
+      Resolution is defined in meters as we're using EPSG:3857 
+      """
+      import odc.stac
+      import planetary_computer
+      import pystac_client
 
-        if resolution < 10:
-            print("Resolution shouldn't be lower than Sentinel 1 or 2 native resolution. Bumping to 10m")
-            resolution = 10
-            print(f"{resolution=}")
 
-        catalog = pystac_client.Client.open(
-                "https://planetarycomputer.microsoft.com/api/stac/v1",
-                # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
-                modifier=planetary_computer.sign_inplace,
-            )
-        items = catalog.search(
-            collections=[data_name],
-            bbox=bbox.total_bounds,
-            datetime=time_of_interest,
-            query=None,
-        ).item_collection()
+      # Convert bounds to GeoDataFrame
+      bbox = fused.utils.common.bounds_to_gdf(bbox)
 
-        if len(items) < 1:
-            print(f'No items found. Please either zoom out or move to a different area')
-        else:
-            print(f"Returned {len(items)} Items")
+      if resolution < 10:
+          print("Resolution shouldn't be lower than Sentinel 1 or 2 native resolution. Bumping to 10m")
+          resolution = 10
+          print(f"{resolution=}")
 
-            def odc_load(bbox,resolution, time_of_interest):
-                ds = odc.stac.load(
-                        items,
-                        crs="EPSG:3857",
-                        bands=bands,
-                        resolution=resolution,
-                        bbox=bbox.total_bounds,
-                    ).astype(float)
-                return ds
-                
-            ds=odc_load(bbox,resolution, time_of_interest)
-            da =  ds[bands[0]].isel(time=0)
+      catalog = pystac_client.Client.open(
+              "https://planetarycomputer.microsoft.com/api/stac/v1",
+              # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+              modifier=planetary_computer.sign_inplace,
+          )
 
-            return da
+      items = catalog.search(
+          collections=[data_name],
+          bbox=bbox.total_bounds,
+          datetime=time_of_interest,
+          query=None,
+      ).item_collection()
 
-    def quick_convolution(input_array, kernel_size):
-        import numpy as np
-        shifted_images = []
-        
-        # Shifting the image in all combinations of directions (x, y) with padding
-        for x in [-kernel_size, 0, kernel_size]:  # Shift left (kernel_size), no shift (0), right (kernel_size)
-            for y in [-kernel_size, 0, kernel_size]:  # Shift up (kernel_size), no shift (0), down (kernel_size)
-                shifted = pad_and_shift_image(input_array, x, y, pad_value=0, kernel_size=kernel_size)
-                shifted_images.append(shifted)
+      if len(items) < 1:
+          print(f'No items found. Please either zoom out or move to a different area')
+      else:
+          print(f"Returned {len(items)} Items")
 
-        stacked_image = np.stack(shifted_images)
-        return stacked_image.std(axis=0)
+          def odc_load(bbox,resolution, time_of_interest):
+              ds = odc.stac.load(
+                      items,
+                      crs="EPSG:3857",
+                      bands=bands,
+                      resolution=resolution,
+                      bbox=bbox.total_bounds,
+                  ).astype(float)
+              return ds
+           
+          ds=odc_load(bbox,resolution, time_of_interest)
+          da = ds[bands[0]].isel(time=0)
+          return da
 
-    def pad_and_shift_image(img, x_shift, y_shift, pad_value=0, kernel_size: int = 3):
-        import numpy as np
-        """Pad and shift an image by x_shift and y_shift with specified pad_value."""
+   def quick_convolution(input_array, kernel_size):
+      import numpy as np
+      shifted_images = []
+   
+      # Shifting the image in all combinations of directions (x, y) with padding
+      for x in [-kernel_size, 0, kernel_size]:  # Shift left (kernel_size), no shift (0), right (kernel_size)
+          for y in [-kernel_size, 0, kernel_size]:  # Shift up (kernel_size), no shift (0), down (kernel_size)
+              shifted = pad_and_shift_image(input_array, x, y, pad_value=0, kernel_size=kernel_size)
+              shifted_images.append(shifted)
+      stacked_image = np.stack(shifted_images)
+      return stacked_image.std(axis=0)
 
-        padded_img = np.pad(img, pad_width=kernel_size, mode='constant', constant_values=pad_value)
-        shifted_img = np.roll(np.roll(padded_img, y_shift, axis=0), x_shift, axis=1)
-        
-        return shifted_img[kernel_size:-kernel_size, kernel_size:-kernel_size]
+   def pad_and_shift_image(img, x_shift, y_shift, pad_value=0, kernel_size: int = 3):
+      import numpy as np
+      """Pad and shift an image by x_shift and y_shift with specified pad_value."""
+      padded_img = np.pad(img, pad_width=kernel_size, mode='constant', constant_values=pad_value)
+      shifted_img = np.roll(np.roll(padded_img, y_shift, axis=0), x_shift, axis=1)
+   
+      return shifted_img[kernel_size:-kernel_size, kernel_size:-kernel_size]
     ```
   </TabItem>
 </Tabs>
@@ -808,7 +822,7 @@ This is now relatively simple to vectorise (turn into a vector object, from imag
     ```python {8-10,17-31} showLineNumbers
     @fused.udf
     def udf(
-        bbox: fused.types.ViewportGDF,
+        bbox: fused.types.Bounds,
         bands: list=["vv"],
         resolution: int=10,
         time_of_interest: str="2024-09-03/2024-09-10",
@@ -816,7 +830,7 @@ This is now relatively simple to vectorise (turn into a vector object, from imag
         import geopandas as gpd
         import numpy as np
         from local_utils import get_data, quick_convolution, vectorise_raster
-
+        bbox_gdf = fused.utils.common.bounds_to_gdf(bbox)
         da = get_data(bbox, time_of_interest, resolution, bands)
         image = da.values * 1.0
 
@@ -824,7 +838,7 @@ This is now relatively simple to vectorise (turn into a vector object, from imag
         
         gdf_predictions = vectorise_raster(
             raster=convoled_image.astype("uint8"),
-            bbox=bbox, 
+            bbox=bbox_gdf, 
             threshold=200 # Taking a high threshold in 0-255 range to keep only very bright spots
         )
 
@@ -842,7 +856,7 @@ This is now relatively simple to vectorise (turn into a vector object, from imag
     ```python {70-90} showLineNumbers
     @fused.cache
     def get_data(
-        bbox: fused.types.ViewportGDF, 
+        bbox: fused.types.Bounds,
         time_of_interest: str,
         resolution: int, 
         bands: list, 
@@ -855,7 +869,8 @@ This is now relatively simple to vectorise (turn into a vector object, from imag
         import odc.stac
         import planetary_computer
         import pystac_client
-
+        
+        bbox = fused.utils.common.bounds_to_gdf(bbox)
         if resolution < 10:
             print("Resolution shouldn't be lower than Sentinel 1 or 2 native resolution. Bumping to 10m")
             resolution = 10
@@ -958,7 +973,7 @@ To get our AIS data, we now need to retrieve the exact moment our Sentinel 1 ima
   <TabItem value="editor" label="Editor" default>
     ```python {29-30} showLineNumbers@fused.udf
     def udf(
-        bbox: fused.types.ViewportGDF,
+        bbox: fused.types.Bounds,
         bands: list=["vv"],
         resolution: int=10,
         time_of_interest: str="2024-09-03/2024-09-10",
@@ -966,7 +981,9 @@ To get our AIS data, we now need to retrieve the exact moment our Sentinel 1 ima
         import geopandas as gpd
         import numpy as np
         from local_utils import get_data, quick_convolution, vectorise_raster
-
+        
+        bbox_gdf = fused.utils.common.bounds_to_gdf(bbox)
+        
         da = get_data(bbox, time_of_interest, resolution, bands)
         image = da.values * 1.0
 
@@ -974,7 +991,7 @@ To get our AIS data, we now need to retrieve the exact moment our Sentinel 1 ima
         
         gdf_predictions = vectorise_raster(
             raster=convoled_image.astype("uint8"),
-            bbox=bbox, 
+            bbox=bbox_gdf, 
             threshold=200 # Using higher threshold to make sure only bright spots are taken
         )
 
@@ -995,7 +1012,7 @@ To get our AIS data, we now need to retrieve the exact moment our Sentinel 1 ima
     ```python {70-90} showLineNumbers
     @fused.cache
     def get_data(
-        bbox: fused.types.ViewportGDF, 
+        bbox: fused.types.Bounds,
         time_of_interest: str,
         resolution: int, 
         bands: list, 
@@ -1009,6 +1026,8 @@ To get our AIS data, we now need to retrieve the exact moment our Sentinel 1 ima
         import planetary_computer
         import pystac_client
 
+        bbox = fused.utils.common.bounds_to_gdf(bbox)
+        
         if resolution < 10:
             print("Resolution shouldn't be lower than Sentinel 1 or 2 native resolution. Bumping to 10m")
             resolution = 10
@@ -1102,7 +1121,7 @@ If we save and call this UDF with a [token](/core-concepts/run-udfs/run-small-ud
 # This is a new UDF
 @fused.udf
 def udf(
-    bbox: fused.types.ViewportGDF=None,
+    bbox: fused.types.Bounds=None,
     time_of_interest: int="2024-09-03/2024-09-10",
 ):
     import fused
@@ -1150,58 +1169,55 @@ We can use [this bit of code called `tile_to_table`](https://github.com/fusedio/
 ```python showLineNumbers
 @fused.udf 
 def udf(
-    bbox: fused.types.TileGDF = None,
-    s1_acquisition_month_day_hour_min:str = '2024-09-04T00:19:09.175874',
-    time_delta_in_hours: float = 0.1, # by default 6min (60min * 0.1)
-    min_zoom_to_load_data: int = 14,
-    ais_table_path: str = "s3://fused-users/fused/demo_user/AIS_2024_ingester/prod_2024_09", # This is the location where we had ingested our geo-partitioned AIS data
+   bbox: fused.types.Tile = None, 
+   s1_acquisition_month_day_hour_min:str = '2024-09-04T00:19:09.175874',
+   time_delta_in_hours: float = 0.1, # by default 6min (60min * 0.1)
+   min_zoom_to_load_data: int = 14,
+   ais_table_path: str = "s3://fused-users/fused/demo_user/AIS_2024_ingester/prod_2024_09", # This is the location where we had ingested our geo-partitioned AIS data
 ):
-    """Reading AIS data from Fused partitioned AIS data from NOAA (data only available in US)"""
-    import pandas as pd
-    from datetime import datetime, timedelta
-    local_utils = fused.load(
-        "https://github.com/fusedio/udfs/tree/f8f0c0f/public/common/"
-    ).utils
+   """Reading AIS data from Fused partitioned AIS data from NOAA (data only available in US)"""
+   import pandas as pd
+   from datetime import datetime, timedelta
+   local_utils = fused.load(
+       "https://github.com/fusedio/udfs/tree/f8f0c0f/public/common/"
+   ).utils
 
-    sentinel1_time = pd.to_datetime(s1_acquisition_month_day_hour_min)
-    time_delta_in_hours = timedelta(hours=time_delta_in_hours)
-    # This is based on our own ingestion process, we partitioned the data per month
-    # This could have been done any other way, so this reader does depend on how we created the ingestion in the first place
+   sentinel1_time = pd.to_datetime(s1_acquisition_month_day_hour_min)
+   time_delta_in_hours = timedelta(hours=time_delta_in_hours)
+   
+   month_date = sentinel1_time.strftime('%Y_%m')
+   monthly_ais_table = f"{ais_table_path}prod_{month_date}/"
+   print(f"{monthly_ais_table=}")
 
-    month_date = sentinel1_time.strftime('%Y_%m')
-    monthly_ais_table = f"{ais_table_path}prod_{month_date}/"
-    print(f"{monthly_ais_table=}")
-    if type(bbox) == fused.types.TileGDF:
-        # This is only for workbench, doesn't work on fused.run() in notebook 
-        print(f"{bbox.z=}")
+   if hasattr(bbox, 'z'):  # Changed type check to hasattr
+       print(f"{bbox.z=}")
 
-    @fused.cache
-    def getting_ais_from_s3(bbox, monthly_table):
-        return local_utils.table_to_tile(
-            bbox,
-            table=monthly_ais_table, 
-            use_columns=None, 
-            min_zoom=min_zoom_to_load_data # Loading AIS takes a little while, so keeping it to only a very close range
-        )
+   @fused.cache
+   def getting_ais_from_s3(bbox, monthly_table):
+       return local_utils.table_to_tile(
+           bbox,
+           table=monthly_ais_table, 
+           use_columns=None, 
+           min_zoom=min_zoom_to_load_data
+       )
 
-    ais_df = getting_ais_from_s3(bbox, monthly_ais_table)
+   ais_df = getting_ais_from_s3(bbox, monthly_ais_table)
 
-    if ais_df.shape[0] == 0:
-        print("No AIS data within this bbox & timeframe. Change bbox or timeframe")
-        return ais_df
-    
-    if type(bbox) == fused.types.TileGDF:
-        if bbox.z > min_zoom_to_load_data:
-            print(f"Zoom is {bbox.z=} | Only showing bbox")
-            return ais_df
+   if ais_df.shape[0] == 0:
+       print("No AIS data within this bbox & timeframe. Change bbox or timeframe")
+       return ais_df
+   
+   if hasattr(bbox, 'z'):  # Changed type check to hasattr
+       if bbox.z > min_zoom_to_load_data:
+           print(f"Zoom is {bbox.z=} | Only showing bbox")
+           return ais_df
 
-    print(f"{ais_df['BaseDateTime'].iloc[0]=}")
-    ais_df['datetime'] = pd.to_datetime(ais_df['BaseDateTime'])
-
-    mask = (ais_df['datetime'] >= sentinel1_time - time_delta_in_hours) & (ais_df['datetime'] <= sentinel1_time + time_delta_in_hours)
-    filtered_ais_df = ais_df[mask]
-    print(f'{filtered_ais_df.shape=}')
-    return filtered_ais_df
+   print(f"{ais_df['BaseDateTime'].iloc[0]=}")
+   ais_df['datetime'] = pd.to_datetime(ais_df['BaseDateTime'])
+   mask = (ais_df['datetime'] >= sentinel1_time - time_delta_in_hours) & (ais_df['datetime'] <= sentinel1_time + time_delta_in_hours)
+   filtered_ais_df = ais_df[mask]
+   print(f'{filtered_ais_df.shape=}')
+   return filtered_ais_df
 ```
 
 In workbench UDF builder we can now see the output of both of our UDF:
@@ -1231,7 +1247,7 @@ Any point with the closest AIS point >100m from the Sentinel 1 boat will be cons
 ```python {5,29-53} showLineNumbers
 @fused.udf
 def udf(
-    bbox: fused.types.ViewportGDF=None,
+    bbox: fused.types.Bounds=None,
     time_of_interest: str="2024-09-03/2024-09-10",
     ais_search_distance_in_meters: int=10,
 ):
