@@ -371,6 +371,8 @@ We're going to use the [Microsoft Planetary Computer Sentinel-1 Ground Range Det
     {/* TODO: Should also add a link to the best practices for writing UDFs in Workbench once we have that section */}
 :::
 
+
+
 Let's start with a basic UDF just returning our area of interest:
 
 ```python showLineNumbers
@@ -383,11 +385,26 @@ def udf(
     return bbox
 ```
 
+:::info
+The code above demonstrates a basic User-Defined Function (UDF) that utilizes [Fused's utility functions](https://github.com/fusedio/udfs/blob/eeb22486da7b3a073371b278e3473c24438ec715/public/common/utils.py#L1891). These utilities provide a some general functions for geospatial operations and transformations. You can also define your own utils in the module section.
+The utility function `bounds_to_gdf` is mentioned above is defined as:
+
+```python
+def bounds_to_gdf(bounds_list, crs=4326):
+    import geopandas as gpd
+    import shapely
+    box = shapely.box(*bounds_list)
+    return gpd.GeoDataFrame(geometry=[box], crs=crs)
+```
+
+This function converts a bounding box into a GeoDataFrame .
+:::
+
 This UDF simply returns our [Map viewport](/core-concepts/filetile/#fusedtypesviewportgdf) as a `gpd.GeoDataFrame`, this is a good starting point for our UDF returning Sentinel 1 images
 
 While you can do this anywhere around the continental US (our AIS dataset covered shores around the US, so we want to limit ourselves there), if you want to follow along this is the area of interest we'll be using. You can overwrite this in the UDF directly:
 
-```python showLineNumbers
+```python {6-7} showLineNumbers
 @fused.udf
 def udf(
     bbox: fused.types.Bounds,
@@ -400,9 +417,9 @@ def udf(
 
 Following the [Microsoft Planetary Computer examples for getting Sentinel-1](https://planetarycomputer.microsoft.com/dataset/sentinel-1-grd#Example-Notebook) we can add a few of the imports we need and call the STAC catalog:
 
-{/* TODO: Remove odc for now */}
+{/* TODO: explain the bounds to gdf */}
 
-```python {5-8,12-16} showLineNumbers
+```python {5-8,13-17} showLineNumbers
 @fused.udf
 def udf(
    bbox: fused.types.Bounds,
@@ -426,13 +443,15 @@ def udf(
 
 We already have a bounding box, but let's narrow down our search to the first week of September:
 
-```python {8,17-23} showLineNumbers
+```python {10,20-26} showLineNumbers
 @fused.udf
 def udf(
    bbox: fused.types.Bounds,
 ):
    import planetary_computer
    import pystac_client
+   import geopandas as gpd
+   import shapely
 
    time_of_interest="2024-09-03/2024-09-04"
    specific_bounds = [-93.90425364, 29.61879782, -93.72767384, 29.7114987]
@@ -466,7 +485,7 @@ We can now use the [`odc` package](https://odc-stac.readthedocs.io/en/latest/int
 
 We'll get an [`xarray.Dataset` object](https://docs.xarray.dev/en/stable/generated/xarray.Dataset.html) back that we can simply open & return as a `uint8` array:
 
-```python {5,10,27-33,35-36,38} showLineNumbers
+```python {5,13,33-39,41-43} showLineNumbers
 @fused.udf
 def udf(
    bbox: fused.types.Bounds,
@@ -474,6 +493,8 @@ def udf(
    import odc.stac
    import planetary_computer
    import pystac_client
+   import geopandas as gpd
+   import shapely
 
 
    time_of_interest="2024-09-03/2024-09-04"
@@ -535,7 +556,10 @@ This will allow us to keep our UDF more readable (by abstracting code away) and 
 
 Here's our cleaned up UDF:
 
-```python {11,16,26-29,43-46} showLineNumbers
+{/* TODO: explain the parameters */}
+
+
+```python {4-6,14,33-36,51-54} showLineNumbers
 @fused.udf
 def udf(
    bbox: fused.types.Bounds,
@@ -705,7 +729,7 @@ Radar images over calm water tend to look black (as all the radar signal is refl
 
 <Tabs className="unique-tabs">
   <TabItem value="editor" label="Editor" default>
-    ```python {8,15,17} showLineNumbers
+    ```python {8,14,16} showLineNumbers
     @fused.udf
     def udf(
         bbox: fused.types.Bounds,
@@ -726,7 +750,7 @@ Radar images over calm water tend to look black (as all the radar signal is refl
   </TabItem>
   <TabItem value="module" label="Module" default>
   
-    ```python {48-68} showLineNumbers
+    ```python {58-76} showLineNumbers
    @fused.cache
    def get_data(
       bbox: fused.types.Bounds,
@@ -853,7 +877,7 @@ This is now relatively simple to vectorise (turn into a vector object, from imag
     ```
   </TabItem>
   <TabItem value="module" label="Module" default>
-    ```python {70-90} showLineNumbers
+    ```python {77-97} showLineNumbers
     @fused.cache
     def get_data(
         bbox: fused.types.Bounds,
@@ -971,7 +995,7 @@ To get our AIS data, we now need to retrieve the exact moment our Sentinel 1 ima
 
 <Tabs className="unique-tabs">
   <TabItem value="editor" label="Editor" default>
-    ```python {29-30} showLineNumbers@fused.udf
+    ```python {31-32} showLineNumbers@fused.udf
     def udf(
         bbox: fused.types.Bounds,
         bands: list=["vv"],
@@ -1009,7 +1033,7 @@ To get our AIS data, we now need to retrieve the exact moment our Sentinel 1 ima
     ```
   </TabItem>
   <TabItem value="module" label="Module" default>
-    ```python {70-90} showLineNumbers
+    ```python showLineNumbers
     @fused.cache
     def get_data(
         bbox: fused.types.Bounds,
@@ -1117,7 +1141,7 @@ To get our AIS data, we now need to retrieve the exact moment our Sentinel 1 ima
 
 If we save and call this UDF with a [token](/core-concepts/run-udfs/run-small-udfs/#token) we can call it from anywhere, from a Jupyter Notebook or from another UDF. Let's create a new UDF in Workbench:
 
-```python showLineNumbers
+```python {14-18} showLineNumbers
 # This is a new UDF
 @fused.udf
 def udf(
@@ -1160,13 +1184,13 @@ We can now create another UDF that will take this `s1_acquisition_month_day_hour
 
 We're going to leverage code from the community for this part, namely reading the AIS data from a geo-partitioned GeoParquet. Fused allows us to easily re-use any code we want and freeze it to a specific commit so it doesn't break our pipelines ([read more about this here](/core-concepts/run-udfs/run-small-udfs/#git-commit-hash-recommended-for-most-stable-use-cases))
 
-We can use [this bit of code called `tile_to_table`](https://github.com/fusedio/udfs/blob/f8f0c0f5f5565c4f8be599c9fcb43368352f145f/public/common/utils.py#L163) which will either load the AIS data or the bounding box depending on our zoom level to keep our UDF fast & responsive. 
+We can use [this bit of code called `table_to_tile`](https://github.com/fusedio/udfs/blob/f8f0c0f5f5565c4f8be599c9fcb43368352f145f/public/common/utils.py#L163) which will either load the AIS data or the bounding box depending on our zoom level to keep our UDF fast & responsive. 
 
 :::note
     You could write a GeoParquet reader from scratch or call a UDF that you have that already does this, you don't have to use this option. But we want to show you how you can re-use bits of code from others here.
 :::
 
-```python showLineNumbers
+```python {26-33} showLineNumbers
 @fused.udf 
 def udf(
    bbox: fused.types.Tile = None, 
