@@ -66,7 +66,7 @@ Under the hood:
 **Implementation Details**
 
 A function cached with [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) is:
-- Cached for 5 days from the creation time
+- Cached for 12h by default (can be changed with [`cache_max_age`](/core-concepts/cache/#defining-your-cache-lifetime-cache_max_age))
 - Stored as pickle file on `mount/`
 
 ### Benchmark: With / without [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
@@ -118,23 +118,91 @@ import BenchmarkCache from '@site/static/img/core-concepts/caching/caching_bench
 <img src={BenchmarkCache} alt="Function + Input run" style={{width: 800,}} />
 </div>
 
-### Best Practices
+### Best Practices: [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
 
 Caching inside a UDF works best for:
 - Loading data from slow formats (CSV, Shapefile)
 - Repetitive operations that can take a long amount of processing
 
-However, do not rely on [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) to load very large (>10Gb) datasets as cache is only stored for a short amount of time (in days) and is over-written each time you change the cached function or inputs
+However, be wary of relying on [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) to load very large (>10Gb) datasets as cache is only stored for a few hours by default and is over-written each time you change the cached function or inputs.
 
-Look into [ingesting your data](/core-concepts/data_ingestion/) in partitioned, [cloud native formats](/core-concepts/data_ingestion/file-formats/) if you're working with large datasets
+Look into [ingesting your data](/core-concepts/data_ingestion/) in partitioned [cloud native formats](/core-concepts/data_ingestion/file-formats/) if you're working with large datasets.
 
 :::tip
 The line between when to ingest your data or use `@fused.cache` is a bit blurry. Check [this section](/core-concepts/data_ingestion/why-ingestion/#using-cache-as-a-single-use-ingester) for more
 :::
 
-### Advanced
+## Caching a UDF
 
-#### Caching & [`bbox`](/core-concepts/filetile/#the-bbox-object)
+**Implementation Details**
+
+Cached UDF are:
+- Stored for 90d by default
+- Stored on S3
+
+### Calling a UDF with a [token](/core-concepts/run-udfs/run-small-udfs/#token)
+
+While [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) allows you to cache functions _inside_ UDFs, UDFs ran with [tokens](/core-concepts/run-udfs/run-small-udfs/#token) are cached by default.
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import WorkbenchToken from '@site/static/img/core-concepts/caching/workbench_token_caching.png';
+
+<Tabs className="unique-tabs">
+  <TabItem value="workbench" label="Workbench" default>
+
+    {/* TODO: Update this with new Workbench design */}
+    This is enabled by default when sharing a token from Workbench:
+
+    <div style={{textAlign: 'center'}}>
+    <img src={WorkbenchToken} alt="Workbench token saving" style={{width: 600,}} />
+    </div>
+
+  </TabItem>
+  <TabItem value="python" label="Python">
+
+    You can create a token for your UDF in Python by first saving your UDF to Fused server:
+
+    ```python showLineNumbers
+    @fused.udf
+    def slow_caching_udf():
+        import time
+        time.sleep(5)
+        return pd.DataFrame({"output": ["I'm done running my long task!"]})
+
+    slow_caching_udf.to_fused()
+    token = udf.create_access_token()
+
+    fused.run(token)
+    ```
+
+  </TabItem>
+</Tabs>
+
+We can demonstrate this caching with a UDF that has a `time.sleep(5)` in it. Running this same UDF twice:
+
+import TokenCache from '@site/static/img/core-concepts/caching/cached_token_udf.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={TokenCache} alt="Token fused.run() caching" style={{width: 800,}} />
+</div>
+
+This means that UDFs that are repeatably called with `fused.run(token)` become much more responsive. Do remember once again that UDFs are recomputed each time either anything in the UDF function or the inputs change! 
+
+
+### Calling a UDF from [object](/core-concepts/run-udfs/run-small-udfs/#udf-object) or [name](/core-concepts/run-udfs/run-small-udfs/#name-from-your-account)
+
+{/* 
+TODO:
+Add section on doing this in `fused-py` once this is implemented
+ */}
+
+🚧 Under Construction 🚧
+
+
+## Advanced
+
+### Caching & [`bbox`](/core-concepts/filetile/#the-bbox-object)
 
 Pass [`bbox`](/core-concepts/filetile/#the-bbox-object) to make the output unique to each [Tile](/core-concepts/filetile/#tile).
 
@@ -170,16 +238,16 @@ def udf(bbox: fused.types.TileGDF):
 ```
 
 {/* TODO: Commenting this out for now, will add back once these are implemented */}
-{/* ### Defining a `ttl`: How long to keep your cache for
+### Defining your cache lifetime: `cache_max_age`
 
-You can define how long to keep your cache data for with `ttl`:
+You can define how long to keep your cache data for with `cache_max_age`:
 
 ```python showLineNumbers
 @fused.udf
 def udf():
 
     @fused.cache(
-        ttl=24 # Your cache will stay available for 24h
+        cache_max_age="24h" # Your cache will stay available for 24h
     )
     def loading_slow_geodataframe(data_path):
         ...
@@ -188,11 +256,45 @@ def udf():
     return gdf
 ```
 
-:::tip
-    Read more about this in the [Python SDK page on `@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
-:::
+This also works with [`@fused.udf()`](/python-sdk/top-level-functions/#fusedudf) & [`fused.run()`](/python-sdk/top-level-functions/#run):
+```python showLineNumbers
+@fused.udf(cache_max_age='24h') # This UDF will be cached for 24h after it's initial run
+def udf(path):
 
-### Caching on `local` or `mount` storage
+    gdf = gpd.read_file(path)
+
+    return gdf
+```
+
+This UDF will be cached from the moment it's executed with `fused.run(udf)` for as long as is defined in `cache_max_age`:
+
+```python showLineNumbers
+fused.run(udf)
+```
+
+If you run `fused.run(udf)` again with no changes to `udf`, then for the next 24h `fused.run(udf)` will return a cached result. This is both faster & cheaper (saving on compute) while giving you control over how long to keep your cache for.
+
+{/* NOTE: This only works with a token for now! */}
+You can also overwrite the `cache_max_age` defined in `udf` when running your UDF:
+
+```python showLineNumbers
+fused.run(udf, cache_max_age='12h')
+```
+
+`udf` results will now only be cached for `12h`, even if `udf` was defined with a `cache_max_age` of `24h`:
+
+The age of your cache is defined as follows:
+- By default a UDF is cached for 90 days.
+- If `@fused.udf(cache_max_age)` is defined, this new cache age overwrites the default.
+- If `fused.run(udf, cache_max_age)` is passed, then this cache age takes priority over default & `@fused.udf(cache_max_age)`
+
+{/* TODO: This needs to be linked to the Python SDK page once its updated */}
+{/* :::tip
+    Read more about this in the [Python SDK page on `@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
+::: */}
+
+{/* TODO: Don't want to expose this just yet  */}
+{/* ### Caching on `local` or `mount` storage
 
 Your cache is by default saved to `mount/`. This means if you or a team mate runs the same function with the same input they can also leverage your previously cached functions
 
@@ -214,38 +316,3 @@ gdf = local_function_load()
 :::tip
     Read more about this in the [Python SDK page on `@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
 ::: */}
-
-## Caching a UDF
-
-### Calling a UDF with a [token](/core-concepts/run-udfs/run-small-udfs/#token)
-
-While [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) allows you to cache functions _inside_ UDFs, UDFs ran with [tokens](/core-concepts/run-udfs/run-small-udfs/#token) are cached by default.
-
-This is enabled by default when sharing a token from Workbench:
-
-import WorkbenchToken from '@site/static/img/core-concepts/caching/workbench_token_caching.png';
-
-<div style={{textAlign: 'center'}}>
-<img src={WorkbenchToken} alt="Workbench token saving" style={{width: 600,}} />
-</div>
-
-We can demonstrate this with this UDF, that has a `time.sleep(5)` in it. In Workbench we can get the Python token and run it 2 times:
-
-import TokenCache from '@site/static/img/core-concepts/caching/cached_token_udf.png';
-
-<div style={{textAlign: 'center'}}>
-<img src={TokenCache} alt="Token fused.run() caching" style={{width: 800,}} />
-</div>
-
-This means that UDFs that are repeatably called with `fused.run(udf)` become much more responsive (if they have the same inputs)
-
-
-### Calling a UDF from [object](/core-concepts/run-udfs/run-small-udfs/#udf-object) or [name](/core-concepts/run-udfs/run-small-udfs/#name-from-your-account)
-
-{/* 
-TODO:
-Add section on doing this in `fused-py` once this is implemented
- */}
-
-🚧 Under Construction 🚧
-
