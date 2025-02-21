@@ -43,27 +43,87 @@ return arr, [xmin, ymin, xmax, ymax]
 
 ## The `bbox` object
 
-A UDF may use the `bbox` parameter to spatially filter datasets and load into memory only the data that corresponds to the `bbox` spatial bounds. This reduces latency and data transfer costs. [Cloud-optimized formats](https://guide.cloudnativegeo.org/) are particularly suited for these operations - they include [Cloud Optimized GeoTiff](https://www.cogeo.org/), [Geoparquet](https://geoparquet.org/), and [GeoArrow](https://geoarrow.org/format.html).
+A UDF may use the `bbox` parameter to spatially filter datasets and load into memory only the data that corresponds to the `bbox` spatial bounds. This reduces latency and data transfer costs. 
+[Cloud-optimized formats](/core-concepts/data_ingestion/file-formats/) are particularly suited for these operations - they include [Cloud Optimized GeoTiff](https://www.cogeo.org/), [Geoparquet](https://geoparquet.org/), and [GeoArrow](https://geoarrow.org/format.html).
 
 ### `bbox` object types
 
-The `bbox` object defines the spatial bounds of the Tile, which can be represented as a geometry object or XYZ index. For convenience, a user writing a UDF can select from 4 `bbox` object structures using a [parameter type](/core-concepts/write/#typed-parameters).
+The `bbox` object defines the spatial bounds of the Tile, which can be represented as a geometry object or XYZ index.
 
-#### `fused.types.TileGDF`
+#### `fused.types.Tile`
 
-This is a [geopandas.geodataframe.GeoDataFrame](https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.html) with `x`, `y`, `z`, and `geometry` columns. UDFs use this as default if no type is specified.
+This is a [geopandas.GeoDataFrame](https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.html) with `x`, `y`, `z`, and `geometry` columns.
 
 ```python showLineNumbers
 @fused.udf
-def udf(bbox: fused.types.TileGDF=None):
+def udf(bbox: fused.types.Tile=None):
     print(bbox)
-    return bbox
 
 >>>      x    y   z                                           geometry
 >>> 0  327  790  11  POLYGON ((-122.0 37.0, -122.0 37.1, -122.1 37.1, -122.1 37.0, -122.0 37.0))
 ```
 
-#### `fused.types.Bbox`
+#### `fused.types.Bounds`
+
+This is a `list` of 4 points representing the bounds (extent) of a geometry. The 4 points represent `[xmin, ymin, xmax, ymax]` of the bounds.
+
+{/* TODO: Rename input to `bounds` here? If so then change this doc section away from `bbox`, and called something else */}
+```python showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.Bounds=None):
+    print(bbox)
+
+>>> [-1.52244399, 48.62747869, -1.50004107, 48.64359255]
+```
+
+:::note
+As `fused.types.Bounds` is a list of 4 points it cannot be returned in a UDF directly. The simplest way to return it is to convert it to a `GeoDataFrame`:
+
+```python showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.Bounds=None):
+    import shapely
+    import geopandas as gpd
+
+    print(bbox)
+
+    bbox = gpd.GeoDataFrame(geometry=[shapely.box(*bbox)], crs=4326)
+    return bbox
+```
+
+`fused` also comes with many [handy utils functions](https://github.com/fusedio/udfs/blob/58288bff7b5f34bff100b24b0edd226cbada4970/public/common/utils.py#L1891) that allow you to quickly access these common operations:
+
+```python showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.Bounds=None):
+    bbox = fused.utils.common.bounds_to_gdf(bbox)
+    return bbox
+```
+
+:::
+
+<details>
+    <summary>Comparison of `TileGDF` and `ViewportGDF` geometries in [Workbench Map View](/workbench/udf-builder/map/)</summary>
+
+    Comparing the same UDF with a different `bounds` input
+
+    1. `bounds: fused.types.Tile`
+
+    ![Tile UDF](/img/core-concepts/file_tile/tile_udf.png)
+
+    2. `bounds: fused.types.Bounds`
+
+    (We also turn `bounds` into a `gpd.GeoDataFrame` to render it in Workbench)
+
+    ![Bounds UDF](/img/core-concepts/file_tile/bounds_udf.png)
+
+</details>
+
+### Legacy types
+
+These types are still currently supported in `fused` though only for legacy reasons and will soon be deprecated. 
+
+{/* #### `fused.types.Bbox`
 
 This is a [shapely.geometry.polygon.Polygon](https://shapely.readthedocs.io/en/stable/reference/shapely.Polygon.html) corresponding to the Tile's bounds.
 
@@ -87,9 +147,13 @@ def udf(bbox: fused.types.TileXYZ=None):
     return bbox
 
 >>> Tile(x=328, y=790, z=11)
-```
+``` */}
 
-#### `fused.types.ViewportGDF`
+#### [Legacy] `fused.types.TileGDF`
+
+This behaves the same as [`fused.types.Tile`](/core-concepts/filetile/#fusedtypestile). 
+
+#### [Legacy] `fused.types.ViewportGDF`
 
 This is a [geopandas.geodataframe.GeoDataFrame](https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.html) with a `geometry` column corresponding to the coordinates of the current viewport in the Map.
 ```python showLineNumbers
@@ -101,21 +165,6 @@ def udf(bbox: fused.types.ViewportGDF=None):
 >>>  geometry
 >>>  POLYGON ((-122.0 37.0, -122.0 37.1, -122.1 37.1, -122.1 37.0, -122.0 37.0))
 ```
-import tileImage from '@site/docs/core-concepts/TileGDF.png';
-import viewportImage from '@site/docs/core-concepts/viewportGDF.png';
-
-<details>
-    <summary>Comparison of `TileGDF` and `ViewportGDF` geometries in [Workbench Map View](/workbench/udf-builder/map/)</summary>
-
-    <div style={{textAlign: 'center'}}>
-    <img src={tileImage} alt="The TileGDF" style={{width: 1000}} />
-    </div>
-
-
-    <div style={{textAlign: 'center'}}>
-    <img src={viewportImage} alt="The ViewportGDF" style={{width: 1000}} />
-    </div>
-</details>
 
 ## Call HTTP endpoints
 
@@ -141,18 +190,20 @@ This endpoint structure runs a UDF as a `Tile`. The `{z}/{x}/{y}` templated path
 https://www.fused.io/server/.../run/tiles/{z}/{x}/{y}?&dtype_out_vector=csv
 ```
 
-## Call `fused.run`
+## Tile UDF behavior in `fused.run()`
 
-A UDF called with [`fused.run`](/core-concepts/run-udfs/run-small-udfs/#fusedrun) runs as `Tile` when the `Tile` geometry is specified with [reserved parameters](/core-concepts/write/#reserved-parameters) in the following ways. Otherwise, it runs as `File`.
-
-Specify a Tile's bounds with a `gpd.GeoDataFrame` or `shapely.Geometry` as the `bbox` parameter.
+UDFs behave different when using `fused.types.Tile` than in any other case. When passing a `gpd.GeoDataFrame`. `shapely.Geometry` to bbox:
 
 ```python showLineNumbers
-fused.run(my_udf, bbox=bbox)
+fused.run(tile_udf, bbox=bbox)
 ```
 
-Specify a Tile by its index in the `x`, `y`, and `z` parameters.
+Or passing `X Y Z`:
 
 ```python showLineNumbers
-fused.run(my_udf, x=1, y=2, z=3)
+fused.run(tile_udf, x=1, y=2, z=3)
 ```
+
+The `tile_udf` gets tiled and run on [Web mercator XYZ tiles](https://en.wikipedia.org/wiki/Tiled_web_map) and then combined back together to speed up processing rather than executing a single run. 
+
+This is in contrast to most other UDFs (either using no `bbox` input at all or using `bbox: fused.types.Bounds`) which run a single run across the given input.
