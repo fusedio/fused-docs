@@ -7,22 +7,24 @@ sidebar_position: 8
 
 # Changelog
 
-## v1.14.0 (2025-02-14)
+## v2.0: Fused 2.0
 
 Fused 2.0 is one of our biggest updates to date, [read the announcement here](/blog/announcing-fused-2-0/)
 
-**`fused-py`**
+**[`fused-py`](/python-sdk/)**
 
-<!-- Unsure about changes yet: cache, ttl, fused.run() & fused.submit() -->
-<!-- Q: workbench: Only apps can be shared by team (#3028) -> Not sure what this is? -->
-
-<!-- TODO: Link to `fused.submit()` docs before releasing  -->
-- Introducing `fused.submit()` method for multiple job run 
+- Introducing [`fused.submit()`](/python-sdk/top-level-functions/#submit) method for multiple job run
+- Improvement to [UDF caching](/core-concepts/cache/#caching-a-udf)
+    - All UDFs are now cached for 90 days by default
+    - Ability to customize the age of cached data & UDFs with the new `cache_max_age` argument when defining UDFs, running UDFs or when caching regular Python functions
 - `pandas` & `geopandas` are now optional for running non-spatial UDF locally
 - Removed hardcoded `nodata=0` value for serializing raster data
-- Improvement to [UDF caching](/core-concepts/cache/#caching-a-udf)
 
-**Workbench**
+**[Workbench](/workbench/)**
+
+New:
+- Introducing Collections to organize & aggregate UDFs together
+- Redesigned "Share" button & page: All the info you need to share your UDFs to your team or the world
 
 General:
 - Improvements to Navigation in [Command Pallette](/user-guide/best-practices/workbench-best-practices/#using-keyboard-shortcuts-command-palette). Try it out in Workbench by doing `Cmd + K` (`Ctrl + K` on Windows / Linux)
@@ -31,7 +33,6 @@ General:
 - Ability to upload images for UDF Preview in [Settings Page](/workbench/udf-builder/code-editor/#settings)
 - Adding “Fullscreen” toggle in [Map View](/workbench/udf-builder/map/)
 - Improved `colorContinuous` in [Visualize Tab](/workbench/udf-builder/styling/)
-<!-- I think this is out, please confirm -->
 - Allowing users to configure public/team access scopes for share tokens 
 - No longer able to edit UDF & App name in read-only mode
 - Fixing job loading logs
