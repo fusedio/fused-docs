@@ -9,6 +9,8 @@ sidebar_position: 8
 
 ## v1.14.0 (2025-02-14)
 
+Fused 2.0 is one of our biggest updates to date, [read the announcement here](/blog/announcing-fused-2-0/)
+
 **`fused-py`**
 
 <!-- Unsure about changes yet: cache, ttl, fused.run() & fused.submit() -->
