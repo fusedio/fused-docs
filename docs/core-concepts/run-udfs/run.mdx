@@ -7,6 +7,7 @@ toc_min_heading_level: 2
 toc_max_heading_level: 4
 ---
 
+{/* TODO: Might want to mention `fused.submit()` here to be able to run multiple jobs? */}
 Fused UDF functions really shine once you start calling them from anywhere. You can call small jobs in 2 main ways:
 1.  [`fused.run()`](/python-sdk/top-level-functions/#run) in Python. All you need is the [`fused` Python](/python-sdk/#install) package installed
     - Useful when wanting to run UDF as part of another pipeline, inside another UDF or anywhere in Python / code.
@@ -220,7 +221,7 @@ A [`fused.run()`](/python-sdk/top-level-functions/#run) call will require the fo
    - `bbox` -> A geographical bounding box (as a GeoDataFrame or shapely Geometry) defining the area of interest.
    - `x`, `y`, `z` -> Tile coordinates for tile-based UDF execution.
 
-## Running multiple small [`fused.run()`](/python-sdk/top-level-functions/#run) jobs in parallel
+## Running multiple jobs in parallel
 
 Sometimes you want to run a UDF over a list of inputs (for example running a [UDF that unzips a file over a list of files](/user-guide/examples/dark-vessel-detection/#33---run-this-udf-over-a-year-of-ais-data)). If each run itself is quite small, than you can run all a batch of UDFs over a list of inputs.
 
@@ -235,42 +236,40 @@ def udf(val):
 
 Say we wanted to run this `udf` 10 times over `inputs = [0,1,2,3,4,5,6,7,8,9]`:
 
-#### [Experimental] Using `run_pool` and `PoolRunner`
+### [`fused.submit()`](/python-sdk/top-level-functions/#submit)
 
-:::note
-This is not a feature directly implemented in `fused`. Instead we're going to use a code from the [`udfs.public.common`](https://github.com/fusedio/udfs/tree/main/public/common) utils module, that might change over time
+Fused is built to help you scale your processing to huge datasets and the core of this ability is [`fused.submit()`](/python-sdk/top-level-functions/#submit). You can run 1 UDF over a large amount of arguments:
 
-    You can learn more about import utils from UDFs [here](/core-concepts/write/#import-utils-from-other-udfs)
+```python showLineNumbers
+job_pool = fused.submit(udf, inputs)
+```
 
+This example will quick-off 10 UDF runs in parallel:
+
+```python showLineNumbers
+job_pool
+
+>>> <JobPool with 10 jobs [status: 0/10 done]>
+```
+
+### Getting [`fused.submit()`](/python-sdk/top-level-functions/#submit) results
+
+A few seconds after, once all our jobs are run we can get our results as a `pd.DataFrame`, using the same example as above:
+
+```python showLineNumbers
+results = job_pool.collect_df()
+```
+
+![job pool results](/img/core-concepts/run-udfs/job_pool_results.png)
+
+:::tip
+Have a look at the dedicated [`fused.submit()`](/python-sdk/top-level-functions/#submit) Python SDK page to read more about all the available methods to access your multi-runs
 :::
 
-[`PoolRunner`](https://github.com/fusedio/udfs/blob/main/public/common/utils.py#L2164) allows to quickly run a UDF a few times over a dataset or a list of inputs. Using a `lambda` function you can map the function to pass to `PoolRunner`:
-
-```python showLineNumbers
-runner = fused.utils.common.PoolRunner(lambda val: fused.run(udf, val=val), range(10))
-runner.get_result_all()
-```
-
-In a notebook `runner.get_result_all()` prints the progress status over time until the job is done:
-
-![Pool Runner](/img/core-concepts/run-udfs/poolrunner-get_results_all.png)
-
-#### Getting "real-time" results
-
-You can then get all your results by concatenating them:
-
-```python showLineNumbers
-# In this example udf() returns a Pandas DataFrame so `.get_concat()`
-result = runner.get_concat()
-```
-
-with `type(result)` being a `pandas.core.frame.DataFrame`
-
-
 <details>
-  <summary>Simple `PoolRunner` Benchmark</summary>
+  <summary>Simple [`fused.submit()`](/python-sdk/top-level-functions/#submit) Benchmark</summary>
 
-    `PoolRunner` runs all the UDF calls in parallel, making it a helpful tool to run multiple UDFs all at once.
+    `fused.submit(udf)` runs all the UDF calls in parallel, making it a helpful tool to run multiple UDFs all at once.
 
     We can demonstrate this by adding a simple `time.sleep(1)` in our original UDF:
     ```python {4-5} showLineNumbers
@@ -290,15 +289,15 @@ with `type(result)` being a `pandas.core.frame.DataFrame`
     fused.run(udf, val=1)
     ```
 
-    ![Pool Runner](/img/core-concepts/run-udfs/PoolRunner_timer_single_udf.png)
+    ![Singe run](/img/core-concepts/run-udfs/fused_run_single_job.png)
 
-    This takes 1.8s: A few ms of overhead to send the UDF to Fused server & run + 1s of `time.sleep(1)`
+    This takes 1.7s: A few ms of overhead to send the UDF to Fused server & run + 1s of `time.sleep(1)`
 
-    Now using `PoolRunner` to run this over `range(10)`:
+    Now using `fused.submit()` to run this over 30 UDFs:
 
-    ![Pool Runner](/img/core-concepts/run-udfs/PoolRunner_timer_10_udfs.png)
+    ![30 runs](/img/core-concepts/run-udfs/submit_30jobs.png)
 
-    This takes a few more seconds, but not 10s. `PoolRunner` is a helpful way to scale a single UDF to many inputs in a timely manner.
+    This takes a few more seconds, but not 30s. `fused.submit()` is a helpful way to scale a single UDF to many inputs in a timely manner.
 
 
 </details>
