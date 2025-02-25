@@ -7,6 +7,42 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.14.0 (2025-02-25)
+
+v1.14.0 introduces a lot of new changes across `fused-py` and Workbench
+
+**[`fused-py`](/python-sdk/)**
+
+- Introducing [`fused.submit()`](/python-sdk/top-level-functions/#submit) method for multiple job run
+- Improvement to [UDF caching](/core-concepts/cache/#caching-a-udf)
+    - All UDFs are now cached for 90 days by default
+    - Ability to customize the age of cached data & UDFs with the new [`cache_max_age`](/core-concepts/cache/#defining-your-cache-lifetime-cache_max_age) argument when defining UDFs, running UDFs or when caching regular Python functions
+- `pandas` & `geopandas` are now optional for running non-spatial UDF locally
+- Removed hardcoded `nodata=0` value for serializing raster data
+
+**[Workbench](/workbench/)**
+
+New:
+- Introducing [Collections](/workbench/udf-builder/collections/) to organize & aggregate UDFs together
+- Redesigned "Share" button & page: All the info you need to share your UDFs to your team or the world
+
+General:
+- Improvements to Navigation in [Command Pallette](/user-guide/best-practices/workbench-best-practices/#using-keyboard-shortcuts-command-palette). Try it out in Workbench by doing `Cmd + K` (`Ctrl + K` on Windows / Linux)
+- Autocomplete now works with `Tab` in [Code Editor](/workbench/udf-builder/code-editor/) with `Tab`
+- Added a Delete Button in the Shared Tokens page (under [Account page](/workbench/account/))
+- Ability to upload images for UDF Preview in [Settings Page](/workbench/udf-builder/code-editor/#settings)
+- Adding “Fullscreen” toggle in [Map View](/workbench/udf-builder/map/)
+- Improved `colorContinuous` in [Visualize Tab](/workbench/udf-builder/styling/)
+- Allowing users to configure public/team access scopes for share tokens 
+- No longer able to edit UDF & App name in read-only mode
+- Fixing job loading logs
+
+[File Explorer](/workbench/file-explorer/):
+- Download directories as `zip`
+- Adding favorites to file path input search results 
+- Ability to open `.parquet` files with Kepler.gl
+
+
 ## v1.13.0 (2025-01-22)
 
 - Fixed shared UDFs not respecting the Cache Enabled setting.
