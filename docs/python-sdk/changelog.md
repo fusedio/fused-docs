@@ -23,7 +23,7 @@ Fused 2.0 is one of our biggest updates to date, [read the announcement here](/b
 **[Workbench](/workbench/)**
 
 New:
-- Introducing Collections to organize & aggregate UDFs together
+- Introducing [Collections](/workbench/udf-builder/collections/) to organize & aggregate UDFs together
 - Redesigned "Share" button & page: All the info you need to share your UDFs to your team or the world
 
 General:
