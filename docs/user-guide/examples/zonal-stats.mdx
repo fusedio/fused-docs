@@ -104,21 +104,21 @@ To see the data as we process it, we will write a UDF in the [Fused Workbench](h
 
 To [write a UDF](/core-concepts/write/) simply wrap a Python function with the decorator `@fused.udf`.
 
-The first parameter of this UDF, `bbox`. It is reserved for Fused to pass a `GeoDataFrame` which the UDF may use to spatially filter datasets, and usually corresponds to a web map [tile](/core-concepts/filetile/). This enables Fused to run the UDF for each tile in the viewport to distribute processing across multiple workers.
+The first parameter of this UDF, `bounds`. It is reserved for Fused to pass a `GeoDataFrame` which the UDF may use to spatially filter datasets, and usually corresponds to a web map [tile](/core-concepts/filetile/). This enables Fused to run the UDF for each tile in the viewport to distribute processing across multiple workers.
 
-The `year` parameter is used to structure the S3 path of the CDL GeoTiff which the utility function `read_tiff` reads for the area defined by `bbox`. The `crop_id` parameter 36 corresponds to alfalfa the CDL [colormap](https://storage.googleapis.com/earthengine-stac/catalog/USDA/USDA_NASS_CDL.json), which the UDF uses to mask the raster array.
+The `year` parameter is used to structure the S3 path of the CDL GeoTiff which the utility function `read_tiff` reads for the area defined by `bounds`. The `crop_id` parameter 36 corresponds to alfalfa the CDL [colormap](https://storage.googleapis.com/earthengine-stac/catalog/USDA/USDA_NASS_CDL.json), which the UDF uses to mask the raster array.
 
 Fused lets you import utility Modules from other UDFs with `fused.utils`. Their code lives in the [public UDFs repo](https://github.com/fusedio/udfs/blob/main/public/common/utils.py).
 
-- `read_tiff` loads an array of the CDL dataset for the specified `bbox` extent and `year`
-- `table_to_tile` loads the table you geo partitioned for the specified `bbox` extent
+- `read_tiff` loads an array of the CDL dataset for the specified `bounds` extent and `year`
+- `table_to_tile` loads the table you geo partitioned for the specified `bounds` extent
 - `geom_stats` calculates zonal statistics by aggregating the `arr` variable over the geometries specified by the `gdf`
 
 
 ```python showLineNumbers
 @fused.udf
 def udf(
-    bbox: fused.types.Tile = None,
+    bounds: fused.types.Tile = None,
     year: int = 2020,
     crop_id: int = 36
 ):
@@ -126,7 +126,7 @@ def udf(
 
     # Load CDLS data
     arr = fused.utils.common.read_tiff(
-      bbox,
+      bounds,
       input_tiff_path=f"s3://fused-asset/data/cdls/{year}_30m_cdls.tif"
     )
 
@@ -135,7 +135,7 @@ def udf(
 
     # Load polygons
     gdf = fused.utils.common.table_to_tile(
-      bbox,
+      bounds,
       table='s3://fused-asset/data/tl_2023_49_bg/',
       min_zoom=5,
       use_columns=['NAMELSAD', 'GEOID', 'MTFCC', 'FUNCSTAT', 'geometry']
@@ -229,7 +229,7 @@ https://www.fused.io/server/v1/realtime-shared/fsh_46eSFZaR3q3SnoVB28pN0g/run/ti
 
 #### What just happened?
 
-When you called the HTTP endpoint, Fused ran the UDF then sent back the output table and [debug logs](/core-concepts/write/#http-requests). In the URL above, `/12/778/1548` specifies the ZXY tile index to structure `bbox` and `dtype_out_vector=geojson` specifies the output format. Fused passes the `year` & `crop_type` parameters to the UDF as `int` based on their types in the function definition.
+When you called the HTTP endpoint, Fused ran the UDF then sent back the output table and [debug logs](/core-concepts/write/#http-requests). In the URL above, `/12/778/1548` specifies the ZXY tile index to structure `bounds` and `dtype_out_vector=geojson` specifies the output format. Fused passes the `year` & `crop_type` parameters to the UDF as `int` based on their types in the function definition.
 
 #### Why does this matter?
 
@@ -239,7 +239,7 @@ To start seeing the full power of Fused, change the UDF code, save it, and call 
 
 ### b. Python SDK
 
-The share token also enables you to run the UDF in a Python environment. You can specify `bbox` as the same map tile as above by passing `x`, `y`, and `z` parameters.
+The share token also enables you to run the UDF in a Python environment. You can specify `bounds` as the same map tile as above by passing `x`, `y`, and `z` parameters.
 
 ```python showLineNumbers
 import fused
@@ -252,14 +252,14 @@ If you haven't installed GeoPandas at this point, the data in the `geometries` c
 
 :::
 
-You can also pass a `GeoDataFrame` to explicitly define a custom `bbox` and other parameters specific to the UDF.
+You can also pass a `GeoDataFrame` to explicitly define a custom `bounds` and other parameters specific to the UDF.
 
 ```python showLineNumbers
 import geopandas as gpd
 
 # Square AOI near Utah Lake
-bbox = gpd.GeoDataFrame.from_features({"type":"FeatureCollection","features":[{"type":"Feature","properties":{"shape":"Rectangle"},"geometry":{"type":"Polygon","coordinates":[[[-112.01315665811222,40.13628586159681],[-111.89330615564467,40.13628586159681],[-111.89330615564467,40.004073791892196],[-112.01315665811222,40.004073791892196],[-112.01315665811222,40.13628586159681]]]}}]})
-fused.run("fsh_46eSFZaR3q3SnoVB28pN0g", bbox=bbox, year=2020, crop_id=36)
+bounds = gpd.GeoDataFrame.from_features({"type":"FeatureCollection","features":[{"type":"Feature","properties":{"shape":"Rectangle"},"geometry":{"type":"Polygon","coordinates":[[[-112.01315665811222,40.13628586159681],[-111.89330615564467,40.13628586159681],[-111.89330615564467,40.004073791892196],[-112.01315665811222,40.004073791892196],[-112.01315665811222,40.13628586159681]]]}}]})
+fused.run("fsh_46eSFZaR3q3SnoVB28pN0g", bounds=bounds, year=2020, crop_id=36)
 ```
 
 ### c. Parallelization
@@ -270,7 +270,7 @@ Invoke the UDF in parallel with `run_pool` to increase performance when you want
 import pandas as pd
 
 def run_udf(year):
-    gdf = fused.run("fsh_46eSFZaR3q3SnoVB28pN0g", bbox=bbox, year=year, crop_id=36)
+    gdf = fused.run("fsh_46eSFZaR3q3SnoVB28pN0g", bounds=bounds, year=year, crop_id=36)
     gdf['year'] = year
     return gdf
 

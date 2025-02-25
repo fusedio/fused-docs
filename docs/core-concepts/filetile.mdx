@@ -25,7 +25,7 @@ import ImageFile from '@site/static/img/image-file2.png';
 
 `Tile` mode is designed to process geospatial datasets in grid-based tiles that align with [web map tiling schemas](https://wiki.openstreetmap.org/wiki/Slippy_map). Each Tile request may correspond to a spatial slice of a larger dataset, making it ideal to work with large datasets that can be spatially filtered.
 
-When a UDF endpoint is called as `Tile`, Fused passes `bbox` as the first argument, which the UDF can use to spatially filter the dataset. The [`bbox` object](/core-concepts/filetile/#bbox-object-types) specifies a tile by its bounds or XYZ index.
+When a UDF endpoint is called as `Tile`, Fused passes `bounds` as the first argument, which the UDF can use to spatially filter the dataset. The [`bounds` object](/core-concepts/filetile/#bounds-object-types) specifies a tile by its bounds or XYZ index.
 
 import ImageTile from '@site/static/img/image-tile2.png';
 
@@ -33,7 +33,7 @@ import ImageTile from '@site/static/img/image-tile2.png';
 <img src={ImageTile} alt="File" style={{width: 600}} />
 </div>
 
-This is in contrast with a `File` call, where the UDF runs within a single HTTP response. In `File` mode, the UDF doesn't receive a `bbox` object to spatially filter data into tiles.
+This is in contrast with a `File` call, where the UDF runs within a single HTTP response. In `File` mode, the UDF doesn't receive a `bounds` object to spatially filter data into tiles.
 
 Responses with spatial data can render on a map. `GeoDataFrames` already contain spatial geometry information. If a raster does not contain spatial information, the bounds must be specified alongside the output object, separated by a comma, to determine its location on a map.
 
@@ -41,14 +41,14 @@ Responses with spatial data can render on a map. `GeoDataFrames` already contain
 return arr, [xmin, ymin, xmax, ymax]
 ```
 
-## The `bbox` object
+## The `bounds` object
 
-A UDF may use the `bbox` parameter to spatially filter datasets and load into memory only the data that corresponds to the `bbox` spatial bounds. This reduces latency and data transfer costs. 
+A UDF may use the `bounds` parameter to spatially filter datasets and load into memory only the data that corresponds to the `bounds` spatial bounds. This reduces latency and data transfer costs. 
 [Cloud-optimized formats](/core-concepts/data_ingestion/file-formats/) are particularly suited for these operations - they include [Cloud Optimized GeoTiff](https://www.cogeo.org/), [Geoparquet](https://geoparquet.org/), and [GeoArrow](https://geoarrow.org/format.html).
 
-### `bbox` object types
+### `bounds` object types
 
-The `bbox` object defines the spatial bounds of the Tile, which can be represented as a geometry object or XYZ index.
+The `bounds` object defines the spatial bounds of the Tile, which can be represented as a geometry object or XYZ index.
 
 #### `fused.types.Tile`
 
@@ -56,8 +56,8 @@ This is a [geopandas.GeoDataFrame](https://geopandas.org/en/stable/docs/referenc
 
 ```python showLineNumbers
 @fused.udf
-def udf(bbox: fused.types.Tile=None):
-    print(bbox)
+def udf(bounds: fused.types.Tile=None):
+    print(bounds)
 
 >>>      x    y   z                                           geometry
 >>> 0  327  790  11  POLYGON ((-122.0 37.0, -122.0 37.1, -122.1 37.1, -122.1 37.0, -122.0 37.0))
@@ -67,11 +67,10 @@ def udf(bbox: fused.types.Tile=None):
 
 This is a `list` of 4 points representing the bounds (extent) of a geometry. The 4 points represent `[xmin, ymin, xmax, ymax]` of the bounds.
 
-{/* TODO: Rename input to `bounds` here? If so then change this doc section away from `bbox`, and called something else */}
 ```python showLineNumbers
 @fused.udf
-def udf(bbox: fused.types.Bounds=None):
-    print(bbox)
+def udf(bounds: fused.types.Bounds=None):
+    print(bounds)
 
 >>> [-1.52244399, 48.62747869, -1.50004107, 48.64359255]
 ```
@@ -81,23 +80,21 @@ As `fused.types.Bounds` is a list of 4 points it cannot be returned in a UDF dir
 
 ```python showLineNumbers
 @fused.udf
-def udf(bbox: fused.types.Bounds=None):
+def udf(bounds: fused.types.Bounds=None):
     import shapely
     import geopandas as gpd
-
-    print(bbox)
-
-    bbox = gpd.GeoDataFrame(geometry=[shapely.box(*bbox)], crs=4326)
-    return bbox
+    bounds = fused.utils.common.bounds_to_gdf(bounds)
+    print(bounds)
+    return bounds
 ```
 
 `fused` also comes with many [handy utils functions](https://github.com/fusedio/udfs/blob/58288bff7b5f34bff100b24b0edd226cbada4970/public/common/utils.py#L1891) that allow you to quickly access these common operations:
 
 ```python showLineNumbers
 @fused.udf
-def udf(bbox: fused.types.Bounds=None):
-    bbox = fused.utils.common.bounds_to_gdf(bbox)
-    return bbox
+def udf(bounds: fused.types.Bounds=None):
+    bounds = fused.utils.common.bounds_to_gdf(bounds)
+    return bounds
 ```
 
 :::
@@ -166,6 +163,10 @@ def udf(bbox: fused.types.ViewportGDF=None):
 >>>  POLYGON ((-122.0 37.0, -122.0 37.1, -122.1 37.1, -122.1 37.0, -122.0 37.0))
 ```
 
+#### [Legacy] `bbox` object
+
+UDFs defined using the legacy keyword `bbox` are automatically now mapped to `bounds`. Please update your code to use `bounds` directly as this alias will be removed in a future release.
+
 ## Call HTTP endpoints
 
 A UDF called via an [HTTP endpoint](/core-concepts/run-udfs/run-small-udfs/#http-requests) is invoked as `File` or `Tile`, depending on the URL structure.
@@ -192,10 +193,10 @@ https://www.fused.io/server/.../run/tiles/{z}/{x}/{y}?&dtype_out_vector=csv
 
 ## Tile UDF behavior in `fused.run()`
 
-UDFs behave different when using `fused.types.Tile` than in any other case. When passing a `gpd.GeoDataFrame`. `shapely.Geometry` to bbox:
+UDFs behave different when using `fused.types.Tile` than in any other case. When passing a `gpd.GeoDataFrame`. `shapely.Geometry` to bounds:
 
 ```python showLineNumbers
-fused.run(tile_udf, bbox=bbox)
+fused.run(tile_udf, bounds=bounds)
 ```
 
 Or passing `X Y Z`:
@@ -206,4 +207,4 @@ fused.run(tile_udf, x=1, y=2, z=3)
 
 The `tile_udf` gets tiled and run on [Web mercator XYZ tiles](https://en.wikipedia.org/wiki/Tiled_web_map) and then combined back together to speed up processing rather than executing a single run. 
 
-This is in contrast to most other UDFs (either using no `bbox` input at all or using `bbox: fused.types.Bounds`) which run a single run across the given input.
+This is in contrast to most other UDFs (either using no `bounds` input at all or using `bounds: fused.types.Bounds`) which run a single run across the given input.
