@@ -16,7 +16,7 @@ v1.14.0 introduces a lot of new changes across `fused-py` and Workbench
 - Introducing [`fused.submit()`](/python-sdk/top-level-functions/#submit) method for multiple job run
 - Improvement to [UDF caching](/core-concepts/cache/#caching-a-udf)
     - All UDFs are now cached for 90 days by default
-    - Ability to customize the age of cached data & UDFs with the new `cache_max_age` argument when defining UDFs, running UDFs or when caching regular Python functions
+    - Ability to customize the age of cached data & UDFs with the new [`cache_max_age`](/core-concepts/cache/#defining-your-cache-lifetime-cache_max_age) argument when defining UDFs, running UDFs or when caching regular Python functions
 - `pandas` & `geopandas` are now optional for running non-spatial UDF locally
 - Removed hardcoded `nodata=0` value for serializing raster data
 
