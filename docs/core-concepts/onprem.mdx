@@ -1,13 +1,123 @@
 ---
 title: 🐳 On-prem
 sidebar_label: On-prem
+id: onprem
 sidebar_position: 6
-unlisted: true
 ---
 
 Fused offers an on-prem version of our application in a Docker container. The container runs in your computing environment (such as AWS, GCP, or Azure) and your data stays under your control.
 
 Our container is currently distributed via a private release. Email `info@fused.io` for access.
+
+## Fused On-Prem Docker Installation Guide
+
+![On prem](/img/advanced/advanced_concept_diagram.png)
+
+_Diagram of the System Architecture_
+
+### 1. Install Docker
+
+Follow these steps to install Docker on a bare-metal environment:
+Step 1: Update System Packages
+
+Ensure your system is up-to-date:
+```bash
+sudo apt update && sudo apt upgrade -y
+```
+
+Step 2: Start & Enable Docker
+```bash
+sudo apt install -y ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/debian/gpg | sudo tee /etc/apt/keyrings/docker.asc > /dev/null
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable docker
+sudo systemctl start docker
+```
+
+Step 4: Add Docker Permission to local user (after this command is run, the shell session must be restarted)
+```bash
+sudo usermod -G docker $(whoami)
+```
+
+Step 5: Configure Artifact Registry
+```bash
+gcloud auth configure-docker us-west1-docker.pkg.dev
+```
+
+
+### 2. Install Dependencies and Create Virtual Environment
+
+Step 1: Install pip
+```bash
+sudo apt install python3-pip python3.11-venv
+```
+
+Step 2: Create virtual environment
+```bash
+python3 -m venv venv
+```
+Step 3: Activate virtual environment
+```bash
+source venv/bin/activate
+```
+Step 4: Install Fused and dependencies
+```bash
+pip install pandas ipython https://fused-magic.s3.us-west-2.amazonaws.com/fused-1.14.1.dev2%2B2c8d59a-py3-none-any.whl
+```
+3. Login to Fused
+Step 1: Start a Python shell
+```bash
+python
+```
+Step 2: Obtain credentials URL
+
+```python showLineNumbers
+import fused
+credentials = fused.api.NotebookCredentials()
+credentials.url
+```
+
+Step 3: Authenticate with Fused
+Go to the credentials URL from the prior step in a web browser. Copy the code that is generated and paste into Python.
+```python showLineNumbers
+credentials.finalize(code="xxxxxxxxxxxxxxx")
+```
+
+### 3. Run Fused API
+
+Step 1: Start a Python shell
+```bash
+python
+```
+
+Step 2: Run UDF
+
+```python showLineNumbers
+import fused
+import pandas as pd
+fused.api.FusedAPI()
+
+udf = fused.load("ETL_ingest")
+start_datestr='2020-02-01'; end_datestr='2020-03-01';
+arg_list = pd.date_range(start=start_datestr, end=end_datestr).strftime('%Y-%m-%d').tolist()
+job = udf(arg_list=arg_list)
+
+fused.api.FusedDockerAPI(
+  set_global_api=True,
+  is_gcp=True,
+  repository="us-west1-docker.pkg.dev/daring-agent-375719/fused-job2/fused-job2",
+  additional_docker_args=[
+    "-e","FUSED_SERVER_ROOT=https://app.fused.io/server/v1", "-v", "./.fused:/root/.fused"
+  ]
+)
+
+job_status = job.run_remote()
+job_status.run_and_tail_output()
+```
 
 ## Commands
 
