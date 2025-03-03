@@ -238,6 +238,25 @@ Cancel an existing job
 
   A new job object.
 
+#### get\_job\_results
+
+```python
+def get_job_results(job: CoerceableToJobId,
+                    arg_index: int = -1) -> Any | list[Any]
+```
+
+Get the deserialized batch results of a job
+
+**Arguments**:
+
+- `job` - the identifier of a job or a `RunResponse` object.
+- `arg_index` - number representing the desired partition result of a batch job
+  
+
+**Returns**:
+
+  A single deserialized vector or raster, or a list of them
+
 #### upload
 
 ```python
