@@ -42,6 +42,7 @@ The main benefit of Fused UDFs is how responsive they are. To do so, they run on
 
 - Break pipelines into single tasks UDFs
 - Leverage [`fused.run()`](/core-concepts/run-udfs/run-small-udfs/#fusedrun) to chain together UDFs
+- Or [run small tasks in parallel](/user-guide/best-practices/udf-best-practices/#run-tasks-in-parallel)
 
 <details>
     <summary>Example: Breaking down a complex pipeline into smaller UDFs</summary>
@@ -116,14 +117,14 @@ A lot of processing of large datasets sometimes doesn't fit in a 30s-1min job an
 - You can run [multiple small UDF in parallel](/core-concepts/run-udfs/run-small-udfs/#running-multiple-jobs-in-parallel)
 - If you need a much longer run or simply need more RAM, [you can run a large UDF with our offline instances](/core-concepts/run-udfs/run_large/) */}
 
-### Leverage [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit): Run small tasks over large inputs
+### Run tasks in parallel
 
-Sometimes you need to run a UDF that takes longer than 120s to run, either you need to load a large dataset or you need to run a more complex process.
+Sometimes you need to run a UDF over a large amount of inputs that takes [longer than 120s to run](/core-concepts/run-udfs/run-small-udfs/#defining-small-job), for example loading a large dataset or running a more complex process.
 
-In this case you can use [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit) to run a small UDF in parallel. 
+In this case you can use [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit) to run a small UDF over a set of inputs in parallel. 
 
 <details>
-    <summary>Example: Running a large UDF with `fused.submit()`</summary>
+    <summary>Example: Parallelizing a UDF with [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit)</summary>
 
     Let's imagine we have a `fetch_single_data` that loads data from an API for a large amount of inputs `input_data=[0,1,2,3,4,5,7,8,9]`:
 
@@ -134,31 +135,30 @@ In this case you can use [`fused.submit()`](/core-concepts/run-udfs/run-small-ud
         import time
 
         # Considering this as our API call, sleeping to simulate the time it takes to get the data
-        time.sleep(15)
+        time.sleep(3)
 
         return pd.DataFrame({"data": [f"processed_{str(single_input)}"]})
     ```
-    If we were to run this UDF in [workbench](/workbench/overview/) we would only be able to run it for 1 input at a time, so we could edit our UDF to loop over the inputs:
+    If we were to run this UDF in [Workbench](/workbench/overview/) we would only be able to run it for 1 input at a time, so we could edit our UDF to loop over the inputs:
     ```python showLineNumbers
     @fused.udf
     def fetch_data(inputs: list):
         import pandas as pd
         import time
 
-        requested_data = []
+        fetched_data = []
         for i in inputs:
             # Considering this as our API call
-            time.sleep(15)
-            requested_data.append(f"processed_{str(i)}")
+            time.sleep(3)
+            fetched_data.append(f"processed_{str(i)}")
 
-        return pd.DataFrame({"data": requested_data})
+        return pd.DataFrame({"data": fetched_data})
     ```
-    However, running this UDF with `fused.run(fetch_data, input_data)` might timeout, i.e. go over the 120s limit. We still do want to fetch data across all our inputs which is where [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit) comes in:
+    However, running this UDF with `fused.run(fetch_data, input_data)` might will take longer as we add inputs, we could even quickly go over [the 120s limit](/core-concepts/run-udfs/run-small-udfs/#defining-small-job). We still do want to fetch data across all our inputs which is where [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit) comes in:
 
     Going back to our original UDF, we can now run it with `fused.submit()` to run it in parallel:
     
     ```python showLineNumbers
-    # ...
     @fused.udf
     def load_data_udf(input_data):
     
@@ -167,9 +167,9 @@ In this case you can use [`fused.submit()`](/core-concepts/run-udfs/run-small-ud
             input_data,
             engine='local', # This ensures the UDF is run in our local server rather than spinning up new instances.
         )
-        df = results.collect_df()
+        fetched_data = results.collect_df()
 
-        return df
+        return fetched_data
     ```
 
     This is of course a simplified example, but it shows how you can use `fused.submit()` to run a UDF in parallel for each input.
@@ -179,6 +179,14 @@ In this case you can use [`fused.submit()`](/core-concepts/run-udfs/run-small-ud
     :::note
     The example here blocks the main thread until all the `fused.submit()` calls have finished. This means you might have to wait longer in [Workbench](/workbench/overview/) for the results to show up.
     :::
+
+    Comparison of both approaches in Workbench:
+
+    Running with `fused.run()`, 31.5s:
+    ![10 inputs fused.run](/img/user-guide/best-practices/10_udfs_fused_run.png)
+
+    Running with `fused.submit()`, 4.6s:
+    ![10 inputs fused.submit](/img/user-guide/best-practices/10_udfs_fused_submit.png)
     
 </details>
 
