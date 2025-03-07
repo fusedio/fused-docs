@@ -22,7 +22,7 @@ const config: Config = {
   organizationName: "fusedio", // Usually your GitHub org/user name.
   projectName: "fused-docs", // Usually your repo name.
 
-  onBrokenLinks: 'throw', // Breaking CI if links aren't good
+  onBrokenLinks: "throw", // Breaking CI if links aren't good
   // onBrokenLinks: "ignore",
   onBrokenMarkdownLinks: "warn",
 
@@ -232,6 +232,12 @@ const config: Config = {
           {
             to: "/workbench/udf-builder/styling/",
             from: ["/workbench/viz-styling/"],
+          },
+          {
+            to: "/core-concepts/run-udfs/dependencies/#beta-install-your-own-dependencies",
+            from: [
+              "/core-concepts/run-udfs/dependencies/#beta-adding-your-own-dependencies",
+            ],
           },
         ],
         createRedirects(existingPath) {
