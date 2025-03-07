@@ -22,7 +22,7 @@ const config: Config = {
   organizationName: "fusedio", // Usually your GitHub org/user name.
   projectName: "fused-docs", // Usually your repo name.
 
-  onBrokenLinks: 'throw', // Breaking CI if links aren't good
+  onBrokenLinks: "throw", // Breaking CI if links aren't good
   // onBrokenLinks: "ignore",
   onBrokenMarkdownLinks: "warn",
 
