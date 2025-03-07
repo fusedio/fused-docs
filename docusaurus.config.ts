@@ -233,12 +233,6 @@ const config: Config = {
             to: "/workbench/udf-builder/styling/",
             from: ["/workbench/viz-styling/"],
           },
-          {
-            to: "/core-concepts/run-udfs/dependencies/#beta-install-your-own-dependencies",
-            from: [
-              "/core-concepts/run-udfs/dependencies/#beta-adding-your-own-dependencies",
-            ],
-          },
         ],
         createRedirects(existingPath) {
           if (existingPath.includes("/user-guide/out")) {
