@@ -1,3 +1,6 @@
+import micropip
+
+await micropip.install(["folium", "streamlit-folium"])
 import folium
 import streamlit as st
 from streamlit_folium import st_folium
