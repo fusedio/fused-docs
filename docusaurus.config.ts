@@ -233,6 +233,10 @@ const config: Config = {
             to: "/workbench/udf-builder/styling/",
             from: ["/workbench/viz-styling/"],
           },
+          {
+            to: "/core-concepts/data-ingestion",
+            from: ["/core-concepts/data_ingestion/"],
+          },
         ],
         createRedirects(existingPath) {
           if (existingPath.includes("/user-guide/out")) {
