@@ -1,3 +1,7 @@
+import micropip
+
+await micropip.install(["pydeck"])
+
 import pydeck as pdk
 import streamlit as st
 
