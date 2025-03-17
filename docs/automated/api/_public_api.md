@@ -374,3 +374,40 @@ Fetches a list of UDFs.
     fused.get_udfs()
     ```
 
+#### get\_apps
+
+```python
+def get_apps(n: int = 10,
+             *,
+             skip: int = 0,
+             per_request: int = 25,
+             max_requests: Optional[int] = None,
+             by: Literal["name", "id", "slug"] = "name",
+             whose: Literal["self", "public"] = "self")
+```
+
+Fetches a list of apps.
+
+**Arguments**:
+
+- `n` - The total number of apps to fetch. Defaults to 10.
+- `skip` - The number of apps to skip before starting to collect the result set. Defaults to 0.
+- `per_request` - The number of apps to fetch in each API request. Defaults to 25.
+- `max_requests` - The maximum number of API requests to make.
+- `by` - The attribute by which to sort the apps. Can be &quot;name&quot;, &quot;id&quot;, or &quot;slug&quot;. Defaults to &quot;name&quot;.
+- `whose` - Specifies whose apps to fetch. Can be &quot;self&quot; for the user&#x27;s own apps or &quot;public&quot; for
+  UDFs available publicly. Defaults to &quot;self&quot;.
+  
+
+**Returns**:
+
+  A list of apps.
+  
+
+**Examples**:
+
+  Fetch apps under the user account:
+    ```py
+    fused.get_apps()
+    ```
+
