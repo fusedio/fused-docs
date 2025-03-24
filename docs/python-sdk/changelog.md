@@ -17,6 +17,8 @@ sidebar_position: 8
 - UDFs can now return simple types like `str`, `int`, `float`, `bool`, and so on.
 - Files in `/mount/` can be listed through the API.
 - UDFs from publicly accessible GitHub repositories can be loaded through `fused.load`.
+- `fused.load` now supports loading a UDF from a local .py file or directory
+- The `x`, `y` and `z` names can now be used as generic keyword arguments in UDF signatures.
 
 **[Workbench](/workbench/)**
 
