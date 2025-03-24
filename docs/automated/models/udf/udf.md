@@ -21,6 +21,10 @@ The [`Schema`][fused.models.Schema] describing the output of this UDF.
 
 Name of the function within the code to invoke.
 
+#### cache\_max\_age
+
+The maximum age when returning a result from the cache.
+
 #### parameters
 
 Parameters to pass into the entrypoint.
@@ -63,7 +67,7 @@ def run_local(sample: Any | None = ...,
               inplace: bool = False,
               validate_output: bool = False,
               validate_imports: Optional[bool] = None,
-              **kwargs) -> "UdfEvaluationResult"
+              **kwargs) -> UdfEvaluationResult
 ```
 
 Evaluate this UDF against a sample.
@@ -95,14 +99,16 @@ The UDF will be written as a Zip file.
 #### to\_directory
 
 ```python
-def to_directory(where: Union[str, Path], *, overwrite: bool = False)
+def to_directory(where: Optional[Union[str, Path]] = None,
+                 *,
+                 overwrite: bool = False)
 ```
 
 Write the UDF to disk as a directory (folder).
 
 **Arguments**:
 
-- `where` - A path to a directory.
+- `where` - A path to a directory. If not provided, uses the UDF function name.
   
 
 **Arguments**:
