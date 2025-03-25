@@ -7,6 +7,35 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.15.0 (2025-03-20)
+
+**[`fused-py`](/python-sdk/)**
+
+- Loading UDFs now behaves like importing a Python module, and attributes defined on the UDF can be accessed.
+- The `fused.submit()` keyword `wait_on_result` has been renamed to `collect`, with a default of `collect=True` returning the collected results (pass `collect=False` to get the JobPool object to inspect individual results).
+- New UDFs default to using `fused.types.Bounds`.
+- Upgraded `duckdb` to v1.2.1.
+- UDFs can now return simple types like `str`, `int`, `float`, `bool`, and so on.
+- Files in `/mount/` can be listed through the API.
+- UDFs from publicly accessible GitHub repositories can be loaded through `fused.load`.
+- `fused.load` now supports loading a UDF from a local .py file or directory
+- The `x`, `y` and `z` aren't protected arguments when running a UDF anymore (previously protected to pass X/Y/Z mercantile tiles).
+
+**[Workbench](/workbench/)**
+
+New:
+- Added a new account page and redesigned preferences page.
+- You can now customize the code formatter settings (available under Preferences > Editor preferences).
+- UDFs can optionally be shared with their code when creating a share token.
+
+General:
+- Moved shared token page to bottom left bar, and adjusted the icons.
+- The ordering of UDFs in collections is now saved.
+
+[App Builder](/workbench/app-builder/app-overview/):
+- Updated app list UI.
+- Fixed bugs with shared apps showing the wrong URL in the browser.
+
 ## v1.14.0 (2025-02-25)
 
 v1.14.0 introduces a lot of new changes across `fused-py` and Workbench
