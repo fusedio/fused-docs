@@ -7,6 +7,25 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.16.0 (2025-03-27)
+
+**[`fused-py`](/python-sdk/)**
+- The result object of running in `batch` now has `logs_url` property.
+- Fixed `fused.submit` raising an error if some run failed.
+
+**[Workbench](/workbench/)**
+
+- Added a Download UDFs button for downloading an entire collection.
+- Results will show a message at the top if UDF execution was cached.
+- Non-visible UDFs will have a different highlight color on them in the UDF list.
+- Collections will show as modified if the order of UDFs has been changed.
+- Fixes for Collections saving the ordering and visibility of UDFs.
+- Fixed the Team Jobs page in Workbench crashing in some cases.
+
+**Shared tokens**
+
+- Shared token URLs can be called with an arbitrary (ignored) file extension in the URL.
+
 ## v1.15.0 (2025-03-20)
 
 **[`fused-py`](/python-sdk/)**
