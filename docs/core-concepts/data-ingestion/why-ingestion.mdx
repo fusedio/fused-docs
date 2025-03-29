@@ -180,17 +180,22 @@ Our ingestion process broke down our dataset into smaller files (making each fil
 ```python showLineNumbers
 @fused.udf
 def read_ingested_parquet_udf(
-    bounds: fused.types.Tile,
+    bounds: fused.types.Bounds,
     path: str = "s3://your-bucket/your-dir/file_format_demo/ingested/"
 ):
     import fused
     import pandas as pd
 
+    # convert bounds to tile
+    common_utils = fused.load("https://github.com/fusedio/udfs/tree/bb712a5/public/common/").utils
+    zoom = common_utils.estimate_zoom(bounds)
+    tile = common_utils.get_tiles(bounds, zoom=zoom)
+
     # Built in fused method to reach the `_sample` file and return only bounding box of each parquet holding our points
     df = fused.get_chunks_metadata(path)
 
     # Only keeping the tiles where our bounds is -> Only need to load actual data inside / touching our bounds
-    df = df[df.intersects(bounds.geometry.iloc[0])]
+    df = df[df.intersects(tile.geometry.iloc[0])]
 
     # This is based on Fused's ingestion process
     chunk_values = df[["file_id", "chunk_id"]].values
@@ -198,8 +203,8 @@ def read_ingested_parquet_udf(
         fused.get_chunk_from_table(path, fc[0], fc[1], columns=['geometry'])
         for fc in chunk_values
     ])
-    df = rows_df[rows_df.intersects(bounds.geometry[0])]
-    df.crs = bounds.crs
+    df = rows_df[rows_df.intersects(tile.geometry[0])]
+    df.crs = tile.crs
     return df
 ```
 
@@ -210,8 +215,8 @@ def read_ingested_parquet_udf(
     ```python showLineNumbers
     @fused.udf
     def udf(
-        bounds: fused.types.Tile, path: str='s3://your-bucket/your-dir/demo_reading_ais/ingested/'):
-        utils = fused.load('https://github.com/fusedio/udfs/tree/19b5240/public/common/').utils
+        bounds: fused.types.Bounds, path: str='s3://your-bucket/your-dir/demo_reading_ais/ingested/'):
+        utils = fused.load('https://github.com/fusedio/udfs/tree/bb712a5/public/common/').utils
         df = utils.table_to_tile(bounds, table=path)
         return df
     ```
