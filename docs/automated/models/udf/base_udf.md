@@ -13,6 +13,14 @@ class AttrDict(dict)
 
 Dictionary where keys can also be accessed as attributes
 
+## CompiledAttrs Objects
+
+```python
+class CompiledAttrs(AttrDict)
+```
+
+Dictionary that stores compiled values where keys can also be accessed as attributes
+
 ## BaseUdf Objects
 
 ```python

@@ -19,6 +19,15 @@ The identifier of this job.
 
 The status of the instance running this job.
 
+#### logs\_url
+
+```python
+@property
+def logs_url() -> str
+```
+
+Returns a URL for getting the job&#x27;s logs in the browser.
+
 #### get\_status
 
 ```python
@@ -180,6 +189,15 @@ The status of this job.
 #### job\_status\_date
 
 When the job_status was last updated
+
+#### logs\_url
+
+```python
+@property
+def logs_url() -> str
+```
+
+Returns a URL for getting the job&#x27;s logs in the browser.
 
 #### config
 
