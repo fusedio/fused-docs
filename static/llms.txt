@@ -740,19 +740,6 @@ A UDF may use the `bounds` parameter to spatially filter datasets and load into 
 
 The `bounds` object defines the spatial bounds of the Tile, which can be represented as a geometry object or XYZ index.
 
-#### `fused.types.Tile`
-
-This is a [geopandas.GeoDataFrame](https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.html) with `x`, `y`, `z`, and `geometry` columns.
-
-```python showLineNumbers
-@fused.udf
-def udf(bounds: fused.types.Tile=None):
-    print(bounds)
-
->>>      x    y   z                                           geometry
->>> 0  327  790  11  POLYGON ((-122.0 37.0, -122.0 37.1, -122.1 37.1, -122.1 37.0, -122.0 37.0))
-```
-
 #### `fused.types.Bounds`
 
 This is a `list` of 4 points representing the bounds (extent) of a geometry. The 4 points represent `[xmin, ymin, xmax, ymax]` of the bounds.
@@ -1398,7 +1385,7 @@ In Google Cloud Console, go to `IAM & Admin > Service Accounts`. Select the serv
 Step 2:
 Login to the [Fused workbench environment settings](https://www.fused.io/workbench/settings/environment). Click `Add new secret`. For name use `gcs_fused` and for value paste the contents of the JSON key file.
 
-### 4. Run Fused API – test udf
+### 4. Run Fused API: Test UDF
 
 {/* TODO: We need to add section that this writes in S3, so if using this on GCS, then we need communicate to user that they shouldn't return anything rather write their data somewhere else */}
 
@@ -1406,9 +1393,9 @@ Step 1: Open [Fused Workbench](/workbench/udf-builder/code-editor/), create a "N
 
 ```python showLineNumbers
 @fused.udf
- def udf(datestr=0):
-   import loguru
-   loguru.logger.info(f'hello world {datestr}')
+def udf(datestr=0):
+  import loguru
+  loguru.logger.info(f'hello world {datestr}')
 ```
 
 Step 2: Rename this UDF to "hello_world_udf" & Save
@@ -1430,12 +1417,12 @@ fused.api.FusedAPI()
 my_udf = fused.load("hello_world_udf") # Make sure this is the same name as the UDF you saved
 job = my_udf(arg_list=[1, 2])
 fused.api.FusedDockerAPI(
-set_global_api=True,
-is_gcp=True,
-repository="us-west1-docker.pkg.dev/daring-agent-375719/fused-job2/fused-job2",
-additional_docker_args=[
-"-e","FUSED_SERVER_ROOT=https://app.fused.io/server/v1"
-]
+  set_global_api=True,
+  is_gcp=True,
+  repository="us-west1-docker.pkg.dev/daring-agent-375719/fused-job2/fused-job2",
+  additional_docker_args=[
+    "-e","FUSED_SERVER_ROOT=https://app.fused.io/server/v1"
+  ]
 )
 
 job_status = job.run_remote()
@@ -1455,49 +1442,49 @@ You'll need a GCS Bucket to save this to, pass it to `bucket_name` in the UDF de
 ```python {2,13} showLineNumbers
 @fused.udf
 def udf(datestr: str='2001-01-03', res:int=15, var='t2m', row_group_size:int=20_000, bucket_name:str):
-    import pandas as pd
-    import h3
-    import xarray
-    import io
-    import pyarrow.parquet as pq
-    import pyarrow as pa
-    import gcsfs
-    import json
+  import pandas as pd
+  import h3
+  import xarray
+  import io
+  import pyarrow.parquet as pq
+  import pyarrow as pa
+  import gcsfs
+  import json
 
-    path_in=f'https://storage.googleapis.com/gcp-public-data-arco-era5/raw/date-variable-single_level/{datestr.replace("-","/")}/2m_temperature/surface.nc'
-    path_out=f"gs://{bucket_name}/data/era5/t2m/datestr={datestr}/0.parquet"
+  path_in=f'https://storage.googleapis.com/gcp-public-data-arco-era5/raw/date-variable-single_level/{datestr.replace("-","/")}/2m_temperature/surface.nc'
+  path_out=f"gs://{bucket_name}/data/era5/t2m/datestr={datestr}/0.parquet"
 
-    if len(fused.api.list(path_out))>0:
-        df = pd.DataFrame([{'status':'Already Exist.'}])
-        print("Already exists")
-        return None
-
-    def get_data(path_in, path_out):
-        path = fused.download(path_in, path_in)
-        xds = xarray.open_dataset(path)
-        df = xds[var].to_dataframe().unstack(0)
-        df.columns = df.columns.droplevel(0)
-        df['hex'] = df.index.map(lambda x:h3.api.basic_int.latlng_to_cell(x[0],x[1],res))
-        df = df.set_index('hex').sort_index()
-        df.columns=[f'hour{hr}' for hr in range(24)]
-        df['daily_min'] = df.iloc[:,:24].values.min(axis=1)
-        df['daily_max'] = df.iloc[:,:24].values.max(axis=1)
-        df['daily_mean'] = df.iloc[:,:24].values.mean(axis=1)
-        return df
-
-    df = get_data(path_in, path_out)
-
-    memory_buffer = io.BytesIO()
-    table = pa.Table.from_pandas(df)
-    pq.write_table(table, memory_buffer, row_group_size=row_group_size, compression='zstd', write_statistics=True)
-    memory_buffer.seek(0)
-
-    gcs = gcsfs.GCSFileSystem(token=json.loads(fused.secrets['gcs_fused']))
-    with gcs.open(path_out, "wb") as f:
-        f.write(memory_buffer.getvalue())
-
-    print(df.shape)
+  if len(fused.api.list(path_out))>0:
+    df = pd.DataFrame([{'status':'Already Exist.'}])
+    print("Already exists")
     return None
+
+  def get_data(path_in, path_out):
+    path = fused.download(path_in, path_in)
+    xds = xarray.open_dataset(path)
+    df = xds[var].to_dataframe().unstack(0)
+    df.columns = df.columns.droplevel(0)
+    df['hex'] = df.index.map(lambda x:h3.api.basic_int.latlng_to_cell(x[0],x[1],res))
+    df = df.set_index('hex').sort_index()
+    df.columns=[f'hour{hr}' for hr in range(24)]
+    df['daily_min'] = df.iloc[:,:24].values.min(axis=1)
+    df['daily_max'] = df.iloc[:,:24].values.max(axis=1)
+    df['daily_mean'] = df.iloc[:,:24].values.mean(axis=1)
+    return df
+
+  df = get_data(path_in, path_out)
+
+  memory_buffer = io.BytesIO()
+  table = pa.Table.from_pandas(df)
+  pq.write_table(table, memory_buffer, row_group_size=row_group_size, compression='zstd', write_statistics=True)
+  memory_buffer.seek(0)
+
+  gcs = gcsfs.GCSFileSystem(token=json.loads(fused.secrets['gcs_fused']))
+  with gcs.open(path_out, "wb") as f:
+    f.write(memory_buffer.getvalue())
+
+  print(df.shape)
+  return None
 ```
 
 Step 2: Rename this UDF to "ETL_Ingest"
@@ -3122,6 +3109,35 @@ import DocCardList from '@theme/DocCardList';
 // File: python-sdk/changelog
 
 # Changelog
+
+## v1.15.0 (2025-03-20)
+
+**[`fused-py`](/python-sdk/)**
+
+- Loading UDFs now behaves like importing a Python module, and attributes defined on the UDF can be accessed.
+- The `fused.submit()` keyword `wait_on_result` has been renamed to `collect`, with a default of `collect=True` returning the collected results (pass `collect=False` to get the JobPool object to inspect individual results).
+- New UDFs default to using `fused.types.Bounds`.
+- Upgraded `duckdb` to v1.2.1.
+- UDFs can now return simple types like `str`, `int`, `float`, `bool`, and so on.
+- Files in `/mount/` can be listed through the API.
+- UDFs from publicly accessible GitHub repositories can be loaded through `fused.load`.
+- `fused.load` now supports loading a UDF from a local .py file or directory
+- The `x`, `y` and `z` aren't protected arguments when running a UDF anymore (previously protected to pass X/Y/Z mercantile tiles).
+
+**[Workbench](/workbench/)**
+
+New:
+- Added a new account page and redesigned preferences page.
+- You can now customize the code formatter settings (available under Preferences > Editor preferences).
+- UDFs can optionally be shared with their code when creating a share token.
+
+General:
+- Moved shared token page to bottom left bar, and adjusted the icons.
+- The ordering of UDFs in collections is now saved.
+
+[App Builder](/workbench/app-builder/app-overview/):
+- Updated app list UI.
+- Fixed bugs with shared apps showing the wrong URL in the browser.
 
 ## v1.14.0 (2025-02-25)
 
