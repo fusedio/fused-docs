@@ -663,7 +663,7 @@ We can make this even simpler by moving the `get_data` function under [the `Modu
     ```python showLineNumbers
     @fused.cache
     def get_data(
-        bounds: fused.types.Tile,
+        bounds: fused.types.Bounds,
         time_of_interest: str,
         resolution: int,
         bands: list,
@@ -678,7 +678,7 @@ We can make this even simpler by moving the `get_data` function under [the `Modu
         import pystac_client
         import geopandas as gpd
 
-        # Convert tile to GeoDataFrame if needed
+        # Convert bounds to GeoDataFrame if needed
         if not isinstance(bounds, gpd.GeoDataFrame):
             utils = fused.load("https://github.com/fusedio/udfs/tree/e1fefb7/public/common/").utils
             bounds = utils.bounds_to_gdf(bounds)
@@ -1207,7 +1207,7 @@ We can use [this bit of code called `table_to_tile`](https://github.com/fusedio/
 ```python {26-33} showLineNumbers
 @fused.udf
 def udf(
-    bounds: fused.types.Tile = None,
+    bounds: fused.types.Bounds = None,
     s1_acquisition_month_day_hour_min:str = '2024-09-04T00:19:09.175874',
     time_delta_in_hours: float = 0.1, # by default 6min (60min * 0.1)
     min_zoom_to_load_data: int = 14,
@@ -1216,9 +1216,10 @@ def udf(
     """Reading AIS data from Fused partitioned AIS data from NOAA (data only available in US)"""
     import pandas as pd
     from datetime import datetime, timedelta
-    local_utils = fused.load(
-        "https://github.com/fusedio/udfs/tree/f8f0c0f/public/common/"
-    ).utils
+
+    # Load the utils module
+    local_utils = fused.load("https://github.com/fusedio/udfs/tree/bb712a5/public/common/").utils
+    zoom = local_utils.estimate_zoom(bounds)
 
     sentinel1_time = pd.to_datetime(s1_acquisition_month_day_hour_min)
     time_delta_in_hours = timedelta(hours=time_delta_in_hours)
@@ -1226,9 +1227,6 @@ def udf(
     month_date = sentinel1_time.strftime('%Y_%m')
     monthly_ais_table = f"{ais_table_path}prod_{month_date}/"
     print(f"{monthly_ais_table=}")
-
-    if hasattr(bounds, 'z'):  # Changed type check to hasattr
-        print(f"{bounds.z=}")
 
     @fused.cache
     def getting_ais_from_s3(bounds, monthly_table):
@@ -1245,10 +1243,9 @@ def udf(
         print("No AIS data within this bounds & timeframe. Change bounds or timeframe")
         return ais_df
 
-    if hasattr(bounds, 'z'):  # Changed type check to hasattr
-        if bounds.z > min_zoom_to_load_data:
-            print(f"Zoom is {bounds.z=} | Only showing bounds")
-            return ais_df
+    if zoom > min_zoom_to_load_data:
+        print(f"Zoom is {zoom=} | Only showing bounds")
+        return ais_df
 
     print(f"{ais_df['BaseDateTime'].iloc[0]=}")
     ais_df['datetime'] = pd.to_datetime(ais_df['BaseDateTime'])
