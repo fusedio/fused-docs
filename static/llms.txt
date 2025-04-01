@@ -580,7 +580,7 @@ def udf(bounds: fused.types.Bounds = None):
 
 Fused supports the native Python types `int`, `float`, `bool`, `list`, `dict`, and `list`. Parameters without a specified type are handled as strings by default.
 
-The UDF Builder runs the UDF as a [Map Tile](/core-concepts/filetile/) if the [first parameter](/core-concepts/filetile/#the-bounds-object) is typed as `fused.types.Bounds`, or `fused.types.Tile`.
+The UDF Builder runs the UDF as a [Map Tile](/core-concepts/filetile/) if the [first parameter](/core-concepts/filetile/#the-bounds-object) is typed as `fused.types.Bounds`.
 
 ### `pd.DataFrame` as JSON
 
@@ -779,56 +779,26 @@ def udf(bounds: fused.types.Bounds=None):
 
 :::
 
-<details>
-    <summary>Comparison of `TileGDF` and `ViewportGDF` geometries in [Workbench Map View](/workbench/udf-builder/map/)</summary>
-
-    Comparing the same UDF with a different `bounds` input
-
-    1. `bounds: fused.types.Tile`
-
-    ![Tile UDF](/img/core-concepts/file_tile/tile_udf.png)
-
-    2. `bounds: fused.types.Bounds`
-
-    (We also turn `bounds` into a `gpd.GeoDataFrame` to render it in Workbench)
-
-    ![Bounds UDF](/img/core-concepts/file_tile/bounds_udf.png)
-
-</details>
-
 ### Legacy types
 
 These types are still currently supported in `fused` though only for legacy reasons and will soon be deprecated.
 
-{/* #### `fused.types.Bbox`
+#### [Legacy] `fused.types.Tile`
 
-This is a [shapely.geometry.polygon.Polygon](https://shapely.readthedocs.io/en/stable/reference/shapely.Polygon.html) corresponding to the Tile's bounds.
+This is a [geopandas.GeoDataFrame](https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.html) with `x`, `y`, `z`, and `geometry` columns.
 
 ```python showLineNumbers
 @fused.udf
-def udf(bbox: fused.types.Bbox=None):
-    print(bbox)
-    return bbox
+def udf(bounds: fused.types.Tile=None):
+    print(bounds)
 
->>> POLYGON ((-122.0 37.0, -122.0 37.1, -122.1 37.1, -122.1 37.0, -122.0 37.0))
+>>>      x    y   z                                           geometry
+>>> 0  327  790  11  POLYGON ((-122.0 37.0, -122.0 37.1, -122.1 37.1, -122.1 37.0, -122.0 37.0))
 ```
-
-#### `fused.types.TileXYZ`
-
-This is a [mercantile.Tile](https://mercantile.readthedocs.io/en/stable/api/mercantile.html) object with values for the `x`, `y`, and `z` Tile indices.
-
-```python showLineNumbers
-@fused.udf
-def udf(bbox: fused.types.TileXYZ=None):
-    print(bbox)
-    return bbox
-
->>> Tile(x=328, y=790, z=11)
-``` */}
 
 #### [Legacy] `fused.types.TileGDF`
 
-This behaves the same as [`fused.types.Tile`](/core-concepts/filetile/#fusedtypestile).
+This behaves the same as [`fused.types.Tile`](/core-concepts/filetile/#legacy-fusedtypestile).
 
 #### [Legacy] `fused.types.ViewportGDF`
 
@@ -1105,11 +1075,15 @@ Pass [`bounds`](/core-concepts/filetile/#the-bounds-object) to make the output u
 
 ```python showLineNumbers
 @fused.udf
-def udf(bounds: fused.types.Tile=None):
+def udf(bounds: fused.types.Bounds=None):
 
     @fused.cache
     def fn(bounds):
-        return bounds
+        # convert bounds to tile
+        common_utils = fused.load("https://github.com/fusedio/udfs/tree/bb712a5/public/common/").utils
+        zoom = common_utils.estimate_zoom(bounds)
+        tile = common_utils.get_tiles(bounds, zoom=zoom)
+        return tile
 
     return fn(bounds)
 ```
@@ -1120,16 +1094,21 @@ For this reason, it's recommend to keep cache for tasks that _aren't_ dependent 
 
 ```python {5} showLineNumbers
 @fused.udf
-def udf(bounds: fused.types.Tile):
+def udf(bounds: fused.types.Bounds=None):
 
     @fused.cache
     def loading_slow_geodataframe(data_path):
         ...
         return gdf
 
+    # convert bounds to tile
+    common_utils = fused.load("https://github.com/fusedio/udfs/tree/bb712a5/public/common/").utils
+    zoom = common_utils.estimate_zoom(bounds)
+    tile = common_utils.get_tiles(bounds, zoom=zoom)
+
     # Loading of our slow data does not depend on bounds so can be cached even if we pan around
     gdf = loading_slow_geodataframe()
-    gdf_in_bounds = gdf[gdf.geometry.within(bounds.iloc[0].geometry)]
+    gdf_in_bounds = gdf[gdf.geometry.within(tile.iloc[0].geometry)]
 
     return gdf_in_bounds
 ```
@@ -1723,7 +1702,7 @@ import Tag from '@site/src/components/Tag'
 
 Teams use the GitHub integration to share UDFs and load [util Modules](/core-concepts/write/#utils-module) from private GitHub repos. When an organization sets up GitHub integration, team members will see UDFs in the linked repos under the "Team UDFs" tab of the [UDF Catalog](/workbench/udf-catalog/). Users may "duplicate" the UDFs to make changes.
 
-import gh1 from '@site/static/img/workbench_catalog.png';
+import gh1 from '@site/static/img/workbench/workbench_catalog.png';
 
 <div style={{textAlign: 'center'}}>
 <img src={gh1} alt="File" style={{}} />
@@ -1759,22 +1738,22 @@ import gh3 from '@site/static/img/gh3.png';
 
 ## Enabling GitHub integration
 
-To enable the GitHub integration, click "Preferences" in the bottom left corner, then select "Enable GitHub Integration".
+To enable the GitHub integration, click the "Preferences" icon in the top left corner, and enable "GitHub Integration".
 
-import ImageGit from '@site/static/img/enable_git.png';
+import ImageGit from '@site/static/img/core-concepts/enable_git.png';
 
 <div style={{textAlign: 'center'}}>
-<img src={ImageGit} alt="File" style={{width: 500}} />
+<img src={ImageGit} alt="File" style={{width: 700}} />
 </div>
 
 
 <br></br>
 
-Once it's enabled, the "Push to GitHub" option should appear in the UDF's dropdown menu.
+Once it's enabled, the "Push" option should appear in the UDF's dropdown menu.
 
 <br></br>
 
-import ImageGitDropdown from '@site/static/img/git_dropdown.png';
+import ImageGitDropdown from '@site/static/img/core-concepts/github_dropdown.png';
 
 <div style={{textAlign: 'center'}}>
 <img src={ImageGitDropdown} alt="File" style={{width: 500}} />
@@ -1963,17 +1942,22 @@ Our ingestion process broke down our dataset into smaller files (making each fil
 ```python showLineNumbers
 @fused.udf
 def read_ingested_parquet_udf(
-    bounds: fused.types.Tile,
+    bounds: fused.types.Bounds,
     path: str = "s3://your-bucket/your-dir/file_format_demo/ingested/"
 ):
     import fused
     import pandas as pd
 
+    # convert bounds to tile
+    common_utils = fused.load("https://github.com/fusedio/udfs/tree/bb712a5/public/common/").utils
+    zoom = common_utils.estimate_zoom(bounds)
+    tile = common_utils.get_tiles(bounds, zoom=zoom)
+
     # Built in fused method to reach the `_sample` file and return only bounding box of each parquet holding our points
     df = fused.get_chunks_metadata(path)
 
     # Only keeping the tiles where our bounds is -> Only need to load actual data inside / touching our bounds
-    df = df[df.intersects(bounds.geometry.iloc[0])]
+    df = df[df.intersects(tile.geometry.iloc[0])]
 
     # This is based on Fused's ingestion process
     chunk_values = df[["file_id", "chunk_id"]].values
@@ -1981,8 +1965,8 @@ def read_ingested_parquet_udf(
         fused.get_chunk_from_table(path, fc[0], fc[1], columns=['geometry'])
         for fc in chunk_values
     ])
-    df = rows_df[rows_df.intersects(bounds.geometry[0])]
-    df.crs = bounds.crs
+    df = rows_df[rows_df.intersects(tile.geometry[0])]
+    df.crs = tile.crs
     return df
 ```
 
@@ -1993,8 +1977,8 @@ def read_ingested_parquet_udf(
     ```python showLineNumbers
     @fused.udf
     def udf(
-        bounds: fused.types.Tile, path: str='s3://your-bucket/your-dir/demo_reading_ais/ingested/'):
-        utils = fused.load('https://github.com/fusedio/udfs/tree/19b5240/public/common/').utils
+        bounds: fused.types.Bounds, path: str='s3://your-bucket/your-dir/demo_reading_ais/ingested/'):
+        utils = fused.load('https://github.com/fusedio/udfs/tree/bb712a5/public/common/').utils
         df = utils.table_to_tile(bounds, table=path)
         return df
     ```
@@ -2474,7 +2458,7 @@ fused.run('UDF_Get_Isochrone')
 
 _When to use: Whenever you want someone to be able to execute a UDF but might not want to share the code with them._
 
-You can get the token from a UDF either in [Workbench](/workbench/) (Save your UDF then go to "Settings" -> "Share" -> "Fused App") or returning the token in Python.
+You can get the token from a UDF either in [Workbench](/workbench/) (Save your UDF then click "Share") or returning the token in Python.
 
 Here's a toy UDF that we want others to be able to run, but we don't want them to see the code:
 
@@ -2699,11 +2683,13 @@ Have a look at the dedicated [`fused.submit()`](/python-sdk/top-level-functions/
 
 {/* Need to showcase this in video */}
 
-In the UDF Builder, you can create an HTTP endpoint for a UDF in the ["Snippets"](/workbench/udf-builder/code-editor/#share-snippets) section. This generates a unique URL to call the UDF via HTTP requests. The URL is scoped to that UDF only and it can be revoked to disable access. The same can be done with the [Fused Python SDK](/python-sdk/).
+In the UDF Builder, you can create an HTTP endpoint for a UDF in the ["Snippets"](/workbench/udf-builder/navigation/#share-snippets) section. This generates a unique URL to call the UDF via HTTP requests. The URL is scoped to that UDF only and it can be revoked to disable access. The same can be done with the [Fused Python SDK](/python-sdk/).
 
 ### Shared token
 
-To run a UDF via HTTP request, create a [shared token](/workbench/udf-builder/code-editor/#share-snippets) then modify the provided URL. Manage your account's shared tokens in [fused.io/profile#tokens](https://www.fused.io/profile#tokens).
+To run a UDF via HTTP request, generate a [shared token](/workbench/udf-builder/navigation/#share) and use the provided URL. Manage your account's shared tokens in [fused.io/profile#tokens](https://www.fused.io/workbench/tokens).
+
+<ReactPlayer playsinline className="video__player" loop playing={false} muted controls height="100%" width="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/shared_token.mp4" />
 
 Structure the URL with the `file` path parameter to run as a single batch operation.
 
@@ -2744,7 +2730,7 @@ Read how to structure HTTP endpoints to call the UDF as a [Map Tile & File](/cor
 
 ## Caching responses
 
-If a UDF's [cache](/workbench/udf-builder/code-editor/#cache) is enabled, its endpoints cache outputs for each combination of code and parameters. The first call runs and caches the UDF, and subsequent calls return cached data.
+If a UDF's [cache](/core-concepts/cache/) is enabled, its endpoints cache outputs for each combination of code and parameters. The first call runs and caches the UDF, and subsequent calls return cached data.
 
 ---
 
@@ -5492,7 +5478,7 @@ We strongly recommend you [type](https://docs.python.org/3/library/typing.html) 
 ```python {3} showLineNumbers
 @fused.udf
 def udf(
-    bounds:fused.types.Tile=None, n:int=1
+    bounds:fused.types.Bounds=None, n:int=1
 ):
     ...
     return
@@ -6313,7 +6299,7 @@ We can make this even simpler by moving the `get_data` function under [the `Modu
     ```python showLineNumbers
     @fused.cache
     def get_data(
-        bounds: fused.types.Tile,
+        bounds: fused.types.Bounds,
         time_of_interest: str,
         resolution: int,
         bands: list,
@@ -6328,7 +6314,7 @@ We can make this even simpler by moving the `get_data` function under [the `Modu
         import pystac_client
         import geopandas as gpd
 
-        # Convert tile to GeoDataFrame if needed
+        # Convert bounds to GeoDataFrame if needed
         if not isinstance(bounds, gpd.GeoDataFrame):
             utils = fused.load("https://github.com/fusedio/udfs/tree/e1fefb7/public/common/").utils
             bounds = utils.bounds_to_gdf(bounds)
@@ -6857,7 +6843,7 @@ We can use [this bit of code called `table_to_tile`](https://github.com/fusedio/
 ```python {26-33} showLineNumbers
 @fused.udf
 def udf(
-    bounds: fused.types.Tile = None,
+    bounds: fused.types.Bounds = None,
     s1_acquisition_month_day_hour_min:str = '2024-09-04T00:19:09.175874',
     time_delta_in_hours: float = 0.1, # by default 6min (60min * 0.1)
     min_zoom_to_load_data: int = 14,
@@ -6866,9 +6852,10 @@ def udf(
     """Reading AIS data from Fused partitioned AIS data from NOAA (data only available in US)"""
     import pandas as pd
     from datetime import datetime, timedelta
-    local_utils = fused.load(
-        "https://github.com/fusedio/udfs/tree/f8f0c0f/public/common/"
-    ).utils
+
+    # Load the utils module
+    local_utils = fused.load("https://github.com/fusedio/udfs/tree/bb712a5/public/common/").utils
+    zoom = local_utils.estimate_zoom(bounds)
 
     sentinel1_time = pd.to_datetime(s1_acquisition_month_day_hour_min)
     time_delta_in_hours = timedelta(hours=time_delta_in_hours)
@@ -6876,9 +6863,6 @@ def udf(
     month_date = sentinel1_time.strftime('%Y_%m')
     monthly_ais_table = f"{ais_table_path}prod_{month_date}/"
     print(f"{monthly_ais_table=}")
-
-    if hasattr(bounds, 'z'):  # Changed type check to hasattr
-        print(f"{bounds.z=}")
 
     @fused.cache
     def getting_ais_from_s3(bounds, monthly_table):
@@ -6895,10 +6879,9 @@ def udf(
         print("No AIS data within this bounds & timeframe. Change bounds or timeframe")
         return ais_df
 
-    if hasattr(bounds, 'z'):  # Changed type check to hasattr
-        if bounds.z > min_zoom_to_load_data:
-            print(f"Zoom is {bounds.z=} | Only showing bounds")
-            return ais_df
+    if zoom > min_zoom_to_load_data:
+        print(f"Zoom is {zoom=} | Only showing bounds")
+        return ais_df
 
     print(f"{ais_df['BaseDateTime'].iloc[0]=}")
     ais_df['datetime'] = pd.to_datetime(ais_df['BaseDateTime'])
@@ -7127,17 +7110,20 @@ Fused lets you import utility Modules from other UDFs with `fused.load`. Their c
 ```python showLineNumbers
 @fused.udf
 def udf(
-    bounds: fused.types.Tile = None,
+    bounds: fused.types.Bounds = None,
     year: int = 2020,
     crop_id: int = 36
 ):
     import numpy as np
 
-    utils = fused.load("https://github.com/fusedio/udfs/tree/e1fefb7/public/common/").utils
+    # Convert bounds to tile
+    utils = fused.load("https://github.com/fusedio/udfs/tree/bb712a5/public/common/").utils
+    zoom = utils.estimate_zoom(bounds)
+    tile = utils.get_tiles(bounds, zoom=zoom)
 
     # Load CDLS data
     arr = utils.read_tiff(
-      bounds,
+      tile,
       input_tiff_path=f"s3://fused-asset/data/cdls/{year}_30m_cdls.tif"
     )
 
@@ -7349,14 +7335,16 @@ This UDF loads data from an endpoint by [Element 84](https://aws.amazon.com/mark
 
 ```python showLineNumbers
 @fused.udf
-def udf(bounds: fused.types.Tile):
+def udf(bounds: fused.types.Bounds):
     import odc.stac
     import pystac_client
     from pystac.extensions.eo import EOExtension as eo
 
     utils = fused.load(
-        "https://github.com/fusedio/udfs/tree/f928ee1/public/common/"
+        "https://github.com/fusedio/udfs/tree/bb712a5/public/common/"
     ).utils
+    zoom = utils.estimate_zoom(bounds)
+    tile = utils.get_tiles(bounds, zoom=zoom)
 
     odc.stac.configure_s3_access(aws_unsigned=True)
     catalog = pystac_client.Client.open("https://earth-search.aws.element84.com/v1")
@@ -7366,14 +7354,14 @@ def udf(bounds: fused.types.Tile):
         bbox=bounds.total_bounds,
     ).item_collection()
 
-    resolution = int(20 * 2 ** (13 - bounds.z[0]))
+    resolution = int(20 * 2 ** (13 - zoom))
 
     ds = odc.stac.load(
         items,
         crs="EPSG:3857",
         bands=["data"],
         resolution=resolution,
-        bbox=bounds.total_bounds,
+        bbox=bounds,
     ).astype(float)
     arr = ds["data"].max(dim="time")
     return utils.arr_to_plasma(arr.values, min_max=(0, 500), reverse=False)
@@ -9092,9 +9080,9 @@ This example UDF loads the building footprint table `gdf` and DSM raster `arr` f
 ```python showLineNumbers
 @fused.udf
 def udf(
-    bounds: fused.types.Tile=None, min_zoom=15, table="s3://fused-asset/infra/building_msft_us/"
+    bounds: fused.types.Bounds=None, min_zoom=15, table="s3://fused-asset/infra/building_msft_us/"
 ):
-    dsm_to_tile = fused.load("https://github.com/fusedio/udfs/tree/eda5aec/public/DSM_JAXA_Example").utils.dsm_to_tile
+    dsm_to_tile = fused.load("https://github.com/fusedio/udfs/tree/91845c4/public/DSM_JAXA_Example").utils.dsm_to_tile
     utils = fused.load("https://github.com/fusedio/udfs/tree/2a76b6a/public/common/").utils
 
     gdf = utils.table_to_tile(bounds, table, min_zoom)
@@ -9473,7 +9461,7 @@ With this in mind, the App Builder enables users to build and run apps with [ser
 
 import ReactPlayer from 'react-player'
 
-<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/app_builder.mp4" width="100%" />
+<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/app_builder_edit.mp4" width="100%" />
 
 
 
@@ -9618,7 +9606,7 @@ st.write(fused.run('fsh_1uQkWaPFfB2O7Qy1zzOHS9'))
 
 The App Builder settings menu includes options to generate a URL to share the app or embed it with an `<iframe>`.
 
-<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/app_builder_share.mp4" width="100%" />
+<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/app_builder_share_edit.mp4" width="100%" />
 
 
 ### Shareable links
@@ -9630,7 +9618,7 @@ The app is saved to Fused and referenced by a token, such as `https://www.fused.
 
 Click "Rerun" on the top-right menu of the App view in case things aren't working as expected.
 
-import Img from './rerun-app.png';
+import Img from '/static/img/app-builder/rerun.png';
 
 <div style={{textAlign: 'center'}}>
 <img src={Img} alt="Rerun App" />
@@ -9830,7 +9818,7 @@ Here is an example in the Public [Overture_Maps_example](https://github.com/fuse
 ```python showLineNumbers
 @fused.udf
 def udf(
-    bounds: fused.types.Tile,
+    bounds: fused.types.Bounds,
     release: str = "2025-01-22-0",
 ):
     from utils import get_overture
@@ -10594,9 +10582,9 @@ import ImgShare from '@site/static/img/workbench/udf-builder/share.png';
 
 ### Private snippets
 
-The "Snippets" section shows snippets that can only be called by services authenticated with a private token. These include `cURL`, `Python` and `fused.load`.
+The "Snippets" section shows snippets that can only be called by services authenticated with a private token. These include `Links` and `Python snippets`.
 
-import ImageSnippets from '@site/static/img/workbench_snippets.png';
+import ImageSnippets from '@site/static/img/workbench/workbench_snippets.png';
 
 <div style={{textAlign: 'center'}}>
 <img src={ImageSnippets} alt="File" style={{width: '100%'}} />
@@ -10640,10 +10628,10 @@ Organizations with the [GitHub Integration](/core-concepts/content-management/gi
 
 Clicking "Download" [saves the UDF](/core-concepts/write/#save-udfs) and downloads a `.zip` file with the UDF code, module, and configuration.
 
-import ImageDownloadmenu from '@site/static/img/workbench/udf-builder/download.png';
+import ImageGitDropdown from '@site/static/img/core-concepts/github_dropdown.png';
 
 <div style={{textAlign: 'center'}}>
-<img src={ImageDownloadmenu} alt="File" style={{width: '80%'}} />
+<img src={ImageGitDropdown} alt="File" style={{width: '80%'}} />
 </div>
 
 ### Default parameter values
