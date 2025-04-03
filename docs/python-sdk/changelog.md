@@ -12,14 +12,14 @@ sidebar_position: 8
 **[`fused-py`](/python-sdk/)**
 
 - It is now possible to return dictionaries of objects from a UDF, for example a dictionary of a raster numpy array, a DataFrame, and a string.
-- Whitespace in a UDF will be considered when determining whether to return cached data.
+- Whitespace in a UDF will be considered as changes when determining whether to return cached data. (a UDF with different whitespace will be rerun rather than cached)
 - Fixed calling `fused.run` in [large jobs](/core-concepts/run-udfs/run_large/).
 
 **[Workbench](/workbench/)**
 
 - Added experimental AI agent builder.
 - Workbench will now prompt you to replace an existing UDF when adding the same UDF (by name) from the catalog.
-- Added ability to upload an entire collection.
+- Added ability to download & upload an entire collection.
 - Fixed saving collections with empty names.
 
 [Visualization](/workbench/udf-builder/styling/):
