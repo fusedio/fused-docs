@@ -237,6 +237,10 @@ const config: Config = {
             to: "/core-concepts/data-ingestion",
             from: ["/core-concepts/data_ingestion/"],
           },
+          {
+            to: "/core-concepts/onprem",
+            from: ["/core-concepts/setup-profile/"],
+          },
         ],
         createRedirects(existingPath) {
           if (existingPath.includes("/user-guide/out")) {
