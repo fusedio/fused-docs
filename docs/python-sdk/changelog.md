@@ -23,7 +23,7 @@ sidebar_position: 8
 - Fixed saving collections with empty names.
 
 [Visualization](/workbench/udf-builder/styling/):
-- Added a H3-only visualization preset.
+- Added an H3-only visualization preset.
 - Fixed a bug where changing TileLayer visualization type could result in a crash.
 
 [App Builder](/workbench/app-builder/app-overview/):
