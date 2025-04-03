@@ -7,9 +7,32 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.16.2 (2025-04-01)
+
+**[`fused-py`](/python-sdk/)**
+
+- It is now possible to return dictionaries of objects from a UDF, for example a dictionary of a raster numpy array, a DataFrame, and a string.
+- Whitespace in a UDF will be considered as changes when determining whether to return cached data. (a UDF with different whitespace will be rerun rather than cached)
+- Fixed calling `fused.run` in [large jobs](/core-concepts/run-udfs/run_large/).
+
+**[Workbench](/workbench/)**
+
+- Added experimental AI agent builder.
+- Workbench will now prompt you to replace an existing UDF when adding the same UDF (by name) from the catalog.
+- Added ability to download & upload an entire collection.
+- Fixed saving collections with empty names.
+
+[Visualization](/workbench/udf-builder/styling/):
+- Added an H3-only visualization preset.
+- Fixed a bug where changing TileLayer visualization type could result in a crash.
+
+[App Builder](/workbench/app-builder/app-overview/):
+- Updated the runtime.
+
 ## v1.16.0 (2025-03-27)
 
 **[`fused-py`](/python-sdk/)**
+
 - The result object of running in `batch` now has `logs_url` property.
 - Fixed `fused.submit` raising an error if some run failed.
 
