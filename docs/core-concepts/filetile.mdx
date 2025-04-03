@@ -7,39 +7,62 @@ toc_min_heading_level: 2
 toc_max_heading_level: 4
 ---
 
-# Map Tile/File
+# Displaying Spatial Data: Tile vs File
 
-When UDFs are called, they [run](/core-concepts/run-udfs/) and return the output of the execution. They can be called in two ways that influence how Fused handles them: `File` and `Tile`.
+When spatial UDFs are called (i.e. that return spatial data like a `GeoDataFrame` or an array of `GeoTiff` tiles), they [run](/core-concepts/run-udfs/) and return the output of the execution like any UDF. However they can be called in two ways that influence how Fused handles them: `File` and `Tile`.
 
-### Single File
+This is an important distinction and can be changed in Workbench at the top of the UDF editor:
 
-In `File` mode, the UDF runs within a single HTTP response. This is suitable for tasks that can be completed in a single request, such as processing data that fits in memory.
+![File or Tile](https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/core-concepts/file-tile/File_Tile_Viewport.gif)
 
-import ImageFile from '@site/static/img/image-file2.png';
-
-<div style={{textAlign: 'center'}}>
-<img src={ImageFile} alt="File" style={{width: 600,}} />
-</div>
-
-### Map Tiles
-
-`Tile` mode is designed to process geospatial datasets in grid-based tiles that align with [web map tiling schemas](https://wiki.openstreetmap.org/wiki/Slippy_map). Each Tile request may correspond to a spatial slice of a larger dataset, making it ideal to work with large datasets that can be spatially filtered.
-
-When a UDF endpoint is called as `Tile`, Fused passes `bounds` as the first argument, which the UDF can use to spatially filter the dataset. The [`bounds` object](/core-concepts/filetile/#bounds-object-types) specifies a tile by its bounds or XYZ index.
-
-import ImageTile from '@site/static/img/image-tile2.png';
-
-<div style={{textAlign: 'center'}}>
-<img src={ImageTile} alt="File" style={{width: 600}} />
-</div>
-
-This is in contrast with a `File` call, where the UDF runs within a single HTTP response. In `File` mode, the UDF doesn't receive a `bounds` object to spatially filter data into tiles.
-
-Responses with spatial data can render on a map. `GeoDataFrames` already contain spatial geometry information. If a raster does not contain spatial information, the bounds must be specified alongside the output object, separated by a comma, to determine its location on a map.
+We'll demonstrate the differences with a simple UDF that takes a [`bounds` object](/core-concepts/filetile/#the-bounds-object) as input and display how it behaves differently in each mode:
 
 ```python showLineNumbers
-return arr, [xmin, ymin, xmax, ymax]
+@fused.udf
+def udf(bounds: fused.types.Bounds):
+    import geopandas as gpd
+    from shapely.geometry import box
+    
+    # Returning bounds to gdf
+    gdf = gpd.GeoDataFrame(geometry=[box(*bounds)], crs=4326)
+    return gdf
 ```
+
+### File (Viewport)
+
+Selecting `File (Viewport)` mode, the UDF runs within a single call.
+
+If you run the example UDF, make sure to select `File (Viewport)` mode in the UDF editor, execute it with "Shift + Enter" and zoom out you'll see that `gdf` covers the viewport you had:
+
+![File (Viewport)](/img/core-concepts/file_tile/File_bounds_udf.png)
+
+**We generally recommend using `File (Viewport)` mode when :**
+- Working with smaller datasets that fit into memory
+- Wanting to load data that doesn’t move each time you pan around
+- Wanting 1 seamless layer without tiling artifacts
+- Wanting data at a specific resolution
+
+### Tile
+
+By contrast, `Tile` mode runs your UDF multiple times over a grid of [Mercator Tiles](https://en.wikipedia.org/wiki/Tiled_web_map) that cover the viewport. We aim to use anywhere from 2 to 15 tiles to cover the current viewport. 
+
+Looking at the same UDF and selecting `Tile` mode, we get many different tiles:
+
+![Tile](https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/core-concepts/file-tile/Tile_bounds_udf.gif)
+
+You can see a few other differences:
+- This UDF is called each time you move around the Map Viewport
+- We need to "Freeze" the viewport for it to stop rendering. This is in contrast to `File (Viewport)` mode where the UDF is called once and panning in Map View doesn't re-run the UDF
+
+**We generally recommend using `Tile` mode when :**
+- Loading a lot of data at once (since the UDF is called multiple times over a smaller extent each time)
+- Wanting a more dynamic, responsive panning & scrolling experience
+- Wanting a dynamic resolution to be calculated for your image rendering based on your current zoom level
+
+:::tip
+
+The mode you select for a UDF is saved with the UDF. You can decide which mode you prefer people to use for your UDF by selecting the mode in the UDF editor.
+:::
 
 ## The `bounds` object
 
@@ -64,7 +87,7 @@ def udf(bounds: fused.types.Bounds=None):
 ```
 
 :::note
-`fused.types.Bounds` is a list of 4 points so it cannot be returned by a UDF directly. The simplest way to return it is to convert it to a `GeoDataFrame`:
+`fused.types.Bounds` is a list of 4 points so it might be helpful to convert it to a `GeoDataFrame` when returning spatial data:
 
 ```python showLineNumbers
 @fused.udf
