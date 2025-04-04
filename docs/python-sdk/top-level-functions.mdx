@@ -14,49 +14,41 @@ def udf(
     name: Optional[str] = None,
     cache_max_age: Optional[str] = None,
     default_parameters: Optional[Dict[str, Any]] = None,
-    headers: Optional[Sequence[Union[str, Header]]] = None,
-) -> Callable[..., GeoPandasUdfV2]:
+    headers: Optional[Sequence[Union[str, Header]]] = None
+) -> Callable[..., GeoPandasUdfV2Callable]
 ```
 
- """A decorator that transforms a function into a Fused UDF.
+A decorator that transforms a function into a Fused UDF.
 
-    Args:
-        schema: The schema for the DataFrame returned by the UDF. The schema may be either
-            a string (in the form `"field_name:DataType field_name2:DataType"`, or as JSON),
-            as a Python dictionary representing the schema, or a `Schema` model object.
+**Arguments**:
 
-            Defaults to None, in which case a schema must be evaluated by calling `run_local`
-            for a job to be able to write output. The return value of `run_local` will also
-            indicate how to include the schema in the decorator so `run_local` does not need
-            to be run again.
-        name: The name of the UDF object. Defaults to the name of the function.
-        cache_max_age: The maximum age when returning a result from the cache.
-        default_parameters: Parameters to embed in the UDF object, separately from the arguments
-            list of the function. Defaults to None for empty parameters.
-        headers: A list of files to include as modules when running the UDF. For example,
-            when specifying `headers=['my_header.py']`, inside the UDF function it may be
-            referenced as:
+- `schema` _Schema | Dict | None_ - The schema for the DataFrame returned by the UDF. The schema may be either a string (in the form "field_name:DataType field_name2:DataType", or as JSON), as a Python dictionary representing the schema, or a Schema model object. Defaults to None, in which case a schema must be evaluated by calling run_local for a job to be able to write output. The return value of run_local will also indicate how to include the schema in the decorator so run_local does not need to be run again.
+- `name` _str | None_ - The name of the UDF object. Defaults to the name of the function.
+- `cache_max_age` _str | None_ - The maximum age when returning a result from the cache. Supported units are seconds (s), minutes (m), hours (h), and days (d) (e.g. “48h”, “10s”, etc.). Defaults to `"90d"`.
+- `default_parameters` _Dict[str, Any] | None_ - Parameters to embed in the UDF object, separately from the arguments list of the function. Defaults to None for empty parameters.
+- `headers` _Sequence[str | Header] | None_ - A list of files to include as modules when running the UDF. For example, when specifying headers=['my_header.py'], inside the UDF function it may be referenced as:
+  ```python
+  import my_header
+  my_header.my_function()
+  ```
+  Defaults to None for no headers.
+- `fn` _Callable | None_ - The function to decorate.
 
-            ```py
-            import my_header
-            my_header.my_function()
-            ```
+**Returns**:
 
-            Defaults to None for no headers.
-    Returns:
-        A callable that represents the transformed UDF. This callable can be used
-        within GeoPandas workflows to apply the defined operation on geospatial data.
+- `Callable` - A callable that represents the transformed UDF. This callable can be used within GeoPandas workflows to apply the defined operation on geospatial data.
 
-    Examples:
-        To create a simple UDF that calls a utility function to calculate the area of geometries in a GeoDataFrame:
+**Examples**:
 
-        ```py
-        @fused.udf
-        def udf(bbox, table_path="s3://fused-asset/infra/building_msft_us"):
-            ...
-            gdf = table_to_tile(bbox, table=table_path)
-            return gdf
-        ```
+To create a simple UDF that calls a utility function to calculate the area of geometries in a GeoDataFrame:
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds, table_path="s3://fused-asset/infra/building_msft_us"):
+    ...
+    gdf = table_to_tile(bounds, table=table_path)
+    return gdf
+```
 
 ---
 
@@ -65,77 +57,82 @@ def udf(
 ```python showLineNumbers
 def cache(
     func: Optional[Callable[..., Any]] = None,
-    cache_max_age: str | int = DEFAULT_CACHE_MAX_AGE,
-    path: str = "tmp",
-    concurrent_lock_timeout: str | int = 120,
-    reset: bool = False,
-) -> Callable[..., Any]:
+    cache_max_age: Union[str, int] = '12h',
+    path: str = 'tmp',
+    concurrent_lock_timeout: int = 120,
+    **kwargs: Any
+) -> Callable[..., Any]
 ```
+
 Decorator to cache the return value of a function.
 
-    This function serves as a decorator that can be applied to any function
-    to cache its return values. The cache behavior can be customized through
-    keyword arguments.
+This function serves as a decorator that can be applied to any function
+to cache its return values. The cache behavior can be customized through
+keyword arguments.
 
-    Args:
-        func (Callable, optional): The function to be decorated. If None, this
-            returns a partial decorator with the passed keyword arguments.
-        cache_max_age: A string with a numbered component and units. Supported units are seconds (s), minutes (m), hours (h), and
-            days (d) (e.g. "48h", "10s", etc.).
-        path: Folder to append to the configured cache directory.
-        concurrent_lock_timeout: Max amount of time in seconds for subsequent concurrent calls to wait for a previous
-            concurrent call to finish execution and to write the cache file.
+**Arguments**:
 
-    Returns:
-        Callable: A decorator that, when applied to a function, caches its
-        return values according to the specified keyword arguments.
+- `func` _Callable, optional_ - The function to be decorated. If None, this
+  returns a partial decorator with the passed keyword arguments.
+- `cache_max_age` _str | int_ - A string with a numbered component and units. Supported units are seconds (s), minutes (m), hours (h), and
+  days (d) (e.g. “48h”, “10s”, etc.). Defaults to `"12h"`
+- `path` _str_ - Folder to append to the configured cache directory.
+- `concurrent_lock_timeout` _int_ - Max amount of time in seconds for subsequent concurrent calls to wait for a previous
+  concurrent call to finish execution and to write the cache file.
+- `**kwargs` - Arbitrary keyword arguments that are passed to the internal
+  caching mechanism. These could specify cache size, expiration time,
+  and other cache-related settings.
 
-    Examples:
+**Returns**:
 
-        Use the `@cache` decorator to cache the return value of a function in a custom path.
+- `Callable` - A decorator that, when applied to a function, caches its
+  return values according to the specified keyword arguments.
 
-        ```py
-        @cache(path="/tmp/custom_path/")
-        def expensive_function():
-            # Function implementation goes here
-            return result
-        ```
+**Examples**:
 
-        If the output of a cached function changes, for example if remote data is modified,
-        it can be reset by running the function with the `reset` keyword argument. Afterward,
-        the argument can be cleared.
+Use the `@cache` decorator to cache the return value of a function in a custom path.
 
-        ```py
-        @cache(path="/tmp/custom_path/", reset=True)
-        def expensive_function():
-            # Function implementation goes here
-            return result
-        ```
+```python showLineNumbers
+@cache(path="/mount/custom_path/")
+def expensive_function():
+    # Function implementation goes here
+    return result
+```
+
+If the output of a cached function changes, for example, if remote data is modified, it can be reset by running the function with the `reset` keyword argument. Afterward,
+the argument can be cleared.
+
+```python showLineNumbers
+@cache(path="/mount/custom_path/", reset=True)
+def expensive_function():
+    # Function implementation goes here
+    return result
+```
 ---
 
 ## `load`
 
 ```python showLineNumbers
-def load(url_or_udf: Union[str, Path], /, *, cache_key: Any = None) -> AnyBaseUdf:
+def load(url_or_udf: Union[str, Path], *, cache_key: Any = None) -> AnyBaseUdf
 ```
 
- Loads a UDF from various sources including GitHub URLs,
-    and a Fused platform-specific identifier.
+Loads a UDF from various sources including GitHub URLs,
+local files, or directories, and a Fused platform-specific identifier.
 
-This function supports loading UDFs from a GitHub repository URL, or a Fused
-    platform-specific identifier composed of an email and UDF name. It intelligently
-    determines the source type based on the format of the input and retrieves the UDF
-    accordingly.
+This function supports loading UDFs from a GitHub repository URL, a local file path,
+a directory containing UDF definitions, or a Fused platform-specific identifier
+composed of an email and UDF name. It intelligently determines the source type based
+on the format of the input and retrieves the UDF accordingly.
 
 **Arguments**:
 
-- `url_or_udf` - A string representing the location of the UDF, or the raw code of the UDF.
-            The location can be a GitHub URL starting with "https://github.com",
-            a Fused platform-specific identifier in the format "email/udf_name",
-            or a local file path pointing to a Python file.
+- `url_or_udf` - A string or Path object representing the location of the UDF. This can be
+  a GitHub URL starting with "https://github.com", a local file path, a directory
+  containing one or more UDFs, or a Fused platform-specific identifier in the
+  format "email/udf_name".
 - `cache_key` - An optional key used for caching the loaded UDF. If provided, the function
-            will attempt to load the UDF from cache using this key before attempting to
-            load it from the specified source. Defaults to None, indicating no caching.
+  will attempt to load the UDF from cache using this key before attempting to
+  load it from the specified source. Defaults to None, indicating no caching.
 
 **Returns**:
 
@@ -143,22 +140,31 @@ This function supports loading UDFs from a GitHub repository URL, or a Fused
 
 **Raises**:
 
+- `FileNotFoundError` - If a local file or directory path is provided but does not exist.
 - `ValueError` - If the URL or Fused platform-specific identifier format is incorrect or
-            cannot be parsed.
+  cannot be parsed.
 - `Exception` - For errors related to network issues, file access permissions, or other
-            unforeseen errors during the loading process.
+  unforeseen errors during the loading process.
 
 **Examples**:
 
-   Load a UDF from a GitHub URL:
-```py
-udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/REM_with_HyRiver/")
-        ```
+Load a UDF from a GitHub URL:
 
-   Load a UDF using a Fused platform-specific identifier:
-```py
+```python showLineNumbers
+udf = fused.load("https://github.com/fusedio/udfs/tree/cb37656/public/REM_with_HyRiver/")
+```
+
+Load a UDF from a local file:
+
+```python showLineNumbers
+udf = fused.load("/localpath/REM_with_HyRiver/")
+```
+
+Load a UDF using a Fused platform-specific identifier:
+
+```python showLineNumbers
 udf = fused.load("username@fused.io/REM_with_HyRiver")
-        ```
+```
 
 ---
 
@@ -166,51 +172,122 @@ udf = fused.load("username@fused.io/REM_with_HyRiver")
 
 ```python showLineNumbers
 def run(
-    step_config: Optional[AnyJobStepConfig] = None,
-    params: Optional[Dict[str, str]] = None,
-    *,
-    print_time: bool = False,
-    read_options: Optional[Dict] = None,
-    client_id: Optional[str] = None,
-    cache_max_age: Optional[int] = None,
-    dtype_out_vector: str = "parquet",
-    dtype_out_raster: str = "tiff",
-) -> pd.DataFrame:
+    udf: Optional[Union[str, GeoPandasUdfV2, UdfJobStepConfig]] = None,
+    *args: Any,
+    x: Optional[int] = None,
+    y: Optional[int] = None,
+    z: Optional[int] = None,
+    sync: bool = True,
+    engine: Optional[Literal["remote", "local"]] = None,
+    type: Optional[Literal["tile", "file"]] = None,
+    max_retry: int = 0,
+    cache_max_age: Optional[str] = None,
+    parameters: Optional[Dict[str, Any]] = None,
+    _include_log: bool = False,
+    _return_response: bool = False,
+    **kw_parameters: Any
+) -> Any
 ```
 
-Run a UDF.
+Executes a user-defined function (UDF) with various execution and input options. 
+
+This function supports executing UDFs in different environments (local or remote),
+with different types of inputs (tile coordinates, geographical bounding boxes, etc.), and
+allows for both synchronous and asynchronous execution. It dynamically determines the execution
+path based on the provided parameters.
 
 **Arguments**:
 
-- `step_config` - AnyJobStepConfig.
-- `params` - Additional parameters to pass to the UDF. Must be JSON serializable.
+- `udf` - The UDF to execute. The UDF can be specified in several ways:
+  - A string representing a UDF name or UDF shared token.
+  - A UDF object.
+  - A UdfJobStepConfig object for detailed execution configuration.
+- `x` _int | None_ - Tile coordinates for tile-based UDF execution.
+- `y` _int | None_ - Tile coordinates for tile-based UDF execution.
+- `z` _int | None_ - Tile coordinates for tile-based UDF execution.
+- `sync` _bool_ - If True, execute the UDF synchronously. If False, execute asynchronously.
+- `engine` _Literal["remote", "local"] | None_ - The execution engine to use.
+- `type` _Literal["tile", "file"] | None_ - The type of UDF execution ('tile' or 'file').
+- `max_retry` _int_ - The maximum number of retries to attempt if the UDF fails. By default does not retry.
+- `cache_max_age` _str | None_ - The maximum age when returning a result from the cache. Supported units are seconds (s), minutes (m), hours (h), and days (d) (e.g. “48h”, “10s”, etc.). Default is `None` so a UDF run with `fused.run()` will follow `cache_max_age` defined in `@fused.udf()` unless this value is changed.
+- `parameters` _Dict[str, Any] | None_ - Additional parameters to pass to the UDF.
+- `_include_log` _bool | None_
+- `_return_response` _bool | None_
+- `**kw_parameters` - Additional parameters to pass to the UDF.
 
-**Keyword Args**:
+**Raises**:
 
-- `print_time` - If True, print the amount of time taken in the request.
-- `read_options` - If not None, options for reading `df` that will be passed to GeoPandas.
+- `ValueError` - If the UDF is not specified or is specified in more than one way.
+- `TypeError` - If the first parameter is not of an expected type.
+- `Warning` - Various warnings are issued for ignored parameters based on the execution path chosen.
+
+**Returns**:
+
+The result of the UDF execution, which varies based on the UDF and execution path.
+
+**Examples**:
+
+Run a UDF saved in the Fused system:
+
+```python showLineNumbers
+    fused.run("username@fused.io/my_udf_name")
+    ```
+
+Run a UDF saved in GitHub:
+
+```python showLineNumbers
+    loaded_udf = fused.load("https://github.com/fusedio/udfs/tree/e3202f5/public/Building_Tile_Example")
+    fused.run(loaded_udf, bounds=bounds)
+    ```
+
+Run a UDF saved in a local directory:
+
+```python showLineNumbers
+    loaded_udf = fused.load("/Users/local/dir/Building_Tile_Example")
+    fused.run(loaded_udf, bounds=bounds)
+    ```
+
+:::note
+
+This function dynamically determines the execution path and parameters based on the inputs.
+  It is designed to be flexible and support various UDF execution scenarios.
+
+Because the output must be serializable and returned via an HTTP response, Fused validates the output of UDFs that execute remotely with the `realtime` engine and will hold back invalid responses. This might result in perceived inconsistencies because running locally with the `local` engine does not validate and will instead return any output. See the set of supported return object types [here](/core-concepts/write/#return-object).
+
+```python showLineNumbers
+import fused
+
+@fused.udf
+def udf(x=1):
+    return x
+fused.run(udf, engine='local') # Returns 1
+fused.run(udf, engine='remote') # Returns None because output is not a valid response object
+```
+
+:::
+
+---
+
 
 ## `submit`
 
 ```python showLineNumbers
 def submit(
-    udf,
-    arg_list,
-    /,
+    udf: Callable[..., Any],
+    arg_list: Union[List[Any], List[Dict[str, Any]], pd.DataFrame],
     *,
-    engine: Optional[Literal["remote", "local"]] = "remote",
+    engine: Optional[Literal["remote", "local"]] = 'remote',
     max_workers: Optional[int] = None,
     max_retry: int = 2,
     debug_mode: bool = False,
-    collect: bool = True,
-    **kwargs,
-) -> Union[JobPool, ResultType, "pd.DataFrame"]:
+    wait_on_results: bool = False,
+    **kwargs: Any
+) -> JobPool
 ```
 
- Executes a user-defined function (UDF) multiple times for a list of input
-    parameters, and return immediately a "lazy" JobPool object allowing
-    to inspect the jobs and wait on the results.
-
+Executes a user-defined function (UDF) multiple times for a list of input
+parameters, and returns immediately a “lazy” JobPool object allowing
+to inspect the jobs and wait on the results.
 
 See `fused.run` for more details on the UDF execution.
 
@@ -221,33 +298,30 @@ See `fused.run` for more details on the UDF execution.
   - A list of values for parametrizing over a single parameter, i.e., the first parameter of the UDF.
   - A list of dictionaries for parametrizing over multiple parameters.
   - A DataFrame for parametrizing over multiple parameters where each row is a set of parameters.
-- `engine` - The execution engine to use. Defaults to 'remote'.
-- `max_workers` - The maximum number of workers to use. Defaults to 32.
-- `max_retry` - The maximum number of retries for failed jobs. Defaults to 2.
-- `debug_mode` - If True, executes only the first item in arg_list directly using `fused.run()`. Useful for debugging UDF execution. Default is False.
-- `collect` - If True, waits for all jobs to complete and returns the collected DataFrame
-            containing the results. If False, returns a JobPool object, which is non-blocking
-            and allows you to inspect the individual results and logs.
-            Default is True.
+- `engine` _str_ - The execution engine to use. Defaults to 'remote'.
+- `max_workers` _int | None_ - The maximum number of workers to use. Defaults to 32.
+- `max_retry` _int_ - The maximum number of retries for failed jobs. Defaults to 2.
+- `debug_mode` _bool_ - If True, executes only the first item in arg_list directly using `fused.run()`. Useful for debugging UDF execution. Default is False.
+- `wait_on_results` _bool_ - If True, waits for all jobs to complete and returns a DataFrame containing the results. If False, returns a JobPool object. Default is False.
+- `**kwargs` - Additional keyword arguments to pass to the UDF.
 
 **Returns**:
 
-- `JobPool` 
+- `JobPool` - A JobPool object that allows inspecting the jobs and waiting on the results.
 
 **Examples**:
 
- Run a UDF multiple times for the values 0 to 9 passed to as the first
-        positional argument of the UDF:
+Running a UDF with values passed as first positional argument:
 
-```py
-  pool = fused.submit("username@fused.io/my_udf_name", range(10))
-        ```
+```python showLineNumbers
+pool = fused.submit(udf, [dict(n=i) for i in range(10)])
+```
 
 Being explicit about parameter names:
 
-```py
-  pool = fused.submit(udf, [dict(n=i) for i in range(10)])
-        ```
+```python showLineNumbers
+pool = fused.submit(udf, [dict(n=i) for i in range(10)])
+```
 
 
 ---
@@ -255,21 +329,47 @@ Being explicit about parameter names:
 ## `download`
 
 ```python showLineNumbers
-def download(path: str, local_path: Union[str, Path]) -> None:
+def download(url: str, file_path: str) -> str
 ```
 
-Download the contents at the path to disk.
+Download a file.
 
-Args
+May be called from multiple processes with the same inputs to get the same result.
 
-`path:` URL to a file, like `fd://bucket-name/file.parquet`  
-`local_path:` Path to a local file.
+Fused runs UDFs from top to bottom each time code changes. This means objects in the UDF are recreated each time, which can slow down a UDF that downloads files from a remote server.
+
+💡 Downloaded files are written to a mounted volume shared across all UDFs in an organization. This means that a file downloaded by one UDF can be read by other UDFs.
+
+Fused addresses the latency of downloading files with the download utility function. It stores files in the mounted filesystem so they only download the first time.
+
+💡 Because a Tile UDF runs multiple chunks in parallel, the download function sets a signal lock during the first download attempt, to ensure the download happens only once.
+
+**Arguments**:
+
+- `url` _str_ - The URL to download.
+- `file_path` _str_ - The local path where to save the file.
+
+**Returns**:
+
+The function downloads the file only on the first execution and returns the file path.
+
+**Examples**:
+
+```python showLineNumbers
+@fused.udf
+def geodataframe_from_geojson():
+    import geopandas as gpd
+    url = "s3://sample_bucket/my_geojson.zip"
+    path = fused.core.download(url, "tmp/my_geojson.zip")
+    gdf = gpd.read_file(path)
+    return gdf
+```
 
 ## `ingest`
 
 ```python showLineNumbers
 def ingest(
-    input: Union[str, Path, Sequence[Union[str, Path]], "gpd.GeoDataFrame"],
+    input: Union[str, Sequence[str], Path, gpd.GeoDataFrame],
     output: Optional[str] = None,
     *,
     output_metadata: Optional[str] = None,
@@ -292,9 +392,9 @@ def ingest(
     split_identical_centroids: bool = True,
     target_num_chunks: int = 5000,
     lonlat_cols: Optional[Tuple[str, str]] = None,
-    partitioning_schema_input: Optional[Union[str, "pd.DataFrame"]] = None,
-    gdal_config: Union[GDALOpenConfig, Dict[str, Any], None] = None,
-) -> GeospatialPartitionJobStepConfig:
+    partitioning_schema_input: Optional[str] = None,
+    gdal_config: Union[GDALOpenConfig, Dict[str, Any], None] = None
+) -> GeospatialPartitionJobStepConfig
 ```
 
 Ingest a dataset into the Fused partitioned format.
@@ -394,21 +494,21 @@ Ingest a dataset into the Fused partitioned format.
 
 **Returns**:
 
-Configuration object describing the ingestion process. Call `.execute` on this object to start a job.
+Configuration object describing the ingestion process. Call `.run_remote` on this object to start a job.
 
 **Examples**:
 
-For example, to ingest the California Census dataset for the year 2022:
-        ```py
-        job = fused.ingest(
-            input="https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/06_CALIFORNIA/06/tl_rd22_06_bg.zip",
-            output="s3://fused-sample/census/ca_bg_2022/main/",
-            output_metadata="s3://fused-sample/census/ca_bg_2022/fused/",
-            explode_geometries=True,
-            partitioning_maximum_per_file=2000,
-            partitioning_maximum_per_chunk=200,
-        ).execute()
-        ```
+```python showLineNumbers
+    job = fused.ingest(
+        input="https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/06_CALIFORNIA/06/tl_rd22_06_bg.zip",
+        output="s3://fused-sample/census/ca_bg_2022/main/",
+        output_metadata="s3://fused-sample/census/ca_bg_2022/fused/",
+        explode_geometries=True,
+        partitioning_maximum_per_file=2000,
+        partitioning_maximum_per_chunk=200,
+    )
+    job.run_remote()
+    ```
 
 ---
 
@@ -492,32 +592,122 @@ job_id.cancel()
 ## `file_path`
 
 ```python showLineNumbers
-def file_path(file_path: str, mkdir: bool = True) -> str:
+def file_path(file_path: str, mkdir: bool = True) -> str
 ```
 
 Creates a directory in a predefined temporary directory.
 
-    This gives users the ability to manage directories during the execution of a UDF. It takes a relative file_path,
-    creates the corresponding directory structure, and returns its absolute path.
+This gives users the ability to manage directories during the execution of a UDF. It takes a relative `file_path`,
+creates the corresponding directory structure, and returns its absolute path.
 
-    This is useful for UDFs that temporarily store intermediate results as files,
-    such as when writing intermediary files to disk when processing large datasets.
-    file_path ensures that necessary directories exist.
+This is useful for UDFs that temporarily store intermediate results as files,
+such as when writing intermediary files to disk when processing large datasets.
+`file_path` ensures that necessary directories exist.
 
-**Arguments**:
+**Arguments:**
 
-- `file_path:` The file path to locate.
-- `mkdir:` If True, create the directory if it doesn't already exist. Defaults to True.
+- `file_path`: The file path to locate.
+- `mkdir`: If True, create the directory if it doesn't already exist. Defaults to True.
 
 
-Returns:
-        `The located file path.`
-  
+**Returns:**
+
+The located file path.
+
+
+**Examples:**
+
+When run locally, `file_path` returns the local `/tmp/fused/` directory on your machine. If called in a UDF is run on Fused servers, the returned path will be of the shared mounted storage [`/mount`](/core-concepts/content-management/file-system/#mntcache-disk). 
+Because `file_path` on a batch job using [`job.run_remote()`](/core-concepts/run-udfs/run_large/#getting-results) returns the directory of the remote instance, it recommended to write data directly to `/mount`.
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import WorkbenchFiles from '@site/docs/user-guide/examples/workbench_files.png';
+
+<Tabs className="unique-tabs">
+  <TabItem value="local" label="Local" default>
+
+        ```python showLineNumbers
+        # in a Jupyter notebook
+        import fused
+
+        path=fused.file_path('hello')
+        print(path)
+        ```
+
+        Directory located (and created if not already there):
+        ```batch
+        >>> /tmp/fused/hello
+        ```
+  </TabItem>
+  <TabItem value="udf" label="In a UDF" default>
+        ```python showLineNumbers
+        @fused.udf
+        def see_file_path():
+            path=fused.file_path('testing')
+            print(path)
+
+            return
+        
+        fused.run(see_file_path)
+        ```
+
+        You can find the new directory in the [File Explorer](/workbench/file-explorer/) in [Workbench](/workbench/) after running this code.
+        ```
+        >>> /mount/testing
+        ```
+
+  </TabItem>
+  <TabItem value="local_udf" label="In a UDF run locally" default>
+
+        ```python showLineNumbers
+        @fused.udf
+        def see_file_path():
+            #highlight-next-line
+            path=fused.file_path('do_not_create', false)
+            print(path)
+
+            return
+
+        #highlight-next-line
+        fused.run(see_file_path, engine='local')
+        ```
+
+        Directory returned (but not created):
+        ```batch
+        >>> /tmp/fused/do_not_create
+        ```
+
+  </TabItem>
+  <TabItem value="batch" label="In a UDF run in a batch" default>
+
+        ```python showLineNumbers
+        @fused.udf
+        def udf():
+            path=fused.file_path('where_am_i')
+            print(path)
+
+            return
+
+        job = udf()
+        job.run_remote()
+        ```
+
+        Directory of remote instance returned (that we can no longer access):
+        ```batch
+        >>> 2025-01-27 17:40:06.429 | INFO     | job2.log:write:160 partition=None - fused.file_path("where_am_i") = '/data/where_am_i'
+        ```
+
+  </TabItem>
+</Tabs>
+
+
+
 ---
 ## `get_chunks_metadata`
 
 ```python showLineNumbers
-def get_chunks_metadata(url: str) -> "gpd.GeoDataFrame":
+def get_chunks_metadata(url: str) -> "gpd.GeoDataFrame"
 ```
 
 Returns a GeoDataFrame with each chunk in the table as a row.
@@ -531,12 +721,11 @@ Returns a GeoDataFrame with each chunk in the table as a row.
 
 ```python showLineNumbers
 def get_chunk_from_table(
-    url: str,
-    file_id: Union[str, int, None],
-    chunk_id: Optional[int],
-    *,
-    columns: Optional[Iterable[str]] = None,
-) -> "gpd.GeoDataFrame":
+        url: str,
+        file_id: Union[str, int, None],
+        chunk_id: Optional[int],
+        *,
+        columns: Optional[Iterable[str]] = None) -> "gpd.GeoDataFrame"
 ```
 
 Returns a chunk from a table and chunk coordinates.
@@ -548,3 +737,4 @@ This can be called with file_id and chunk_id from `get_chunks_metadata`.
 - `url` - URL of the table.
 - `file_id` - File ID to read.
 - `chunk_id` - Chunk ID to read.
+- `columns` - Read only the specified columns.
