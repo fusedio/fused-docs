@@ -7,6 +7,19 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.16.3 (2025-04-03)
+
+**[`fused-py`](/python-sdk/)**
+
+- It is now possible to return general `list`s and `tuple`s from UDFs. (Note: a tuple of a raster and bounds will be treated as a raster return type.)
+
+**[Workbench](/workbench/)**
+
+- Workbench will now prompt you when loading large UDF results that could slow down or overwhelm your browser. The threshold for this prompt is configurable in your Workbench preferences.
+- Fixed bugs with loading large UDF results.
+- UDF list will show an error if a UDF has an empty name.
+- Fixed running some public UDFs in Workbench.
+
 ## v1.16.2 (2025-04-01)
 
 **[`fused-py`](/python-sdk/)**
