@@ -361,6 +361,22 @@ You can use the [App Builder](/workbench/app-builder/app-overview/) create an ap
 
 </details>
 
+<details>
+<summary>How can I create a set of tiles that cover a given geometry?</summary>
+
+Use cases like creating chips may call for running a UDF across a set of tiles that fall within a given geometry. This can be done by creating a list of tiles with the [mercantile](https://github.com/mapbox/mercantile) library then calling the UDF [in parallel](/user-guide/examples/zonal-stats/#c-parallelization).
+
+```python showLineNumbers
+import fused
+import mercantile
+
+bounds = [32.4203, -14.0933, 34.6186, -12.42826]
+
+tile_list = list(mercantile.tiles(*bounds,zooms=[15]))
+```
+
+</details>
+
 
 ## Troubleshooting
 
@@ -649,10 +665,12 @@ utils = fused.load("your@email.com/my_udf").utils
 
 ## `return` object
 
-UDFs return either a table or an array.
+UDFs can return the following objects:
 
-- Tables can be: `pd.DataFrame`, `pd.Series`, `gpd.GeoDataFrame`,  `gpd.GeoSeries`, and `shapely geometry`.
-- Arrays can be: `numpy.ndarray`, `xarray.Dataset`, `xarray.DataArray`, and `io.BytesIO`. Fused Workbench only supports the rendering of `uint8` arrays. Rasters without spatial metadata should indicate their [tile bounds](/core-concepts/filetile/#tile).
+- Tables: `pd.DataFrame`, `pd.Series`, `gpd.GeoDataFrame`,  `gpd.GeoSeries`, and `shapely geometry`.
+- Arrays: `numpy.ndarray`, `xarray.Dataset`, `xarray.DataArray`, and `io.BytesIO`. Fused Workbench only supports the rendering of `uint8` arrays. Rasters without spatial metadata should indicate their [tile bounds](/core-concepts/filetile/#map-tiles).
+- Simple Python objects: `str`, `int`, `float`, `bool`. 
+- Dictionaries: `dict`. Useful to return dictionaries of raster numpy array for example.
 
 ## Save UDFs
 
@@ -696,39 +714,62 @@ import ImageNetwork from '@site/static/img/network.png';
 
 // File: core-concepts/filetile
 
-# Map Tile/File
+# Displaying Spatial Data: Tile vs File
 
-When UDFs are called, they [run](/core-concepts/run-udfs/) and return the output of the execution. They can be called in two ways that influence how Fused handles them: `File` and `Tile`.
+When spatial UDFs are called (i.e. that return spatial data like a `GeoDataFrame` or an array of `GeoTiff` tiles), they [run](/core-concepts/run-udfs/) and return the output of the execution like any UDF. However they can be called in two ways that influence how Fused handles them: `File` and `Tile`.
 
-### Single File
+This is an important distinction and can be changed in Workbench at the top of the UDF editor:
 
-In `File` mode, the UDF runs within a single HTTP response. This is suitable for tasks that can be completed in a single request, such as processing data that fits in memory.
+![File or Tile](https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/core-concepts/file-tile/File_Tile_Viewport.gif)
 
-import ImageFile from '@site/static/img/image-file2.png';
-
-<div style={{textAlign: 'center'}}>
-<img src={ImageFile} alt="File" style={{width: 600,}} />
-</div>
-
-### Map Tiles
-
-`Tile` mode is designed to process geospatial datasets in grid-based tiles that align with [web map tiling schemas](https://wiki.openstreetmap.org/wiki/Slippy_map). Each Tile request may correspond to a spatial slice of a larger dataset, making it ideal to work with large datasets that can be spatially filtered.
-
-When a UDF endpoint is called as `Tile`, Fused passes `bounds` as the first argument, which the UDF can use to spatially filter the dataset. The [`bounds` object](/core-concepts/filetile/#bounds-object-types) specifies a tile by its bounds or XYZ index.
-
-import ImageTile from '@site/static/img/image-tile2.png';
-
-<div style={{textAlign: 'center'}}>
-<img src={ImageTile} alt="File" style={{width: 600}} />
-</div>
-
-This is in contrast with a `File` call, where the UDF runs within a single HTTP response. In `File` mode, the UDF doesn't receive a `bounds` object to spatially filter data into tiles.
-
-Responses with spatial data can render on a map. `GeoDataFrames` already contain spatial geometry information. If a raster does not contain spatial information, the bounds must be specified alongside the output object, separated by a comma, to determine its location on a map.
+We'll demonstrate the differences with a simple UDF that takes a [`bounds` object](/core-concepts/filetile/#the-bounds-object) as input and display how it behaves differently in each mode:
 
 ```python showLineNumbers
-return arr, [xmin, ymin, xmax, ymax]
+@fused.udf
+def udf(bounds: fused.types.Bounds):
+    import geopandas as gpd
+    from shapely.geometry import box
+    
+    # Returning bounds to gdf
+    gdf = gpd.GeoDataFrame(geometry=[box(*bounds)], crs=4326)
+    return gdf
 ```
+
+### File (Viewport)
+
+Selecting `File (Viewport)` mode, the UDF runs within a single call.
+
+If you run the example UDF, make sure to select `File (Viewport)` mode in the UDF editor, execute it with "Shift + Enter" and zoom out you'll see that `gdf` covers the viewport you had:
+
+![File (Viewport)](/img/core-concepts/file_tile/File_bounds_udf.png)
+
+**We generally recommend using `File (Viewport)` mode when :**
+- Working with smaller datasets that fit into memory
+- Wanting to load data that doesn’t move each time you pan around
+- Wanting 1 seamless layer without tiling artifacts
+- Wanting data at a specific resolution
+
+### Tile
+
+By contrast, `Tile` mode runs your UDF multiple times over a grid of [Mercator Tiles](https://en.wikipedia.org/wiki/Tiled_web_map) that cover the viewport. We aim to use anywhere from 2 to 15 tiles to cover the current viewport. 
+
+Looking at the same UDF and selecting `Tile` mode, we get many different tiles:
+
+![Tile](https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/core-concepts/file-tile/Tile_bounds_udf.gif)
+
+You can see a few other differences:
+- This UDF is called each time you move around the Map Viewport
+- We need to "Freeze" the viewport for it to stop rendering. This is in contrast to `File (Viewport)` mode where the UDF is called once and panning in Map View doesn't re-run the UDF
+
+**We generally recommend using `Tile` mode when :**
+- Loading a lot of data at once (since the UDF is called multiple times over a smaller extent each time)
+- Wanting a more dynamic, responsive panning & scrolling experience
+- Wanting a dynamic resolution to be calculated for your image rendering based on your current zoom level
+
+:::tip
+
+The mode you select for a UDF is saved with the UDF. You can decide which mode you prefer people to use for your UDF by selecting the mode in the UDF editor.
+:::
 
 ## The `bounds` object
 
@@ -753,7 +794,7 @@ def udf(bounds: fused.types.Bounds=None):
 ```
 
 :::note
-`fused.types.Bounds` is a list of 4 points so it cannot be returned by a UDF directly. The simplest way to return it is to convert it to a `GeoDataFrame`:
+`fused.types.Bounds` is a list of 4 points so it might be helpful to convert it to a `GeoDataFrame` when returning spatial data:
 
 ```python showLineNumbers
 @fused.udf
@@ -857,17 +898,6 @@ fused.run(tile_udf, x=1, y=2, z=3)
 
 The `tile_udf` gets tiled and run on [Web mercator XYZ tiles](https://en.wikipedia.org/wiki/Tiled_web_map) and then combined back together to speed up processing rather than executing a single run. This is in contrast to most other UDFs (either using no `bounds` input at all or using `bounds: fused.types.Bounds`) which run a single run across the given input.
 
-Use cases like creating chips may call for running a UDF across a set of tiles that fall within a given geometry. This can be done by creating a list of tiles with the [mercantile](https://github.com/mapbox/mercantile) library then calling the UDF [in parallel](/user-guide/examples/zonal-stats/#c-parallelization).
-
-```python showLineNumbers
-import fused
-import mercantile
-
-bounds = [32.4203, -14.0933, 34.6186, -12.42826]
-
-tile_list = list(mercantile.tiles(*bounds,zooms=[15]))
-```
-
 ---
 
 // File: core-concepts/cache
@@ -882,28 +912,51 @@ The goal of Fused is to make developing & running code faster for data scientist
 
 At a high level, caching is storing the output of a function run with some input so we can directly access the result next time that function is called with the same input, rather than re-computing it to save time & processing cost.
 
-import FunctionRun from '@site/static/img/core-concepts/caching/function_input_run_cache.png';
-
-<div style={{textAlign: 'center'}}>
-<img src={FunctionRun} alt="Function + Input run" style={{width: 800,}} />
-</div>
+![Function + Input run](/img/core-concepts/caching/function_input_run_cache.png)
 
 _The first run of a [Function + Input] is processed, but the next time that same combination is called, the result is retrieved much faster_
 
 As soon as either the function or the inputs change however, the output needs to be processed (as the result of this new combination has not been computed before)
 
-import DifferentFct from '@site/static/img/core-concepts/caching/running_different_function.png';
-
-<div style={{textAlign: 'center'}}>
-<img src={DifferentFct} alt="Different Function + Input run" style={{width: 800,}} />
-</div>
+![Different Function + Input run](/img/core-concepts/caching/running_different_function.png)
 
 Fused uses a few different types of cache, but they all work in this same manner
 
 
-## Caching a function (inside a UDF): [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
+## Caching any Python function: [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
 
-Any function inside a UDF can be cached using the [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) decorator around it:
+### Locally
+
+Any Python function, either inside a UDF or even locally on your machine can be cached using the [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) decorator around it:
+
+```python {5} showLineNumbers
+# This works locally on your machine
+import python
+from datetime import datetime
+
+@fused.cache(cache_max_age='30s')
+def telling_time():
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return current_time
+
+telling_time()
+```
+
+![Fused_cache_function_locally](/img/core-concepts/caching/fused_cache_function.png)
+
+As seen in the debug logs, your cached data will be saved under `/tmp/cached_data/tmp/` locally.
+
+:::tip
+Similar to how this works with [`fused.run()`](/python-sdk/top-level-functions/#run), you can overwrite [`cache_max_age`](/core-concepts/cache/#defining-your-cache-lifetime-cache_max_age) when executing your function directly:
+
+```python showLineNumbers
+telling_time(cache_max_age="0s") # Overwrite cache duration to be 0s, i.e. no caching
+```
+:::
+
+### Inside a UDF
+
+This also works inside a UDF by passing [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) decorator around any function:
 
 ```python {5} showLineNumbers
 @fused.udf
@@ -979,15 +1032,11 @@ def with_cache_loading_udf(
 
 Comparing the 2:
 
-import BenchmarkCache from '@site/static/img/core-concepts/caching/caching_benchmark.png';
-
-<div style={{textAlign: 'center'}}>
-<img src={BenchmarkCache} alt="Function + Input run" style={{width: 800,}} />
-</div>
+![Caching benchmark](/img/core-concepts/caching/caching_benchmark.png)
 
 ### Best Practices: [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
 
-Caching inside a UDF works best for:
+Caching a local function or inside a UDF works best for:
 - Loading data from slow formats (CSV, Shapefile)
 - Repetitive operations that can take a long amount of processing
 
@@ -996,76 +1045,40 @@ However, be wary of relying on [`@fused.cache`](/python-sdk/top-level-functions/
 Look into [ingesting your data](/core-concepts/data-ingestion/) in partitioned [cloud native formats](/core-concepts/data-ingestion/file-formats/) if you're working with large datasets.
 
 :::tip
-The line between when to ingest your data or use `@fused.cache` is a bit blurry. Check [this section](/core-concepts/data-ingestion/why-ingestion/#using-cache-as-a-single-use-ingester) for more
+The line between when to ingest your data or use `@fused.cache` to load data inside a UDF is a bit blurry. Check [this section](/core-concepts/data-ingestion/why-ingestion/#using-cache-as-a-single-use-ingester) for more
 :::
 
 ## Caching a UDF
+
+While [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) allows you to cache functions locally or _inside_ UDFs, UDFs ran with [`fused.run()`](/python-sdk/top-level-functions/#run) are cached by default on Fused server.
+
+You can create a token for your UDF in Python by first saving your UDF to Fused server:
+
+```python showLineNumbers
+@fused.udf
+def slow_caching_udf():
+    import time
+    import pandas as pd
+    
+    time.sleep(5)
+    
+    return pd.DataFrame({"output": ["I'm done running my long task!"]})
+
+fused.run(slow_caching_udf)
+```
+
+We can demonstrate this caching with a UDF that has a `time.sleep(5)` in it. Running this same UDF twice:
+
+![Cached_fused_run_udf](/img/core-concepts/caching/cached_fused_run_udf.png)
+
+This means that UDFs that are repeatably called with `fused.run()` become much more responsive. Do remember once again that UDFs are recomputed each time either anything in the UDF function or the inputs change!
 
 **Implementation Details**
 
 Cached UDF are:
 - Stored for 90d by default (see [Python SDK](/python-sdk/top-level-functions/#fusedudf) for more details)
 - Stored on S3
-
-### Calling a UDF with a [token](/core-concepts/run-udfs/run-small-udfs/#token)
-
-While [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) allows you to cache functions _inside_ UDFs, UDFs ran with [tokens](/core-concepts/run-udfs/run-small-udfs/#token) are cached by default.
-
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-import WorkbenchToken from '@site/static/img/core-concepts/caching/workbench_token_caching.png';
-
-<Tabs className="unique-tabs">
-  <TabItem value="workbench" label="Workbench" default>
-
-    {/* TODO: Update this with new Workbench design */}
-    This is enabled by default when sharing a token from Workbench:
-
-    <div style={{textAlign: 'center'}}>
-    <img src={WorkbenchToken} alt="Workbench token saving" style={{width: 600,}} />
-    </div>
-
-  </TabItem>
-  <TabItem value="python" label="Python">
-
-    You can create a token for your UDF in Python by first saving your UDF to Fused server:
-
-    ```python showLineNumbers
-    @fused.udf
-    def slow_caching_udf():
-        import time
-        time.sleep(5)
-        return pd.DataFrame({"output": ["I'm done running my long task!"]})
-
-    slow_caching_udf.to_fused()
-    token = udf.create_access_token()
-
-    fused.run(token)
-    ```
-
-  </TabItem>
-</Tabs>
-
-We can demonstrate this caching with a UDF that has a `time.sleep(5)` in it. Running this same UDF twice:
-
-import TokenCache from '@site/static/img/core-concepts/caching/cached_token_udf.png';
-
-<div style={{textAlign: 'center'}}>
-<img src={TokenCache} alt="Token fused.run() caching" style={{width: 800,}} />
-</div>
-
-This means that UDFs that are repeatably called with `fused.run(token)` become much more responsive. Do remember once again that UDFs are recomputed each time either anything in the UDF function or the inputs change!
-
-
-### Calling a UDF from [object](/core-concepts/run-udfs/run-small-udfs/#udf-object) or [name](/core-concepts/run-udfs/run-small-udfs/#name-from-your-account)
-
-{/*
-TODO:
-Add section on doing this in `fused-py` once this is implemented
- */}
-
-🚧 Under Construction 🚧
-
+- You can overwrite the cache age by passing [`cache_max_age`](/core-concepts/cache/#defining-your-cache-lifetime-cache_max_age) either when defining the UDF with [`@fused.udf(cache_max_age)`](/python-sdk/top-level-functions/#fusedudf) or when running the UDF with [`fused.run(udf, cache_max_age)`](/python-sdk/top-level-functions/#run)
 
 ## Advanced
 
@@ -1283,6 +1296,7 @@ _Diagram of the System Architecture_
 ### 1. Install Docker
 
 Follow these steps to install Docker on a bare-metal environment:
+
 Step 1: Update System Packages
 
 Ensure your system is up-to-date:
@@ -1313,31 +1327,7 @@ Step 5: Configure Artifact Registry
 gcloud auth configure-docker us-west1-docker.pkg.dev
 ```
 
-
-### 2. Configure Fused on the Docker container
-
-Run the following in a Python environment within the container to configure the on-prem profile. Fused will provide values specific to your account via secure communication.
-
-```python showLineNumbers
-import fused
-
-fused.options.base_url = "***"
-fused.options.auth.client_id = "***"
-fused.options.auth.client_secret = "***"
-fused.options.auth.audience = "***"
-fused.options.auth.oauth_token_url = "***"
-fused.options.auth.authorize_url = "***"
-
-fused.options.save()
-```
-
-The code above only needs to be run once. After this is complete, Fused will use the local configuration for future batch jobs.
-
-Note: if Fused has already been configured for batch jobs, you may need to remove the local `~/.fused` directory before running the above code.
-
-
-
-### 3. Install Dependencies and Create Virtual Environment
+### 2. Install Dependencies and Create Virtual Environment
 
 Step 1: Install pip
 ```bash
@@ -1358,6 +1348,28 @@ Step 4: Install Fused and dependencies
 ```bash
 pip install pandas ipython https://fused-magic.s3.us-west-2.amazonaws.com/fused-1.14.1.dev2%2B2c8d59a-py3-none-any.whl
 ```
+
+### 3. Configure Fused on the Docker container
+
+Run the following in a Python environment within the container to configure the on-prem profile. The Fused team will provide values specific to your account via secure communication.
+
+```python showLineNumbers
+import fused
+
+fused.options.base_url = "***"
+fused.options.auth.client_id = "***"
+fused.options.auth.client_secret = "***"
+fused.options.auth.audience = "***"
+fused.options.auth.oauth_token_url = "***"
+fused.options.auth.authorize_url = "***"
+
+fused.options.save()
+```
+
+The code above only needs to be run once. After this is complete, Fused will use the local configuration for future batch jobs.
+
+Note: if Fused has already been configured for batch jobs, you may need to remove the local `~/.fused` directory before running the above code.
+
 
 ### 4. Authenticate an individual Fused user account
 
@@ -1436,7 +1448,7 @@ Optionally, to mount a filestore volume to the node that runs the job, add the f
 additional_docker_args=["-v", "/mnt/cache:/mnt/cache"]
 ```
 
-### 5. Run Fused API: Example with ETL Ingest UDF
+### 7. Run Fused API: Example with ETL Ingest UDF
 
 Now that we've tested a simple UDF we can move to a more useful UDF
 
@@ -3095,9 +3107,45 @@ import DocCardList from '@theme/DocCardList';
 
 # Changelog
 
+## v1.16.3 (2025-04-03)
+
+**[`fused-py`](/python-sdk/)**
+
+- It is now possible to return general `list`s and `tuple`s from UDFs. (Note: a tuple of a raster and bounds will be treated as a raster return type.)
+
+**[Workbench](/workbench/)**
+
+- Workbench will now prompt you when loading large UDF results that could slow down or overwhelm your browser. The threshold for this prompt is configurable in your Workbench preferences.
+- Fixed bugs with loading large UDF results.
+- UDF list will show an error if a UDF has an empty name.
+- Fixed running some public UDFs in Workbench.
+
+## v1.16.2 (2025-04-01)
+
+**[`fused-py`](/python-sdk/)**
+
+- It is now possible to return dictionaries of objects from a UDF, for example a dictionary of a raster numpy array, a DataFrame, and a string.
+- Whitespace in a UDF will be considered as changes when determining whether to return cached data. (a UDF with different whitespace will be rerun rather than cached)
+- Fixed calling `fused.run` in [large jobs](/core-concepts/run-udfs/run_large/).
+
+**[Workbench](/workbench/)**
+
+- Added experimental AI agent builder.
+- Workbench will now prompt you to replace an existing UDF when adding the same UDF (by name) from the catalog.
+- Added ability to download & upload an entire collection.
+- Fixed saving collections with empty names.
+
+[Visualization](/workbench/udf-builder/styling/):
+- Added an H3-only visualization preset.
+- Fixed a bug where changing TileLayer visualization type could result in a crash.
+
+[App Builder](/workbench/app-builder/app-overview/):
+- Updated the runtime.
+
 ## v1.16.0 (2025-03-27)
 
 **[`fused-py`](/python-sdk/)**
+
 - The result object of running in `batch` now has `logs_url` property.
 - Fixed `fused.submit` raising an error if some run failed.
 
@@ -9165,7 +9213,7 @@ Data teams frequently encounter silos when looking to share and reuse code snipp
 
 
 
-<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/udf_catalog_edit.mp4" width="100%" />
+<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/udf_catalog_edit2.mp4" width="100%" />
 
 
 
@@ -9195,7 +9243,7 @@ Open the UDF Catalog by Clicking "Add UDF". Search UDFs by name, sort them, and 
 
 If [GitHub integration is enabled](/core-concepts/content-management/git/#enabling-github-integration) on your Workbench, you can paste the link of any UDF from GitHub to open it. This allows you to open a UDF from any branch or revision from GitHub.
 
-<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/import_udf_from_github2.mp4" width="100%" />
+<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/import_udf_from_github_edit.mp4" width="100%" />
 
 
 ## UDF profile
@@ -9222,7 +9270,7 @@ Once you write a UDF, you can use the Push to GitHub button in Fused Workbench t
 
 To add a UDF to the community repository, select community from the dropdown before creating a pull request.
 
-<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/push_udf_to_github2.mp4" width="100%" />
+<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/push_udf_to_github_edit.mp4" width="100%" />
 
 :::info
 
@@ -9401,13 +9449,13 @@ os.environ["GS_SECRET_ACCESS_KEY"] = fused.secrets["GS_SECRET_ACCESS_KEY"]
 
 // File: workbench/account
 
-Configure your account's runtime and secrets in the configuration page. To access this page, click on the account icon in the bottom-left corner of the page. Then, within the Workbench section, click on Environment.
+On the Account page, you can edit your Username, view basic account information, and check your usage in the Usage section. You can also access the Server, Auth, and Instance tabs to view authentication settings and instance details.
 
 
 
 
 
- <ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/account_page3.mp4" width="100%" />
+ <ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/account_page_edit.mp4" width="100%" />
 
 
 
@@ -9450,7 +9498,7 @@ You can access the Preferences page from Workbench by clicking on Preferences in
 
 This page contains general user preferences, experimental features, theme selection, data settings, and other customization options.
 
-import preferences from '/img/workbench/preferences/preferences.png';
+import preferences from '/img/workbench/preferences/new_preferences.png';
 
 <div style={{ textAlign: 'center' }}>
   <img src={preferences} alt="File" style={{ width: '90%' }} />
@@ -9784,7 +9832,7 @@ A Collection is a way for users to organize their UDFs into different projects. 
 
 Currently, all collections are private, meaning only you can see and manage them.
 
-<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/collections.mp4" width="100%" />
+<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/collections_edit.mp4" width="100%" />
 
 We are actively working on expanding Collection features!
 
@@ -9870,11 +9918,72 @@ import ImageFiletile from '@site/static/img/workbench/udf-builder/file_tile.png'
 
 # Layer Styling: Visualization Tab
 
+
 The UDF builder displays data from the UDF into the map view. You can change the visual representation of a UDF's output is configured under the ["Visualization"](/workbench/udf-builder/code-editor/#visualize) tab:
 
 import ReactPlayer from 'react-player';
 
-<ReactPlayer className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/visualization_open.mp4" width="100%" />
+<ReactPlayer className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/visualization_open_edit.mp4" width="100%" />
+
+
+## Basics of DeckGL
+
+The Visualization tab in Fused is built on top of [DeckGL](https://deck.gl/docs), a powerful JavaScript framework designed for large-scale data visualizations. DeckGL enables rendering of complex geospatial data using layers, providing flexibility to work with diverse data formats and visualization styles.
+
+### Key Concepts in DeckGL
+
+- **Layer Types**: DeckGL supports various layer types, such as `GeoJsonLayer`, `TileLayer`, and `BitmapLayer`, which are used to render vector, raster, and tiled data respectively.
+- **Viewport Optimization**: Layers like `TileLayer` ensure that only the data visible in the current viewport is rendered, optimizing performance for large datasets.
+- **Custom Properties**: DeckGL layers can be styled dynamically using properties like `getFillColor`, `getLineColor`, and `getElevation`. These properties can be hardcoded or derived from data attributes.
+
+### Fused-Specific Enhancements
+
+Fused extends DeckGL with custom sub-layers tailored for specific UDF outputs:
+- **`rasterLayer`**: Used for raster-based visualizations (e.g., PNG outputs).
+- **`vectorLayer`**: Used for vector-based visualizations (e.g., GeoDataFrame outputs).
+
+```JavaScript
+{
+"tileLayer": {
+  "@@type": "TileLayer",
+  ...
+  },
+"rasterLayer": {
+  "@@type": "BitmapLayer",
+  ...
+  },
+"vectorLayer": {
+  "@@type": "GeoJsonLayer",
+  ...
+  }
+}
+```
+
+### Using `hasProp`
+
+The `hasProp` function is a utility for conditional styling based on the presence of specific properties in the data. It allows dynamic adjustments to visualization attributes like color and elevation. Here's an example:
+
+```JavaScript
+{
+"getFillColor": {
+  "@@function": "hasProp",
+  "property": "metric",
+  "present": "@@=[255, (1 - properties.metric/500) * 255, 0]",
+  "absent":[^220][^255][^100]
+  },
+"getElevation": {
+  "@@function": "hasProp",
+  "property": "metric",
+  "present": "@@=properties.metric",
+  "absent": 1
+  }
+}
+```
+
+This ensures that styling adapts dynamically based on whether the specified property (`metric`) exists in the dataset.
+
+For more details on DeckGL layers and their properties, refer to [DeckGL documentation](https://deck.gl/docs/api-reference/layers/geojson-layer#properties).
+
 
 #### Default map view
 
@@ -9899,7 +10008,7 @@ import ImgVizTOverview from '/img/workbench/layer-styling/surprise_me.png';
 <img src={ImgVizTOverview} alt="File" style={{}} />
 </div>
 
-You can explore this example right here for yourself. Click on the "UDF Builder" icon on the left, just below the Fused logo to open the code editor:
+You can explore this example right here for yourself. Click on the "UDF Builder" icon on the left to open the code editor:
 
 <iframe
   id="udf_overture_example"
@@ -10377,7 +10486,7 @@ If a 4-channel array is passed, i.e. RGBA, the value of the 4th channel is the t
 
 ## Custom `loadingLayer` and `errorLayer`
 
-When `tileLayer` has `"@@type": "DebugTileLayer"` set `loadingLayer` and `errorLayer` can be configured to show the user that the UDF is still processing or that an error occurred. This is helpful for debugging.
+When `tileLayer` has `"@@type": "DebugTileLayer"` set, `loadingLayer` and `errorLayer` can be configured to show the user that the UDF is still processing or that an error occurred. This is helpful for debugging.
 
 <ReactPlayer playsinline={true} className="video__player" loop={true} playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/debug_layer2.mp4" width="100%" />
 
@@ -10476,7 +10585,7 @@ return np.array([[…], […]]), [xmin, ymin, xmax, ymax]
 
 For UDFs that return [map Tiles](/core-concepts/filetile/#tile), Fused runs the UDF for only the Tiles in the viewport. This enables efficient analysis on a fraction of a dataset.
 
-<ReactPlayer playsinline={true} className="video__player" loop={true} playing={true} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/mapnsi.mp4" width="100%" />
+<ReactPlayer playsinline={true} className="video__player" loop={true} playing={true} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/map_overture.mp4" width="100%" />
 
 ### Map controls
 
@@ -10487,7 +10596,7 @@ The top of the map has controls to interact with the viewport. These include an 
 
 You can change the basemap by setting it in the map style settings, located at the top right of the UDF Builder map. Currently, light, dark, satellite, and blank basemaps are supported.
 
-<ReactPlayer playsinline={true} className="video__player" loop={true} playing={true} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/mapcontrols.mp4" width="50%" />
+<ReactPlayer playsinline={true} className="video__player" loop={true} playing={true} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/mapcontrols_edit.mp4" width="100%" />
 
 ## Debug
 
@@ -10592,7 +10701,7 @@ UDFs saved in the UDF Builder can be called with [HTTP endpoints](/core-concepts
 
 The "Share" section shows snippets to run the UDF using a public token. This allows any application to invoke the UDF without authentication - including `cURL` calls, [Lonboard](/user-guide/out/lonboard/), [Leaflet](/user-guide/out/leaflet/), [Mapbox](/user-guide/out/mapbox/), [Google Sheets](/user-guide/out/googlesheets/), [DuckDB](/user-guide/out/duckdb/), the Fused [App Builder](/workbench/app-builder/), and Python applications with [`fused.run`](/core-concepts/run-udfs/).
 
-import ImgShare from '@site/static/img/workbench/udf-builder/share.png';
+import ImgShare from '@site/static/img/workbench/udf-builder/new_share.png';
 
 <div style={{textAlign: 'center'}}>
 <img src={ImgShare} alt="File" style={{width: '100%'}} />
@@ -10602,7 +10711,7 @@ import ImgShare from '@site/static/img/workbench/udf-builder/share.png';
 
 The "Snippets" section shows snippets that can only be called by services authenticated with a private token. These include `Links` and `Python snippets`.
 
-import ImageSnippets from '@site/static/img/workbench/workbench_snippets.png';
+import ImageSnippets from '@site/static/img/workbench/new_snippets.png';
 
 <div style={{textAlign: 'center'}}>
 <img src={ImageSnippets} alt="File" style={{width: '100%'}} />
@@ -10644,7 +10753,7 @@ Organizations with the [GitHub Integration](/core-concepts/content-management/gi
 
 ### Download
 
-Clicking "Download" [saves the UDF](/core-concepts/write/#save-udfs) and downloads a `.zip` file with the UDF code, module, and configuration.
+Clicking "Download" downloads a `.zip` file with the UDF code, module, and configuration.
 
 import ImageGitDropdown from '@site/static/img/core-concepts/github_dropdown.png';
 
