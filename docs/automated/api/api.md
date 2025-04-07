@@ -50,6 +50,8 @@ def create_udf_access_token(udf_email_or_name_or_id: Optional[str] = None,
                             udf_email: Optional[str] = None,
                             udf_id: Optional[str] = None,
                             client_id: Union[str, Ellipsis, None] = ...,
+                            public_read: Optional[bool] = None,
+                            access_scope: Optional[str] = None,
                             cache: bool = True,
                             metadata_json: Optional[Dict[str, Any]] = None,
                             enabled: bool = True) -> UdfAccessToken
@@ -237,6 +239,25 @@ Cancel an existing job
 **Returns**:
 
   A new job object.
+
+#### get\_job\_results
+
+```python
+def get_job_results(job: CoerceableToJobId,
+                    arg_index: int = -1) -> Any | list[Any]
+```
+
+Get the deserialized batch results of a job
+
+**Arguments**:
+
+- `job` - the identifier of a job or a `RunResponse` object.
+- `arg_index` - number representing the desired partition result of a batch job
+  
+
+**Returns**:
+
+  A single deserialized vector or raster, or a list of them
 
 #### upload
 
