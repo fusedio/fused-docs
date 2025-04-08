@@ -228,7 +228,7 @@ A [`fused.run()`](/python-sdk/top-level-functions/#run) call will require the fo
 2. [Optional] Any arguments of the UDF itself (if it has any). In the example above that's `inputs` because `my_udf` takes `inputs` as argument.
 3. [Optional] Any protected arguments as seen in the dedicated [API docs page](/python-sdk/top-level-functions/#run) (if applicable). These include for example:
    - `bounds` -> A geographical bounding box (as a list of 4 point: `[min_x, min_y, max_x, max_y]`) defining the area of interest.
-   - `x`, `y`, `z` -> Tile coordinates for tile-based UDF execution.
+   - `cache_max_age` -> The maximum [age of the UDF's cache](/core-concepts/cache/#defining-your-cache-lifetime-cache_max_age).
 
 ## Running multiple jobs in parallel
 
@@ -243,7 +243,11 @@ def udf(val):
     return pd.DataFrame({'val':[val]})
 ```
 
-Say we wanted to run this `udf` 10 times over `inputs = [0,1,2,3,4,5,6,7,8,9]`:
+Say we wanted to run this `udf` 10 times over:
+
+```python showLineNumbers
+inputs = [0,1,2,3,4,5,6,7,8,9]
+```
 
 ### [`fused.submit()`](/python-sdk/top-level-functions/#submit)
 
@@ -251,29 +255,93 @@ Fused is built to help you scale your processing to huge datasets and the core o
 
 ```python showLineNumbers
 job_pool = fused.submit(udf, inputs)
+
+>>> 100%  | 10/10
 ```
 
-This example will quick-off 10 UDF runs in parallel:
+`fused.submit()` runs all these jobs in parallel and defaults to directly returning the results back to you as a dataframe:
 
 ```python showLineNumbers
 job_pool
 
->>> <JobPool with 10 jobs [status: 0/10 done]>
+>>>
+ 		val
+val		
+0	0	0
+1	0	1
+...
 ```
 
-### Getting [`fused.submit()`](/python-sdk/top-level-functions/#submit) results
+### Advanced [`fused.submit()`](/python-sdk/top-level-functions/#submit) options
 
-A few seconds after, once all our jobs are run we can get our results as a `pd.DataFrame`, using the same example as above:
+#### Blocking vs non-blocking calls
+
+By default we've setup `fused.submit()` to be a blocking, meaning it will wait for all the jobs to finish before returning the results. 
+
+However, you might want to just kick off these jobs and continue executing the rest of your Python code:
 
 ```python showLineNumbers
-results = job_pool.collect_df()
+job_pool = fused.submit(udf, inputs, collect=False)
 ```
 
-![job pool results](/img/core-concepts/run-udfs/job_pool_results.png)
+`job_pool` then becomes an object you can query to get status of your jobs:
 
-:::tip
-Have a look at the dedicated [`fused.submit()`](/python-sdk/top-level-functions/#submit) Python SDK page to read more about all the available methods to access your multi-runs
-:::
+- `job_pool.get_status_df()` -> Returns a dataframe of the status of each job_pool:
+
+```python showLineNumbers
+job_pool.get_status_df()
+
+>>>	
+val	status	result
+0	0	success	val 0 0
+1	1	success	val 0 1
+2	2	success	val 0 2
+...
+```
+
+- `job_pool.collect()` -> Returns a dataframe of the results of all the jobs once they're all finished (equivalent to default `fused.submit()` behaviour):
+
+```python showLineNumbers
+job_pool.collect()
+
+>>>
+ 		val
+val		
+0	0	0
+1	0	1
+...
+```
+
+#### Debug mode
+
+Sometimes you might just want to make sure your code is running correctly before kicking off a large number of jobs. That's what Debug Mode allows you do to:
+
+```python showLineNumbers
+job = fused.submit(udf, inputs, debug_mode=True)
+```
+
+This will run the first item in `inputs` directly using `fused.run()` (equivalent to `fused.run(udf, inputs[0])`) and then return the results:
+
+```python showLineNumbers
+job
+
+>>>
+	val
+0	0
+```
+
+You can then set `debug_mode` back to False and be more confident that your UDF is working as expected!
+
+#### Execution parameters
+
+[`fused.submit()`](/python-sdk/top-level-functions/#submit) also have parameters giving you more control over the execution. See the Python SDK [docs page](/python-sdk/top-level-functions/#submit) for more details:
+
+- `max_workers`: The number of workers to use for the job pool.
+- `engine`: `local` or `remote` (default is `remote`).
+    Just like `fused.run()`, by default `fused.submit()` will run the UDF in the Fused server (`engine='remote'`). You can set `engine='local'` to run `udf` locally either on your machine or inside a large machine that you spin up. 
+- `max_retry`: The maximum number of retries for a job.
+
+ #### Benchmarking
 
 <details>
   <summary>Simple [`fused.submit()`](/python-sdk/top-level-functions/#submit) Benchmark</summary>
@@ -300,13 +368,13 @@ Have a look at the dedicated [`fused.submit()`](/python-sdk/top-level-functions/
 
     ![Singe run](/img/core-concepts/run-udfs/fused_run_single_job.png)
 
-    This takes 1.7s: A few ms of overhead to send the UDF to Fused server & run + 1s of `time.sleep(1)`
+    This takes 2s: A few ms of overhead to send the UDF to Fused server & run + 1s of `time.sleep(1)`
 
-    Now using `fused.submit()` to run this over 30 UDFs:
+    Now using `fused.submit()` to run this over 50 UDFs:
 
-    ![30 runs](/img/core-concepts/run-udfs/submit_30jobs.png)
+    ![30 runs](/img/core-concepts/run-udfs/submit_50jobs.png)
 
-    This takes a few more seconds, but not 30s. `fused.submit()` is a helpful way to scale a single UDF to many inputs in a timely manner.
+    This takes a few more seconds, but not 100s. `fused.submit()` is a helpful way to scale a single UDF to many inputs in a timely manner.
 
 
 </details>
