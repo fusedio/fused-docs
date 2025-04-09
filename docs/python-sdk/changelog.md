@@ -7,6 +7,27 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.17.0 (2025-04-10)
+
+**[`fused-py`](/python-sdk/)**
+
+- Team UDFs can be loaded or run by specifying the name "team", as in: `fused.load("team/udf_name")`
+- `Udf.to_fused` supports overwriting the UDF when saving.
+- Added `fused.enable_gcs()` to configure using the Google Cloud Platform secret specified in Fused secret manager.
+- `@fused.cache` locking mechanism has changed and will not allow multiple concurrent runs.
+- Upgraded DuckDB to v1.2.2.
+
+**[Workbench](/workbench/)**
+
+- Cached UDF runs will show the original logs.
+- "Change output parameters" in the Share UDF screen shows all detected parameters.
+- Added a copy viewport bounds button in the Results panel.
+- Improved the performance of the catalog screen.
+- Fixed the job page showing times in inconsistent time zones.
+
+[App Builder](/workbench/app-builder/app-overview/):
+- Deprecated `fused_app` module is fully removed.
+
 ## v1.16.3 (2025-04-03)
 
 **[`fused-py`](/python-sdk/)**
