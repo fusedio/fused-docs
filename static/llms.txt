@@ -7135,10 +7135,165 @@ If you want to take this a bit further check out:
 
 _A guide showing how to use Fused to get all of Maxar's Open Data from all the available STAC catalogs and explore the imagery_
 
+{/* TODO: Add image of Maxar's open data, or GIF of showing what this looks like */}
+
+Maxar, the high resolution satellite image company, offers some of their data in the open specifically for following natural disaster. This data is available as a series of [STAC Catalogs](https://radiantearth.github.io/stac-browser/#/external/maxar-opendata.s3.amazonaws.com/events/catalog.json?.language=en) for each of event.
+
+One of the limitation of this setup is that each event is its own STAC Catalog making it hard to parse through all the available Maxar open data if we were to look for specific images. While there is [a STAC Browser](https://radiantearth.github.io/stac-browser/#/external/maxar-opendata.s3.dualstack.us-west-2.amazonaws.com/events/catalog.json?.language=en) available it still only gives us access to a single 'Event' at a time
+
+{/* TODO: Add image here of available STAC Catalogs */}
+
+In this in-depth Example we'll:
+- Show how to use `fused.submit()` to fetch all the available STAC Catalogs all at once in parallel in just a few seconds
+- Filter for any data we want (latest event, only cloud free images, etc.)
+- Write a UDF to then visualise some of the data 
+
 ### Requirements
 - [access to Fused](/user-guide/login/)
 
-Maxar, the high resolution satellite image company, provides a lot of imagery
+{/* Topics to write about
+- Problem statement: Maxar offers a lot of imagery, but in individual STAC catalogs, not all in 1 place
+- We'll show how to use fused.submit() to scale request in parallel to retrieve all their catalog in seconds
+- Then find out data for any event we'd like to explore -> Use the latest available one at time of writing this example
+
+### Display imagery
+- Make another UDF just to display an image. At this point could look at it directly in 
+- Could use "Parameters" in Workbench to make it easier to change visualize directly without having to change the code
+
+### Duplicate UDF to then show another image
+- Show how duplicates work in Workbench
+- Can use Milind's code to show a leaflet side by side comparison even
+
+*/}
+
+### Maxar's Open Data
+
+To access Maxar's Open Data we first need to understand how it's structured. After a quick Google search we find the ["Maxar ARD Open Data Catalog"](https://www.stacindex.org/catalogs/maxar-open-data-catalog-ard-format#/?cp=1) containing:
+- A main catalog containing a list of all the events: `https://maxar-opendata.s3.amazonaws.com/events/catalog.json`
+- Every event being under it's own `events/` directory, for example: `https://maxar-opendata.s3.amazonaws.com/events/BayofBengal-Cyclone-Mocha-May-23/collection.json`. Each `collection` then contains 
+
+{/* TODO: Add links + images */}
+We can use Workbench to write a UDF to explore one of the collections. At the time of writing one of the most recent events is the Jan 2025 Los Angeles Wildfires:
+
+```python
+@fused.udf
+def udf(event_name: str = "WildFires-LosAngeles-Jan-2025"):
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/495e84/public/common/").utils
+    gdf = common.stac_to_gdf_maxar(event_name, 1000)
+
+    print(f"{gdf.shape=}")
+    return gdf
+```
+
+We've abstracted away some of the logic for how to gather then STAC catalog inside a `common` function. 
+
+{/* TODO: Explain common
+- Reusable functions
+- Version controlled by using a git hash -> Someone pushing code doesn't change anything for you, always makes sure your UDF is running
+- Able to use `fused.load()` to load this code from Github directly as a UDF, then call the utils function to access all the utils
+- Explain high level what this function does
+*/}
+
+<details>
+<summary>Deeper look at `stac_to_gdf_maxar` helper function</summary>
+
+Each Maxar Event itself contains multiple collections. We created a simple function that loops over all the available `UNIQUE_ID/collection.json`, reads them an appends them into a single GeoDataFrame:
+
+Looking at the `WildFires-LosAngeles-Jan-202/collections.json` file:
+```json
+{
+    "type": "Collection",
+    "id": "WildFires-LosAngeles-Jan-2025",
+    "stac_version": "1.0.0",
+    "links": [
+        {"rel": "root","href": "../collection.json","type": "application/json"},
+        {
+            "rel": "child",
+            "href": "./ard/acquisition_collections/103001010A705C00_collection.json",
+            "type": "application/json"
+        }
+        {...}
+    ],
+    "extent": {
+        "spatial": {
+            "bbox": [
+                [
+                    -118.83595849685837,
+                    33.94834763200993,
+                    -117.96801495199365,
+                    34.38301736
+                ],
+                [
+                    -118.65050916791418,
+                    34.1935474876183,
+                    -118.46364201282341,
+                    34.33393673056412
+                ],
+                [...]
+            ]
+        },
+        "temporal": {"interval": [["2024-12-14 18:39:04Z","2025-01-20 18:32:44Z"]]}
+    },
+    "title": "Los Angeles Wildfires 2025",
+    "description": "Driven by strong Santa Ana winds, multiple wildfires are burning in the Los Angeles, California, area. More than 40,000 acres and more than 12,300 structures have burned; at least 19 people have died.",
+    "license": "CC-BY-NC-4.0"
+}
+```
+
+</details>
+
+{/* TODO: 
+- First do this manually all in UDF before wrapping function around
+    - Use caching to not do request over and over again
+- Then explain how `common = fused.load().utils` works here -> Simplify UDF for user
+*/}
+
+{/* TODO: Could make this a GIF instead to show panning around? */}
+![Single collection Maxar STAC](/img/user-guide/examples/maxar_stac/single_event_maxar_stac.png)
+
+### Aggregating all available Maxar Open Data
+
+To be able to explore all of Maxar's Open Data Program we now need to run this specific UDF over all the available events. 
+
+We'll do this in 2 steps:
+- Fetch all the event names 
+- Use `fused.submit()` to fetch all the STAC Collections for each event name
+
+```python showLineNumbers
+@fused.udf
+def udf():
+    import geopandas as gpd
+    import pandas as pd
+    from pystac import Catalog
+
+    @fused.cache
+    def getting_stac_collection(stac_url = "https://maxar-opendata.s3.amazonaws.com/events/catalog.json"):
+        root_catalog = Catalog.from_file(stac_url)
+        collections = root_catalog.get_collections()
+        return [collection.id for collection in collections]
+
+    collections = getting_stac_collection()
+    print(f"{collections[:5]=}")
+
+    return collections
+```
+
+This UDF returns a list of all the available event names currently accessible through Maxar's Open STAC Catalog:
+
+```python 
+>>> print(f"{collections[:5]=}")
+['BayofBengal-Cyclone-Mocha-May-23', 'Belize-Wildfires-June24', 'Brazil-Flooding-May24', 'Cyclone-Chido-Dec15', 'Earthquake-Myanmar-March-2025']
+```
+
+![Maxar STAC Events](/img/user-guide/examples/maxar_stac/maxar_stac_events.png)
+
+{/* TODO: Next topics
+- [Beta] Show people how to make a Collection 
+- Create a new UDF that calls the previous UDF with `fused.submit()` to run over multiple times. 
+- Explain how caching works -> Doesn't do calls so many times that it would blow up
+- Make diagram of how fused.submit() works -> If useful, move diagram to Run Small UDFs - `fused.submit()` section so it's available to everyone
+*/}
 
 ---
 
