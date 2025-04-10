@@ -13,9 +13,13 @@ sidebar_position: 8
 
 - Team UDFs can be loaded or run by specifying the name "team", as in: `fused.load("team/udf_name")`
 - `Udf.to_fused` supports overwriting the UDF when saving.
-- Added `fused.enable_gcs()` to configure using the Google Cloud Platform secret specified in Fused secret manager.
+- Added `fused.api.enable_gcs()` to configure using the Google Cloud Platform secret specified in Fused secret manager.
 - `@fused.cache` locking mechanism has changed and will not allow multiple concurrent runs.
 - Upgraded DuckDB to v1.2.2.
+- Running a saved UDF by token or name will now also show the logs, including print statements and error tracebacks.
+- All functions interacting with the Fused server will now retry automatically, by default 3 times.
+- Python 3.9 support is deprecated. The next release of `fused` will require Python 3.10+.
+- Deprecated `fused_batch` module is removed.
 
 **[Workbench](/workbench/)**
 
@@ -26,7 +30,7 @@ sidebar_position: 8
 - Fixed the job page showing times in inconsistent time zones.
 
 [App Builder](/workbench/app-builder/app-overview/):
-- Deprecated `fused_app` module is fully removed.
+- Deprecated `fused_app` module is removed.
 
 ## v1.16.3 (2025-04-03)
 
