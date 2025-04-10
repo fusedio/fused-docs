@@ -271,3 +271,87 @@ After a few seconds, we get back a `GeoDataFrame` containing all the Maxar open 
 This allows us to do a few different things:
 - Explore _all_ of the available Maxar Open Data on a map directly. This helps us see what data Maxar has available that might be of interest, to compare image quality across areas for example. 
 - Offer a wide variety of high resolution imagery to query against. For example retrieving as much the cloud free imagery as possible
+
+## Choosing 1 Event to display
+
+With access to all the images from Maxar, we can navigate the map and choose any image we'd like to display. Let's select one and display it in Workbench:
+
+{/* TODO: Explain how we chose this specific image (using Results Tab -> Selected object) */}
+
+{/* 
+Topics:
+- Displaying image or extent -> Introduce "Zoom to layer" in Wb
+    - Start with True -> Return extent, zoom to layer
+    - Set default view
+    - Then set to false -> Return image
+- Introduce Tile / File visualization -> Send link to Map File / Tile for more details
+ */}
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds, 
+    path: str = "https://maxar-opendata.s3.amazonaws.com/events/Emilia-Romagna-Italy-flooding-may23/ard/33/031111210233/2023-05-23/1050010033C95B00-visual.tif", 
+    chip_len=256,
+    display_extent: bool = True
+):
+    import rasterio
+    import numpy as np
+    import geopandas as gpd
+    from shapely.geometry import box
+    from rasterio.session import AWSSession
+
+    # Getting just bounds of image so we can zoom to layer
+    if display_extent:
+        print("Returning extent")
+        with rasterio.Env(session=AWSSession()):
+            with rasterio.open(path) as src:
+                bbox_gdf = gpd.GeoDataFrame(geometry=[box(*src.bounds)],crs=src.crs)
+        bbox_gdf.to_crs(4326, inplace=True)
+    
+        return bbox_gdf
+
+    # Otherwise reading the GeoTiff
+    else:
+        print("Returning image")
+        utils = fused.load("https://github.com/fusedio/udfs/tree/5432edc/public/common/").utils
+        tiles = utils.get_tiles(bounds)
+    
+        arr = utils.read_tiff(tiles, path, output_shape=(chip_len, chip_len))
+        print(f"{arr.shape=}")
+        return arr
+```
+
+Unpacking this UDF:
+- This UDF takes :
+    - a [`bounds`](/core-concepts/filetile/#the-bounds-object) object. This allows us to pass the [current Workbench Map Viewport](/workbench/udf-builder/map/) to our UDF
+    - `path` represents the path on S3 to one of the images we want to display
+    - `chip_len`: The size of the chip size we'd like our image to display in
+
+:::note
+These images can be loaded using `bounds` and [Tile mode](/core-concepts/filetile/#tile) because Maxar has provided these images as [Cloud Optimized Geotiffs](/core-concepts/data-ingestion/file-formats/#for-rasters-images). This allows us to leverage their tiles & overviews and only load the data we need as we pan around the map
+
+We can check this by reading the metadata in CLI with `gdalinfo`:
+
+```bash
+gdalinfo /vsis3/maxar-opendata/events/Cyclone-Chido-Dec15/ard/38/300200022120/2024-06-11/104001009713BA00-visual.tif
+
+>>>
+Driver: GTiff/GeoTIFF
+
+...
+
+Band 1 Block=512x512 Type=Byte, ColorInterp=Red
+  Overviews: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
+  Mask Flags: PER_DATASET
+  Overviews of mask band: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
+Band 2 Block=512x512 Type=Byte, ColorInterp=Green
+  Overviews: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
+  Mask Flags: PER_DATASET
+  Overviews of mask band: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
+Band 3 Block=512x512 Type=Byte, ColorInterp=Blue
+  Overviews: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
+  Mask Flags: PER_DATASET
+  Overviews of mask band: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
+```
+:::
