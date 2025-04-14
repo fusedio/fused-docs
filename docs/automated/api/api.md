@@ -50,6 +50,8 @@ def create_udf_access_token(udf_email_or_name_or_id: Optional[str] = None,
                             udf_email: Optional[str] = None,
                             udf_id: Optional[str] = None,
                             client_id: Union[str, Ellipsis, None] = ...,
+                            public_read: Optional[bool] = None,
+                            access_scope: Optional[str] = None,
                             cache: bool = True,
                             metadata_json: Optional[Dict[str, Any]] = None,
                             enabled: bool = True) -> UdfAccessToken
@@ -181,8 +183,7 @@ Fetch logs for a job
 def tail_logs(job: CoerceableToJobId,
               refresh_seconds: float = 1,
               sample_logs: bool = True,
-              timeout: Optional[float] = None,
-              get_logs_retries: int = 1)
+              timeout: Optional[float] = None)
 ```
 
 Continuously print logs for a job
@@ -193,7 +194,6 @@ Continuously print logs for a job
 - `refresh_seconds` - how frequently, in seconds, to check for new logs. Defaults to 1.
 - `sample_logs` - if true, print out only a sample of logs. Defaults to True.
 - `timeout` - if not None, how long to continue tailing logs for. Defaults to None for indefinite.
-- `get_logs_retries` - Number of additional retries for log requests. Defaults to 1.
 
 #### wait\_for\_job
 
@@ -238,10 +238,31 @@ Cancel an existing job
 
   A new job object.
 
+#### get\_job\_results
+
+```python
+def get_job_results(job: CoerceableToJobId,
+                    arg_index: int = -1) -> Any | list[Any]
+```
+
+Get the deserialized batch results of a job
+
+**Arguments**:
+
+- `job` - the identifier of a job or a `RunResponse` object.
+- `arg_index` - number representing the desired partition result of a batch job
+  
+
+**Returns**:
+
+  A single deserialized vector or raster, or a list of them
+
 #### upload
 
 ```python
-def upload(path: str, data: Union[bytes, BinaryIO]) -> None
+def upload(path: str,
+           data: Union[bytes, BinaryIO],
+           timeout: Optional[float] = None) -> None
 ```
 
 Upload a binary blob to a cloud location
