@@ -20,27 +20,13 @@ Maxar, the high resolution satellite image company, offers some of their data in
 
 One of the limitation of this setup is that each event is its own STAC Catalog making it hard to parse through all the available Maxar open data if we were to look for specific images. While there is [a STAC Browser](https://radiantearth.github.io/stac-browser/#/external/maxar-opendata.s3.dualstack.us-west-2.amazonaws.com/events/catalog.json?.language=en) available it still only gives us access to a single 'Event' at a time
 
-{/* TODO: Add image here of available STAC Catalogs */}
+![Maxar STAC Catalogs](/img/user-guide/examples/maxar_stac/maxar_open_stac_index.png)
 
 In this in-depth Example we'll:
 - Show how to use [`fused.submit()`](/python-sdk/top-level-functions/#submit) to fetch all the available STAC Catalogs all at once in parallel in just a few seconds
 - Filter for any data we want (latest event, only cloud free images, etc.)
 - Write a UDF to then visualise some of the data 
 
-{/* Topics to write about
-- Problem statement: Maxar offers a lot of imagery, but in individual STAC catalogs, not all in 1 place
-- We'll show how to use fused.submit() to scale request in parallel to retrieve all their catalog in seconds
-- Then find out data for any event we'd like to explore -> Use the latest available one at time of writing this example
-
-### Display imagery
-- Make another UDF just to display an image. At this point could look at it directly in 
-- Could use "Parameters" in Workbench to make it easier to change visualize directly without having to change the code
-
-### Duplicate UDF to then show another image
-- Show how duplicates work in Workbench
-- Can use Milind's code to show a leaflet side by side comparison even
-
-*/}
 
 ## Maxar's Open Data
 
@@ -64,19 +50,21 @@ def udf(event_name: str = "WildFires-LosAngeles-Jan-2025"):
 
 We've abstracted away some of the logic for how to gather then STAC catalog inside a `common` function. 
 
-{/* TODO: Explain common
-- Reusable functions
-- Version controlled by using a git hash -> Someone pushing code doesn't change anything for you, always makes sure your UDF is running
-- Able to use `fused.load()` to load this code from Github directly as a UDF, then call the utils function to access all the utils
-- Explain high level what this function does
-*/}
-
 <details>
-<summary>Deeper look at `stac_to_gdf_maxar` helper function</summary>
+<summary>How Fused uses helper functions: looking at `stac_to_gdf_maxar`</summary>
+
+Working with Fused UDFs also give you the option to easily use functions defined in other UDFs. In practice this means we've created a [`common` public UDF](https://github.com/fusedio/udfs/tree/main/public/common) that contains some functions we've found useful when working with any type of data.
+
+You can explore it yourself by directly [reading the code in Github](https://github.com/fusedio/udfs/blob/main/public/common/utils.py). If you see any functions you'd like to use, we [strongly recommend](/core-concepts/run-udfs/run-small-udfs/#git-commit-hash-recommended-for-most-stable-use-cases) you use `fused.load()` and pass the latest commit hash at the time you want to use it:
+
+```python
+commit_hash = "39d93ca" # Latest commit hash of https://github.com/fusedio/udfs/blob/main/public/common/utils.py at time of writing
+common = fused.load(f"https://github.com/fusedio/udfs/tree/{commit_hash}/public/common/").utils
+```
 
 Each Maxar Event itself contains multiple collections. We created a simple function that loops over all the available `UNIQUE_ID/collection.json`, reads them an appends them into a single GeoDataFrame:
 
-Looking at the `WildFires-LosAngeles-Jan-202/collections.json` file:
+Looking at the `WildFires-LosAngeles-Jan-2025/collections.json` file:
 ```json
 {
     "type": "Collection",
@@ -117,6 +105,15 @@ Looking at the `WildFires-LosAngeles-Jan-202/collections.json` file:
 }
 ```
 
+So we create `stac_to_gdf_maxar` to:
+- Loop over all the `UNIQUE_ID/collection.json` files
+- Read each `collection.json` file
+- Extract the metadata & extent of each collection 
+- Convert the `extent` into a GeoDataFrame
+- Concat all into a single GeoDataFrame
+
+Once again, you can directly read the [code in Github](https://github.com/fusedio/udfs/blob/main/public/common/utils.py#L480) to see exactly how we do this
+
 </details>
 
 :::tip
@@ -127,13 +124,8 @@ Make sure to save your UDF with `Cmd + S` (or `Ctrl + S` on Windows / Linux) or 
 ![Renaming UDF](/img/user-guide/examples/maxar_stac/workbench_rename_udf_maxar.gif)
 :::
 
-{/* TODO: 
-- First do this manually all in UDF before wrapping function around
-    - Use caching to not do request over and over again
-- Then explain how `common = fused.load().utils` works here -> Simplify UDF for user
-*/}
+And here we get all the images for the Los Angeles Wildfires 2025 event:
 
-{/* TODO: Could make this a GIF instead to show panning around? */}
 ![Single collection Maxar STAC](/img/user-guide/examples/maxar_stac/single_event_maxar_stac.png)
 
 ## Aggregating all available data
@@ -183,12 +175,8 @@ This UDF returns a list of all the available event names currently accessible th
 
 ### Preparing `fused.submit()` to run in parallel
 
-{/* TODO: Next topics
-- [Beta] Show people how to make a Collection 
-- Create a new UDF that calls the previous UDF with `fused.submit()` to run over multiple times. 
-- Explain how caching works -> Doesn't do calls so many times that it would blow up
-- Make diagram of how fused.submit() works -> If useful, move diagram to Run Small UDFs - `fused.submit()` section so it's available to everyone
-*/}
+{/* TODO: Make diagram of how fused.submit() works -> If useful, move diagram to Run Small UDFs - `fused.submit()` section so it's available to everyone */}
+{/* TODO: Mention Collections once we're not longer in Beta? */}
 
 We're going to use [`fused.submit()`](/python-sdk/top-level-functions/#submit) to run our first UDF in parallel. To do this we need a few things:
 - Prepare our inputs (in this case the name of all the `events`). We recommend doing this as a dataframe as it's simple to read & work with
@@ -278,14 +266,6 @@ With access to all the images from Maxar, we can navigate the map and choose any
 
 {/* TODO: Explain how we chose this specific image (using Results Tab -> Selected object) */}
 
-{/* 
-Topics:
-- Displaying image or extent -> Introduce "Zoom to layer" in Wb
-    - Start with True -> Return extent, zoom to layer
-    - Set default view
-    - Then set to false -> Return image
-- Introduce Tile / File visualization -> Send link to Map File / Tile for more details
- */}
 
 ```python showLineNumbers
 @fused.udf
