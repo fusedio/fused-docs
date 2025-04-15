@@ -10,7 +10,7 @@ sidebar_custom_props:
 _A guide showing how to use Fused to get all of Maxar's Open Data from all the available STAC catalogs and explore the imagery_
 
 ### Requirements
-- [access to Fused](/user-guide/login/)
+- [Access to Fused](/user-guide/login/)
 
 ## Summary 
 
@@ -331,9 +331,9 @@ Unpacking this UDF:
 :::note
 These images can be loaded using `bounds` and [Tile mode](/core-concepts/filetile/#tile) because Maxar has provided these images as [Cloud Optimized Geotiffs](/core-concepts/data-ingestion/file-formats/#for-rasters-images). This allows us to leverage their tiles & overviews and only load the data we need as we pan around the map
 
-We can check this by reading the metadata in CLI with `gdalinfo`:
+We can check this by reading the metadata in CLI with [`gdalinfo`](https://gdal.org/en/stable/programs/gdalinfo.html) and see that each band has `Block`, meaning is tiled:
 
-```bash
+```bash {8,12,16} 
 gdalinfo /vsis3/maxar-opendata/events/Cyclone-Chido-Dec15/ard/38/300200022120/2024-06-11/104001009713BA00-visual.tif
 
 >>>
@@ -355,3 +355,62 @@ Band 3 Block=512x512 Type=Byte, ColorInterp=Blue
   Overviews of mask band: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
 ```
 :::
+
+Running the above UDF we can for now return the extent of the image:
+
+![maxar return img extent](/img/user-guide/examples/maxar_stac/maxar_read_image_extent.png)
+
+This allows us to introduce 2 concepts in [Workbench](/workbench/):
+- 1. [Zoom to layer](/workbench/udf-builder/navigation/#zoom-to-layer)
+- 2. [Tile / File modes](/core-concepts/filetile/)
+
+### 1. Setting a default view in Workbench
+
+After getting the extent of our image, we're going to [Zoom to layer](/workbench/udf-builder/navigation/#zoom-to-layer) and set this view as the default view:
+
+import ReactPlayer from 'react-player'
+
+<ReactPlayer playsinline={true} className="video__player" playing={true} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/maxar_stac/zoom_to_layer_default_view.mp4" width="100%" />
+
+This allows us to to any change we want to this UDF or pan anywhere on the map and always be able to zoom back to this default view!
+
+### 2. Changing to Tile mode
+
+Now we can edit our UDF to return the image by changing `display_extent` to `False`:
+
+```python {6} showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds, 
+    path: str = "https://maxar-opendata.s3.amazonaws.com/events/Emilia-Romagna-Italy-flooding-may23/ard/33/031111210233/2023-05-23/1050010033C95B00-visual.tif", 
+    chip_len=256,
+    display_extent: bool = False
+):
+    import rasterio
+    import numpy as np
+    import geopandas as gpd
+    from shapely.geometry import box
+    from rasterio.session import AWSSession
+
+    # Getting just bounds of image so we can zoom to layer
+    if display_extent:
+        print("Returning extent")
+        with rasterio.Env(session=AWSSession()):
+            with rasterio.open(path) as src:
+                bbox_gdf = gpd.GeoDataFrame(geometry=[box(*src.bounds)],crs=src.crs)
+        bbox_gdf.to_crs(4326, inplace=True)
+    
+        return bbox_gdf
+
+    # Otherwise reading the GeoTiff
+    else:
+        print("Returning image")
+        utils = fused.load("https://github.com/fusedio/udfs/tree/5432edc/public/common/").utils
+        tiles = utils.get_tiles(bounds)
+    
+        arr = utils.read_tiff(tiles, path, output_shape=(chip_len, chip_len))
+        print(f"{arr.shape=}")
+        return arr
+```
+
+{/* TODO: also show how to use parameters to set this as a param that can be changed in Workbench UI */}
