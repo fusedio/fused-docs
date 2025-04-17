@@ -235,33 +235,56 @@ To recap what we've done so far:
 
 Next step: Run this for a whole period!
 
-Since each UDF takes a few seconds to run per date, we're going to use the experimental `PoolRunner` to call a large pool of UDFs all at once with a large date range.
-You can also [run multiple small UDFs](/core-concepts/run-udfs/run-small-udfs/#running-multiple-jobs-in-parallel) in parallel.
+Since each UDF takes a few seconds to run per date, we're going to use [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#running-multiple-jobs-in-parallel) to call a large numbers of UDFs all at once that will each run over a single date.
 
-With a bit of Python gymnastics we can create a list of all the dates we'd like to process. Preparing to get all of September 2024 would look like this:
+With a bit of Python gymnastics we can create a `DataFrame` of all the dates we'd like to process. Preparing to get all of September 2024 would look like this:
 
 ```python showLineNumbers
 import pandas as pd
-range_of_ais_dates = [str(i)[:10].replace('-','_') for i in pd.date_range('2024-09','2024-10')[:-1]]
-print(range_of_ais_dates)
+date_ranges = pd.DataFrame({
+    'datestr': [str(i)[:10].replace('-','_') for i in pd.date_range('2024-09','2024-10')[:-1]]
+})
+print(f"{date_ranges.shape=}")
+print(date_ranges.head())
 
->>> ['2024_09_01', '2024_09_02', '2024_09_03', '2024_09_04', '2024_09_05', '2024_09_06', '2024_09_07', '2024_09_08', '2024_09_09', '2024_09_10', '2024_09_11', '2024_09_12', '2024_09_13', '2024_09_14', '2024_09_15', '2024_09_16', '2024_09_17', '2024_09_18', '2024_09_19', '2024_09_20', '2024_09_21', '2024_09_22', '2024_09_23', '2024_09_24', '2024_09_25', '2024_09_26', '2024_09_27', '2024_09_28', '2024_09_29', '2024_09_30']
+>>> date_ranges.shape=(30, 1)
+      datestr
+0  2024_09_01
+1  2024_09_02
+2  2024_09_03
+3  2024_09_04
+4  2024_09_05
 ```
 
-We can create a simple `lamda` function that takes each value and sends it to a [`PoolRunner` job](/core-concepts/run-udfs/run-small-udfs/#experimental-using-run_pool-and-poolrunner):
+[`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#running-multiple-jobs-in-parallel) requires inputs as a list or `DataFrame`, in which case columns should have the argument names that our UDF expects, in this case `datestr`. We also recommend you always do a first run with `debug_mode=True` to [test your submit job](/core-concepts/run-udfs/run-small-udfs/#debug-mode):
+
+```python {4} showLineNumbers
+fused.submit(
+    read_ais_from_noaa_udf, 
+    date_ranges, 
+    debug_mode=True
+)
+
+>>> Saved /mnt/cache/tmp/AIS/2024_09/01.parquet
+  |status  | file_path
+-------------------------------------------------
+0 |Done    | /mnt/cache/tmp/AIS/2024_09/01.parquet
+
+```
+
+`debug_mode=True` runs the 1st value inside `date_ranges` with [`fused.run()`](/python-sdk/top-level-functions/#run). This allows you to make sure your UDF + arg_list combo is working properly. 
+
+Now that we've seen our UDF is working we can run all 30 jobs in parallel by removing `debug_mode=True`:
 
 ```python showLineNumbers
-utils = fused.load("https://github.com/fusedio/udfs/tree/e1fefb7/public/common/").utils
-runs = utils.PoolRunner(lambda datestr: fused.run(read_ais_from_noaa_udf(datestr=datestr, overwrite=False)), range_of_ais_dates)
-
-runs.get_result_all()
+fused.submit(read_ais_from_noaa_udf, date_ranges)
 ```
 
-Since `PoolRunner` is running on a "real-time" instance, we can also query the status in a notebook as the job is executing:
-
-![Pool Runner live results](/img/user-guide/examples/dvd/run_get_results_all_notebook_output.png)
-
 We've now unzipped, opened & saved 30 days of data!
+
+:::tip
+[`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#running-multiple-jobs-in-parallel) has [more parameters](/core-concepts/run-udfs/run-small-udfs/#execution-parameters) you can control allowing you to change the number of `max_workers`, `engine` or the retry policies. Also take a look at the [technical docs](/python-sdk/top-level-functions/#submit) for more details.
+:::
 
 One handy way to make sure our data is in the right place is to check it in the Workbench File Explorer. In the search bar type: `file:///mount/AIS/2024_09/`:
 
