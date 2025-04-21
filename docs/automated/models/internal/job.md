@@ -19,6 +19,15 @@ The identifier of this job.
 
 The status of the instance running this job.
 
+#### logs\_url
+
+```python
+@property
+def logs_url() -> str
+```
+
+Returns a URL for getting the job&#x27;s logs in the browser.
+
 #### get\_status
 
 ```python
@@ -84,8 +93,7 @@ Determine the execution time of this job, using the logs.
 ```python
 def tail_logs(refresh_seconds: float = 1,
               sample_logs: bool = True,
-              timeout: Optional[float] = None,
-              get_logs_retries: int = 1) -> None
+              timeout: Optional[float] = None) -> None
 ```
 
 Continuously print logs for this job
@@ -95,7 +103,6 @@ Continuously print logs for this job
 - `refresh_seconds` - how frequently, in seconds, to check for new logs. Defaults to 1.
 - `sample_logs` - if true, print out only a sample of logs. Defaults to True.
 - `timeout` - if not None, how long to continue tailing logs for. Defaults to None for indefinite.
-- `get_logs_retries` - Number of additional retries for log requests. Defaults to 1.
 
 #### wait\_for\_job
 
@@ -180,6 +187,15 @@ The status of this job.
 #### job\_status\_date
 
 When the job_status was last updated
+
+#### logs\_url
+
+```python
+@property
+def logs_url() -> str
+```
+
+Returns a URL for getting the job&#x27;s logs in the browser.
 
 #### config
 
@@ -270,8 +286,7 @@ Determine the execution time of this job, using the logs.
 ```python
 def tail_logs(refresh_seconds: float = 1,
               sample_logs: bool = True,
-              timeout: Optional[float] = None,
-              get_logs_retries: int = 1)
+              timeout: Optional[float] = None)
 ```
 
 Continuously print logs for this job
@@ -281,7 +296,6 @@ Continuously print logs for this job
 - `refresh_seconds` - how frequently, in seconds, to check for new logs. Defaults to 1.
 - `sample_logs` - if true, print out only a sample of logs. Defaults to True.
 - `timeout` - if not None, how long to continue tailing logs for. Defaults to None for indefinite.
-- `get_logs_retries` - Number of additional retries for log requests. Defaults to 1.
 
 #### wait\_for\_job
 

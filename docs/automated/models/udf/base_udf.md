@@ -13,6 +13,14 @@ class AttrDict(dict)
 
 Dictionary where keys can also be accessed as attributes
 
+## CompiledAttrs Objects
+
+```python
+class CompiledAttrs(AttrDict)
+```
+
+Dictionary that stores compiled values where keys can also be accessed as attributes
+
 ## BaseUdf Objects
 
 ```python
@@ -34,7 +42,8 @@ Create a Udf from a GitHub gist.
 def to_fused(slug: Optional[str] = ...,
              over_id: Union[str, UUID, None] = None,
              as_new: Optional[bool] = None,
-             inplace: bool = True)
+             inplace: bool = True,
+             overwrite: Optional[bool] = None)
 ```
 
 Save this UDF on the Fused service.
@@ -45,4 +54,5 @@ Save this UDF on the Fused service.
 - `over_id` - ID to save the UDF over.
 - `as_new` - If True, force saving this UDF as new.
 - `inplace` - If True (default), update the UDF object with the new saved ID.
+- `overwrite` - If True, overwrite existing remote UDF with the UDF object.
 
