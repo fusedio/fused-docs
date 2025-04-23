@@ -16,7 +16,13 @@ from griffe2md.rendering import default_config
 from griffe2md.main import render_object_docs
 
 
+ROOT = Path(__file__).parent / ".."
+
+
 mod = griffe.load("fused")#, docstring_parser="google")
+
+# updated options
+default_config["show_signature_annotations"] = True
 
 
 ## Top-level API page
@@ -49,9 +55,10 @@ for obj in api_listing:
     result += docstring + "\n\n"
 
 
+# some post-processing
 result = result.replace("## fused.udf", "## @fused.udf")
 result = result.replace("## fused.cache", "## @fused.cache")
 
 
-with open(Path(__file__).parent / ".." / "docs" / "python-sdk" / "top-level-functions.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "top-level-functions.mdx", "w") as f:
     f.write(result)
