@@ -19,7 +19,7 @@ from griffe2md.main import render_object_docs
 ROOT = Path(__file__).parent / ".."
 
 
-mod = griffe.load("fused")#, docstring_parser="google")
+mod = griffe.load("fused", docstring_parser="google")
 
 # updated options
 default_config["show_signature_annotations"] = True
