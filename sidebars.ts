@@ -10,6 +10,29 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: "category",
+      label: "Courses",
+      collapsed: false,
+      link: { type: "doc", id: "courses" },
+      items: [
+        {
+          type: "doc",
+          id: "courses/geospatial-masterclass",
+          label: "Geospatial Masterclass",
+        },
+        {
+          type: "doc",
+          id: "courses/end-to-end-duckdb",
+          label: "End to End DuckDB",
+        },
+        {
+          type: "doc",
+          id: "courses/h3-masterclass",
+          label: "H3 Masterclass",
+        },
+      ],
+    },
+    {
+      type: "category",
       label: "User guide",
       collapsed: false,
       link: { type: "doc", id: "user-guide" },
