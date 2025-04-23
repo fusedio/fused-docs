@@ -6,67 +6,101 @@ sidebar_position: 2
 # unlisted: true
 ---
 
-# Raster to H3: A Deep Dive
+# Raster to Hexagon
 
-Transforming raster data to the H3 grid system is a powerful technique that offers significant advantages in geospatial data analysis and processing. This conversion process uses DuckDB to aggregate `numpy` arrays by H3 indices. It opens up new possibilities for efficient raster analysis.
+_Transforming raster data into [H3 cells](https://h3geo.org/_
 
-## Application
+![Raster to H3](/img/user-guide/tranforms/raster_to_hex.jpeg)
 
-### Earth Observation imagery analysis
+## When to use
 
-- Agricultural parcels and field-level data
-- Global environmental
-- Land cover and land use change detection
+{/* This needs to be refined a bit more */}
 
-## Implementing Raster to H3
+Transforming raster data into H3 cells is useful when you need to:
+- Compute statistics across different spatial scales
+- Aggregate data across different datasets for any given location
 
-### Implementation steps
+## Code implementation
 
-1. Load and chunk the raster into manageable parts
-2. Optionally coarsen the data to reduce resolution and speed up processing
-3. Bin the raster data to H3 indices based on points
-4. Aggregate the data by H3 indices
-
-### Example UDF
+<details>
+<summary>Code Details</summary>
 
 ```python showLineNumbers
 @fused.udf
-def udf(
-    tiff_path: str = "s3://fused-asset/gfc2020/JRC_GFC2020_V1_S10_W40.tif",
-    chunk_id: int = 0,
-    x_chunks: int = 20,
-    y_chunks: int = 40,
-    h3_size=6,
-):
-    import geopandas as gpd
+def udf(raster_path = 'https://s3.amazonaws.com/elevation-tiles-prod/geotiff/4/4/6.tif', 
+        stats_type="mean", 
+        h3_res: int = 4,
+        height_scale: int = 10,
+         color_scale:float=1
+    ):
     import pandas as pd
-    from shapely.geometry import box
+    import rioxarray
 
-    utils = fused.load("https://github.com/fusedio/udfs/blob/main/public/common/").utils
+    # 2. Read tiff
+    da_tiff = rioxarray.open_rasterio(raster_path).squeeze(drop=True).rio.reproject("EPSG:4326")
+    df_tiff = da_tiff.to_dataframe("data").reset_index()[["y", "x", "data"]]
 
-    df_tiff = utils.chunked_tiff_to_points(tiff_path, i=chunk_id, x_chunks=x_chunks, y_chunks=y_chunks)
+    # 3. Hexagonify & aggregate
+    df = aggregate_df_hex(
+        df_tiff, h3_res, latlng_cols=["y", "x"], stats_type=stats_type
+    )
+    df["elev_scale"] = height_scale
+    df["metric"]=df["metric"]*color_scale
+    df = df[df["metric"] > 0]
+    print(f"{df.shape=}")
+    return df
 
+@fused.cache
+def df_to_hex(df, res, latlng_cols=("lat", "lng")):
+    utils = fused.load(
+        "https://github.com/fusedio/udfs/tree/be3bc93/public/common/"
+    ).utils
     qr = f"""
-        SELECT
-            h3_latlng_to_cell(lat, lng, {h3_size}) AS hex,
-            AVG(lat) as lat, avg(lng) AS lng,
-            ARRAY_AGG(data) AS agg_data
-        FROM df_tiff
-        group by 1
-    """
+            SELECT h3_latlng_to_cell({latlng_cols[0]}, {latlng_cols[1]}, {res}) AS hex, ARRAY_AGG(data) as agg_data
+            FROM df
+            group by 1
+          --  order by 1
+        """
+    con = utils.duckdb_connect()
+    return con.query(qr).df()
 
-    df = utils.run_query(qr, return_arrow=True)
-    df = df.to_pandas()
-    df["agg_data"] = df.agg_data.map(lambda x: pd.Series(x).sum())
-    df["hex"] = df["hex"].map(lambda x: hex(x)[2:])
-    df["metric"] = df.agg_data / df.agg_data.max() * 100
-    gdf = utils.df_to_gdf(df)
-    return gdf
+
+@fused.cache
+def aggregate_df_hex(df, res, latlng_cols=("lat", "lng"), stats_type="mean"):
+    import pandas as pd
+
+    df = df_to_hex(df, res=res, latlng_cols=latlng_cols)
+    if stats_type == "sum":
+        fn = lambda x: pd.Series(x).sum()
+    elif stats_type == "mean":
+        fn = lambda x: pd.Series(x).mean()
+    else:
+        fn = lambda x: pd.Series(x).mean()
+    df["metric"] = df.agg_data.map(fn)
+    return df
 ```
 
-{/* ## Demo app [beta]
+</details>
 
-import Iframe from "@site/src/components/Iframe";
-import RASTER_TO_H3_CODE from "@site/src/app-iframe/python/raster-to-h3.py";
+{/* TODO: Need to make the above a public UDF */}
 
-<Iframe id="iframe-1" code={RASTER_TO_H3_CODE} /> */}
+You can use the above UDF to convert a raster to H3 cells:
+
+```python showLineNumbers
+hex_df = udf(
+    raster_path="https://s3.amazonaws.com/elevation-tiles-prod/geotiff/4/4/6.tif", 
+    stats_type="mean", 
+    h3_res=4
+)
+```
+
+![Raster to hex operation](/img/user-guide/tranforms/raster_to_hex_diagram.png)
+
+## Example application
+
+- [DEM_Tile_Hexify](https://github.com/fusedio/udfs/tree/1bafbfef94c0699222d4a19acee601b0dd6f1228/public/DEM_Tile_Hexify) Public UDF. 
+    - This UDF takes a Raster Tile from an open S3 bucket containing an elevation model and converts a tile into H3 on the fly
+
+
+
+{/* TODO: This would link to any Example / Blog post that uses this */}
