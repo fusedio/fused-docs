@@ -18,8 +18,11 @@ To help the LLM understand Fused UDFs, you'll need to provide it with the necess
 ### Option 1: Manual Documentation Setup
 
 1. Visit [https://docs.fused.io/llms.txt](https://docs.fused.io/llms.txt) and copy the full documentation text
-   - Note: `llms.txt` is a standard in development for parsing sites into LLM-friendly formats
-   - Learn more at [llmstxt.org](https://llmstxt.org/)
+
+:::note
+`llms.txt` is a standard in development for parsing sites into LLM-friendly formats. Learn more at [llmstxt.org](https://llmstxt.org/).
+:::
+
 2. Download the [common utilities](https://github.com/fusedio/udfs/blob/main/public/common/utils.py)
 3. Add both documents as context in your LLM conversation
 
