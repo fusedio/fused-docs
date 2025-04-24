@@ -1,6 +1,234 @@
 ---
-title: Crop Search using RAG
-description: Learn how to implement crop search using Retrieval Augmented Generation (RAG)
+sidebar_label: "Crop Search using RAG"
+title: "Crop Search using RAG"
+tags: ['example', 'rag', 'embeddings', 'openai', 'vector-search']
+sidebar_custom_props:
+    name: "Crop Search using RAG"
+    image: 'https://fused-magic.s3.us-west-2.amazonaws.com/thumbnails/udfs-staging/Fused_Logo.png'
 ---
 
-# Crop Search using RAG 
+_A guide showing how to use Fused to create embeddings for crop search using RAG (Retrieval Augmented Generation)_
+
+### Requirements
+- [Access to Fused](/user-guide/login/)
+- OpenAI API key (stored in Fused secrets)
+
+## Overview
+
+In this example, we'll create a crop search system using RAG (Retrieval Augmented Generation). We'll:
+1. Fetch crop data from USDA's CDL (Cropland Data Layer)
+2. Generate embeddings for each crop type using OpenAI's embedding model
+3. Store these embeddings for later use in semantic search
+4. Run queries against the embeddings to find similar crops
+
+## 1. Setting up the UDF
+
+First, let's create a UDF that will handle the embedding generation. We'll use OpenAI's text-embedding-3-large model to create embeddings for each crop type.
+
+<details>
+<summary>UDF Code</summary>
+
+```python
+@fused.udf
+def udf():
+    import utils
+    import pandas as pd
+    import requests
+    import json
+    from openai import OpenAI
+    
+    api_key = fused.secrets["open_ai_key"]
+    s3_path = "s3://fused-users/fused/misc/embedings/CDL_crop_name.parquet"
+    
+    print("Fetching USDA crop data...")
+    url = "https://storage.googleapis.com/earthengine-stac/catalog/USDA/USDA_NASS_CDL.json"
+    response = requests.get(url)
+    data = response.json()
+    crops = data["summaries"]["eo:bands"][0]["gee:classes"]
+
+    print(f"Processing {len(crops)} crop types...")
+    df = pd.DataFrame(crops)
+
+    client = OpenAI(api_key=api_key)
+
+    df = utils.generate_crop_embeddings(client, df)
+    
+    print(f"Saving embeddings to S3: {s3_path}")
+    df.to_parquet(s3_path)
+    
+    return df
+```
+</details>
+
+<details>
+<summary>Utils Code</summary>
+
+```python
+import pandas as pd
+from openai import OpenAI
+import time
+from concurrent.futures import ThreadPoolExecutor
+from typing import List, Dict, Any
+
+def get_embedding(client, text, retries=3, backoff_factor=2):
+    for attempt in range(retries):
+        try:
+            response = client.embeddings.create(
+                input=text,
+                model="text-embedding-3-large"
+            )
+            return response.data[0].embedding
+        except Exception as e:
+            if attempt < retries - 1:
+                sleep_time = backoff_factor ** attempt
+                print(f"Attempt {attempt+1} failed: {str(e)}. Retrying in {sleep_time}s...")
+                time.sleep(sleep_time)
+            else:
+                print(f"All attempts failed for: {text[:50]}...")
+                return [0.0] * 1536
+
+def process_row(client, row):
+    description = row['rich_description']
+    try:
+        embedding = get_embedding(client, description)
+        return embedding
+    except Exception as e:
+        print(f"Error generating embedding for {row['description']}: {str(e)}")
+        return [0.0] * 1536
+
+def generate_crop_embeddings(client, df):
+    df['rich_description'] = df.apply(
+        lambda row: f"Crop type: {row['description']}, Value: {row['value']}, Color code: {row['color']}", 
+        axis=1
+    )
+    
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        embeddings = list(executor.map(
+            lambda row: process_row(client, row), 
+            [row for _, row in df.iterrows()]
+        ))
+    
+    df['embedding'] = embeddings
+    df['embedding_dimensions'] = df['embedding'].apply(len)
+    print(f"Embedding dimensions: {df['embedding_dimensions'].iloc[0]}")
+    
+    return df
+```
+</details>
+
+## 2. Understanding the Code
+
+Let's break down what this code does:
+
+1. **Data Fetching**:
+   - Fetches crop data from USDA's CDL STAC catalog
+   - Extracts crop information including descriptions, values, and color codes
+
+2. **Embedding Generation**:
+   - Uses OpenAI's text-embedding-3-large model
+   - Creates rich descriptions combining crop type, value, and color
+   - Generates embeddings in parallel using ThreadPoolExecutor
+   - Includes retry logic for API failures
+
+3. **Storage**:
+   - Saves the embeddings to S3 in Parquet format
+   - Includes metadata like embedding dimensions
+
+## 3. Running the UDF
+
+To run this UDF:
+
+1. Make sure you have your OpenAI API key stored in Fused secrets
+2. Save the UDF and utils code in your Workbench
+3. Run the UDF to generate and store embeddings
+
+The embeddings will be saved to S3 and can be used later for semantic search.
+
+## 4. Querying the Embeddings
+
+Now that we have our embeddings stored, let's create a UDF to run queries against them. This UDF will:
+1. Take a natural language query
+2. Generate an embedding for the query
+3. Find the most similar crops using cosine similarity
+
+<details>
+<summary>Query UDF Code</summary>
+
+```python
+@fused.udf
+def udf(query: str = "show me juicy red fruits"):
+    import pandas as pd
+    from openai import OpenAI 
+    import utils 
+    from utils import cosine_similarity
+
+    df_crops = pd.read_parquet("s3://fused-users/fused/misc/embedings/CDL_crop_name.parquet")
+
+    api_key = fused.secrets["open_ai_key"]
+    print(f"embedding for query: '{query}'")
+    client = OpenAI(api_key=api_key)
+    response = client.embeddings.create(
+        input=query,
+        model="text-embedding-3-large"
+    )
+    query_embedding = response.data[0].embedding
+    
+    df_crops['similarity'] = df_crops['embedding'].apply(
+        lambda embedding: cosine_similarity(query_embedding, embedding)
+    )
+    
+    results = df_crops.sort_values('similarity', ascending=False).head(5)
+    results['similarity'] = results['similarity'].apply(lambda x: f"{x:.2%}")
+    print(results[['value', 'description']])
+    
+    return results
+```
+</details>
+
+<details>
+<summary>Cosine Similarity Implementation</summary>
+
+```python
+def cosine_similarity(a, b):
+    dot_product = sum(x*y for x, y in zip(a, b))
+    norm_a = sum(x*x for x in a)**0.5
+    norm_b = sum(y*y for y in b)**0.5
+    return dot_product / (norm_a * norm_b)
+```
+</details>
+
+### How the Query Works
+
+1. **Query Processing**:
+   - Takes a natural language query (e.g., "show me juicy red fruits")
+   - Generates an embedding for the query using the same model
+
+2. **Similarity Calculation**:
+   - Uses cosine similarity to compare the query embedding with all crop embeddings
+   - Cosine similarity measures the cosine of the angle between two vectors
+   - Values range from -1 to 1, where 1 means the vectors are identical
+
+3. **Results**:
+   - Returns the top 5 most similar crops
+   - Shows similarity scores as percentages
+   - Displays crop values and descriptions
+
+### Example Usage
+
+Try different queries like:
+- "show me juicy red fruits"
+- "what crops grow in dry conditions"
+- "which crops are good for making bread"
+
+Each query will return the most semantically similar crops based on the embeddings.
+
+## Next Steps
+
+In the next part of this guide, we'll show you how to:
+- Filter the geospatial data based on the query results
+- Visualize the results on a map
+- Build a complete RAG system for answering crop-related questions
+
+:::tip
+The cosine similarity score tells you how closely the query matches each crop. A score of 100% means perfect similarity, while lower scores indicate less similarity.
+::: 
