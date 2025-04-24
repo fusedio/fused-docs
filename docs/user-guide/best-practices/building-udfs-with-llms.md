@@ -1,66 +1,53 @@
 # Building UDFs with LLMs
 
-> Speed up your UDF development using LLMs such as Claude!
+> Speed up your UDF development using LLMs
 
-This guide will help you use LLMs to help you build custom User Defined Functions (UDFs) for Fused. We'll be focusing on Claude for this tutorial, but you can do this with any frontier LLM.
+This guide will help you leverage Large Language Models (LLMs) to accelerate your Fused UDF development process.
 
-## Preparing the documentation
+## Prerequisites
 
-Before starting, gather the necessary documentation to help the LLM understand Fused UDFs:
+Before you begin, ensure you have:
+- Access to an LLM (like ChatGPT, Claude, etc.)
+- Basic understanding of Fused UDFs
+- An AI code editor (preferably Cursor IDE)
+
+## Setting Up Documentation
+
+To help the LLM understand Fused UDFs, you'll need to provide it with the necessary documentation. You have two options:
+
+### Option 1: Manual Documentation Setup
 
 1. Visit [https://docs.fused.io/llms.txt](https://docs.fused.io/llms.txt) and copy the full documentation text
-2. Download the [common utilities](https://github.com/fusedio/udfs/blob/main/public/common/utils.py) and add it as a context which contains helpful functions for UDF development
-3. Add the [UDF Best Practices](https://docs.fused.io/user-guide/best-practices/udf-best-practices/) guide for important patterns and recommendations
-4. Paste these documents into your conversation with the LLM
+   - Note: `llms.txt` is a standard in development for parsing sites into LLM-friendly formats
+   - Learn more at [llmstxt.org](https://llmstxt.org/)
+2. Download the [common utilities](https://github.com/fusedio/udfs/blob/main/public/common/utils.py)
+3. Add both documents as context in your LLM conversation
 
-### Adding documentation in Cursor IDE
+### Option 2: Using Cursor IDE
 
-Alternatively, you can add the documentation directly in Cursor IDE:
+For a more streamlined experience:
 
-1. Click on "Add new doc" in Cursor Settings
-2. Paste the documentation link: [https://docs.fused.io/](https://docs.fused.io/)
-3. The IDE will automatically fetch and index the documentation
+1. Open Cursor IDE
+2. Navigate to Settings
+3. Click "Add new doc"
+4. Enter the documentation URL: [https://docs.fused.io/](https://docs.fused.io/)
+5. The IDE will automatically fetch and index the documentation
 
 ![Adding documentation in Cursor IDE](/img/user-guide/building-with-llm/building_with_llm.png)
 
-## Alternatively: Install the fused-mcp server
+## Advanced Setup: Local Development
 
-For a more integrated experience, you can set up the [fused-mcp server](https://github.com/fusedio/fused-mcp) which allows LLMs like Claude to make HTTP requests and connect directly to APIs and executable code. This repository provides:
+For a more integrated development experience, you can set up the [fused-mcp server](https://github.com/fusedio/fused-mcp). This setup enables Claude to:
+- Read UDFs 
+- Execute UDFs using prompts
+- Provide more context 
 
-* A simple step-by-step notebook workflow to set up MCP Servers with Claude's Desktop App
-* Python-based implementation built on top of Fused UDFs
-* Direct integration with your desktop Claude app
-* Ability to pass Python code directly to Claude
+## Next Steps
 
-The fused-mcp server can be used in several ways:
-* Integrated directly with the Claude Desktop App
-* Installed with other MCP clients
-* Used with the [Fused AI Builder](https://docs.fused.io/blog/announcing-fused-ai-builder/) for a more streamlined development experience
-
-This approach can provide a more seamless development experience by giving the LLM direct access to documentation and code execution capabilities.
-
-## Describing your UDF
-
-Once you've provided the documentation, clearly describe to the LLM what kind of UDF you want to build. Be specific about:
-
-* What data sources you'll be working with
-* What transformations or analysis you need to perform
-* What output format you require
-* Any specific performance requirements
-
-Before starting, you can explore existing UDFs for inspiration:
-* Browse the [public UDFs repository](https://github.com/fusedio/udfs/tree/main/public) to see real-world examples
-* Use the [list_public_udfs](https://github.com/fusedio/fused-mcp/tree/main/udfs/list_public_udfs) tool within fused-mcp to explore and analyze existing UDFs
-
-For example:
-
-```
-Build a UDF that:
-- Reads satellite imagery from a specific region
-- Performs NDVI analysis on the imagery
-- Returns the results as a GeoJSON with vegetation indices
-- Optimizes for large-scale processing
-```
+Once you've set up your development environment, you can:
+1. Start creating new UDFs with LLM assistance
+2. Modify existing UDFs
+3. Debug and optimize your code
 
 
 
