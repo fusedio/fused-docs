@@ -258,7 +258,7 @@ Set a user-defined function on this operation
 def run_local(sample: Any | None = ...,
               validate_output: bool = False,
               validate_imports: Optional[bool] = None,
-              _include_log: bool = False,
+              _return_response: bool = False,
               **kwargs) -> UdfEvaluationResult
 ```
 
