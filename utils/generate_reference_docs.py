@@ -62,3 +62,47 @@ result = result.replace("## fused.cache", "## @fused.cache")
 
 with open(ROOT / "docs" / "python-sdk" / "top-level-functions.mdx", "w") as f:
     f.write(result)
+
+
+
+## `fused.api` page
+
+api_listing = [
+    "whoami",
+    "delete",
+    "list",
+    "get",
+    "download",
+    "upload",
+    "sign_url",
+    "sign_url_prefix",
+    "get_udfs",
+    "job_get_logs",
+    "job_print_logs",
+    "job_tail_logs",
+    "job_get_status",
+    "job_cancel",
+    "job_get_exec_time",
+    "job_wait_for_job",
+    "FusedAPI",
+]
+
+result = """\
+---
+sidebar_label: fused.api
+title: fused.api
+toc_max_heading_level: 5
+---
+
+"""
+
+mod_api = mod["api"]
+
+for obj in api_listing:
+    # result += f"## fused.{obj}\n\n"
+    docstring = render_object_docs(mod_api[obj], default_config)
+    result += docstring + "\n\n"
+
+
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w") as f:
+    f.write(result)
