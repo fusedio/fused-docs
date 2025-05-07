@@ -85,9 +85,17 @@ const sidebars: SidebarsConfig = {
       link: { type: "doc", id: "deep-dives" },
       items: [
         {
-          type: "doc",
-          id: "deep-dives/hex-deep-dive",
-          label: "H3 Hexagons Deep Dive",
+          type: "category",
+          label: "⬡ H3 Hexagons",
+          link: { type: "doc", id: "deep-dives/hex/hex-deep-dive" },
+          items: [
+            "deep-dives/hex/why-hexagons",
+            "deep-dives/hex/ingesting-h3",
+            "deep-dives/hex/aggregating-h3",
+            "deep-dives/hex/joining-h3",
+            "deep-dives/hex/visualizing-h3",
+            "deep-dives/hex/mcp-llm-h3"
+          ],
         },
       ],
     },
