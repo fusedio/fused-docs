@@ -1,25 +1,29 @@
 ---
-sidebar_label: "Crop Search using RAG"
-title: "Crop Search using RAG"
+sidebar_label: "Querying Crops data with LLMs"
+title: "Querying Crops data with LLMs"
 tags: ['example', 'rag', 'embeddings', 'openai', 'vector-search']
 sidebar_custom_props:
-    name: "Crop Search using RAG"
+    name: "Querying Crops data with LLMs"
     image: 'https://fused-magic.s3.us-west-2.amazonaws.com/thumbnails/udfs-staging/Fused_Logo.png'
 ---
 
-_A guide showing how to use Fused to create embeddings for crop search using RAG (Retrieval Augmented Generation)_
+### Overview
+This example demonstrates how to use Fused to create an end to end crop search system using Retrieval Augmented Generation (RAG) and the existing CDL udf. We'll leverage OpenAI's embedding model to generate embeddings for crop types and then use these embeddings to perform semantic searches.
 
 ### Requirements
 - [Access to Fused](/user-guide/login/)
-- OpenAI API key (stored in Fused secrets)
+- OpenAI API key (stored in [Fused secrets](/workbench/preferences/#secrets-management))
 
-## Overview
 
-In this example, we'll create a crop search system using RAG (Retrieval Augmented Generation). We'll:
-1. Fetch crop data from USDA's CDL (Cropland Data Layer)
+In this example, we want to find out the most similar crops based on a natural language query. For instance, if you ask "show me all the red fruits", the system should return crops that are semantically similar to that description.
+1. Get the crop data labels from USDA CDL
 2. Generate embeddings for each crop type using OpenAI's embedding model
 3. Store these embeddings for later use in semantic search
 4. Run queries against the embeddings to find similar crops
+5. Filter the CDL data based on the query results
+
+![Embedding Generation and Query Pipeline](/img/user-guide/examples/crop_search_rag/chart.png)
+
 
 ## 1. Setting up the UDF
 
@@ -31,90 +35,69 @@ First, let's create a UDF that will handle the embedding generation. We'll use O
 ```python
 @fused.udf
 def udf():
-    import utils
     import pandas as pd
     import requests
-    import json
     from openai import OpenAI
     
     api_key = fused.secrets["open_ai_key"]
     s3_path = "s3://fused-users/fused/misc/embedings/CDL_crop_name.parquet"
     
+    # Fetch and process crop data
     print("Fetching USDA crop data...")
-    url = "https://storage.googleapis.com/earthengine-stac/catalog/USDA/USDA_NASS_CDL.json"
-    response = requests.get(url)
-    data = response.json()
-    crops = data["summaries"]["eo:bands"][0]["gee:classes"]
-
-    print(f"Processing {len(crops)} crop types...")
+    response = requests.get("https://storage.googleapis.com/earthengine-stac/catalog/USDA/USDA_NASS_CDL.json")
+    crops = response.json()["summaries"]["eo:bands"][0]["gee:classes"]
     df = pd.DataFrame(crops)
-
+    
+    # Generate embeddings
     client = OpenAI(api_key=api_key)
-
-    df = utils.generate_crop_embeddings(client, df)
+    df = generate_crop_embeddings(client, df)
     
     print(f"Saving embeddings to S3: {s3_path}")
     df.to_parquet(s3_path)
-    
     return df
-```
-</details>
-
-<details>
-<summary>Utils Code</summary>
-
-```python
-import pandas as pd
-from openai import OpenAI
-import time
-from concurrent.futures import ThreadPoolExecutor
-from typing import List, Dict, Any
 
 def get_embedding(client, text, retries=3, backoff_factor=2):
     for attempt in range(retries):
         try:
             response = client.embeddings.create(
-                input=text,
+                input=text, 
                 model="text-embedding-3-large"
             )
             return response.data[0].embedding
         except Exception as e:
             if attempt < retries - 1:
                 sleep_time = backoff_factor ** attempt
-                print(f"Attempt {attempt+1} failed: {str(e)}. Retrying in {sleep_time}s...")
+                print(f"Attempt {attempt+1} failed. Retrying in {sleep_time}s...")
                 time.sleep(sleep_time)
             else:
-                print(f"All attempts failed for: {text[:50]}...")
+                print(f"All attempts failed for text: {text[:50]}...")
                 return [0.0] * 1536
 
-def process_row(client, row):
-    description = row['rich_description']
-    try:
-        embedding = get_embedding(client, description)
-        return embedding
-    except Exception as e:
-        print(f"Error generating embedding for {row['description']}: {str(e)}")
-        return [0.0] * 1536
-
 def generate_crop_embeddings(client, df):
+    from concurrent.futures import ThreadPoolExecutor
+    import time
+    
+    # Create rich descriptions
     df['rich_description'] = df.apply(
         lambda row: f"Crop type: {row['description']}, Value: {row['value']}, Color code: {row['color']}", 
         axis=1
     )
     
+    # Generate embeddings in parallel
     with ThreadPoolExecutor(max_workers=5) as executor:
-        embeddings = list(executor.map(
-            lambda row: process_row(client, row), 
-            [row for _, row in df.iterrows()]
+        df['embedding'] = list(executor.map(
+            lambda row: get_embedding(client, row), 
+            df['rich_description']
         ))
     
-    df['embedding'] = embeddings
     df['embedding_dimensions'] = df['embedding'].apply(len)
     print(f"Embedding dimensions: {df['embedding_dimensions'].iloc[0]}")
     
     return df
 ```
 </details>
+
+
 
 ## 2. Understanding the Code
 

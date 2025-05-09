@@ -5818,18 +5818,23 @@ If things feel a bit off, for example your UDF output looks suspicious here are 
 
 // File: user-guide/examples/crop-search-rag
 
-_A guide showing how to use Fused to create embeddings for crop search using RAG (Retrieval Augmented Generation)_
+### Overview
+This example demonstrates how to use Fused to create an end to end crop search system using Retrieval Augmented Generation (RAG) and the existing CDL udf. We'll leverage OpenAI's embedding model to generate embeddings for crop types and then use these embeddings to perform semantic searches.
 
 ### Requirements
 - [Access to Fused](/user-guide/login/)
 - OpenAI API key (stored in Fused secrets)
 
-## Overview
 
-In this example, we'll create a crop search system using RAG (Retrieval Augmented Generation). We'll:
-1. Fetch crop data from USDA's CDL (Cropland Data Layer)
+In this example, we want to find out the most similar crops based on a natural language query. For instance, if you ask "show me all the red fruits", the system should return crops that are semantically similar to that description.
+1. Get the crop data labels from USDA CDL
 2. Generate embeddings for each crop type using OpenAI's embedding model
 3. Store these embeddings for later use in semantic search
+4. Run queries against the embeddings to find similar crops
+5. Filter the CDL data based on the query results
+
+![Embedding Generation and Query Pipeline](/img/user-guide/examples/crop_search_rag/chart.png)
+
 
 ## 1. Setting up the UDF
 
@@ -5954,15 +5959,93 @@ To run this UDF:
 
 The embeddings will be saved to S3 and can be used later for semantic search.
 
+## 4. Querying the Embeddings
+
+Now that we have our embeddings stored, let's create a UDF to run queries against them. This UDF will:
+1. Take a natural language query
+2. Generate an embedding for the query
+3. Find the most similar crops using cosine similarity
+
+<details>
+<summary>Query UDF Code</summary>
+
+```python
+@fused.udf
+def udf(query: str = "show me juicy red fruits"):
+    import pandas as pd
+    from openai import OpenAI 
+    import utils 
+    from utils import cosine_similarity
+
+    df_crops = pd.read_parquet("s3://fused-users/fused/misc/embedings/CDL_crop_name.parquet")
+
+    api_key = fused.secrets["open_ai_key"]
+    print(f"embedding for query: '{query}'")
+    client = OpenAI(api_key=api_key)
+    response = client.embeddings.create(
+        input=query,
+        model="text-embedding-3-large"
+    )
+    query_embedding = response.data[0].embedding
+    
+    df_crops['similarity'] = df_crops['embedding'].apply(
+        lambda embedding: cosine_similarity(query_embedding, embedding)
+    )
+    
+    results = df_crops.sort_values('similarity', ascending=False).head(5)
+    results['similarity'] = results['similarity'].apply(lambda x: f"{x:.2%}")
+    print(results[['value', 'description']])
+    
+    return results
+```
+</details>
+
+<details>
+<summary>Cosine Similarity Implementation</summary>
+
+```python
+def cosine_similarity(a, b):
+    dot_product = sum(x*y for x, y in zip(a, b))
+    norm_a = sum(x*x for x in a)**0.5
+    norm_b = sum(y*y for y in b)**0.5
+    return dot_product / (norm_a * norm_b)
+```
+</details>
+
+### How the Query Works
+
+1. **Query Processing**:
+   - Takes a natural language query (e.g., "show me juicy red fruits")
+   - Generates an embedding for the query using the same model
+
+2. **Similarity Calculation**:
+   - Uses cosine similarity to compare the query embedding with all crop embeddings
+   - Cosine similarity measures the cosine of the angle between two vectors
+   - Values range from -1 to 1, where 1 means the vectors are identical
+
+3. **Results**:
+   - Returns the top 5 most similar crops
+   - Shows similarity scores as percentages
+   - Displays crop values and descriptions
+
+### Example Usage
+
+Try different queries like:
+- "show me juicy red fruits"
+- "what crops grow in dry conditions"
+- "which crops are good for making bread"
+
+Each query will return the most semantically similar crops based on the embeddings.
+
 ## Next Steps
 
 In the next part of this guide, we'll show you how to:
-- Use these embeddings for semantic search
-- Build a RAG system for answering crop-related questions
-- Implement vector similarity search for finding similar crops
+- Filter the geospatial data based on the query results
+- Visualize the results on a map
+- Build a complete RAG system for answering crop-related questions
 
 :::tip
-The embeddings are stored in a 1536-dimensional vector space, allowing for semantic similarity searches. Crops with similar characteristics will have embeddings that are closer together in this space.
+The cosine similarity score tells you how closely the query matches each crop. A score of 100% means perfect similarity, while lower scores indicate less similarity.
 :::
 
 ---
