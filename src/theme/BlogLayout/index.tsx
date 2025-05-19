@@ -13,13 +13,9 @@ export default function BlogLayout(props: Props): JSX.Element {
   return (
     <Layout {...layoutProps}>
       <div className="container margin-vert--lg">
-        <div className="row">
-          <BlogSidebar sidebar={sidebar} />
+        <div className="row ">
           <main
-            className={clsx("col", {
-              "col--7": hasSidebar,
-              "col--9 col--offset-1": !hasSidebar,
-            })}
+            className="col"
           >
             {children}
           </main>
