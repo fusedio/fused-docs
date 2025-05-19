@@ -63,13 +63,12 @@ const config: Config = {
         blog: {
           blogTitle: "Fused blog",
           blogDescription: "Latest blog posts from Fused.",
-          postsPerPage: 10,
+          postsPerPage: 999999,
           blogSidebarTitle: "All posts",
           blogSidebarCount: "ALL",
-          showReadingTime: true, // When set to false, the "x min read" won't be shown
+          showReadingTime: true,
           readingTime: ({ content, frontMatter, defaultReadingTime }) =>
             defaultReadingTime({ content, options: { wordsPerMinute: 300 } }),
-          // Show full content for first post, truncate the rest
           truncateMarker: /(<!--\s*truncate\s*-->)|({\/\*\s*truncate\s*\*\/})/,
         },
         theme: {
