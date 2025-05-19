@@ -2682,7 +2682,7 @@ fused.run(my_udf, engine="local")
 
 Set `sync=False` to run a UDF [asynchronously](/core-concepts/async/).
 
-### Passing arguments in [`fused.run()`](/python-sdk/top-level-functions/#run)
+## Passing arguments in [`fused.run()`](/python-sdk/top-level-functions/#run)
 
 A typical [`fused.run()`](/python-sdk/top-level-functions/#run) call of a UDF looks like this:
 
@@ -2702,6 +2702,20 @@ A [`fused.run()`](/python-sdk/top-level-functions/#run) call will require the fo
 3. [Optional] Any protected arguments as seen in the dedicated [API docs page](/python-sdk/top-level-functions/#run) (if applicable). These include for example:
    - `bounds` -> A geographical bounding box (as a list of 4 point: `[min_x, min_y, max_x, max_y]`) defining the area of interest.
    - `cache_max_age` -> The maximum [age of the UDF's cache](/core-concepts/cache/#defining-your-cache-lifetime-cache_max_age).
+   - `dtype_out_raster` -> The output raster format. Defaults to "tif". Change this to "png" for a simple preview of your image.
+   - `dtype_out_vector` -> The output vector format. Defaults to "parquet".
+
+#### Examples of using parameters
+
+Changing the default cache max age:
+```python showLineNumbers
+fused.run("UDF_CDLs_Tile_Example", cache_max_age='1d')
+```
+
+Calling a public UDF that returns a raster, this might be helpful if you want a simple visualization of your raster without needing other requirements like `rasterio` & `rioxxaray`:
+```python showLineNumbers
+fused.run("UDF_CDLs_Tile_Example", dtype_out_raster='png')
+```
 
 ## Running multiple jobs in parallel
 
@@ -3452,6 +3466,65 @@ See what's [we've announced so far](/blog/announcing-fused-ai-builder/)
 // File: python-sdk/changelog
 
 # Changelog
+
+## v1.19.0 (2025-05-__)
+
+**[`fused-py`](/python-sdk/)**
+
+Breaking changes:
+- Large (batch) jobs have been updated to pass parameters into the UDF the same way as other UDF runs. For compatabilty, if the parameters passed into the job do not correspond with the parameters, a dictionary parameter is passed into the UDF instead. This will be deprecated and removed in a future release.
+- The `context` and `bbox` parameters to a UDF are no longer treated as special.
+- Python 3.9 support, which was previously deprecated, is now removed. The minimum Python version for the `fused` package is now 3.10.
+
+New Features:
+- PyArrow upgraded to version 16.0.
+- Ingestion now supports input files without extensions, and filters out files with `.` or `_` prefix.
+- `cache=False` is now a shortcut for disabling cache, e.g. `cache_max_age=0`.
+- UDFs now support parameters annotated as `shapely.Geomtry` or `shapely.Polygon`.
+- `fused.load` now support loading UDFs from Github Pull Request URLs.
+- Added a timeout parameter for `fused.api.upload`.
+- Fused API functions now support `/mount` without `file://` prefix.
+- `fused.api.download` now supports downloading files from `/mount`.
+- `fused.api.list` now supports listing an individual file under `/mount`.
+- `max_deletion_depth` in `fused.api.delete` default changed from 2 to 3.
+
+Bug Fixes
+- Fixed pickling UDF objects.
+- Fixed UDF equality checks not conforming to Python specifications.
+- Many fixes to ensure compatabilty between the `fused` module available on PyPI and the `fused` module within the Fused backend.
+- Fixed returning `pd.Timestamp` objects.
+- Fixed bugs with handling of stdout if the UDF is async.
+- Fixed bugs with UDF object repr in Jupyter.
+- Fixed `@fused.cache` in Fused Apps.
+- Fixed "multiple auth mechanisms" error when retrieving job results.
+- Fixed deserialization of GeoDataFrame without geometry column.
+- Fixed cases where UDFs would be indented when run.
+- Various stability and performance updates, including new self-healing capabilities on the Fused backend.
+
+**[Workbench](/workbench/)**
+
+- Upgraded Streamlit in apps to 1.44.
+- Fused Apps is no longer "beta".
+- Fused Apps will now highlight syntax errors.
+- Fused Apps will now autocomplete the `fused` module correctly.
+- "Changes pending" in the map has been renamed to "Running" and now shows the time elapsed without needing to hover over it.
+- UDF builder tooltips have been refreshed, it is now possible to click on data on the map to pin the tooltip on screen. Pinned tooltips show how many data records were under the mouse and allow paging through them.
+- Workbench can now highlight H3 hexagons on click.
+- Workbench can now detect decimal H3 indexes and Cmd+Click works on them.
+- `udf://` URLs in Workbench now entirely overwrite parameters of the selected UDF.
+- Fixed UDF builder showing partially updated map states for Tile UDFs.
+- Collections catalog can now be sorted.
+- Fixed a bug where Workbench would not detect newly added utils on UDFs.
+- Parameters and Visualization sections are now styled slightly differently to make it easier to pick out your UDFs.
+- Renamed Visualization "Surprise me" button to "Preset".
+- Fixed a visual bug with the job status.
+- Updated the share UDF and share app pages.
+- Fixed bugs with UDF or app catalog showing the wrong content.
+- Renamed "History" to "Pull Changes" and updated styling of that page.
+- Fixed Pull Changes not showing diffs if utils had been added or deleted.
+- Fixed Workbench showing the original Github link for forked UDFs.
+- Workbench code editors will now remember scroll position.
+- Clicking the viewport location label will now copy it.
 
 ## v1.18.0 (2025-04-28)
 
@@ -5026,6 +5099,8 @@ def run(
     max_retry: int = 0,
     cache_max_age: Optional[str] = None,
     parameters: Optional[Dict[str, Any]] = None,
+    dtype_out_raster: Optional[Literal["png", "tif"]] = "tif",
+    dtype_out_vector: Optional[Literal["parquet", "csv", "geojson", "json"]] = "parquet",
     _include_log: Optional[bool] = False,
     _return_response: Optional[bool] = False,
     **kw_parameters,
@@ -5055,6 +5130,8 @@ Args:
         Supported units are seconds (s), minutes (m), hours (h), and days (d) (e.g. “48h”, “10s”, etc.).
         Default is `None` so a UDF run with `fused.run()` will follow `cache_max_age` defined in `@fused.udf()` unless this value is changed.
     - parameters: Additional parameters to pass to the UDF.
+    - dtype_out_raster: The output raster format. Defaults to "tif".
+    - dtype_out_vector: The output vector format. Defaults to "parquet".
     - **kw_parameters: Additional parameters to pass to the UDF.
 
 Raises:
@@ -10107,10 +10184,6 @@ import FEpreview from '/img/workbench/file-explorer/file_explorer_preview.png';
 </div>
 
 
-::: note Directories Creation
-In File Explorer directories will not be saved if they do not have content in them.
-:::
-
 ## Create UDF
 
 Create Fused UDFs using templates for common file types. Double-click on a file to create a new templated UDF that reads the file, or find additional readers in the file's kebab menu. [Parquet tables](https://www.upsolver.com/blog/apache-parquet-why-use) show an "Open Table" button to open them at the directory level.
@@ -10126,6 +10199,17 @@ import FEcreateudf from '/img/workbench/file-explorer/file_explorer_createudf.pn
 Template UDFs are available for common file types (like `CSV`, `Parquet`) and tools (like `DuckDB` and `GeoPandas`). See the latest template UDFs in the [UDFs repo](https://github.com/fusedio/udfs/tree/main/files).
 
 Supported file types for vector tables include `parquet`, `JSON`, `CSV`, `excel`, `zip`, and `KML`. For raster files `GeoTIFF` and `NetCDF` are supported. If you need a file type that isn't supported, request it on the Fused [Discord channel](https://discord.com/invite/BxS5wMzdRk) or [contribute](/workbench/udf-catalog/#contribute-to-fused) a template to the community.
+
+## Upload / Download / Edit 
+
+File Explorer also allows you to:
+- Upload files (drag & drop)
+- Download files
+- Create new directories
+
+:::note Directories cannot be empty
+In File Explorer directories will not be saved if they do not have content in them.
+:::
 
 ## Connect your own bucket
 
@@ -10637,13 +10721,13 @@ You can:
 - Upload / Download Collections via Workbench (Click the 3 dots next to Collection name)
 - Delete Collections (this doesn't delete the UDFs inside, only the Collection)
 
-<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/collections_edit.mp4" width="100%" />
+<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/collections_edit2.mp4" width="100%" />
 
 We are actively working on expanding Collection features!
 
 ### Examples of Collections in use
 
-- See how we recommend using Collections as part of our [Best Practices](/user-guide/best-practices/workbench-best-practices/#organising-your-work)
+- See how we recommend using Collections as part of our [Best Practices](/user-guide/best-practices/workbench-best-practices/#using-collections)
 
 ---
 
