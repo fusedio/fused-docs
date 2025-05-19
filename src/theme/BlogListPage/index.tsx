@@ -6,6 +6,7 @@ import BlogListPaginator from '@theme/BlogListPaginator';
 import { BlogPostProvider } from '@docusaurus/plugin-content-blog/lib/client/contexts.js';
 import type { Props } from '@theme/BlogListPage';
 import Link from '@docusaurus/Link';
+import useBaseUrl from '@docusaurus/useBaseUrl';
 import BlogListPageStructuredData from '@theme/BlogListPage/StructuredData';
 import styles from './styles.module.css';
 
@@ -50,14 +51,17 @@ function BlogPostCard({
   image?: string;
   showCategory: boolean;
 }): JSX.Element {
+  const imageUrl = image ? useBaseUrl(image) : undefined;
+  const fallbackLogoUrl = useBaseUrl('/img/logo-black-bg-transparent.svg');
+  
   return (
     <Link
       to={permalink}
       className={styles.blogCard}
     >
-      {image ? (
+      {imageUrl ? (
         <div className={styles.cardImage}>
-          <img src={image} alt={title} />
+          <img src={imageUrl} alt={title} />
           {showCategory && (
             <div className={styles.cardCategory}>
               {CATEGORIES[category] || 'Uncategorized'}
@@ -66,7 +70,7 @@ function BlogPostCard({
         </div>
       ) : (
         <div className={styles.cardHeader}>
-          <img src="/img/logo-black-bg-transparent.svg" alt="Fused Logo" className={styles.fallbackLogo} />
+          <img src={fallbackLogoUrl} alt="Fused Logo" className={styles.fallbackLogo} />
           {showCategory && (
             <div className={styles.cardCategory}>
               {CATEGORIES[category] || 'Uncategorized'}
