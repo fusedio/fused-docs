@@ -12,7 +12,7 @@ import styles from './styles.module.css';
 
 const CATEGORIES = {
   all: 'All',
-  announcements: 'Announcements',
+  news: 'News',
   technical: 'Technical blogs',
   use_cases: 'Use cases',
   uncategorized: 'Uncategorized',
