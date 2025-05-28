@@ -503,6 +503,40 @@ To resolve this error, save the UDF again and refreshing your browser window. If
 
 </details>
 
+<details>
+<summary>Error: `ModuleNotFoundError: No module named 'geopandas'`</summary>
+
+This error happens when your UDF returns a `GeoDataFrame` but your local env doesn't have the `geopandas` package installed to manipulate it.
+
+The standalone `fused` package doesn't have `geopandas` or other optional dependencies installed to keep it light weight. 
+
+This can be fixed in 2 ways:
+
+1. When running fused locally
+
+You can [install](/python-sdk/#install) `fused` with all the optional dependencies:
+
+```bash
+pip install "fused[all]"
+```
+
+2. When running a UDF in a [Fused App](/workbench/app-builder/)
+
+Install the package using `micropip` at the top of your app:
+
+```python
+import micropip
+await micropip.install(['geopandas'])
+import geopandas as gpd
+```
+
+You can install multiple packages the same way:
+```python
+await micropip.install(['geopandas', 'pandas', 'numpy'])
+```
+
+</details>
+
 ---
 
 // File: core-concepts/why
@@ -11433,6 +11467,68 @@ When `tileLayer` has `"@@type": "DebugTileLayer"` set, `loadingLayer` and `error
     }
   }
   ```
+</details>
+
+## FAQ: Debugging your visualizations
+
+<details>
+  <summary>Why is my vector layer not colorized?</summary>
+
+  Let's take the example of a UDF that returns a `GeoDataFrame` with `hex` values:
+  
+  ```python showLineNumbers
+  @fused.udf()
+  def udf(
+      bounds: fused.types.Bounds = None,
+  ):  
+      # get_hex() is a non-important function for this demo that gives us US counties
+      df_hex = get_hex(gdf, hex_res)
+      df_hex['state_id'] = [id[:2] for id in df_hex["GEOID"]]
+      
+      return df_hex 
+  ```
+
+  And our visualization JSON looks like this:
+  ```json
+    {
+    "hexLayer": {
+      "@@type": "H3HexagonLayer",
+      "filled": true,
+      "pickable": true,
+      "extruded": false,
+      "getHexagon": "@@=properties.hex",
+      "getFillColor": {
+        "@@function": "colorContinuous",
+        "attr": "state_id",
+        "domain": [
+          0,
+          50
+        ],
+        "steps": 2,
+        "colors": "Magenta"
+      }
+    }
+  }
+  ```
+
+  You should make sure:
+  1. `hexLayer > getFillColor > attr` is set to a column that exists in the `GeoDataFrame` (in this case `state_id`)
+  2. Make sure your `attr` column is in either `int` or `float` type, not in `str`. In this case we should cast `state_id` to `int`:
+
+  ```python {7} showLineNumbers
+  @fused.udf()
+  def udf(
+      bounds: fused.types.Bounds = None,
+  ):
+      df_hex = get_hex(gdf, hex_res)
+      df_hex['state_id'] = [id[:2] for id in df_hex["GEOID"]]
+      df_hex['state_id'] = df_hex['state_id'].astype(int)
+      
+      return df_hex 
+  ```
+
+  3. Making sure your values are within the correct domain (`hexLayer > getFillColor > domain`). In our case, we're showing US States, so the domain should be `[0, 50]`.
+
 </details>
 
 ---
