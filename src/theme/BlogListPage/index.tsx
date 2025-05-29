@@ -122,7 +122,7 @@ export default function BlogListPage(props: Props): JSX.Element {
       <BlogListPageStructuredData {...props} />
       <BlogLayout
         title="Blog"
-        description="Blog List Page"
+        description="Read about Fused's latest News, Use cases, and Technical blogs."
         sidebar={undefined}
       >
         <div className={styles.blogContainer}>
