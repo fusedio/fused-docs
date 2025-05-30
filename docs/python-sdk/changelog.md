@@ -7,6 +7,50 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.20.0 (2025-06-__)
+
+**[`fused-py`](/python-sdk/)**
+
+New Features:
+- Running a UDF with engine `local` will cache similarly to how it would when running on `remote`.
+- Large (batch) jobs can be accepted in a Pending state if they cannot start immediately.
+- UDFs can now accept `**kwargs` parameters, which will always be passed in as strings.
+- Upgraded DuckDB to 1.3.0.
+- `@fused.cache` has new verbose options.
+- `@fused.cache` has new `cache_reset` option. The existing `reset` parameter is deprecated.
+- Some file listing APIs like `fused.api.list` will work for public buckets when on free accounts.
+- `fused.load` accepts a parameter for controlling importing UDF globals. Also, when globals cannot be imported, a warning is emitted instead of an exception.
+
+Bug Fixes:
+- Clarified login-needed message in Fused Apps.
+- Fixed bugs with `@fused.cache` results not being ready.
+- Fixed bugs with `@fused.cache` not detecting changes in the cached function.
+- Loading a UDF from a file will autodetect the UDF function name.
+- Fixed bugs with returning GeoDataFrames that do not contain geometry.
+- Fixed calling `to_fused` on an app.
+
+**[Workbench](/workbench/)**
+
+- A message will appear above the UDF body when parameters are set in the UDF list.
+- A lock icon will be shown next to read-only UDFs and Apps in Workbench.
+- When pushing UDFs to GitHub, the preview image will be pushed to a public URL so that the README in GitHub is rendered correctly.
+- When pushing UDFs to GitHub, Workbench will assign the PR to you if possible.
+- It is now possible to delete UDFs and Apps directly from the catalog.
+- Added a "Reload Collection" button.
+- Workbench will minimize more changes from the PRs it creates on GitHub.
+- "Open in Kepler.gl" supports H3 (string) data.
+- The visibility button for a Fused App will now reset the app.
+- A new Reset 3D View button is added to the UDF Builder map, and the keyboard shortcut has been updated to `Cmd+Shift+UpArrow`.
+- Workbench will show the current environment name above the map by default.
+- Workbench will remember which UDF was selected when reopening the page.
+- Adjusted which UDF mode label is shown when automatically detecting the UDF mode.
+- Fixed some bugs with dynamic output mode.
+- UI updates for the Pull Changes (history) and Push Changes views, including showing the README file in both views.
+- Made it easier to drop UDF files on the Workbench tab to open them.
+- Added a button to download usage table in the Profile view.
+- Fixed some visual bugs with light mode.
+- File Explorer will no longer show file opener UDFs saved on your personal catalog, and will clarify when file opener UDFs are from your team catalog.
+
 ## v1.19.0 (2025-05-19)
 
 **[`fused-py`](/python-sdk/)**
