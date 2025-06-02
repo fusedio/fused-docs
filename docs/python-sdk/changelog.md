@@ -16,7 +16,7 @@ New Features:
 - Large (batch) jobs can be accepted in a Pending state if they cannot start immediately.
 - UDFs can now accept `**kwargs` parameters, which will always be passed in as strings.
 - Upgraded DuckDB to 1.3.0.
-- `@fused.cache` has new `cache_verbose` options. If set to `True`, Print a message when a cached result is returned
+- `@fused.cache` has a new `cache_verbose` option. If set to `True` (default), it prints a message when a cached result is returned.
 - `@fused.cache` has new `cache_reset` option. The existing `reset` parameter is deprecated.
 - Some file listing APIs like `fused.api.list` will work for public buckets when on free accounts.
 - `fused.load` accepts `import_globals` (default `True`) for controlling importing UDF globals. Also, when globals cannot be imported, a warning is emitted instead of an exception.
