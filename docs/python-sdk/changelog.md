@@ -36,7 +36,7 @@ Bug Fixes:
 - When pushing UDFs to GitHub, the preview image will be pushed to a public URL so that the README in GitHub is rendered correctly.
 - When pushing UDFs to GitHub, Workbench will assign the PR to you if possible.
 - It is now possible to delete UDFs and Apps directly from the catalog.
-- Added a "Reload Collection" button.
+- Added a "Reload Collection" button. This pulls all latest version of UDF currently in your Collection.
 - Workbench will minimize more changes from the PRs it creates on GitHub.
 - "Open in Kepler.gl" supports H3 (string) data.
 - The visibility button for a Fused App will now reset the app.
