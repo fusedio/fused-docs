@@ -15,7 +15,6 @@ New Features:
 - Running a UDF with engine `local` will cache similarly to how it would when running on `remote` (supporting `cache_max_age` to control the caching).
 - Large (batch) jobs will be in a Pending state if they cannot start immediately.
 - UDFs can now accept `**kwargs` parameters, which will always be passed in as strings.
-- Upgraded DuckDB to 1.3.0.
 - `@fused.cache` has a new `cache_verbose` option. If set to `True` (default), it prints a message when a cached result is returned.
 - `@fused.cache` renamed the `reset` parameter to `cache_reset`. The existing `reset` parameter is deprecated.
 - Some file listing APIs like `fused.api.list` will work for public buckets when on free accounts.
