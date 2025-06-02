@@ -46,7 +46,7 @@ Bug Fixes:
 - Adjusted which UDF mode label is shown when automatically detecting the UDF mode.
 - Fixed some bugs with dynamic output mode.
 - UI updates for the Pull Changes (history) and Push Changes views, including showing the README file in both views.
-- Made it easier to drop UDF files on the Workbench tab to open them.
+- Drag&Drop UDF into Workbench now works on the entire tab
 - Added a button to download usage table in the Profile view.
 - Fixed some visual bugs with light mode.
 - File Explorer will no longer show file opener UDFs saved on your personal catalog, and will clarify when file opener UDFs are from your team catalog.
