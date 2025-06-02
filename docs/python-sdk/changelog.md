@@ -40,7 +40,7 @@ Bug Fixes:
 - Workbench will minimize more changes from the PRs it creates on GitHub.
 - "Open in Kepler.gl" supports H3 (string) data.
 - The visibility button for a Fused App will now reset the app.
-- A new Reset 3D View button is added to the UDF Builder map, and the keyboard shortcut has been updated to `Cmd+Shift+UpArrow`.
+- A new Reset 3D View button is added to the UDF Builder map, and the keyboard shortcut has been updated to `Cmd+Shift+UpArrow` on MacOS (`Ctrl+Shift_UpArrow` on Windows / Linux).
 - Workbench will show the current environment name above the map by default.
 - Workbench will remember which UDF was selected when reopening the page.
 - Adjusted which UDF mode label is shown when automatically detecting the UDF mode.
