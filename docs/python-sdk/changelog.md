@@ -17,7 +17,7 @@ New Features:
 - UDFs can now accept `**kwargs` parameters, which will always be passed in as strings.
 - Upgraded DuckDB to 1.3.0.
 - `@fused.cache` has a new `cache_verbose` option. If set to `True` (default), it prints a message when a cached result is returned.
-- `@fused.cache` has new `cache_reset` option. The existing `reset` parameter is deprecated.
+- `@fused.cache` renamed the `reset` parameter to `cache_reset`. The existing `reset` parameter is deprecated.
 - Some file listing APIs like `fused.api.list` will work for public buckets when on free accounts.
 - `fused.load` accepts `import_globals` (default `True`) for controlling importing UDF globals. Also, when globals cannot be imported, a warning is emitted instead of an exception.
 
