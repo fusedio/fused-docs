@@ -7,7 +7,7 @@ sidebar_position: 8
 
 # Changelog
 
-## v1.20.0 (2025-06-__)
+## v1.20.0 (2025-06-03)
 
 **[`fused-py`](/python-sdk/)**
 
