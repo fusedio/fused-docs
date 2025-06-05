@@ -538,6 +538,18 @@ await micropip.install(['geopandas', 'xarray'])
 
 </details>
 
+
+<details>
+<summary>Workbench Memory Usage tells me "Unknown"</summary>
+
+We try our best to retrieve memory usage for UDFs you run in Workbench to help you monitor & optimize your UDFs.
+
+There are a few reasons why we might not be able to retrieve memory usage:
+1. **Running a shared token, for example a public UDF**: In this case we don't share memory usage as the original builder of the UDF might not want to reveal the inner workings of their UDF.
+2. **Running a [cached UDF](/core-concepts/cache/)**: If you're running a UDF that was cached (rerunning the same UDF with the same parameters), no memory was used. 
+
+</details>
+
 ---
 
 // File: core-concepts/why
@@ -558,18 +570,17 @@ A lot of the tools Analytics teams have today slow the process down:
 - Python dependency management gets in the way of getting work done.
 - A lot of the scientific Python tooling focused more on getting the result down to 10 decimals places rather than answering the big picture
 
-That's why we built Fused around User Defined Functions, UDFs. 
+That's why we built Fused around [User Defined Functions, UDFs](/core-concepts/write/). 
 
-{/* TODO: Make a cleaner version of this */}
 ![udf pipeline](./images/udf_pipeline.jpeg)
 
 UDFs are the DNA of analytics. They are Python functions that can be called from anywhere:
 - 🐍 No environment setup: Just start writing Python immediately.
-- 🔗 Shareable as HTTP endpoints in 2 clicks: Ship your work to the rest of the team
+- 🔗 Shareable as [HTTPS endpoints](/user-guide/out/http/) in 2 clicks: Ship your work to the rest of the team
 - 🔄 Iterable: Edit your code, Save, and see the results downstream immediately.
 - 🚀 Scales with your hardware requirements: From running a subset of data to analyzing the entire world.
 
-### UDFs are the DNA of analytics
+## UDFs are the DNA of analytics
 
 Making every process of your Analytics a UDF makes it faster:
 
@@ -581,15 +592,16 @@ Making every process of your Analytics a UDF makes it faster:
 
 Look, we know that many Analytics project start in a notebook on a laptop. 
 
-- 💻 UDFs work locally, but in 2 lines of code can be scaled to datasets the size of the world
-- 🌍 UDFs can be called from anywhere: From a notebook, a frontend application or in a Notion page
+- 💻 Start by running UDFs locally, then in 2 lines of code scale to datasets the size of the world
+- 🌍 UDFs can be called from anywhere: From a notebook, a [frontend application](/user-guide/out/deckgl/) or in a [Notion](/user-guide/out/notion/) page
+- 🔀 Work locally or in [Workbench](/workbench/), our browser based IDE interchangeably  
 
 
 ## Efficiently Scaling
 
 Because Fused is built 
-- ☁️ Serverless computing: Only pay for the processing you actually use
-- ⚡️ Caching makes recurring calls faster & cheaper
+- ☁️ [Serverless computing](/core-concepts/run-udfs/): Only pay for the processing you actually use
+- ⚡️ [Caching](/core-concepts/cache/) makes recurring calls faster & cheaper
 
 ## Get started using UDFs right now
 
@@ -1197,6 +1209,30 @@ Cached UDF are:
 - Stored for 90d by default (see [Python SDK](/python-sdk/top-level-functions/#fusedudf) for more details)
 - Stored on S3
 - You can overwrite the cache age by passing [`cache_max_age`](/core-concepts/cache/#defining-your-cache-lifetime-cache_max_age) either when defining the UDF with [`@fused.udf(cache_max_age)`](/python-sdk/top-level-functions/#fusedudf) or when running the UDF with [`fused.run(udf, cache_max_age)`](/python-sdk/top-level-functions/#run)
+
+:::note Default arguments are evaluated when defining the function
+Note that UDFs work similarly to regular Python functions, default arguments are evaluated when defining the function, not when calling it.
+
+For example:
+```python
+import datetime
+
+@fused.udf
+def abc(d: str = datetime.datetime.now().strftime('%Y-%m-%D')):
+    print("with default", d)
+```
+
+and
+```python
+@fused.udf
+def abc(d: str = None):
+    import datetime
+    d = datetime.datetime.now().strftime('%Y-%m-%D')
+    print("with default", d)
+```
+
+Will both be cached similarly (i.e. calling either of these functions 2 times consecutively will return the cached results).
+:::
 
 ## Advanced
 
@@ -3513,6 +3549,49 @@ See what's [we've announced so far](/blog/announcing-fused-ai-builder/)
 // File: python-sdk/changelog
 
 # Changelog
+
+## v1.20.0 (2025-06-03)
+
+**[`fused-py`](/python-sdk/)**
+
+New Features:
+- Running a UDF with engine `local` will cache similarly to how it would when running on `remote` (supporting `cache_max_age` to control the caching).
+- Large (batch) jobs will be in a Pending state if they cannot start immediately.
+- UDFs can now accept `**kwargs` parameters, which will always be passed in as strings.
+- `@fused.cache` has a new `cache_verbose` option. If set to `True` (default), it prints a message when a cached result is returned.
+- `@fused.cache` renamed the `reset` parameter to `cache_reset`. The existing `reset` parameter is deprecated.
+- Some file listing APIs like `fused.api.list` will work for public buckets when on free accounts.
+- `fused.load` accepts `import_globals` (default `True`) for controlling importing UDF globals. Also, when globals cannot be imported, a warning is emitted instead of an exception.
+
+Bug Fixes:
+- Clarified login-needed message in Fused Apps.
+- Fixed bugs with `@fused.cache` results not being ready.
+- Fixed bugs with `@fused.cache` not detecting changes in the cached function.
+- Loading a UDF from a file will autodetect the UDF function name.
+- Fixed bugs with returning GeoDataFrames that do not contain geometry.
+- Fixed calling `to_fused` on an app.
+
+**[Workbench](/workbench/)**
+
+- A message will appear above the UDF body when parameters are set in the UDF list.
+- A lock icon will be shown next to read-only UDFs and Apps in Workbench.
+- When pushing UDFs to GitHub, the preview image will be pushed to a public URL so that the README in GitHub is rendered correctly.
+- When pushing UDFs to GitHub, Workbench will assign the PR to you if possible.
+- It is now possible to delete UDFs and Apps directly from the catalog.
+- Added a "Reload Collection" button. This pulls all latest version of UDF currently in your Collection.
+- Workbench will minimize more changes from the PRs it creates on GitHub.
+- "Open in Kepler.gl" supports H3 (string) data.
+- The visibility button for a Fused App will now reset the app.
+- A new Reset 3D View button is added to the UDF Builder map, and the keyboard shortcut has been updated to `Cmd+Shift+UpArrow` on MacOS (`Ctrl+Shift_UpArrow` on Windows / Linux).
+- Workbench will show the current environment name above the map by default.
+- Workbench will remember which UDF was selected when reopening the page.
+- Adjusted which UDF mode label is shown when automatically detecting the UDF mode.
+- Fixed some bugs with dynamic output mode.
+- UI updates for the Pull Changes (history) and Push Changes views, including showing the README file in both views.
+- Drag&Drop UDF into Workbench now works on the entire tab
+- Added a button to download usage table in the Profile view.
+- Fixed some visual bugs with light mode.
+- File Explorer will no longer show file opener UDFs saved on your personal catalog, and will clarify when file opener UDFs are from your team catalog.
 
 ## v1.19.0 (2025-05-19)
 
@@ -6603,7 +6682,7 @@ def udf(
 ```
 
 :::info
-The code above demonstrates a basic User-Defined Function (UDF) that utilizes [Fused's utility functions](https://github.com/fusedio/udfs/blob/eeb22486da7b3a073371b278e3473c24438ec715/public/common/utils.py#L1891). These utilities provide a some general functions for geospatial operations and transformations. You can also define your own utils in the [module](http://localhost:3000/workbench/udf-builder/code-editor/#module) section of the workbench.
+The code above demonstrates a basic User-Defined Function (UDF) that utilizes [Fused's utility functions](https://github.com/fusedio/udfs/blob/eeb22486da7b3a073371b278e3473c24438ec715/public/common/utils.py#L1891). These utilities provide a some general functions for geospatial operations and transformations. You can also define your own utils in the [utils](/workbench/udf-builder/code-editor/#utils-module) section of the workbench.
 The utility function `bounds_to_gdf` is mentioned above is defined as:
 
 ```python
@@ -6848,9 +6927,9 @@ def get_data(
         return da
 ```
 
-We can make this even simpler by moving the `get_data` function under [the `Module` tab in the Workbench UDF Editor](/workbench/udf-builder/code-editor/#module):
+We can make this even simpler by moving the `get_data` function under [the `Utils` tab in the Workbench UDF Editor](/workbench/udf-builder/code-editor/#utils-module):
 
-<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/dark-vessel-detection/using_utils_module.mp4" width="100%" />
+<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/utils.mp4" width="100%" />
 
 
 <Tabs className="unique-tabs">
@@ -6863,15 +6942,14 @@ We can make this even simpler by moving the `get_data` function under [the `Modu
         resolution: int=10,
         time_of_interest: str="2024-09-03/2024-09-10",
    ):
-        from local_utils import get_data
+        from utils import get_data
         da = get_data(bounds, time_of_interest, resolution, bands)
         image = da.values * 1.0
 
         return image.astype('uint8')
     ```
   </TabItem>
-  <TabItem value="module" label="Module" default>
-    Rename the "Module name" to `local_utils`:
+  <TabItem value="module" label="Utils" default>
 
     ```python showLineNumbers
     @fused.cache
@@ -6957,7 +7035,7 @@ Radar images over calm water tend to look black (as all the radar signal is refl
         time_of_interest: str="2024-09-03/2024-09-10",
     ):
         import numpy as np
-        from local_utils import get_data, quick_convolution
+        from utils import get_data, quick_convolution
 
         da = get_data(bounds, time_of_interest, resolution, bands)
         image = da.values * 1.0
@@ -6967,7 +7045,7 @@ Radar images over calm water tend to look black (as all the radar signal is refl
         return convoled_image.astype('uint8')
     ```
   </TabItem>
-  <TabItem value="module" label="Module" default>
+  <TabItem value="module" label="Utils" default>
 
     ```python {58-76} showLineNumbers
    @fused.cache
@@ -7072,7 +7150,7 @@ This is now relatively simple to vectorise (turn into a vector object, from imag
     ):
         import geopandas as gpd
         import numpy as np
-        from local_utils import get_data, quick_convolution, vectorise_raster
+        from utils import get_data, quick_convolution, vectorise_raster
         utils = fused.load("https://github.com/fusedio/udfs/tree/e1fefb7/public/common/").utils
         bounds_gdf = utils.bounds_to_gdf(bounds)
         da = get_data(bounds, time_of_interest, resolution, bands)
@@ -7096,7 +7174,7 @@ This is now relatively simple to vectorise (turn into a vector object, from imag
         return merged_gdf
     ```
   </TabItem>
-  <TabItem value="module" label="Module" default>
+  <TabItem value="module" label="Utils" default>
     ```python {77-97} showLineNumbers
     @fused.cache
     def get_data(
@@ -7221,7 +7299,7 @@ To get our AIS data, we now need to retrieve the exact moment our Sentinel 1 ima
     ):
         import geopandas as gpd
         import numpy as np
-        from local_utils import get_data, quick_convolution, vectorise_raster
+        from utils import get_data, quick_convolution, vectorise_raster
 
         utils = fused.load("https://github.com/fusedio/udfs/tree/e1fefb7/public/common/").utils
         bounds_gdf = utils.bounds_to_gdf(bounds)
@@ -7250,7 +7328,7 @@ To get our AIS data, we now need to retrieve the exact moment our Sentinel 1 ima
         return merged_gdf
     ```
   </TabItem>
-  <TabItem value="module" label="Module" default>
+  <TabItem value="module" label="Utils" default>
     ```python showLineNumbers
     @fused.cache
     def get_data(
@@ -8155,15 +8233,12 @@ def udf(
 Try running the UDF in the [UDF Builder](/workbench/udf-builder/) and visually inspect the output on the map. See what happens when you change `year`. Try introducing print statements such as `print(arr)` and `print(gdf)` to show logs in the console.
 
 
-import SLC_stats from '@site/docs/user-guide/examples/zonal_stats_map.png';
+![Zonal Stats Map](./zonal_stats_map.png)
 
-<div style={{textAlign: 'center'}}>
-  <img src={SLC_stats} alt="Zonal Stats Map near Heliotrope Mountain" style={{width: 1000}} />
-</div>
 
 :::note
 
-You might receive a [timeout error](/core-concepts/run-udfs/run-small-udfs/#defining-small-job) in the `stdout` tab. Try zooming into Utah on the map where the zonal areas are highlighted, to reduce the [size of the tile](/core-concepts/filetile/#tile) being passed into the UDF from the map.
+You might receive a [timeout error](/core-concepts/run-udfs/run-small-udfs/#defining-small-job) in the `Results` tab. Try zooming into Utah on the map where the zonal areas are highlighted, to reduce the [size of the tile](/core-concepts/filetile/#tile) being passed into the UDF from the map.
 
 :::
 
@@ -8171,7 +8246,7 @@ You might receive a [timeout error](/core-concepts/run-udfs/run-small-udfs/#defi
 import Details from '@theme/MDXComponents/Details';
 
 <details>
-  <summary>You can also [style the map layer](/workbench/udf-builder/styling/) by setting this JSON in the [Visualize tab](/workbench/udf-builder/code-editor/#visualize)</summary>
+  <summary>You can also [style the map layer](/workbench/udf-builder/styling/) by setting this JSON in the [Visualization tab](/workbench/udf-builder/code-editor/#visualize)</summary>
 
 ```json showLineNumbers
 {
@@ -9914,7 +9989,7 @@ To try this example, you can run the cell below. You can find the code of the UD
 
 This pattern gives DuckDB easy parallel operations. Fused spatially filters the dataset via the \`bounds parameter, runs the operation for each encompassing tile, and stitches the results together. Because Fused breaks down operations to only a fraction of the dataset, it's easy to transition between SQL and Python.
 
-<img src="https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/nyc.png" alt="overture" width="600"/>
+![New York City](/img/user-guide/tranforms/nyc.png)
 
 ```python showLineNumbers
 import fused
@@ -11581,7 +11656,7 @@ Clicking a rendered feature enters debug mode. To exit, press `Escape` or click 
 
 When data renders successfully on the map, clicking or hovering on it shows attributes for selected pixels or geometries. When data doesn't render, clicking errored tiles shows an error code, and the full error details can be copied as JSON. Additional debugging information can be found in the [Results](/workbench/udf-builder/results/) pane.
 
-<ReactPlayer playsinline={true} className="video__player" loop={true} playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/debugclick2.mp4" width="50%" />
+<ReactPlayer playsinline={true} className="video__player" loop={true} playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/debugclick3.mp4" width="100%" />
 
 ---
 
