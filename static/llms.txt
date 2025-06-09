@@ -1341,6 +1341,76 @@ The age of your cache is defined as follows:
 - If `@fused.udf(cache_max_age)` is defined, this new cache age overwrites the default.
 - If `fused.run(udf, cache_max_age)` is passed, then this cache age takes priority over default & `@fused.udf(cache_max_age)`
 
+### Resetting cache: `cache_reset`
+
+Sometimes you might want to reset your cache, when for example:
+- Running a UDF with unknown `cache_max_age`, and you want to make sure you're getting fresh results
+- Having a `try / except` block to reset cache if your default UDF with cache fails.
+
+You can easily do this by passing `cache_reset=True`:
+
+```python showLineNumbers
+fused.run(udf, cache_reset=True)
+```
+
+This also works in combination with [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache):
+
+```python showLineNumbers
+@fused.cache(cache_reset=True)
+def my_function():
+    ...
+    return gdf
+```
+
+<details>
+<summary>Example use case for `cache_reset`</summary>
+
+Defining a UDF that simply returns the current time:
+```python showLineNumbers
+import fused
+
+@fused.udf
+def udf():
+    from datetime import datetime
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+```
+
+Running this a first time:
+```python showLineNumbers
+fused.run(udf)
+```
+
+Returns:
+```bash
+2025-06-06 10:00:00
+```
+
+Running this a second time:
+```python showLineNumbers
+fused.run(udf)
+```
+
+Returns a cached result:
+```bash
+Cached UDF result returned.
+2025-06-06 10:00:00
+```
+
+This is because UDFs are [cached by default](/core-concepts/cache/#caching-a-udf) even without passing any [`cache_max_age`](/core-concepts/cache/#defining-your-cache-lifetime-cache_max_age) argument
+
+We can break this cache by passing `cache_reset=True`:
+
+```python showLineNumbers
+fused.run(udf, cache_reset=True)
+```
+
+Returns:
+```bash
+2025-06-06 10:00:12
+```
+
+</details>
+
 {/* TODO: This needs to be linked to the Python SDK page once its updated */}
 {/* :::tip
     Read more about this in the [Python SDK page on `@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
@@ -5115,11 +5185,15 @@ DEFAULT_CACHE_MAX_AGE = "12h"
 
 ```python showLineNumbers
 def cache(
-    func: Optional[Callable[..., Any]] = None,
+    func: Callable[..., Any] | None = None,
     cache_max_age: str | int = DEFAULT_CACHE_MAX_AGE,
     path: str = "tmp",
     concurrent_lock_timeout: str | int = 120,
-    reset: bool = False,
+    cache_reset: bool | None = None,
+    storage: StorageStr = "auto",
+    cache_key_exclude: Iterable[str] = None,
+    cache_verbose: bool | None = None,
+    reset: bool | None = None,
 ) -> Callable[..., Any]:
 ```
 Decorator to cache the return value of a function.
@@ -5136,13 +5210,20 @@ Args:
     - path: Folder to append to the configured cache directory.
     - concurrent_lock_timeout: Max amount of time in seconds for subsequent concurrent calls to wait for a previous
         concurrent call to finish execution and to write the cache file.
-
+    - cache_reset: Ignore `cache_max_age` and overwrite cached result.
+    - storage: Set where the cache data is stored. Supported values are "auto", "mount" and "local". Auto will
+        automatically select the storage location defined in options (mount if it exists, otherwise local) and
+        ensures that it exists and is writable. Mount gets shared across executions where local will only be shared
+        within the same execution.
+    - cache_key_exclude: An iterable of parameter names to exclude from the cache key calculation. Useful for
+        arguments that do not affect the result of the function and could cause unintended cache expiry (e.g.
+        database connection objects)
+    - cache_verbose: Print a message when a cached result is returned
 Returns:
     - Callable: A decorator that, when applied to a function, caches its
-        return values according to the specified keyword arguments.
+    return values according to the specified keyword arguments.
 
 Examples:
-
     Use the `@cache` decorator to cache the return value of a function in a custom path.
 
     ```py
@@ -5153,11 +5234,11 @@ Examples:
     ```
 
     If the output of a cached function changes, for example if remote data is modified,
-    it can be reset by running the function with the `reset` keyword argument. Afterward,
+    it can be reset by running the function with the `cache_reset` keyword argument. Afterward,
     the argument can be cleared.
 
     ```py
-    @cache(path="/tmp/custom_path/", reset=True)
+    @cache(path="/tmp/custom_path/", cache_reset=True)
     def expensive_function():
         # Function implementation goes here
         return result
@@ -10194,11 +10275,12 @@ Data teams frequently encounter silos when looking to share and reuse code snipp
 - [Search](/workbench/udf-catalog/#search) the catalog across [UDF categories](/workbench/udf-catalog/#udf-categories)
 - View the detailed [profile](/workbench/udf-catalog/#udf-profile) for each UDF
 - Add any UDF from its [Github URL](/workbench/udf-catalog/#add-from-github-url)
+- Delete a UDF you created yourself
 
 
 
 
-<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/udf_catalog_edit2.mp4" width="100%" />
+<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/udf_catalog_edit3.mp4" width="100%" />
 
 
 
@@ -10228,7 +10310,7 @@ Open the UDF Catalog by Clicking "Add UDF". Search UDFs by name, sort them, and 
 
 If [GitHub integration is enabled](/core-concepts/content-management/git/#enabling-github-integration) on your Workbench, you can paste the link of any UDF from GitHub to open it. This allows you to open a UDF from any branch or revision from GitHub.
 
-<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/import_udf_from_github_edit.mp4" width="100%" />
+<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/import_udf_from_github_edit2.mp4" width="100%" />
 
 
 ## UDF profile
@@ -10255,7 +10337,7 @@ Once you write a UDF, you can use the Push to GitHub button in Fused Workbench t
 
 To add a UDF to the community repository, select community from the dropdown before creating a pull request.
 
-<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/push_udf_to_github_edit.mp4" width="100%" />
+<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/push_udf_to_github_edit2.mp4" width="100%" />
 
 :::info
 
@@ -11726,13 +11808,7 @@ Private snippets are now located under the "Shared token" section in the "Share"
 
 #### Image preview
 
-UDFs in the [UDF Catalog](/workbench/udf-catalog/) show a preview thumbnail. The image can be set in the "Image preview" field by uploading the image.
-
-import Imgsetimage from '@site/static/img/workbench/udf-builder/img_preview.png';
-
-<div style={{textAlign: 'center'}}>
-<img src={Imgsetimage} alt="File" style={{width: 800}} />
-</div>
+![image preview](img/workbench/udf-builder/img_preview.png)
 
 #### Tags
 
