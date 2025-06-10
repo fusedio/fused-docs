@@ -7,6 +7,28 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.20.1 (2025-06-09)
+
+**[`fused-py`](/python-sdk/)**
+
+New Features:
+- Added `fused.api.resolve` and `fused.api.team_info`.
+- IPython magics will automatically be loaded when importing `fused`.
+- `run_remote` (batch jobs) can now accept a job name.
+
+Bug Fixes:
+- Fixed the `render` method of UDF objects.
+- Fixed access tokens for apps being rendered in IPython.
+- Fixed calling `fused.run(udf, sync=False)` with UDF objects.
+- Removed some deprecated fields and arguments.
+
+**[Workbench](/workbench/)**
+
+- Workbench will now show the amount of time taken in UDF functions as a heatmap.
+- Memory bars in the Results panel will show when usage is unknown.
+- Update how shared token URLs are generated for different output formats.
+- Updated stlite to 0.82.0.
+
 ## v1.20.0 (2025-06-03)
 
 **[`fused-py`](/python-sdk/)**
