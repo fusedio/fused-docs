@@ -14,7 +14,7 @@ sidebar_position: 8
 New Features:
 - Added `fused.api.resolve` and `fused.api.team_info`.
 - IPython magics will automatically be loaded when importing `fused`.
-- `run_rmote` (batch jobs) can now accept a job name.
+- `run_remote` (batch jobs) can now accept a job name.
 
 Bug Fixes:
 - Fixed the `render` method of UDF objects.
