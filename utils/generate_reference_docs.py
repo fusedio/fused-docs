@@ -18,7 +18,8 @@ from griffe2md.main import render_object_docs
 
 ROOT = Path(__file__).parent / ".."
 
-
+# We assume `fused` is installed in the env where we run this script (when running 
+# with `uv run`, this will be the latest released fused which uv installs in an isolated env)
 mod = griffe.load("fused", docstring_parser="google")
 
 # updated options
