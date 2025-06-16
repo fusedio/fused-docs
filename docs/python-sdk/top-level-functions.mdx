@@ -15,7 +15,7 @@ udf(
     cache_max_age: Optional[str] = None,
     default_parameters: Optional[Dict[str, Any]] = None,
     headers: Optional[Sequence[Union[str, Header]]] = None
-) -> Callable[..., GeoPandasUdfV2]
+) -> Callable[..., Udf]
 ```
 
 A decorator that transforms a function into a Fused UDF.
@@ -48,8 +48,8 @@ Defaults to None for no headers.
 
 **Returns:**
 
-- <code>[Callable](#typing.Callable)\[..., [GeoPandasUdfV2](#fused.models.udf.udf.GeoPandasUdfV2)\]</code> – A callable that represents the transformed UDF. This callable can be used
-- <code>[Callable](#typing.Callable)\[..., [GeoPandasUdfV2](#fused.models.udf.udf.GeoPandasUdfV2)\]</code> – within GeoPandas workflows to apply the defined operation on geospatial data.
+- <code>[Callable](#typing.Callable)\[..., [Udf](#fused.models.udf.Udf)\]</code> – A callable that represents the transformed UDF. This callable can be used
+- <code>[Callable](#typing.Callable)\[..., [Udf](#fused.models.udf.Udf)\]</code> – within GeoPandas workflows to apply the defined operation on geospatial data.
 
 **Examples:**
 
@@ -72,9 +72,11 @@ cache(
     cache_max_age: str | int = DEFAULT_CACHE_MAX_AGE,
     path: str = "tmp",
     concurrent_lock_timeout: str | int = 120,
-    reset: bool = False,
+    cache_reset: bool | None = None,
     storage: StorageStr = "auto",
     cache_key_exclude: Iterable[str] = None,
+    cache_verbose: bool | None = None,
+    reset: bool | None = None,
 ) -> Callable[..., Any]
 ```
 
@@ -93,6 +95,7 @@ keyword arguments.
 - **path** (<code>[str](#str)</code>) – Folder to append to the configured cache directory.
 - **concurrent_lock_timeout** (<code>[str](#str) | [int](#int)</code>) – Max amount of time in seconds for subsequent concurrent calls to wait for a previous
   concurrent call to finish execution and to write the cache file.
+- **cache_reset** (<code>[bool](#bool) | None</code>) – Ignore `cache_max_age` and overwrite cached result.
 - **storage** (<code>[StorageStr](#fused._options.StorageStr)</code>) – Set where the cache data is stored. Supported values are "auto", "mount" and "local". Auto will
   automatically select the storage location defined in options (mount if it exists, otherwise local) and
   ensures that it exists and is writable. Mount gets shared across executions where local will only be shared
@@ -100,14 +103,14 @@ keyword arguments.
 - **cache_key_exclude** (<code>[Iterable](#typing.Iterable)\[[str](#str)\]</code>) – An iterable of parameter names to exclude from the cache key calculation. Useful for
   arguments that do not affect the result of the function and could cause unintended cache expiry (e.g.
   database connection objects)
+- **cache_verbose** (<code>[bool](#bool) | None</code>) – Print a message when a cached result is returned
 
 Returns:
 Callable: A decorator that, when applied to a function, caches its
 return values according to the specified keyword arguments.
 
-Examples:
+**Examples:**
 
-````
 Use the `@cache` decorator to cache the return value of a function in a custom path.
 
 ```py
@@ -118,22 +121,27 @@ def expensive_function():
 ```
 
 If the output of a cached function changes, for example if remote data is modified,
-it can be reset by running the function with the `reset` keyword argument. Afterward,
+it can be reset by running the function with the `cache_reset` keyword argument. Afterward,
 the argument can be cleared.
 
 ```py
-@cache(path="/tmp/custom_path/", reset=True)
+@cache(path="/tmp/custom_path/", cache_reset=True)
 def expensive_function():
     # Function implementation goes here
     return result
 ```
-````
 
 
 ## fused.load
 
 ```python
-load(url_or_udf: Union[str, Path], /, *, cache_key: Any = None) -> AnyBaseUdf
+load(
+    url_or_udf: Union[str, Path],
+    /,
+    *,
+    cache_key: Any = None,
+    import_globals: bool = True,
+) -> AnyBaseUdf
 ```
 
 Loads a UDF from various sources including GitHub URLs,
@@ -153,10 +161,12 @@ accordingly.
 - **cache_key** (<code>[Any](#typing.Any)</code>) – An optional key used for caching the loaded UDF. If provided, the function
   will attempt to load the UDF from cache using this key before attempting to
   load it from the specified source. Defaults to None, indicating no caching.
+- **import_globals** (<code>[bool](#bool)</code>) – Expose the globals defined in the UDF's context as attributes on the UDF object (default True).
+  This requires executing the code of the UDF. To globally configure this behavior, use `fused.options.never_import`.
 
 **Returns:**
 
-- **AnyBaseUdf** (<code>[AnyBaseUdf](#fused.core._impl._reimports.AnyBaseUdf)</code>) – An instance of the loaded UDF.
+- **AnyBaseUdf** (<code>[AnyBaseUdf](#fused.models.udf.AnyBaseUdf)</code>) – An instance of the loaded UDF.
 
 **Raises:**
 
@@ -184,10 +194,8 @@ udf = fused.load("username@fused.io/REM_with_HyRiver")
 
 ```python
 run(
-    udf: Union[
-        str, None, UdfJobStepConfig, GeoPandasUdfV2, UdfAccessToken
-    ] = None,
-    *args: Union[str, None, UdfJobStepConfig, GeoPandasUdfV2, UdfAccessToken],
+    udf: Union[str, None, UdfJobStepConfig, Udf, UdfAccessToken] = None,
+    *args: Union[str, None, UdfJobStepConfig, Udf, UdfAccessToken],
     x: Optional[int] = None,
     y: Optional[int] = None,
     z: Optional[int] = None,
@@ -218,7 +226,7 @@ path based on the provided parameters.
 
 **Parameters:**
 
-- **udf** (<code>([str](#str), [GeoPandasUdfV2](#fused.core._impl._reimports.GeoPandasUdfV2) or [UdfJobStepConfig](#fused.core._impl._reimports.UdfJobStepConfig))</code>) – the UDF to execute.
+- **udf** (<code>([str](#str), [Udf](#fused.models.udf.Udf) or [UdfJobStepConfig](#fused.models.api.UdfJobStepConfig))</code>) – the UDF to execute.
   The UDF can be specified in several ways:
 - A string representing a UDF name or UDF shared token.
 - A UDF object.
@@ -307,7 +315,7 @@ See `fused.run` for more details on the UDF execution.
 **Parameters:**
 
 - **udf** – the UDF to execute.
-  See `fused.run` for more details on how tos specify the UDF.
+  See `fused.run` for more details on how to specify the UDF.
 - **arg_list** – a list of input parameters for the UDF. Can be specified as:
 - a list of values for parametrizing over a single parameter, i.e.
   the first parameter of the UDF
@@ -472,9 +480,9 @@ Ingest a dataset into the Fused partitioned format.
 
 - `"rows"`: Construct partitions where all contain a maximum number of rows.
 
-- **partitioning_maximum_per_file** (<code>[int](#int) | [float](#float) | None</code>) – Maximum value for `partitioning_method` to use per file. If `None`, defaults to _1/10th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will be have no more than 1/10th the total area of all geometries. Defaults to `None`.
+- **partitioning_maximum_per_file** (<code>[int](#int) | [float](#float) | None</code>) – Maximum value for `partitioning_method` to use per file. If `None`, defaults to _1/10th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will have no more than 1/10th the total area of all geometries. Defaults to `None`.
 
-- **partitioning_maximum_per_chunk** (<code>[int](#int) | [float](#float) | None</code>) – Maximum value for `partitioning_method` to use per chunk. If `None`, defaults to _1/100th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will be have no more than 1/100th the total area of all geometries. Defaults to `None`.
+- **partitioning_maximum_per_chunk** (<code>[int](#int) | [float](#float) | None</code>) – Maximum value for `partitioning_method` to use per chunk. If `None`, defaults to _1/100th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will have no more than 1/100th the total area of all geometries. Defaults to `None`.
 
 - **partitioning_max_width_ratio** (<code>[int](#int) | [float](#float)</code>) – The maximum ratio of width to height of each partition to use in the ingestion process. So for example, if the value is `2`, then if the width divided by the height is greater than `2`, the box will be split in half along the horizontal axis. Defaults to `2`.
 
@@ -566,16 +574,18 @@ file_path(
 
 Creates a directory in a predefined temporary directory.
 
-This gives users the ability to manage directories during the execution of a UDF. It takes a relative file_path,
-creates the corresponding directory structure, and returns its absolute path.
+This gives users the ability to manage directories during the execution of a UDF.
+It takes a relative file_path, creates the corresponding directory structure,
+and returns its absolute path.
 
 This is useful for UDFs that temporarily store intermediate results as files,
 such as when writing intermediary files to disk when processing large datasets.
-file_path ensures that necessary directories exist.
+`file_path` ensures that necessary directories exist.
+The directory is kept for 12h.
 
 **Parameters:**
 
-- **file_path** (<code>[str](#str)</code>) – The file path to locate.
+- **file_path** (<code>[str](#str)</code>) – The relative file path to locate.
 - **mkdir** (<code>[bool](#bool)</code>) – If True, create the directory if it doesn't already exist. Defaults to True.
 - **storage** (<code>[StorageStr](#fused._options.StorageStr)</code>) – Set where the cache data is stored. Supported values are "auto", "mount" and "local". Auto will
   automatically select the storage location defined in options (mount if it exists, otherwise local) and
