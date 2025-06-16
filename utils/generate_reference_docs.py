@@ -7,7 +7,7 @@
 # ]
 # ///
 #
-# Use as `python utils/generate_reference_docs.py` in the root of this repo
+# Use as `uv run utils/generate_reference_docs.py` in the root of this repo
 
 from pathlib import Path
 
