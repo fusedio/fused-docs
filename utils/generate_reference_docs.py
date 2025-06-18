@@ -24,7 +24,9 @@ mod = griffe.load("fused", docstring_parser="google")
 
 # updated options
 default_config["show_signature_annotations"] = True
-
+default_config["show_root_full_path"] = True
+default_config["show_root_members_full_path"] = False
+default_config["show_object_full_path"] = True
 
 ## Top-level API page
 
@@ -120,7 +122,6 @@ methods = [
 ]
 config = dict(default_config)
 # config["filters"] = ["__init__"]
-config["filters"] = methods
 # config["members_order"] = "source"
 config["members"] = methods
 config["summary"] = False
