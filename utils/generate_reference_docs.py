@@ -101,15 +101,12 @@ mod_api = mod["api"]
 # fused.api functions
 
 for obj in api_listing:
-    # result += f"## fused.{obj}\n\n"
     docstring = render_object_docs(mod_api[obj], default_config)
     result += docstring + "\n\n"
 
 # fused.api.FusedAPI class
 
-config = dict(default_config)
-config["filters"] = [
-    "__init__",
+methods = [
     "create_udf_access_token",
     "upload",
     "start_job",
@@ -121,6 +118,12 @@ config["filters"] = [
     "cancel_job",
     "auth_token",
 ]
+config = dict(default_config)
+# config["filters"] = ["__init__"]
+config["filters"] = methods
+# config["members_order"] = "source"
+config["members"] = methods
+config["summary"] = False
 docstring = render_object_docs(mod_api["FusedAPI"], config)
 result += docstring
 
