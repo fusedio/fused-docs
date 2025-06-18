@@ -85,7 +85,6 @@ api_listing = [
     "job_cancel",
     "job_get_exec_time",
     "job_wait_for_job",
-    "FusedAPI",
 ]
 
 result = """\
@@ -99,11 +98,31 @@ toc_max_heading_level: 5
 
 mod_api = mod["api"]
 
+# fused.api functions
+
 for obj in api_listing:
     # result += f"## fused.{obj}\n\n"
     docstring = render_object_docs(mod_api[obj], default_config)
     result += docstring + "\n\n"
 
+# fused.api.FusedAPI class
+
+config = dict(default_config)
+config["filters"] = [
+    "__init__",
+    "create_udf_access_token",
+    "upload",
+    "start_job",
+    "get_jobs",
+    "get_status",
+    "get_logs",
+    "tail_logs",
+    "wait_for_job",
+    "cancel_job",
+    "auth_token",
+]
+docstring = render_object_docs(mod_api["FusedAPI"], config)
+result += docstring
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w") as f:
     f.write(result)
