@@ -121,12 +121,21 @@ methods = [
     "auth_token",
 ]
 config = dict(default_config)
-# config["filters"] = ["__init__"]
+config["filters"] = ["__init__"]
+# config["members"] = methods
 # config["members_order"] = "source"
-config["members"] = methods
 config["summary"] = False
 docstring = render_object_docs(mod_api["FusedAPI"], config)
-result += docstring
+result += docstring + "\n\n"
+
+# `default_config["show_root_members_full_path"] = False` does not seem to work for the
+# FusedAPI methods, so add them manually with root_full_path set to False
+config["heading_level"] = default_config["heading_level"] + 1
+config["show_root_full_path"] = False
+
+for meth in methods:
+    docstring = render_object_docs(mod_api["FusedAPI"][meth], config)
+    result += docstring + "\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w") as f:
     f.write(result)
