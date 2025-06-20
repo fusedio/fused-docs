@@ -2,8 +2,8 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #   "fused",
-#   "griffe",
-#   "griffe2md",
+#   "griffe ~= 1.7",
+#   "griffe2md @ https://github.com/jorisvandenbossche/griffe2md/tree/parameter-type-description",
 # ]
 # ///
 #
