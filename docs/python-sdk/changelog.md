@@ -86,7 +86,7 @@ New Features:
 - Ingestion now supports input files without extensions, and filters out files with `.` or `_` prefix.
 - `cache=False` is now a shortcut for disabling cache, e.g. `cache_max_age=0`.
 - UDFs now support parameters annotated as `shapely.Geometry` or `shapely.Polygon`.
-- [`fused.load`](/python-sdk/top-level-functions/#load) now support loading UDFs from Github Pull Request URLs.
+- [`fused.load`](/python-sdk/top-level-functions/#fusedload) now support loading UDFs from Github Pull Request URLs.
 - Added a timeout parameter for `fused.api.upload`.
 - Fused API functions now support `/mount` without `file://` prefix.
 - `fused.api.download` now supports downloading files from `/mount`.
@@ -297,7 +297,7 @@ v1.14.0 introduces a lot of new changes across `fused-py` and Workbench
 
 **[`fused-py`](/python-sdk/)**
 
-- Introducing [`fused.submit()`](/python-sdk/top-level-functions/#submit) method for multiple job run
+- Introducing [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) method for multiple job run
 - Improvement to [UDF caching](/core-concepts/cache/#caching-a-udf)
     - All UDFs are now cached for 90 days by default
     - Ability to customize the age of cached data & UDFs with the new [`cache_max_age`](/core-concepts/cache/#defining-your-cache-lifetime-cache_max_age) argument when defining UDFs, running UDFs or when caching regular Python functions
