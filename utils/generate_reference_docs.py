@@ -53,10 +53,92 @@ toc_max_heading_level: 4
 
 """
 
+run_remote_addition = """
+#### `job.run_remote`
+
+```python showLineNumbers
+def run_remote(output_table: Optional[str] = ...,
+    instance_type: Optional[WHITELISTED_INSTANCE_TYPES] = None,
+    *,
+    region: str | None = None,
+    disk_size_gb: int | None = None,
+    additional_env: List[str] | None = None,
+    image_name: Optional[str] = None,
+    ignore_no_udf: bool = False,
+    ignore_no_output: bool = False,
+    validate_imports: Optional[bool] = None,
+    validate_inputs: bool = True,
+    overwrite: Optional[bool] = None) -> RunResponse
+```
+
+Begin execution of the ingestion job by calling `run_remote` on the job object.
+
+**Arguments**:
+
+- `output_table` - The name of the table to write to. Defaults to None.
+- `instance_type` - The AWS EC2 instance type to use for the job. Acceptable strings are `m5.large`, `m5.xlarge`, `m5.2xlarge`, `m5.4xlarge`, `m5.8xlarge`, `m5.12xlarge`, `m5.16xlarge`, `r5.large`, `r5.xlarge`, `r5.2xlarge`, `r5.4xlarge`, `r5.8xlarge`, `r5.12xlarge`, or `r5.16xlarge`. Defaults to None.
+- `region` - The AWS region in which to run. Defaults to None.
+- `disk_size_gb` - The disk size to specify for the job. Defaults to None.
+- `additional_env` - Any additional environment variables to be passed into the job. Defaults to None.
+- `image_name` - Custom image name to run. Defaults to None for default image.
+- `ignore_no_udf` - Ignore validation errors about not specifying a UDF. Defaults to False.
+- `ignore_no_output` - Ignore validation errors about not specifying output location. Defaults to False.
+
+#### Monitor and manage job
+
+Calling `run_remote` returns a `RunResponse` object with helper methods.
+
+```python showLineNumbers
+# Declare ingest job
+job = fused.ingest(
+  input="https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/06_CALIFORNIA/06/tl_rd22_06_bg.zip",
+  output="s3://fused-sample/census/ca_bg_2022/main/"
+)
+
+# Start ingest job
+job_id = job.run_remote()
+```
+
+Fetch the job status.
+
+```python showLineNumbers
+job_id.get_status()
+```
+
+Fetch and print the job's logs.
+
+```python showLineNumbers
+job_id.print_logs()
+```
+
+Determine the job's execution time.
+
+```python showLineNumbers
+job_id.get_exec_time()
+```
+
+Continuously print the job's logs.
+
+```python showLineNumbers
+job_id.tail_logs()
+```
+
+Cancel the job.
+
+```python showLineNumbers
+job_id.cancel()
+```
+
+---
+
+"""
+
 for obj in api_listing:
-    # result += f"## fused.{obj}\n\n"
     docstring = render_object_docs(mod[obj], default_config)
-    result += docstring + "\n\n"
+    result += docstring + "\n---\n\n"
+    if obj == "ingest":
+        # TODO run_remote does not yet have a proper docstring to include automatically
+        result += run_remote_addition
 
 
 # some post-processing
@@ -105,7 +187,7 @@ mod_api = mod["api"]
 
 for obj in api_listing:
     docstring = render_object_docs(mod_api[obj], default_config)
-    result += docstring + "\n\n"
+    result += docstring + "\n---\n\n"
 
 # fused.api.FusedAPI class
 
@@ -127,7 +209,7 @@ config["filters"] = ["__init__"]
 # config["members_order"] = "source"
 config["summary"] = False
 docstring = render_object_docs(mod_api["FusedAPI"], config)
-result += docstring + "\n\n"
+result += docstring + "\n---\n\n"
 
 # `default_config["show_root_members_full_path"] = False` does not seem to work for the
 # FusedAPI methods, so add them manually with root_full_path set to False
@@ -136,7 +218,7 @@ config["show_root_full_path"] = False
 
 for meth in methods:
     docstring = render_object_docs(mod_api["FusedAPI"][meth], config)
-    result += docstring + "\n\n"
+    result += docstring + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w") as f:
     f.write(result)
