@@ -222,3 +222,39 @@ for meth in methods:
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w") as f:
     f.write(result)
+
+
+## `fused.options` page
+
+result = """\
+---
+sidebar_label: fused.options
+title: fused.options
+toc_max_heading_level: 5
+---
+
+"""
+
+config = dict(default_config)
+docstring = render_object_docs(mod["options"], default_config)
+# setting config["show_signature"] to False does not seem to work for this case, so remove it manually
+docstring = docstring.replace("""
+```python
+options = _load_options()
+```
+""", "")
+result += docstring + "\n\n"
+
+config = dict(default_config)
+config["summary"] = False
+config["show_bases"] = False
+config["show_root_full_path"] = False
+config["show_root_members_full_path"] = False
+config["show_object_full_path"] = False
+config["members_order"] = "source"
+config["filters"] = ["!model_config"]
+docstring = render_object_docs(mod["_options"]["Options"], config)
+result += docstring
+
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "options.mdx", "w") as f:
+    f.write(result)
