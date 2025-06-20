@@ -3,7 +3,8 @@
 # dependencies = [
 #   "fused",
 #   "griffe ~= 1.7",
-#   "griffe2md @ https://github.com/jorisvandenbossche/griffe2md/tree/parameter-type-description",
+#   "griffe2md @ https://github.com/jorisvandenbossche/griffe2md/archive/refs/heads/parameter-type-description.zip",
+#   "black",
 # ]
 # ///
 #
