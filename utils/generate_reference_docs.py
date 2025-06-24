@@ -259,3 +259,39 @@ result += docstring
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "options.mdx", "w") as f:
     f.write(result)
+
+
+## `JobPool` page
+
+result = """\
+---
+sidebar_label: JobPool
+title: JobPool
+toc_max_heading_level: 5
+---
+
+"""
+
+result += """\
+## JobPool
+
+The `JobPool` class is used to manage, inspect and retrieve results from
+submitted jobs from [`fused.submit()`]((/python-sdk/top-level-functions/#fusedsubmit)).
+
+"""
+
+# listing and rendering the methods separately to avoid including the JobPool 
+# class signature and docstring (which is not public -> use submit() to get this object)
+import fused
+methods = [key for key in fused._submit.JobPool.__dict__.keys() if not key.startswith("_")]
+
+config = dict(default_config)
+config["heading_level"] = default_config["heading_level"] + 1
+config["show_root_full_path"] = False
+
+for meth in methods:
+    docstring = render_object_docs(mod["_submit"]["JobPool"][meth], config)
+    result += docstring + "\n---\n\n"
+
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "jobpool.mdx", "w") as f:
+    f.write(result)
