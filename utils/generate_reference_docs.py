@@ -145,7 +145,7 @@ for obj in api_listing:
 result = result.replace("## fused.udf", "## @fused.udf")
 result = result.replace("## fused.cache", "## @fused.cache")
 # griffe cannot handl the x, y, z multiple parameters on one line
-result = result.replace("**x,** (<code>y, z</code>)", "**x, y, z** (<code>int<code>)")
+result = result.replace("**x,** (<code>y, z</code>)", "**x, y, z** (<code>int</code>)")
 
 with open(ROOT / "docs" / "python-sdk" / "top-level-functions.mdx", "w") as f:
     f.write(result)
