@@ -276,7 +276,7 @@ result += """\
 ## JobPool
 
 The `JobPool` class is used to manage, inspect and retrieve results from
-submitted jobs from [`fused.submit()`]((/python-sdk/top-level-functions/#fusedsubmit)).
+submitted jobs from [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit).
 
 """
 
