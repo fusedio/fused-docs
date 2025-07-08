@@ -6,6 +6,11 @@ const config: Config = {
   title: "Fused",
   tagline: "Code to map. Instantly.",
   favicon: "img/favicon.png",
+  
+  // Custom fields for version management
+  customFields: {
+    fusedPyVersion: '1.20.1',
+  },
 
   trailingSlash: true,
   // url: "https://fusedio.github.io/",
