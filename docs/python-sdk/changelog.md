@@ -311,7 +311,7 @@ New:
 - Redesigned "Share" button & page: All the info you need to share your UDFs to your team or the world
 
 General:
-- Improvements to Navigation in [Command Pallette](/user-guide/best-practices/workbench-best-practices/#using-keyboard-shortcuts-command-palette). Try it out in Workbench by doing `Cmd + K` (`Ctrl + K` on Windows / Linux)
+- Improvements to Navigation in [Command Pallette](/core-concepts/best-practices/workbench-best-practices/#using-keyboard-shortcuts-command-palette). Try it out in Workbench by doing `Cmd + K` (`Ctrl + K` on Windows / Linux)
 - Autocomplete now works with `Tab` in [Code Editor](/workbench/udf-builder/code-editor/) with `Tab`
 - Added a Delete Button in the Shared Tokens page (under [Account page](/workbench/account/))
 - Ability to upload images for UDF Preview in [Settings Page](/workbench/udf-builder/code-editor/#settings)
