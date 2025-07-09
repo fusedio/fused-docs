@@ -7,138 +7,110 @@ sidebar_position: 0
 
 # Get started with Fused! 🚀
 
-There are 2 ways to use Fused:
-1. [Workbench](/workbench/overview/), our web-based IDE
-2. [Python library](/python-sdk/)
+The simplest way to use Fused is to run it in [Workbench](https://www.fused.io/workbench), our web-based IDE.
 
-## Installation
+### Your first UDF
 
-Install `fused-py` with [pip](https://pip.pypa.io/) and **Python 3.10+**:
-
-```python
-pip install "fused[all]"
-```
-
-Follow the dedicated [installation guide](/python-sdk/#python-install) for more details.
-
-## Basic UDF
-
-Fused is built around the concept of User Defined Functions (UDFs).
-
-A UDF is a Python function decorated with `@fused.udf` that can be run anywhere - in the cloud, on your local machine, or embedded in web applications. Read more about [why UDFs](/core-concepts/why/).
-
-{/* TODO: simplify this to only do it once.  */}
-```python
-import fused
-```
+{/* TODO: Showcase the most basic UDF */}
 
 ```python
 @fused.udf
-def udf(x: int) -> str:
-    return f"Hello, World! {x}"
+def udf(msg: str = "Hello, World!"):
+    import pandas as pd
+    return pd.DataFrame({"msg": [msg]})
 ```
 
-- **In Workbench**: No need to import `fused` and you can execute UDFs directly.
-- **In a Python script**: You need to import `fused` and run the UDF with `fused.run(udf)`.
+Fused is built around [User Defined Functions (UDFs)](/core-concepts/why/):
+- Runs serverless Python code. No env & infra setup required.
 
-NOTE: For the rest of the this guide we'll assume you either have `fused-py` installed or are in [Workbench](/workbench/overview/) so won't ask you to do `import fused` in your code.
+### Loading data
 
-
-## Data input
-
-Fused UDFs run Python code, so you can use Python libraries to read and write data from a variety of sources.
-
-{/* TODO: Local file might not be the best example because we'd need to show how to upload it to Fused first */}
-{/* TODO: Use actual files */}
-
+You can use libraries you know to load data:
 
 ```python
 @fused.udf
 def udf():
     import pandas as pd
-    df = pd.read_csv("local_file.csv")                       # Reading from a local file
-    df = pd.read_parquet("s3://bucket/path/to/file.parquet") # Reading from S3
-    df = pd.read_parquet("gs://bucket/path/to/file.parquet") # Reading from GCS
-
-    return df
+    housing = pd.read_csv("s3://fused-sample/demo_data/housing_2020.csv")
+    return housing
 ```
 
-### Output formats
+TODO: Wb to load table view
 
-A UDF can return a variety of data formats:
+### Visualize your data
 
-{/* TODO: Fix this example, the numpy doesn't work */}
-```python
+TODO: Make a bar chart of price
+
+
+### Instant feedback
+
+Visualizing just housing price isn't helpful when comparing houses. Let's visualize the price per area instead:
+
+```python {5}
 @fused.udf
-def udf(x: int = 1):
-    return x * 2                        # Returning python types
-
-    return {"value": x * 2}             # Returning dict
-
-    import numpy as np
-    return np.array([x * 2])            # Returning np.array
-
-    return np.array([x * 2]), [x * 3]   # Returning multiple objects
-```
-
-Check out the list of [fully supported data formats](/core-concepts/write/#return-object). 
-
-### Writing data
-
-You can also decide to write data inside a UDF:
-
-```python
-@fused.udf
-def udf(x: int = 1):
+def udf():
     import pandas as pd
-    df = pd.DataFrame({"a": [x * 2]})
-
-    df.to_parquet("/mnt/cache/local_file.parquet")     # Writing to Fused mount
-    df.to_parquet("s3://bucket/path/to/file.parquet")  # Writing to S3
-
-    return "Processed & Saved!"
+    housing = pd.read_csv("s3://fused-sample/demo_data/housing_2020.csv")
+    housing['price_per_area'] = housing['price'] / housing['area']
+    return housing
 ```
 
-Note: The [/mnt/cache](/core-concepts/content-management/file-system/#mntcache-disk) disk is used to store data cross multiple runs of UDFs. This is the fastest way to write data between UDFs.
+TODO: Update chart to now show price per area
 
-{/* TODO: Add section title something that says this is run from anywhere with Python SDK */}
-### Calling UDFs from anywhere outside of Workbench
+### Calling UDFs from anywhere
 
-Fused UDFs can be called from a lot of places:
+On top of making visualizations you can also call UDFs from anywhere:
+
+**From Python**:
 
 ```python
-fused.run(udf, x=1)            # Calling from a Python object
+import fused
 
-udf.to_fused()
-token = udf.create_access_token()
-fused.run(token, x=1)          # Calling from a token (especially from another python script)
+fused.run("housing")
 ```
 
-{/* TODO: Would be nice to have a handy way to get HTTP request directly from fused-py. */}
+**From HTTPS**:
 
-Read more about all [the different ways to call UDFs](/core-concepts/run-udfs/run-small-udfs/).
+```bash
+https://www.fused.io/server/v1/realtime-shared/fsh_2H08xCuml9QRnACo4NeZ1S/run/file?
+```
 
-### Running UDFs in parallel
+**From DuckDB**:
 
-UDfs can be run 1 time or in parallel:
+```sql
+select * from read_json('https://www.fused.io/server/v1/realtime-shared/fsh_2H08xCuml9QRnACo4NeZ1S/run/file?');
+```
+
+
+### Scaling analysis
+
+We made a simple analysis for 1 year. But we want to see the big picture. What's the mean price per area over the last few years?
 
 ```python
-fused.run(udf, x=1)            # Running a single UDF
+@fused.udf
+def udf(year: int = 2020):
+    import pandas as pd
+    housing = pd.read_csv(f"s3://fused-sample/demo_data/housing_{str(year)}.csv")
+    housing['price_per_area'] = housing['price'] / housing['area']
 
-fused.submit(udf, range(10))   # Running 10 UDFs at once
+    mean_price_per_area = housing['price_per_area'].mean()
+    print(f"{mean_price_per_area=}")
+    return mean_price_per_area.round(2)
 ```
 
-Read more about [running multiple UDFs in parallel](/core-concepts/run-udfs/run-small-udfs/#running-multiple-jobs-in-parallel).
+We can now run this in parallel:
+
+```python
+fused.submit(udf, range(2020, 2025))
+```
+
+### Dashboard
+
+TODO: Dashboard of mean price per area over the last few years, directly taken from output
 
 
-## Dive Deeper
+{/* TODO: Show that we can scale analysis over many different files or inputs */}
 
-- Learn more about [UDFs](/core-concepts/why/)
-- Take a deeper look at [Workbench](/workbench/overview/)
-- Play around with the [Use Cases](/use-cases/) to see Fused in action
-- Look into the [UDF Catalog](/workbench/udf-catalog/) to find UDFs from the community you could leverage
-- Dive into the `fused` [Python SDK](/python-sdk/)
-- Learn about how [Fused handles caching](/core-concepts/cache/)
-- Join [Discord](https://bit.ly/fused-discord) to connect with the community and discover what's possible
+### Sharing your analysis
 
-Welcome aboard! 🚢
+Any dashboard can be shared out with anyone
