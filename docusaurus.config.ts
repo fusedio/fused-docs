@@ -218,10 +218,10 @@ const config: Config = {
       {
         redirects: [
           // { to: "/basics/core-concepts/faq/", from: ["/basics/faq/"] },
-          {
-            to: "/user-guide/",
-            from: ["/basics/user-guide/"],
-          },
+          // {
+          //   to: "/user-guide/",
+          //   from: ["/basics/user-guide/"],
+          // },
           {
             to: "/workbench/udf-builder/code-editor/",
             from: ["/workbench/udf-editor/"],
@@ -248,17 +248,17 @@ const config: Config = {
             from: ["/core-concepts/setup-profile/"],
           },
         ],
-        createRedirects(existingPath) {
-          if (existingPath.includes("/user-guide/out")) {
-            return [existingPath.replace("/user-guide/out", "/basics/out")];
-          }
-          if (existingPath.includes("/basics/user-guide/")) {
-            return [
-              existingPath.replace("/user-guide/", "/basics/user-guide/"),
-            ];
-          }
-          return undefined;
-        },
+        // createRedirects(existingPath) {
+        //   if (existingPath.includes("/user-guide/out")) {
+        //     return [existingPath.replace("/user-guide/out", "/basics/out")];
+        //   }
+        //   if (existingPath.includes("/basics/user-guide/")) {
+        //     return [
+        //       existingPath.replace("/user-guide/", "/basics/user-guide/"),
+        //     ];
+        //   }
+        //   return undefined;
+        // },
       },
     ],
     [
