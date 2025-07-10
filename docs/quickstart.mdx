@@ -119,32 +119,25 @@ We just processed 10 years of worldwide global data in **1min 7s**!
 Daily values are a bit too granular, let's instead get the monthly mean temperature:
 
 ```python
-monthly_mean = daily_mean_temp.groupby(pd.to_datetime(daily_mean_temp.index).strftime('%Y-%m'))['result'].mean()
-monthly_mean_df = monthly_mean.reset_index()
-monthly_mean_df.columns = ['month', 'mean_temp']
-```
-
-Saving to file:
-
-{/* NOTE: Would need access to S3 to be able to do this. Do it in a UDF instead? */}
-
-```python
-monthly_mean_df.to_parquet("s3://fused-sample/demo_data/climate/monthly_mean_temp.parquet")
-```
-
-### Making your first chart
-
-Fused allows allows you to make simple interactive charts & dashboard through a Canvas.
-
-Let's load our data in a UDF first:
-
-```python
 @fused.udf
-def udf(
-    path: str = "s3://fused-sample/demo_data/climate/monthly_mean_temp.parquet"
-):
-    import pandas as pd
-    return pd.read_parquet(path)
+def udf():
+   common = fused.load("https://github.com/fusedio/udfs/tree/7918aff/public/common/").utils
+   con = common.duckdb_connect()
+   
+   daily_temp_files = fused.api.list(f"s3://fused-users/fused/{fused.api.whoami()['handle']}/climate_data_all_same_col/")
+   # daily_temp_files = daily_temp_files[:100]
+   
+   file_list = "', '".join(daily_temp_files)
+   
+   result = con.sql(f"""
+       SELECT LEFT(REGEXP_EXTRACT(REGEXP_EXTRACT(filename, '[^/]+$'), '([0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}})'), 7) as month,
+              ROUND(AVG(mean_temp), 2) as monthly_mean_temp
+       FROM read_parquet(['{file_list}'], filename=True)
+       GROUP BY month
+       ORDER BY month
+   """).df()
+   
+   return result
 ```
 
 We can now open this UDF in Workbench, Fused's web-based IDE:
@@ -165,7 +158,9 @@ loaded_udf
 
 Click on the link to open the UDF in Workbench. Click "+ Add to UDF Builder" 
 
-You can now build a new Frame in Workbench:
+You can now build a new Frame in Workbench.
+
+{/* TODO: Add screenshots of Workbench */}
 
 
 
