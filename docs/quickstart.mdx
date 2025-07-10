@@ -7,6 +7,8 @@ sidebar_position: 0
 
 # Quickstart: Building a Climate dashboard
 
+We're going to build an interactive dashboard of global temperature data, after processing 1TB of data in < 1min!
+
 ### Install `fused`
 
 ```python
@@ -15,59 +17,85 @@ pip install "fused[all]"
 
 Read more about installing Fused [here](/python-sdk/#python-install).
 
-### Processing a Single Day: Mean temperature
+<details>
+<summary>Authenticate in Fused</summary>
+
+In a notebook:
+
+```python
+from fused.api import NotebookCredentials
+
+credentials = NotebookCredentials()
+print(credentials.url)
+```
+
+Follow the link to authenticate.
+
+Read more about [authenticating in Fused](/python-sdk/authentication/).
+
+</details>
+
+### 1 month of mean temperature
 
 ```python
 import fused
+```
+
+We'll save this data to a file in your Fused S3 bucket. Find your username with: `fused.api.whoami()['handle']`. 
+
+Change the output directory to your own S3 bucket:
+{/* TODO: Any faster / better way to get this? */}
+
+```python
+output_dir = f"s3://fused-users/fused/{fused.api.whoami()['handle']}/climate_data_monthly_means/"
 ```
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 <Tabs className="unique-tabs">
-  <TabItem value="Pandas">
-
-    {/* TODO: Update to write to file before return */}
-    ```python
-    @fused.udf
-    def udf(
-        date: str = '1950-01-01'
-    ):
-        import pandas as pd
-        path: str='s3://fused-asset/data/era5/t2m_daily_mean_v31/'
-        
-        monthly_path = f"{path}month={date[:7]}/0.parquet" 
-        df = pd.read_parquet(monthly_path, columns=[date])
-
-        # single day
-        mean_daily_temperature = df[[date]].mean().round(2)
-        return mean_daily_temperature
-    ```
-
-  </TabItem>
-
   <TabItem value="DuckDB">
     ```python
     @fused.udf
     def udf(
-      date: str = '1950-01-01'
+        month: str = "2024-01",
     ):
-        common = fused.load("https://github.com/fusedio/udfs/tree/7918aff/public/common/").utils
-        con = common.duckdb_connect()
+        import duckdb
+        result = duckdb.sql(f"""
+          SELECT 
+              datestr::VARCHAR as datestr,
+              ROUND(AVG(daily_mean), 2) as daily_mean_temp
+          FROM 's3://fused-asset/data/era5/t2m/datestr={month}-*/*.parquet'
+          GROUP BY datestr
+          ORDER BY datestr
+        """).df()
+
+        output_fp = fused.file_path(f"monthly_climate/{month}.pq")
+        result.to_parquet(output_fp)
         
-        path: str='s3://fused-asset/data/era5/t2m_daily_mean_v31/'
-        monthly_path = f"{path}month={date[:7]}/0.parquet" 
-
-        result = con.sql(
-          f"SELECT ROUND(AVG(\"{date}\"), 2) as mean_temp FROM '{monthly_path}'"
-        ).df()
-
-        # Writing mean daily to individual file
-        user_dir_filepath = f"s3://fused-users/fused/{fused.api.whoami()['handle']}/climate_data_all_same_col/mean_{date}.pq"
-        result.to_parquet(user_dir_filepath)
-
         return result
     ```
+  </TabItem>
+  <TabItem value="Pandas">
+
+    NOTE: `pandas` approach is a bit slower than DuckDB.
+
+    ```python
+    @fused.udf
+    def udf(month: str = "2024-01",):
+        import pandas as pd
+
+        files = fused.api.list(f"s3://fused-asset/data/era5/t2m/datestr={month}-")
+
+        dfs = [pd.read_parquet(file, columns=['daily_mean']).assign(datestr=file.split('datestr=')[1].split('/')[0]) for file in files]
+        result = pd.concat(dfs).groupby('datestr')['daily_mean'].mean().round(2).reset_index()
+
+        output_fp = fused.file_path(f"monthly_climate/{month}.pq")
+        result.to_parquet(output_fp)
+        
+        return result
+    ```
+
   </TabItem>
 </Tabs>
 
@@ -77,8 +105,11 @@ Run this UDF on Fused server:
 fused.run(udf)
 ```
 
-```bash
-276.43
+```
+   datestr     daily_mean_temp
+3  2024-01-04            277.36
+4  2024-01-05            277.26
+5  2024-01-06            277.17
 ```
 
 ### Computing mean daily temperature for 1950-1959 (33.5Gb in 1min!)
