@@ -112,21 +112,39 @@ fused.run(udf)
 5  2024-01-06            277.17
 ```
 
-### Computing mean daily temperature for 1950-1959 (33.5Gb in 1min!)
+### 20 years of data (1TB in < 1min!)
 
-Explore the available data for yourself in [File Explorer](https://www.fused.io/workbench/files?path=s3%3A%2F%2Ffused-asset%2Fdata%2Fera5%2Ft2m_daily_mean_v31%2F)
+Explore the available data for yourself in [File Explorer](https://www.fused.io/workbench/files?path=s3%3A%2F%2Ffused-asset%2Fdata%2Fera5%2Ft2m%2F)
 
-We'll process 10 years of data:
+We'll process 20 years of data:
 
 ```python
-import pandas as pd
-dates = pd.date_range('1950-01-01', '1959-12-31').strftime('%Y-%m-%d').tolist()
+available_days = fused.api.list('s3://fused-asset/data/era5/t2m/')
+available_months = list(set([path.split('datestr=')[1][:7] for path in available_days]))
+recent_months = [month for month in available_months if int(month[:4]) >= 2005]
 ```
 
-We can now run our previous UDF in parallel across 1,000 jobs:
+Each file being about 140MB a quick back of the envelope calculation gives us:
+```python
+recent_days = [day for day in available_days if day.split('datestr=')[1][:7] in recent_months]
+len(recent_days) * 140 / 1000 # size in GB of files we'll
+```
+
+```bash
+1005.62
+```
+
+We're looking at 1TB of data!
+
+So let's run 1 month of data across hundreds of jobs:
 
 ```python
-results = fused.submit(udf, dates, max_workers=1000, collect=False)
+results = fused.submit(
+  udf, 
+  recent_months, 
+  max_workers=1000, 
+  collect=False
+)
 ```
 
 Tail the logs as the jobs run:
@@ -142,43 +160,41 @@ results.total_time()
 ```
 
 ```bash
-datetime.timedelta(seconds=67, microseconds=896063)
+datetime.timedelta(seconds=40, microseconds=437845)
 ```
 
-We just processed 10 years of worldwide global data in **1min 7s**!
+**We just processed 20 years of worldwide global data, over 1TB in 40s!!**
 
-Daily values are a bit too granular, let's instead get the monthly mean temperature:
+All we need to do now is aggregate the data by month:
 
 ```python
-@fused.udf
+@fused.udf(cache_max_age='0s')
 def udf():
-   common = fused.load("https://github.com/fusedio/udfs/tree/7918aff/public/common/").utils
-   con = common.duckdb_connect()
-   
-   daily_temp_files = fused.api.list(f"s3://fused-users/fused/{fused.api.whoami()['handle']}/climate_data_all_same_col/")
-   # daily_temp_files = daily_temp_files[:100]
-   
-   file_list = "', '".join(daily_temp_files)
-   
-   result = con.sql(f"""
-       SELECT LEFT(REGEXP_EXTRACT(REGEXP_EXTRACT(filename, '[^/]+$'), '([0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}})'), 7) as month,
-              ROUND(AVG(mean_temp), 2) as monthly_mean_temp
-       FROM read_parquet(['{file_list}'], filename=True)
+    import duckdb
+    
+    monthlys = fused.api.list(fused.file_path(f"monthly_climate/"))
+    file_list = "', '".join(monthlys)
+    
+    result = duckdb.sql(f"""
+       SELECT 
+           LEFT(datestr, 7) as month,
+           ROUND(AVG(daily_mean_temp), 2) as monthly_mean_temp
+       FROM read_parquet(['{file_list}'])
        GROUP BY month
        ORDER BY month
-   """).df()
-   
-   return result
+    """).df()
+    
+    return result
 ```
 
-We can now open this UDF in Workbench, Fused's web-based IDE:
+Let's do this in Workbench, Fused's web-based IDE:
 
 ```python
 # Save to Fused
-udf.to_fused("monthly_mean_temp_since_1950")
+udf.to_fused("monthly_mean_temp")
 
 # Load again to get the Workbench URL
-loaded_udf = fused.load("monthly_mean_temp_since_1950")
+loaded_udf = fused.load("monthly_mean_temp")
 ```
 
 In a notebook returning the loaded UDF will give you a hyperlink `Workbench URL`:
@@ -189,10 +205,7 @@ loaded_udf
 
 Click on the link to open the UDF in Workbench. Click "+ Add to UDF Builder" 
 
-You can now build a new Frame in Workbench.
-
-{/* TODO: Add screenshots of Workbench */}
-
+{/* TODO: Add a screenshot of Table view in Wb */}
 
 
 
