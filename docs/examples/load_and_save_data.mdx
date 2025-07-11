@@ -1,122 +1,173 @@
 ---
-id: load-save-data
-title: Load and Save Data
-sidebar_label: Load & Save Data
+id: load-export-data
+title: Load & Export Data
+sidebar_label: Load & Export Data
 sidebar_position: 0
 ---
 
-# Load & Save Data 
+# Load & Export Data 
 
 A set of common examples on how to load and save data in Fused.
 
-### Loading data: Just regular Python
+## Load Data
 
-FUsed User Defined Functions (UDFs) load dat just like any other Python function:
+### `pandas`
 
 ```python
 @fused.udf
-def udf(path: str = "s3://fused-sample/demo_data/housing/housing_2024.csv"):
+def udf(path: str = "s3://my-bucket/data.csv"):
     import pandas as pd
-    housing = pd.read_csv(path)
-    return housing
+    
+    return pd.read_csv(path)
 ```
 
+### `duckdb`
 
-## Data input
+```python
+@fused.udf
+def udf(path: str = "s3://my-bucket/large_dataset.parquet"):
+    import duckdb
+    
+    conn = duckdb.connect()
+    result = conn.execute(f"""
+        SELECT * 
+        FROM '{path}'
+        LIMIT 100
+    """).df()
+    
+    return result
+```
 
-Fused UDFs run Python code, so you can use Python libraries to read and write data from a variety of sources.
+### From other UDFs
 
-{/* TODO: Local file might not be the best example because we'd need to show how to upload it to Fused first */}
-{/* TODO: Use actual files */}
+{/* TODO: Use a non geo example here */}
 
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds):
+    overture_udf = fused.load('https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example/')
+    buildings = fused.run(overture_udf, bounds=bounds, theme='buildings', overture_type='building')
+ 
+    return buildings
+```
+
+## Export Data
+
+### Fused managed storage
+
+```python
+# Save to Fused managed S3 bucket
+df.to_parquet("fd://my-dataset/data.parquet")
+```
+
+### AWS S3
+
+```python
+# Save to your own S3 bucket
+df.to_parquet("s3://my-bucket/data.parquet")
+```
+
+### Google Cloud Storage
+
+```python
+# Save to Google Cloud Storage
+df.to_parquet("gcs://my-bucket/data.parquet")
+```
+
+### Use as API (No file saving required)
+
+You can change the output format of your HTTPS endpoint:
+
+```bash
+https://fused.io/.../run/file?dtype_out_vector=json
+```
+
+**Tabular data downloads:**
+
+```bash
+# ?dtype_out_vector=csv          # CSV download
+# ?dtype_out_vector=geojson      # GeoJSON download  
+# ?dtype_out_vector=parquet      # Parquet download
+# ?dtype_out_vector=json         # JSON download
+# ?dtype_out_vector=mvt          # Mapbox Vector Tile download
+```
+
+**Image data downloads:**
+
+```bash
+# Add to your UDF endpoint URL:
+# ?dtype_out_raster=png          # PNG image
+# ?dtype_out_raster=tiff         # GeoTIFF download
+```
+
+### Integrate with Other Tools
+
+{/* TODO: Need to clean this part up */}
+
+**DuckDB:** Connect directly to your UDF endpoint
+
+**Curl:** Use HTTPS endpoint for command-line access
+
+**Google Sheets:** Connect via UDF API endpoint
+
+**Notion:** Use `/embed` block with UDF endpoint
+
+
+## Geospatial Data
+
+### `geopandas`
+
+```python
+@fused.udf
+def udf(path: str = "s3://my-bucket/boundaries.geojson"):
+    import geopandas as gpd
+    
+    return gpd.read_file(path)
+```
+
+### `xarray`
 
 ```python
 @fused.udf
 def udf():
-    import pandas as pd
-    df = pd.read_csv("local_file.csv")                       # Reading from a local file
-    df = pd.read_parquet("s3://bucket/path/to/file.parquet") # Reading from S3
-    df = pd.read_parquet("gs://bucket/path/to/file.parquet") # Reading from GCS
-
+    import xarray as xr
+    
+    # Climate/weather data
+    ds = xr.open_dataset('s3://bucket/climate_data.nc')
+    
+    # Convert to DataFrame
+    df = ds.to_dataframe().reset_index()
+    
     return df
 ```
 
-### Output formats
+### STAC Catalog (Satellite Imagery)
 
-A UDF can return a variety of data formats:
-
-{/* TODO: Fix this example, the numpy doesn't work */}
-```python
-@fused.udf
-def udf(x: int = 1):
-    return x * 2                        # Returning python types
-
-    return {"value": x * 2}             # Returning dict
-
-    import numpy as np
-    return np.array([x * 2])            # Returning np.array
-
-    return np.array([x * 2]), [x * 3]   # Returning multiple objects
-```
-
-Check out the list of [fully supported data formats](/core-concepts/write/#return-object). 
-
-### Writing data
-
-You can also decide to write data inside a UDF:
+{/* TODO: This isn't working just yet, need to fix */}
 
 ```python
 @fused.udf
-def udf(x: int = 1):
-    import pandas as pd
-    df = pd.DataFrame({"a": [x * 2]})
-
-    df.to_parquet("/mnt/cache/local_file.parquet")     # Writing to Fused mount
-    df.to_parquet("s3://bucket/path/to/file.parquet")  # Writing to S3
-
-    return "Processed & Saved!"
+def udf(bounds: fused.types.Bounds = [-1.631, 48.541, -1.324, 48.724]):
+    import pystac_client
+    import rasterio
+    
+    catalog = pystac_client.Client.open('https://earth-search.aws.element84.com/v1')
+    
+    search = catalog.search(
+       bbox=bounds,
+       collections=['sentinel-2-l2a'],
+       datetime='2025-01-01/2025-01-10',
+       query={'eo:cloud_cover': {'lt': 50}},
+       sortby=[{'field': 'properties.datetime', 'direction': 'desc'}],
+       limit=1
+    )
+    
+    items = list(search.items())
+    print(len(items))
+    if items:
+       item = items[0]
+       with rasterio.open(item.assets['red'].href) as src:
+           return src.read(1), src.bounds
+    
+    return None
 ```
-
-Note: The [/mnt/cache](/core-concepts/content-management/file-system/#mntcache-disk) disk is used to store data cross multiple runs of UDFs. This is the fastest way to write data between UDFs.
-
-{/* TODO: Add section title something that says this is run from anywhere with Python SDK */}
-### Calling UDFs from anywhere outside of Workbench
-
-Fused UDFs can be called from a lot of places:
-
-```python
-fused.run(udf, x=1)            # Calling from a Python object
-
-udf.to_fused()
-token = udf.create_access_token()
-fused.run(token, x=1)          # Calling from a token (especially from another python script)
-```
-
-{/* TODO: Would be nice to have a handy way to get HTTP request directly from fused-py. */}
-
-Read more about all [the different ways to call UDFs](/core-concepts/run-udfs/run-small-udfs/).
-
-### Running UDFs in parallel
-
-UDfs can be run 1 time or in parallel:
-
-```python
-fused.run(udf, x=1)            # Running a single UDF
-
-fused.submit(udf, range(10))   # Running 10 UDFs at once
-```
-
-Read more about [running multiple UDFs in parallel](/core-concepts/run-udfs/run-small-udfs/#running-multiple-jobs-in-parallel).
-
-
-## Dive Deeper
-
-- Learn more about [UDFs](/core-concepts/why/)
-- Take a deeper look at [Workbench](/workbench/overview/)
-- Play around with the [Use Cases](/use-cases/) to see Fused in action
-- Look into the [UDF Catalog](/workbench/udf-catalog/) to find UDFs from the community you could leverage
-- Dive into the `fused` [Python SDK](/python-sdk/)
-- Learn about how [Fused handles caching](/core-concepts/cache/)
-- Join [Discord](https://bit.ly/fused-discord) to connect with the community and discover what's possible
-
-Welcome aboard! 🚢
