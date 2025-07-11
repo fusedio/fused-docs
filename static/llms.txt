@@ -69,249 +69,77 @@ Find inspiration for your next project, ask questions, or share your work with t
 
 ---
 
-// File: quickstart
-
-# Quickstart: Building a Climate dashboard
-
-We're going to build an interactive dashboard of global temperature data, after processing 1TB of data in a few minutes!
-
-### Install `fused`
-
-```python
-pip install "fused[all]"
-```
-
-Read more about installing Fused [here](/python-sdk/#python-install).
-
-<details>
-<summary>Authenticate in Fused</summary>
-
-In a notebook:
-
-```python
-from fused.api import NotebookCredentials
-
-credentials = NotebookCredentials()
-print(credentials.url)
-```
-
-Follow the link to authenticate.
-
-Read more about [authenticating in Fused](/python-sdk/authentication/).
-
-</details>
-
-### Your first User Defined Function
-
-Fused is built around the concept of [User Defined Functions (UDFs)](/core-concepts/why/). These are serverless Python functions:
-
-```python
-@fused.udf
-def udf(path: str = 's3://fused-asset/data/era5/t2m/datestr=2024-01-01/0.parquet'):
-    import pandas as pd
-    df = pd.read_parquet(path, columns=['daily_mean'])
-
-    return df.head()
-```
-
-Call your UDF to execute it on Fused server:
-
-```python
-fused.run(udf)
-```
-
-You get your results back in a couple of seconds:
-
-```shell
->>> 	daily_mean
-hex	
-644014746717455876	268.686016
-644014747002884118	268.747975
-644014747398193161	268.623347
-```
-
-### Processing 1 month
-
-{/* TODO: Have link to ingestion pipeline later on */}
-[ERA5](https://www.ecmwf.int/en/forecasts/dataset/ecmwf-reanalysis-v5) global weather data was ingested using Fused ingestion pipeline.
-
-```python
-import fused
-```
-
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-
-<Tabs className="unique-tabs">
-  <TabItem value="DuckDB">
-    ```python
-    @fused.udf
-    def udf(
-        month: str = "2024-01",
-    ):
-        import duckdb
-        result = duckdb.sql(f"""
-          SELECT 
-              datestr::VARCHAR as datestr,
-              ROUND(AVG(daily_mean), 2) as daily_mean_temp
-          FROM 's3://fused-asset/data/era5/t2m/datestr={month}-*/*.parquet'
-          GROUP BY datestr
-          ORDER BY datestr
-        """).df()
-
-        output_fp = fused.file_path(f"monthly_climate/{month}.pq")
-        result.to_parquet(output_fp)
-        
-        return result
-    ```
-  </TabItem>
-  <TabItem value="Pandas">
-
-    NOTE: `pandas` approach is a bit slower than DuckDB.
-
-    ```python
-    @fused.udf
-    def udf(month: str = "2024-01",):
-        import pandas as pd
-
-        files = fused.api.list(f"s3://fused-asset/data/era5/t2m/datestr={month}-")
-
-        dfs = [pd.read_parquet(file, columns=['daily_mean']).assign(datestr=file.split('datestr=')[1].split('/')[0]) for file in files]
-        result = pd.concat(dfs).groupby('datestr')['daily_mean'].mean().round(2).reset_index()
-
-        output_fp = fused.file_path(f"monthly_climate/{month}.pq")
-        result.to_parquet(output_fp)
-        
-        return result
-    ```
-
-  </TabItem>
-</Tabs>
-
-```python
-fused.run(udf)
-```
-
-```shell
->>>   datestr     daily_mean_temp
-3  2024-01-04            277.36
-4  2024-01-05            277.26
-5  2024-01-06            277.17
-```
-
-### 20 years of data (1TB in < 1min!)
-
-Explore the available data for yourself in [File Explorer](https://www.fused.io/workbench/files?path=s3%3A%2F%2Ffused-asset%2Fdata%2Fera5%2Ft2m%2F)
-
-We'll process 20 years of data:
-
-```python
-data_until = 2005
-
-available_days = fused.api.list('s3://fused-asset/data/era5/t2m/')
-recent_months = list(set([
-   path.split('datestr=')[1][:7] for path in available_days 
-   if int(path.split('datestr=')[1][:4]) >= data_until
-]))
-```
-
-This corresponds to ~1TB of data!
-
-<details>
-<summary>Size of data quick calculation</summary>
-
-Each file being about 140MB a quick back of the envelope calculation gives us:
-```python
-recent_days = [day for day in available_days if day.split('datestr=')[1][:7] in recent_months]
-len(recent_days) * 140 / 1000 # size in GB of files we'll process
-```
-
-```bash
-1005.62
-```
-</details>
-
-Fused allows us to run a [UDF in parallel](/run-udfs/run-small-udfs/#running-multiple-jobs-in-parallel). So we'll process 1 month of data across hundreds of jobs:
-
-```python
-results = fused.submit(
-  udf, 
-  recent_months, 
-  max_workers=250, 
-  collect=False
-)
-```
-
-See a progress bar of jobs running:
-
-```python
-results.wait()
-```
-
-See how long all the jobs took:
-
-```python
-results.total_time()
-```
-
-```bash
->>> datetime.timedelta(seconds=40, ...)
-```
-
-**We just processed 20 years of worldwide global data, over 1TB in 40s!!**
-
-All we need to do now is aggregate the data by month:
-
-```python
-@fused.udf(cache_max_age='0s')
-def udf():
-    import duckdb
-    
-    monthlys = fused.api.list(fused.file_path(f"monthly_climate/"))
-    file_list = "', '".join(monthlys)
-    
-    result = duckdb.sql(f"""
-       SELECT 
-           LEFT(datestr, 7) as month,
-           ROUND(AVG(daily_mean_temp), 2) as monthly_mean_temp
-       FROM read_parquet(['{file_list}'])
-       GROUP BY month
-       ORDER BY month
-    """).df()
-    print(result)
-    return result
-```
-
-Instead of running this locally, we'll open it in [Workbench](/workbench/), Fused's web-based IDE:
-
-```python
-# Save to Fused
-udf.to_fused("monthly_mean_temp")
-
-# Load again to get the Workbench URL
-loaded_udf = fused.load("monthly_mean_temp")
-loaded_udf.catalog_url()
-```
-
-Click on the link to open the UDF in Workbench. Click "+ Add to UDF Builder" 
-
-{/* TODO: Add a screenshot of Table view in Wb */}
-
-### Interactive canvas
-
-{/* TODO */}
-
-### Next Steps
-
-{/* TODO */}
-
----
-
 // File: workbench
 
 import DocCardList from '@theme/DocCardList';
 
 <DocCardList />
+
+---
+
+// File: quickstart
+
+# Quickstart
+
+{/* TODO: Need to clean up a bit / add a video showing basics of Fused */}
+
+### Log into Workbench
+
+Start by logging into [Workbench](https://www.fused.io/workbench), Fused's web IDE
+
+### Write your first User Defined Function (UDF)
+
+Fused is built around [User Defined Functions (UDFs)](/core-concepts/why/), serverless Python functions that don't require any setup to run. Write your first UDF in Workbench: 
+
+```python
+@fused.udf
+def udf(path = "s3://fused-sample/demo_data/housing/housing_2024.csv"):
+	import pandas as pd
+	return pd.read_csv(path)
+```
+
+You have now loaded a DataFrame into Fused! 
+
+### Instant feedback
+
+We loaded housing data based on the [Kaggle Housing Prices Dataset(https://www.kaggle.com/datasets/yasserh/housing-prices-dataset). 
+
+To better compare house prices, we can calculate the price per area:
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/housing/housing_2024.csv"):
+    import pandas as pd
+    housing = pd.read_csv(path)
+    housing['price_per_area'] = round(housing['price'] / housing['area'], 2)
+    
+    return housing[['price', 'price_per_area']]
+```
+
+You've made your first analysis!
+
+### Make your data available as an API
+
+Fused allows you to easily turn any code into an API, so you can reference it anywhere!
+
+In Workbench:
+1. Save your UDF
+2. Click the "Share" icon
+3. Create a new [shared token](/workbench/udf-builder/navigation/#share) by clicking "Share"
+4. Copy the HTTPS endpoint
+
+<video width="100%" controls>
+  <source src="/img/quickstart/Sharing_to_URL.mp4" type="video/mp4" />
+</video>
+
+You can now share your analysis with your team or use it in any application!
+
+
+### Next Steps
+
+- Take a look at our [7 Quick Wins with Fused](/tutorials/fused-quick-wins) tutorial
+- Read the [Best Practices](/core-concepts/best-practices/) guide
+- Explore more ways to [load & export data](/examples/load-export-data/)
 
 ---
 
@@ -4286,121 +4114,172 @@ import DocCardList from '@theme/DocCardList';
 
 // File: examples/load_and_save_data
 
-# Load & Save Data 
+# Load & Export Data 
 
 A set of common examples on how to load and save data in Fused.
 
-### Loading data: Just regular Python
+## Load Data
 
-FUsed User Defined Functions (UDFs) load dat just like any other Python function:
+### `pandas`
 
 ```python
 @fused.udf
-def udf(path: str = "s3://fused-sample/demo_data/housing/housing_2024.csv"):
+def udf(path: str = "s3://my-bucket/data.csv"):
     import pandas as pd
-    housing = pd.read_csv(path)
-    return housing
+    
+    return pd.read_csv(path)
 ```
 
+### `duckdb`
 
-## Data input
+```python
+@fused.udf
+def udf(path: str = "s3://my-bucket/large_dataset.parquet"):
+    import duckdb
+    
+    conn = duckdb.connect()
+    result = conn.execute(f"""
+        SELECT * 
+        FROM '{path}'
+        LIMIT 100
+    """).df()
+    
+    return result
+```
 
-Fused UDFs run Python code, so you can use Python libraries to read and write data from a variety of sources.
+### From other UDFs
 
-{/* TODO: Local file might not be the best example because we'd need to show how to upload it to Fused first */}
-{/* TODO: Use actual files */}
+{/* TODO: Use a non geo example here */}
 
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds):
+    overture_udf = fused.load('https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example/')
+    buildings = fused.run(overture_udf, bounds=bounds, theme='buildings', overture_type='building')
+ 
+    return buildings
+```
+
+## Export Data
+
+### Fused managed storage
+
+```python
+# Save to Fused managed S3 bucket
+df.to_parquet("fd://my-dataset/data.parquet")
+```
+
+### AWS S3
+
+```python
+# Save to your own S3 bucket
+df.to_parquet("s3://my-bucket/data.parquet")
+```
+
+### Google Cloud Storage
+
+```python
+# Save to Google Cloud Storage
+df.to_parquet("gcs://my-bucket/data.parquet")
+```
+
+### Use as API (No file saving required)
+
+You can change the output format of your HTTPS endpoint:
+
+```bash
+https://fused.io/.../run/file?dtype_out_vector=json
+```
+
+**Tabular data downloads:**
+
+```bash
+# ?dtype_out_vector=csv          # CSV download
+# ?dtype_out_vector=geojson      # GeoJSON download  
+# ?dtype_out_vector=parquet      # Parquet download
+# ?dtype_out_vector=json         # JSON download
+# ?dtype_out_vector=mvt          # Mapbox Vector Tile download
+```
+
+**Image data downloads:**
+
+```bash
+# Add to your UDF endpoint URL:
+# ?dtype_out_raster=png          # PNG image
+# ?dtype_out_raster=tiff         # GeoTIFF download
+```
+
+### Integrate with Other Tools
+
+{/* TODO: Need to clean this part up */}
+
+**DuckDB:** Connect directly to your UDF endpoint
+
+**Curl:** Use HTTPS endpoint for command-line access
+
+**Google Sheets:** Connect via UDF API endpoint
+
+**Notion:** Use `/embed` block with UDF endpoint
+
+
+## Geospatial Data
+
+### `geopandas`
+
+```python
+@fused.udf
+def udf(path: str = "s3://my-bucket/boundaries.geojson"):
+    import geopandas as gpd
+    
+    return gpd.read_file(path)
+```
+
+### `xarray`
 
 ```python
 @fused.udf
 def udf():
-    import pandas as pd
-    df = pd.read_csv("local_file.csv")                       # Reading from a local file
-    df = pd.read_parquet("s3://bucket/path/to/file.parquet") # Reading from S3
-    df = pd.read_parquet("gs://bucket/path/to/file.parquet") # Reading from GCS
-
+    import xarray as xr
+    
+    # Climate/weather data
+    ds = xr.open_dataset('s3://bucket/climate_data.nc')
+    
+    # Convert to DataFrame
+    df = ds.to_dataframe().reset_index()
+    
     return df
 ```
 
-### Output formats
+### STAC Catalog (Satellite Imagery)
 
-A UDF can return a variety of data formats:
-
-{/* TODO: Fix this example, the numpy doesn't work */}
-```python
-@fused.udf
-def udf(x: int = 1):
-    return x * 2                        # Returning python types
-
-    return {"value": x * 2}             # Returning dict
-
-    import numpy as np
-    return np.array([x * 2])            # Returning np.array
-
-    return np.array([x * 2]), [x * 3]   # Returning multiple objects
-```
-
-Check out the list of [fully supported data formats](/core-concepts/write/#return-object). 
-
-### Writing data
-
-You can also decide to write data inside a UDF:
+{/* TODO: This isn't working just yet, need to fix */}
 
 ```python
 @fused.udf
-def udf(x: int = 1):
-    import pandas as pd
-    df = pd.DataFrame({"a": [x * 2]})
-
-    df.to_parquet("/mnt/cache/local_file.parquet")     # Writing to Fused mount
-    df.to_parquet("s3://bucket/path/to/file.parquet")  # Writing to S3
-
-    return "Processed & Saved!"
+def udf(bounds: fused.types.Bounds = [-1.631, 48.541, -1.324, 48.724]):
+    import pystac_client
+    import rasterio
+    
+    catalog = pystac_client.Client.open('https://earth-search.aws.element84.com/v1')
+    
+    search = catalog.search(
+       bbox=bounds,
+       collections=['sentinel-2-l2a'],
+       datetime='2025-01-01/2025-01-10',
+       query={'eo:cloud_cover': {'lt': 50}},
+       sortby=[{'field': 'properties.datetime', 'direction': 'desc'}],
+       limit=1
+    )
+    
+    items = list(search.items())
+    print(len(items))
+    if items:
+       item = items[0]
+       with rasterio.open(item.assets['red'].href) as src:
+           return src.read(1), src.bounds
+    
+    return None
 ```
-
-Note: The [/mnt/cache](/core-concepts/content-management/file-system/#mntcache-disk) disk is used to store data cross multiple runs of UDFs. This is the fastest way to write data between UDFs.
-
-{/* TODO: Add section title something that says this is run from anywhere with Python SDK */}
-### Calling UDFs from anywhere outside of Workbench
-
-Fused UDFs can be called from a lot of places:
-
-```python
-fused.run(udf, x=1)            # Calling from a Python object
-
-udf.to_fused()
-token = udf.create_access_token()
-fused.run(token, x=1)          # Calling from a token (especially from another python script)
-```
-
-{/* TODO: Would be nice to have a handy way to get HTTP request directly from fused-py. */}
-
-Read more about all [the different ways to call UDFs](/core-concepts/run-udfs/run-small-udfs/).
-
-### Running UDFs in parallel
-
-UDfs can be run 1 time or in parallel:
-
-```python
-fused.run(udf, x=1)            # Running a single UDF
-
-fused.submit(udf, range(10))   # Running 10 UDFs at once
-```
-
-Read more about [running multiple UDFs in parallel](/core-concepts/run-udfs/run-small-udfs/#running-multiple-jobs-in-parallel).
-
-
-## Dive Deeper
-
-- Learn more about [UDFs](/core-concepts/why/)
-- Take a deeper look at [Workbench](/workbench/overview/)
-- Play around with the [Use Cases](/use-cases/) to see Fused in action
-- Look into the [UDF Catalog](/workbench/udf-catalog/) to find UDFs from the community you could leverage
-- Dive into the `fused` [Python SDK](/python-sdk/)
-- Learn about how [Fused handles caching](/core-concepts/cache/)
-- Join [Discord](https://bit.ly/fused-discord) to connect with the community and discover what's possible
-
-Welcome aboard! 🚢
 
 ---
 
@@ -9348,102 +9227,185 @@ This can be called with file_id and chunk_id from `get_chunks_metadata`.
 
 ---
 
-// File: tutorials/fused-in-5min
+// File: tutorials/fused-quick-wins
 
-{/* TODO: This should be simplified and reviewed again. Didn't want this page to be empty though */}
+# Quick Wins with Fused
 
-# Fused in 5 Minutes
+We'll show you 7 quick ways to get started with Fused. All of these can be done in [Workbench](https://www.fused.io/workbench).
 
-Welcome to Fused! This tutorial will get you up and running in just 5 minutes with three simple examples that demonstrate the core concepts of User Defined Functions (UDFs).
-
-## What is a UDF?
-
-A User Defined Function (UDF) is a Python function decorated with `@fused.udf` that can be run anywhere - in the cloud, on your local machine, or embedded in web applications. Read more about [why UDFs](/core-concepts/why/).
-
-## Example 1: Hello World UDF
-
-Let's start with the simplest possible UDF:
-
-```python
-import fused
-
-@fused.udf
-def udf(x: int = 1):
-    return f"Hello world {x + x}"
-
-fused.run(udf)
-```
-
-**What this does:**
-- Runs on Fused server on a [real machine](/core-concepts/run-udfs/run-small-udfs/)
-- The [`@fused.udf` decorator](/python-sdk/top-level-functions/#fusedudf) makes this function runnable on Fused
-
-**Try it:**
-1. Copy this code into [Fused Workbench](https://www.fused.io/workbench)
-2. Click "Run" to execute it
-3. You'll see the output: "Hello world 2"
-
-## Example 2: Simple Data UDF
-
-Now let's create a UDF that returns structured data:
+### Open a simple dataset
 
 ```python
 @fused.udf
-def udf(x: int = 5):
+def udf(path = "s3://fused-sample/demo_data/housing/housing_2024.csv"):
     import pandas as pd
-    return pd.DataFrame({"x": range(x)})
+    housing = pd.read_csv(path)
 ```
 
-**What this does:**
-- Creates a pandas DataFrame with numbers from 0 to x-1
-- Returns structured data that can be visualized or processed further
-- Default value creates a DataFrame with 5 rows
-
-**Try it:**
-1. Paste this code into a new UDF in Workbench
-2. Run it to see a table with values 0, 1, 2, 3, 4
-3. Try changing the parameter `x` to see different amounts of data
-
-## Example 3: Simple Data File UDF
-
-Finally, let's read real data from a file:
+### Convert data quickly
 
 ```python
 @fused.udf
-def udf(x: int = 10):
+def udf():
     import pandas as pd
-    # Read from a public dataset
-    df = pd.read_parquet("s3://fused-asset/infra/building_msft_us.parquet")
-    return df.head(x)
+    df = pd.read_excel("s3://fused-sample/demo_data/housing_2024.xlsx")
+    df.to_parquet("s3://fused-sample/demo_data/housing_2024.parquet")
+    
+    return df
 ```
 
-**What this does:**
-- Reads a parquet file from cloud storage (S3)
-- Returns the first `x` rows of the dataset
-- This example uses Microsoft building footprint data
+### Join datasets
 
-**Try it:**
-1. Paste this code into Workbench
-2. Run it to see building data
-3. Try the File Explorer in Workbench to browse other available datasets
+{/* TODO: Add example */}
 
-## Next Steps
+### Turn any data in API
 
-Congratulations! You've just created your first three UDFs. Here's what you can explore next:
+Similar to our [Quickstart](/quickstart), we can turn any code into an API:
 
-- **File Explorer**: Browse available datasets in the Fused catalog
-- **Map View**: Visualize geospatial data on an interactive map
-- **Sharing**: Share your UDFs with others using shareable URLs
-- **Advanced Features**: Explore caching, async operations, and more complex data transformations
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/housing/housing_2024.csv"):
+    import pandas as pd
+    housing = pd.read_csv(path)
+    housing['price_per_area'] = round(housing['price'] / housing['area'], 2)
+    
+    return housing[['price', 'price_per_area']]
+```
 
-## Key Concepts Learned
+### Preview datasets
 
-✅ **UDF Decorator**: `@fused.udf` transforms any Python function into a distributed, scalable function  
-✅ **Type Hints**: Parameters should have type hints and default values  
-✅ **Data Returns**: UDFs can return strings, DataFrames, or other data structures  
-✅ **Cloud Integration**: Easily read from cloud storage like S3  
+Explore cloud storage directly in the [File Explorer](https://www.fused.io/workbench/files) tab
 
-Ready to build more complex UDFs? Check out our [Core Concepts](/core-concepts) and [Examples](/examples) sections!
+<video width="100%" controls>
+  <source src="/img/tutorials/File_explorer_from_file.mp4" type="video/mp4" />
+</video>
+
+### Profile your code
+
+Workbench has a built-in profiler giving you:
+- Line by line runtime
+- Memory usage
+- Total runtime
+- Total file size
+
+<video width="100%" controls>
+  <source src="/img/tutorials/profiling_lines_and_memory.mp4" type="video/mp4" />
+</video>
+
+
+### Data First IDE: Table / Map view
+
+Workbench is built for data teams. 
+
+You can toggle between Map / Table view depending on your data! 
+
+<video width="100%" controls>
+  <source src="/img/tutorials/Map_Table_alternating.mp4" type="video/mp4" />
+</video>
+
+---
+
+// File: tutorials/fused-advanced
+
+# Advanced Fused Features
+
+You should install `fused` python package locally to follow these advanced features:
+
+```bash
+pip install "fused[all]"
+```
+
+Read more about [installing Fused](/python-sdk/#python-install) details. 
+
+### Run 100s of jobs in seconds (`submit`)
+
+```python
+import fused 
+
+@fused.udf
+def udf(path: str = "https://example.com/sales_data_2023.xlsx"):
+   import pandas as pd
+   df = pd.read_excel(path)
+   filename = path.split("/")[-1].split(".")[0]
+   df.to_parquet(f"s3://my-bucket/{filename}.parquet")
+   return df
+
+excel_files = [
+    "https://example.com/sales_data_2023.xlsx",
+    "https://example.com/sales_data_2024.xlsx",
+    "https://example.com/sales_data_2025.xlsx",
+    ...
+]
+
+results = fused.submit(
+    udf,
+    excel_files,
+)
+```
+
+### Batch jobs
+
+```python
+@fused.udf
+def udf(val):
+    import pandas as pd
+    return pd.DataFrame({'val':[val]})
+    
+# Running with 5 inputs
+job = udf(arg_list=[0,1,2,3,4])
+job.run_remote()
+```
+
+### Ingest data at scale
+
+```python
+# Ingesting Washington DC Census data
+job = fused.ingest(
+    input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
+    output=f"fd://census/partitioned/",
+)
+
+job.run_remote()
+```
+
+### Preview large files from your laptop
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+    large_dataset = pd.read_parquet("s3://my-bucket/my-large-dataset.parquet")
+
+    return large_dataset.sample(10)
+```
+
+Locally:
+```python
+sample = fused.run()
+```
+
+### Make a Map Tile Server in seconds
+
+```python
+@fused.udf
+def udf(
+   bounds: fused.types.Bounds,
+   path: str="s3://fused-asset/data/tiger/state/tl_rd22_us_state 1pct.parquet"
+):
+   import geopandas as gpd
+   
+   df = gpd.read_parquet(path)
+   df = df.cx[bounds[0]:bounds[2], bounds[1]:bounds[3]]
+   df['area'] = df['geometry'].area.round(2)
+   return df
+```
+
+→ Switch to Tile UDF in Workbench
+
+→ Share as HTTPS tile server:
+```
+https://staging.fused.io/server/v1/realtime-shared/fsh_73YbgGZWieYpuCbPgLsHTY/run/tiles/{z}/{x}/{y}?dtype_out_vector=parquet
+```
 
 ---
 
@@ -9454,6 +9416,245 @@ Ready to build more complex UDFs? Check out our [Core Concepts](/core-concepts) 
 import DocCardList from '@theme/DocCardList';
 
 <DocCardList className="DocCardList--no-description"/>
+
+---
+
+// File: use-cases/climate-dashboard
+
+# Building a Climate dashboard
+
+We're going to build an interactive dashboard of global temperature data, after processing 1TB of data in a few minutes!
+
+### Install `fused`
+
+```python
+pip install "fused[all]"
+```
+
+Read more about installing Fused [here](/python-sdk/#python-install).
+
+<details>
+<summary>Authenticate in Fused</summary>
+
+In a notebook:
+
+```python
+from fused.api import NotebookCredentials
+
+credentials = NotebookCredentials()
+print(credentials.url)
+```
+
+Follow the link to authenticate.
+
+Read more about [authenticating in Fused](/python-sdk/authentication/).
+
+</details>
+
+{/* TODO:  Remove this to clean up. Not needed anymore*/}
+{/* ### Your first User Defined Function
+
+Fused is built around the concept of [User Defined Functions (UDFs)](/core-concepts/why/). These are serverless Python functions:
+
+```python
+@fused.udf
+def udf(path: str = 's3://fused-asset/data/era5/t2m/datestr=2024-01-01/0.parquet'):
+    import pandas as pd
+    df = pd.read_parquet(path, columns=['daily_mean'])
+
+    return df.head()
+```
+
+Call your UDF to execute it on Fused server:
+
+```python
+fused.run(udf)
+```
+
+You get your results back in a couple of seconds:
+
+```shell
+>>> 	daily_mean
+hex	
+644014746717455876	268.686016
+644014747002884118	268.747975
+644014747398193161	268.623347
+``` */}
+
+### Processing 1 month
+
+{/* TODO: Have link to ingestion pipeline later on */}
+[ERA5](https://www.ecmwf.int/en/forecasts/dataset/ecmwf-reanalysis-v5) global weather data was ingested using Fused ingestion pipeline.
+
+```python
+import fused
+```
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+<Tabs className="unique-tabs">
+  <TabItem value="DuckDB">
+    ```python
+    @fused.udf
+    def udf(
+        month: str = "2024-01",
+    ):
+        import duckdb
+        result = duckdb.sql(f"""
+          SELECT 
+              datestr::VARCHAR as datestr,
+              ROUND(AVG(daily_mean), 2) as daily_mean_temp
+          FROM 's3://fused-asset/data/era5/t2m/datestr={month}-*/*.parquet'
+          GROUP BY datestr
+          ORDER BY datestr
+        """).df()
+
+        output_fp = fused.file_path(f"monthly_climate/{month}.pq")
+        result.to_parquet(output_fp)
+        
+        return result
+    ```
+  </TabItem>
+  <TabItem value="Pandas">
+
+    NOTE: `pandas` approach is a bit slower than DuckDB.
+
+    ```python
+    @fused.udf
+    def udf(month: str = "2024-01",):
+        import pandas as pd
+
+        files = fused.api.list(f"s3://fused-asset/data/era5/t2m/datestr={month}-")
+
+        dfs = [pd.read_parquet(file, columns=['daily_mean']).assign(datestr=file.split('datestr=')[1].split('/')[0]) for file in files]
+        result = pd.concat(dfs).groupby('datestr')['daily_mean'].mean().round(2).reset_index()
+
+        output_fp = fused.file_path(f"monthly_climate/{month}.pq")
+        result.to_parquet(output_fp)
+        
+        return result
+    ```
+
+  </TabItem>
+</Tabs>
+
+```python
+fused.run(udf)
+```
+
+```shell
+>>>   datestr     daily_mean_temp
+3  2024-01-04            277.36
+4  2024-01-05            277.26
+5  2024-01-06            277.17
+```
+
+### 20 years of data (1TB in < 1min!)
+
+Explore the available data for yourself in [File Explorer](https://www.fused.io/workbench/files?path=s3%3A%2F%2Ffused-asset%2Fdata%2Fera5%2Ft2m%2F)
+
+We'll process 20 years of data:
+
+```python
+data_until = 2005
+
+available_days = fused.api.list('s3://fused-asset/data/era5/t2m/')
+recent_months = list(set([
+   path.split('datestr=')[1][:7] for path in available_days 
+   if int(path.split('datestr=')[1][:4]) >= data_until
+]))
+```
+
+This corresponds to ~1TB of data!
+
+<details>
+<summary>Size of data quick calculation</summary>
+
+Each file being about 140MB a quick back of the envelope calculation gives us:
+```python
+recent_days = [day for day in available_days if day.split('datestr=')[1][:7] in recent_months]
+len(recent_days) * 140 / 1000 # size in GB of files we'll process
+```
+
+```bash
+1005.62
+```
+</details>
+
+Fused allows us to run a [UDF in parallel](/run-udfs/run-small-udfs/#running-multiple-jobs-in-parallel). So we'll process 1 month of data across hundreds of jobs:
+
+```python
+results = fused.submit(
+  udf, 
+  recent_months, 
+  max_workers=250, 
+  collect=False
+)
+```
+
+See a progress bar of jobs running:
+
+```python
+results.wait()
+```
+
+See how long all the jobs took:
+
+```python
+results.total_time()
+```
+
+```bash
+>>> datetime.timedelta(seconds=40, ...)
+```
+
+**We just processed 20 years of worldwide global data, over 1TB in 40s!!**
+
+All we need to do now is aggregate the data by month:
+
+```python
+@fused.udf(cache_max_age='0s')
+def udf():
+    import duckdb
+    
+    monthlys = fused.api.list(fused.file_path(f"monthly_climate/"))
+    file_list = "', '".join(monthlys)
+    
+    result = duckdb.sql(f"""
+       SELECT 
+           LEFT(datestr, 7) as month,
+           ROUND(AVG(daily_mean_temp), 2) as monthly_mean_temp
+       FROM read_parquet(['{file_list}'])
+       GROUP BY month
+       ORDER BY month
+    """).df()
+    print(result)
+    return result
+```
+
+Instead of running this locally, we'll open it in [Workbench](/workbench/), Fused's web-based IDE:
+
+```python
+# Save to Fused
+udf.to_fused("monthly_mean_temp")
+
+# Load again to get the Workbench URL
+loaded_udf = fused.load("monthly_mean_temp")
+loaded_udf.catalog_url()
+```
+
+Click on the link to open the UDF in Workbench. Click "+ Add to UDF Builder" 
+
+{/* TODO: Add a screenshot of Table view in Wb */}
+
+### Interactive canvas
+
+{/* TODO */}
+
+### Next Steps
+
+{/* TODO */}
 
 ---
 

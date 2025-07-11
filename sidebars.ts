@@ -25,7 +25,7 @@ const sidebars: SidebarsConfig = {
         {
           type: "category",
           label: "Load & Save Data",
-          link: { type: "doc", id: "examples/load-save-data" },
+          link: { type: "doc", id: "examples/load-export-data" },
           items: [],
         },
         {
