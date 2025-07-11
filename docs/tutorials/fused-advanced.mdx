@@ -15,33 +15,47 @@ pip install "fused[all]"
 
 Read more about [installing Fused](/python-sdk/#python-install) details. 
 
+We recommend you run the following code snippets in a [notebook](https://jupyter.org/install) for best interactivity!
+
 ### Run 100s of jobs in seconds (`submit`)
+
+We'll calculate the average prices of houses over the years:
 
 ```python
 import fused 
 
 @fused.udf
-def udf(path: str = "https://example.com/sales_data_2023.xlsx"):
-   import pandas as pd
-   df = pd.read_excel(path)
-   filename = path.split("/")[-1].split(".")[0]
-   df.to_parquet(f"s3://my-bucket/{filename}.parquet")
-   return df
+def udf(path: str = "s3://fused-sample/demo_data/housing/housing_2024.csv"):
+    import pandas as pd
+    housing = pd.read_csv(path)
+    housing['price_per_area'] = housing['price'] / housing['area'].round(2)
 
-excel_files = [
-    "https://example.com/sales_data_2023.xlsx",
-    "https://example.com/sales_data_2024.xlsx",
-    "https://example.com/sales_data_2025.xlsx",
-    ...
-]
+    return housing['price_per_area'].mean()
 
-results = fused.submit(
-    udf,
-    excel_files,
-)
+# Listing all available files
+housing_lists = fused.api.list('s3://fused-sample/demo_data/housing/')
+
+results = fused.submit(udf, housing_lists)
 ```
 
+Print results and get all your data back:
+
+```python
+results
+
+>>> 
+path	
+s3://fused-sample/demo_data/housing/housing_1970.csv	1376.804413
+s3://fused-sample/demo_data/housing/housing_1971.csv	1492.044819
+s3://fused-sample/demo_data/housing/housing_1972.csv	1484.496548
+```
+
+Read more about running your code in parallel [here](/core-concepts/run-udfs/run-small-udfs/#running-multiple-jobs-in-parallel)
+
+
 ### Batch jobs
+
+You can also run much larger jobs that don't fit in the [memory & time constraints](/core-concepts/run-udfs/run-small-udfs/#defining-small-job) of a single UDF job.
 
 ```python
 @fused.udf
@@ -54,35 +68,56 @@ job = udf(arg_list=[0,1,2,3,4])
 job.run_remote()
 ```
 
-### Ingest data at scale
+Read more about setting up batch jobs [here](/core-concepts/run-udfs/run_large/)
+
+### Preview large files from your laptop
+
+When you have a large dataset that you'd like to explore on your local machine, you can use Fused to send yourself a sample of the data. The data will be loaded inside your UDF and only send you the sample. 
+
+We'll use the ERA5 weather dataset as an example (this file is about 140Mb):
+```python
+@fused.udf
+def udf(path: str='s3://fused-asset/data/era5/t2m/datestr=2024-01-01/0.parquet'):
+    import pandas as pd
+    df = pd.read_parquet(path)
+
+    return df.head(10)
+```
+
+You will now only get a small sample of data:
 
 ```python
+sample = fused.run(udf)
+```
+
+### Ingest geospatial data at scale
+
+When you have very large geospatial data, it might not be in an optimized format & partition to run efficiently. Fused offers a simple way to [ingest your data](/core-concepts/data-ingestion/ingestion-your-data/) at scale. 
+
+```python
+# Get your user handle 
+user = fused.api.whoami()['handle']
+
 # Ingesting Washington DC Census data
 job = fused.ingest(
     input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
-    output=f"fd://census/partitioned/",
+    output=f"fd://{user}/data/census/partitioned/", # Saving to your Fused bucket
 )
 
 job.run_remote()
 ```
 
-### Preview large files from your laptop
+You can trail logs to see how the job is progressing:
 
 ```python
-@fused.udf
-def udf():
-    import pandas as pd
-    large_dataset = pd.read_parquet("s3://my-bucket/my-large-dataset.parquet")
-
-    return large_dataset.sample(10)
+fused.api.job_tail_logs("your-job-id")
 ```
 
-Locally:
-```python
-sample = fused.run()
-```
+Learn more about [Fused data ingestion](/core-concepts/data-ingestion/ingestion-your-data/)
 
 ### Make a Map Tile Server in seconds
+
+This example works best in [Workbench](https://www.fused.io/workbench)
 
 ```python
 @fused.udf
@@ -98,10 +133,14 @@ def udf(
    return df
 ```
 
-→ Switch to Tile UDF in Workbench
+- Switch to using a [Tile UDF](/core-concepts/filetile/#tile)
+- Save your UDF
+- Create a new [shared token](/workbench/udf-builder/navigation/#share)
+- Copy the HTTPS endpoint
 
-→ Share as HTTPS tile server:
+You do need to edit the tile coordinates to use `{z}/{x}/{y}`:
 ```
-https://staging.fused.io/server/v1/realtime-shared/fsh_73YbgGZWieYpuCbPgLsHTY/run/tiles/{z}/{x}/{y}?dtype_out_vector=parquet
+https://.../run/tiles/{z}/{x}/{y}?dtype_out_vector=parquet
 ```
 
+Connect this anywhere you want to deliver a map tile server!
