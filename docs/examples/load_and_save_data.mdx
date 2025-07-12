@@ -179,34 +179,31 @@ def udf():
 
 ### STAC Catalog (Satellite Imagery)
 
+Loading an digital elevation model (DEM) from the [Microsoft Planetary Computer STAC Catalog]https://planetarycomputer.microsoft.com/dataset/cop-dem-glo-30:
+
 ```python
-@fused.udf
 def udf(
-    bounds: fused.types.Bounds=[-122.463,37.755,-122.376,37.803],
-    time_of_interest="2025-01-01/2025-01-10"
-):  
-    import rasterio
-    from rasterio.warp import transform_bounds
+    bounds: fused.types.Bounds = [-122.463,37.755,-122.376,37.803],
+):
+    import odc.stac
+    import planetary_computer
     import pystac_client
-
-    catalog = pystac_client.Client.open("https://earth-search.aws.element84.com/v1")
     
-    items = catalog.search(
-        collections=["sentinel-2-l2a"],
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        modifier=planetary_computer.sign_inplace,
+    )
+
+    # Loading Elevation model
+    items = catalog.search(collections=["cop-dem-glo-30"],bbox=bounds).item_collection()
+    
+    xarray_dataset = odc.stac.load(
+        items,
+        crs="EPSG:3857",
+        bands=["data"],
+        resolution=100,
         bbox=bounds,
-        datetime=time_of_interest,
-        query={"eo:cloud_cover": {"lt": 10}},
-        limit=1,
-    ).item_collection()
-
-    if items:
-       item = items[0]
-       with rasterio.open(item.assets['red'].href) as src:
-           window = rasterio.windows.Window(0, 0, 100, 100)
-           window_bounds = rasterio.windows.bounds(window, src.transform)
-           window_bounds_wgs84 = transform_bounds(src.crs, 'EPSG:4326', *window_bounds)
-           return data, window_bounds
+    ).astype(int)
     
-    return None
-
+    return xarray_dataset["data"], bounds
 ```
