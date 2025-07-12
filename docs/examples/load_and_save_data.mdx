@@ -124,15 +124,29 @@ https://fused.io/.../run/file?dtype_out_vector=json
 
 ### Integrate with Other Tools
 
-{/* TODO: Need to clean this part up */}
+Call your UDFs from other tools after creating a [Shared Token](/core-concepts/run-udfs/run-small-udfs/#shared-token) for your UDF:
 
-**DuckDB:** Connect directly to your UDF endpoint
+**DuckDB:** 
 
-**Curl:** Use HTTPS endpoint for command-line access
+```bash
+select * from read_parquet('https://fused.io/.../run/file?');
+```
 
-**Google Sheets:** Connect via UDF API endpoint
+**Curl:** 
 
-**Notion:** Use `/embed` block with UDF endpoint
+```bash
+curl -L -XGET 'https://fused.io/.../run/file?'
+```
+
+**Google Sheets:** 
+
+```bash
+=importData('https://fused.io/.../run/file?')
+```
+
+**Notion:** 
+
+- Use `/embed` block with UDF endpoint: `'https://fused.io/.../run/file?'`
 
 
 ## Geospatial Data
@@ -155,41 +169,44 @@ def udf():
     import xarray as xr
     
     # Climate/weather data
-    ds = xr.open_dataset('s3://bucket/climate_data.nc')
+    ds = xr.open_dataset('/mount/tmp/demo_data/ERA5/2025_01_01_ERA5_surface.nc')
     
     # Convert to DataFrame
     df = ds.to_dataframe().reset_index()
     
-    return df
+    return df.head()
 ```
 
 ### STAC Catalog (Satellite Imagery)
 
-{/* TODO: This isn't working just yet, need to fix */}
-
 ```python
 @fused.udf
-def udf(bounds: fused.types.Bounds = [-1.631, 48.541, -1.324, 48.724]):
-    import pystac_client
+def udf(
+    bounds: fused.types.Bounds=[-122.463,37.755,-122.376,37.803],
+    time_of_interest="2025-01-01/2025-01-10"
+):  
     import rasterio
+    from rasterio.warp import transform_bounds
+    import pystac_client
+
+    catalog = pystac_client.Client.open("https://earth-search.aws.element84.com/v1")
     
-    catalog = pystac_client.Client.open('https://earth-search.aws.element84.com/v1')
-    
-    search = catalog.search(
-       bbox=bounds,
-       collections=['sentinel-2-l2a'],
-       datetime='2025-01-01/2025-01-10',
-       query={'eo:cloud_cover': {'lt': 50}},
-       sortby=[{'field': 'properties.datetime', 'direction': 'desc'}],
-       limit=1
-    )
-    
-    items = list(search.items())
-    print(len(items))
+    items = catalog.search(
+        collections=["sentinel-2-l2a"],
+        bbox=bounds,
+        datetime=time_of_interest,
+        query={"eo:cloud_cover": {"lt": 10}},
+        limit=1,
+    ).item_collection()
+
     if items:
        item = items[0]
        with rasterio.open(item.assets['red'].href) as src:
-           return src.read(1), src.bounds
+           window = rasterio.windows.Window(0, 0, 100, 100)
+           window_bounds = rasterio.windows.bounds(window, src.transform)
+           window_bounds_wgs84 = transform_bounds(src.crs, 'EPSG:4326', *window_bounds)
+           return data, window_bounds
     
     return None
+
 ```
