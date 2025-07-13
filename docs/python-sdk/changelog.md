@@ -50,6 +50,7 @@ New Features:
 - Added new Dashboard builder mode (experimental).
 - Added new Table data view mode.
 - GitHub integration has a new page and is no longer beta.
+- GitHub integration remembers relevant open PRs better.
 - Fused apps uses a newer version of Streamlit and Stlite.
 - Added a menu item to take a screenshot in higher-than-screen resolution.
 - Added type-to-filter in File Explorer.
