@@ -81,7 +81,7 @@ import DocCardList from '@theme/DocCardList';
 
 # Quickstart
 
-{/* TODO: Need to clean up a bit / add a video showing basics of Fused */}
+Learn the basics of Fused!
 
 ### Log into Workbench
 
@@ -2517,25 +2517,16 @@ import DocCardList from '@theme/DocCardList';
 
 Download remote files to the local system to make them available to UDFs across runs. Files are written to a [disk](/core-concepts/content-management/file-system/#mntcache-disk) shared across all UDFs in an organization.
 
-## `fused.download`
+## [`fused.download`](/python-sdk/top-level-functions/#fuseddownload)
 
-Call [`fused.download`](/python-sdk/top-level-functions/#fuseddownload) with the file's endpoint in the `url` parameter and the local file name in the `file_path` parameter. The function will download the file and return the file path, which other functions can reference.
+Download any file to: `/mount/tmp/` which any other UDF can then access.
 
-This example downloads a `.zip` file then returns it as a `GeoDataFrame`.
 
 ```python showLineNumbers
 @fused.udf
 def udf(url='https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_COLUMBIA/11/tl_rd22_11_bg.zip'):
-    import fused
-    import geopandas as gpd
-
-    # Download zip file
     out_path = fused.download(url=url, file_path='out.zip')
-
-    # Show path to file
     print(out_path)
-
-    return gpd.read_file(out_path)
 ```
 
 :::info
@@ -4116,7 +4107,7 @@ import DocCardList from '@theme/DocCardList';
 
 # Load & Export Data 
 
-A set of common examples on how to load and save data in Fused.
+Common examples for loading and saving data in Fused.
 
 ## Load Data
 
@@ -4160,32 +4151,55 @@ def udf(bounds: fused.types.Bounds):
     return buildings
 ```
 
-## Export Data
-
-### Fused managed storage
+### Download data to shared Fused mount
 
 ```python
-# Save to Fused managed S3 bucket
+@fused.udf
+def udf(url='https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_COLUMBIA/11/tl_rd22_11_bg.zip'):
+    out_path = fused.download(url=url, file_path='out.zip')
+    print(out_path)
+```
+
+Files will be written to `/mount/tmp/`, where any other UDF can then access them.
+
+Read more about `fused.download()` [here](/python-sdk/top-level-functions/#fuseddownload)
+
+## Export Data
+
+### Fused managed storage: `fd://`
+
+```python
 df.to_parquet("fd://my-dataset/data.parquet")
 ```
 
-### AWS S3
+Read more about about [`fd://` S3 Bucket](/core-concepts/content-management/file-system/#fd-s3-bucket)
+
+### Fused mount disk: `/mnt/cache`
 
 ```python
-# Save to your own S3 bucket
+df.to_parquet("/mnt/cache/data.parquet")
+```
+
+Read more about about [`/mnt/cache` mount disk](/core-concepts/content-management/file-system/#mntcache-disk)
+
+
+### AWS S3: `s3://`
+
+```python
 df.to_parquet("s3://my-bucket/data.parquet")
 ```
 
-### Google Cloud Storage
+### Google Cloud Storage: `gcs://`
 
 ```python
-# Save to Google Cloud Storage
 df.to_parquet("gcs://my-bucket/data.parquet")
 ```
 
 ### Use as API (No file saving required)
 
-You can change the output format of your HTTPS endpoint:
+You can directly call your UDFs as APIs, removing the need to even save your data at all!
+
+After creating a [Shared Token](/core-concepts/run-udfs/run-small-udfs/#shared-token) for your UDF, you can change the output format of your HTTPS endpoint:
 
 ```bash
 https://fused.io/.../run/file?dtype_out_vector=json
@@ -4194,32 +4208,45 @@ https://fused.io/.../run/file?dtype_out_vector=json
 **Tabular data downloads:**
 
 ```bash
-# ?dtype_out_vector=csv          # CSV download
-# ?dtype_out_vector=geojson      # GeoJSON download  
-# ?dtype_out_vector=parquet      # Parquet download
-# ?dtype_out_vector=json         # JSON download
-# ?dtype_out_vector=mvt          # Mapbox Vector Tile download
+?dtype_out_vector=csv          # CSV download
+?dtype_out_vector=geojson      # GeoJSON download
+?dtype_out_vector=parquet      # Parquet download
+?dtype_out_vector=json         # JSON download
+?dtype_out_vector=mvt          # Mapbox Vector Tile download
 ```
 
 **Image data downloads:**
 
 ```bash
-# Add to your UDF endpoint URL:
-# ?dtype_out_raster=png          # PNG image
-# ?dtype_out_raster=tiff         # GeoTIFF download
+?dtype_out_raster=png          # PNG image
+?dtype_out_raster=tiff         # GeoTIFF download
 ```
 
 ### Integrate with Other Tools
 
-{/* TODO: Need to clean this part up */}
+Call your UDFs from other tools after creating a [Shared Token](/core-concepts/run-udfs/run-small-udfs/#shared-token) for your UDF:
 
-**DuckDB:** Connect directly to your UDF endpoint
+**DuckDB:** 
 
-**Curl:** Use HTTPS endpoint for command-line access
+```bash
+select * from read_parquet('https://fused.io/.../run/file?');
+```
 
-**Google Sheets:** Connect via UDF API endpoint
+**Curl:** 
 
-**Notion:** Use `/embed` block with UDF endpoint
+```bash
+curl -L -XGET 'https://fused.io/.../run/file?'
+```
+
+**Google Sheets:** 
+
+```bash
+=importData('https://fused.io/.../run/file?')
+```
+
+**Notion:** 
+
+- Use `/embed` block with UDF endpoint: `'https://fused.io/.../run/file?'`
 
 
 ## Geospatial Data
@@ -4242,43 +4269,43 @@ def udf():
     import xarray as xr
     
     # Climate/weather data
-    ds = xr.open_dataset('s3://bucket/climate_data.nc')
+    ds = xr.open_dataset('/mount/tmp/demo_data/ERA5/2025_01_01_ERA5_surface.nc')
     
     # Convert to DataFrame
     df = ds.to_dataframe().reset_index()
     
-    return df
+    return df.head()
 ```
 
 ### STAC Catalog (Satellite Imagery)
 
-{/* TODO: This isn't working just yet, need to fix */}
+Loading an digital elevation model (DEM) from the [Microsoft Planetary Computer STAC Catalog]https://planetarycomputer.microsoft.com/dataset/cop-dem-glo-30:
 
 ```python
-@fused.udf
-def udf(bounds: fused.types.Bounds = [-1.631, 48.541, -1.324, 48.724]):
+def udf(
+    bounds: fused.types.Bounds = [-122.463,37.755,-122.376,37.803],
+):
+    import odc.stac
+    import planetary_computer
     import pystac_client
-    import rasterio
     
-    catalog = pystac_client.Client.open('https://earth-search.aws.element84.com/v1')
-    
-    search = catalog.search(
-       bbox=bounds,
-       collections=['sentinel-2-l2a'],
-       datetime='2025-01-01/2025-01-10',
-       query={'eo:cloud_cover': {'lt': 50}},
-       sortby=[{'field': 'properties.datetime', 'direction': 'desc'}],
-       limit=1
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        modifier=planetary_computer.sign_inplace,
     )
+
+    # Loading Elevation model
+    items = catalog.search(collections=["cop-dem-glo-30"],bbox=bounds).item_collection()
     
-    items = list(search.items())
-    print(len(items))
-    if items:
-       item = items[0]
-       with rasterio.open(item.assets['red'].href) as src:
-           return src.read(1), src.bounds
+    xarray_dataset = odc.stac.load(
+        items,
+        crs="EPSG:3857",
+        bands=["data"],
+        resolution=100,
+        bbox=bounds,
+    ).astype(int)
     
-    return None
+    return xarray_dataset["data"], bounds
 ```
 
 ---
@@ -9231,7 +9258,7 @@ This can be called with file_id and chunk_id from `get_chunks_metadata`.
 
 # Quick Wins with Fused
 
-We'll show you quick ways to get started with Fused. All of these can be done in [Workbench](https://www.fused.io/workbench).
+Quick ways to get started with Fused in [Workbench](https://www.fused.io/workbench).
 
 ### Open a simple dataset
 
@@ -9257,9 +9284,9 @@ def udf():
 {/* TODO: Add join datasets example later */}
 {/* ### Join datasets */}
 
-### Turn any data in API
+### Turn any data into an API
 
-Similar to our [Quickstart](/quickstart), we can turn any code into an API:
+Turn any code into an API (similar to our [Quickstart](/quickstart)):
 
 ```python
 @fused.udf
@@ -9281,7 +9308,7 @@ Explore cloud storage directly in the [File Explorer](https://www.fused.io/workb
 
 ### Profile your code
 
-Workbench has a built-in profiler giving you:
+Workbench's built-in profiler provides:
 - Line by line runtime
 - Memory usage
 - Total runtime
@@ -9296,7 +9323,7 @@ Workbench has a built-in profiler giving you:
 
 Workbench is built for data teams. 
 
-You can toggle between Map / Table view depending on your data! 
+Toggle between Map/Table view based on your data!
 
 <video width="100%" controls>
   <source src="/img/tutorials/Map_Table_alternating.mp4" type="video/mp4" />
@@ -9308,19 +9335,19 @@ You can toggle between Map / Table view depending on your data!
 
 # Advanced Fused Features
 
-You should install `fused` python package locally to follow these advanced features:
+Install the `fused` Python package locally:
 
 ```bash
 pip install "fused[all]"
 ```
 
-Read more about [installing Fused](/python-sdk/#python-install) details. 
+Read more about [installing Fused](/python-sdk/#python-install).
 
-We recommend you run the following code snippets in a [notebook](https://jupyter.org/install) for best interactivity!
+Run the following code snippets in a [notebook](https://jupyter.org/install) for best interactivity!
 
 ### Run 100s of jobs in seconds: `fused.submit()`
 
-We'll calculate the average prices of houses over the years:
+Calculate the average prices of houses over the years:
 
 ```python
 import fused 
@@ -9333,13 +9360,13 @@ def udf(path: str = "s3://fused-sample/demo_data/housing/housing_2024.csv"):
 
     return housing['price_per_area'].mean()
 
-# Listing all available files
+# List all available files
 housing_lists = fused.api.list('s3://fused-sample/demo_data/housing/')
 
 results = fused.submit(udf, housing_lists)
 ```
 
-Print results and get all your data back:
+Print results:
 
 ```python
 results
@@ -9356,7 +9383,7 @@ Read more about running your code in parallel [here](/core-concepts/run-udfs/run
 
 ### Batch jobs
 
-You can also run much larger jobs that don't fit in the [memory & time constraints](/core-concepts/run-udfs/run-small-udfs/#defining-small-job) of a single UDF job.
+Run larger jobs that exceed the [memory & time constraints](/core-concepts/run-udfs/run-small-udfs/#defining-small-job) of a single UDF job.
 
 ```python
 @fused.udf
@@ -9378,9 +9405,9 @@ Read more about setting up batch jobs [here](/core-concepts/run-udfs/run_large/)
 
 ### Preview large files from your laptop
 
-When you have a large dataset that you'd like to explore on your local machine, you can use Fused to send yourself a sample of the data. The data will be loaded inside your UDF and only send you the sample. 
+Use Fused to sample large datasets for local exploration. The data loads inside your UDF and only sends you the sample.
 
-We'll use the ERA5 weather dataset as an example (this file is about 140Mb):
+Using the ERA5 weather dataset as an example (~140MB file):
 ```python
 @fused.udf
 def udf(path: str='s3://fused-asset/data/era5/t2m/datestr=2024-01-01/0.parquet'):
@@ -9390,7 +9417,7 @@ def udf(path: str='s3://fused-asset/data/era5/t2m/datestr=2024-01-01/0.parquet')
     return df.head(10)
 ```
 
-You will now only get a small sample of data:
+Get a small sample of data:
 
 ```python
 sample = fused.run(udf)
@@ -9398,13 +9425,13 @@ sample = fused.run(udf)
 
 ### Ingest geospatial data at scale
 
-When you have very large geospatial data, it might not be in an optimized format & partition to run efficiently. Fused offers a simple way to [ingest your data](/core-concepts/data-ingestion/ingestion-your-data/) at scale. 
+Large geospatial data might not be optimally formatted or partitioned. Fused offers a simple way to [ingest your data](/core-concepts/data-ingestion/ingestion-your-data/) at scale.
 
 ```python
 # Get your user handle 
 user = fused.api.whoami()['handle']
 
-# Ingesting Washington DC Census data
+# Ingest Washington DC Census data
 job = fused.ingest(
     input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
     output=f"fd://{user}/data/census/partitioned/", # Saving to your Fused bucket
@@ -9413,7 +9440,7 @@ job = fused.ingest(
 job.run_remote()
 ```
 
-You can trail logs to see how the job is progressing:
+You can tail logs to see how the job is progressing:
 
 ```python
 fused.api.job_tail_logs("your-job-id")
@@ -9444,12 +9471,12 @@ def udf(
 - Create a new [shared token](/workbench/udf-builder/navigation/#share)
 - Copy the HTTPS endpoint
 
-You do need to edit the tile coordinates to use `{z}/{x}/{y}`:
+Edit the tile coordinates to use `{z}/{x}/{y}`:
 ```
 https://.../run/tiles/{z}/{x}/{y}?dtype_out_vector=parquet
 ```
 
-Connect this anywhere you want to deliver a map tile server!
+Connect this anywhere to deliver a map tile server!
 
 ---
 
@@ -9673,7 +9700,7 @@ def udf():
        GROUP BY month
        ORDER BY month
     """).df()
-    print(result)
+
     return result
 ```
 
@@ -9685,18 +9712,22 @@ udf.to_fused("monthly_mean_temp")
 
 # Load again to get the Workbench URL
 loaded_udf = fused.load("monthly_mean_temp")
-loaded_udf.catalog_url()
+```
+
+Return `loaded_udf` in a notebook and you'll get a URL that takes you to Workbench:
+
+```python
+loaded_udf
 ```
 
 Click on the link to open the UDF in Workbench. Click "+ Add to UDF Builder" 
 
+![Monthly temperature aggregation in Workbench](/img/uses-cases/climate_dashboard/climate_agg.png)
+
+
 {/* TODO: Add a screenshot of Table view in Wb */}
 
-### Interactive canvas
-
-{/* TODO */}
-
-### Next Steps
+{/* ### Interactive canvas */}
 
 {/* TODO */}
 
