@@ -46,7 +46,7 @@ Bug Fixes:
 
 New Features:
 - Added AI editing and AI chat capabilities in the UDF builder.
-- Workbench will now show how much time was taken on each line of a UDF.
+- Workbench now has a code profiler: each line of code will show its execution runtime
 - Added new Dashboard builder mode (experimental).
 - Added new Table data view mode.
 - GitHub integration has a new page and is no longer beta.
