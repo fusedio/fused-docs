@@ -1,0 +1,151 @@
+---
+id: advanced-fused
+title: Advanced Fused Features
+sidebar_label: Advanced Fused Features
+sidebar_position: 2
+---
+
+# Advanced Fused Features
+
+Install the `fused` Python package locally:
+
+```bash
+pip install "fused[all]"
+```
+
+Read more about [installing Fused](/python-sdk/#python-install).
+
+Run the following code snippets in a [notebook](https://jupyter.org/install) for best interactivity!
+
+### Run 100s of jobs in seconds: `fused.submit()`
+
+Calculate the average prices of houses over the years:
+
+```python
+import fused 
+
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/housing/housing_2024.csv"):
+    import pandas as pd
+    housing = pd.read_csv(path)
+    housing['price_per_area'] = housing['price'] / housing['area'].round(2)
+
+    return housing['price_per_area'].mean()
+
+# List all available files
+housing_lists = fused.api.list('s3://fused-sample/demo_data/housing/')
+
+results = fused.submit(udf, housing_lists)
+```
+
+Print results:
+
+```python
+results
+
+>>> 
+path	
+s3://fused-sample/demo_data/housing/housing_1970.csv	1376.804413
+s3://fused-sample/demo_data/housing/housing_1971.csv	1492.044819
+s3://fused-sample/demo_data/housing/housing_1972.csv	1484.496548
+```
+
+Read more about running your code in parallel [here](/core-concepts/run-udfs/run-small-udfs/#running-multiple-jobs-in-parallel)
+
+
+### Batch jobs
+
+Run larger jobs that exceed the [memory & time constraints](/core-concepts/run-udfs/run-small-udfs/#defining-small-job) of a single UDF job.
+
+```python
+@fused.udf
+def udf(val):
+    import time
+    import pandas as pd
+
+    # Simulating a complex processing step
+    time.sleep(200) 
+
+    return pd.DataFrame({'val':[val]})
+    
+# Running with 5 inputs
+job = udf(arg_list=[0,1,2,3,4])
+job.run_remote()
+```
+
+Read more about setting up batch jobs [here](/core-concepts/run-udfs/run_large/)
+
+### Preview large files from your laptop
+
+Use Fused to sample large datasets for local exploration. The data loads inside your UDF and only sends you the sample.
+
+Using the ERA5 weather dataset as an example (~140MB file):
+```python
+@fused.udf
+def udf(path: str='s3://fused-asset/data/era5/t2m/datestr=2024-01-01/0.parquet'):
+    import pandas as pd
+    df = pd.read_parquet(path)
+
+    return df.head(10)
+```
+
+Get a small sample of data:
+
+```python
+sample = fused.run(udf)
+```
+
+### Ingest geospatial data at scale
+
+Large geospatial data might not be optimally formatted or partitioned. Fused offers a simple way to [ingest your data](/core-concepts/data-ingestion/ingestion-your-data/) at scale.
+
+```python
+# Get your user handle 
+user = fused.api.whoami()['handle']
+
+# Ingest Washington DC Census data
+job = fused.ingest(
+    input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
+    output=f"fd://{user}/data/census/partitioned/", # Saving to your Fused bucket
+)
+
+job.run_remote()
+```
+
+You can tail logs to see how the job is progressing:
+
+```python
+fused.api.job_tail_logs("your-job-id")
+```
+
+Learn more about [Fused data ingestion](/core-concepts/data-ingestion/ingestion-your-data/)
+
+### Make a Map Tile Server in seconds
+
+This example works best in [Workbench](https://www.fused.io/workbench)
+
+```python
+@fused.udf
+def udf(
+   bounds: fused.types.Bounds,
+   path: str="s3://fused-asset/data/tiger/state/tl_rd22_us_state 1pct.parquet"
+):
+   import geopandas as gpd
+   
+   df = gpd.read_parquet(path)
+   df = df.cx[bounds[0]:bounds[2], bounds[1]:bounds[3]]
+   df['area'] = df['geometry'].area.round(2)
+   return df
+```
+
+- Switch to using a [Tile UDF](/core-concepts/filetile/#tile)
+- Save your UDF
+- Create a new [shared token](/workbench/udf-builder/navigation/#share)
+- Copy the HTTPS endpoint
+
+Edit the tile coordinates to use `{z}/{x}/{y}`:
+```
+https://.../run/tiles/{z}/{x}/{y}?dtype_out_vector=parquet
+```
+
+Connect this anywhere to deliver a map tile server!
