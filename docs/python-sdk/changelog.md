@@ -68,7 +68,6 @@ Bug Fixes:
 - Reordered menu items in File Explorer.
 - Cursor position will be remembered when switching between UDFs.
 - Share tokens that are already shown on the page are no longer redacted.
-- GitHub integration remembers relevant open PRs better.
 - Map tooltip can now be scrolled.
 
 ## v1.20.1 (2025-06-09)
