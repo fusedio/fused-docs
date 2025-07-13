@@ -16,7 +16,7 @@ New Features:
 - Added `fused.api.team_info`.
 - IPython magics now load automatically.
 - When running a large (batch) job, it is now possible to specify the job's name.
-- Upgraded xarray to 2025.4.0, DuckDB to 1.3.2, and H3 to 4.3.0.
+- Upgraded `xarray` to 2025.4.0, DuckDB to 1.3.2, and H3 to 4.3.0.
 - The `fd://` filesystem scheme will automatically be registered with `fsspec`.
 - UDFs that return HTML will be loaded as `str` objects from `fused.run`.
 - Saved UDFs have a `catalog_url` property.
