@@ -19,7 +19,7 @@ New Features:
 - Upgraded `xarray` to 2025.4.0, DuckDB to 1.3.2, and H3 to 4.3.0.
 - The `fd://` filesystem scheme will automatically be registered with `fsspec`.
 - UDFs that return HTML will be loaded as `str` objects from `fused.run`.
-- Saved UDFs have a `catalog_url` property.
+- UDFs saved on Fused server now have a `catalog_url` property to get the Workbench UDF URL.
 - `npy` output format is now supported for numpy (raster) return values.
 - Arrow-compatible return values are now accepted.
 - `fused.cache` will detect changes to referenced UDFs.
