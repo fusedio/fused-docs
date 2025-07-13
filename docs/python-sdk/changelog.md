@@ -26,7 +26,7 @@ New Features:
 - `fused.run` accepts `verbose` keyword.
 
 Bug Fixes:
-- Fixed bugs with `Udf.render` on some IPython versions.
+- Fixed bugs with `udf.render` on some IPython versions.
 - Fixed bugs with `repr`s for access tokens and UDFs.
 - Fixed calling `fused.run` with UDF objects and `sync=False`.
 - Renamed the UDF class to `Udf`.
