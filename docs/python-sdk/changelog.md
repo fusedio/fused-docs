@@ -7,6 +7,70 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.21.0 (2025-07-11)
+
+**[`fused-py`](/python-sdk/)**
+
+New Features:
+- Added `fused.api.resolve`.
+- Added `fused.api.team_info`.
+- IPython magics now load automatically.
+- When running a large (batch) job, it is now possible to specify the job's name.
+- Upgraded xarray to 2025.4.0, DuckDB to 1.3.2, and H3 to 4.3.0.
+- The `fd://` filesystem scheme will automatically be registered with `fsspec`.
+- UDFs that return HTML will be loaded as `str` objects from `fused.run`.
+- Saved UDFs have a `catalog_url` property.
+- `npy` output format is now supported for numpy (raster) return values.
+- Arrow-compatible return values are now accepted.
+- `fused.cache` will detect changes to referenced UDFs.
+- `fused.run` accepts `verbose` keyword.
+
+Bug Fixes:
+- Fixed bugs with `Udf.render` on some IPython versions.
+- Fixed bugs with `repr`s for access tokens and UDFs.
+- Fixed calling `fused.run` with UDF objects and `sync=False`.
+- Renamed the UDF class to `Udf`.
+- Removed some unused and deprecated code.
+- Fixed bugs with `fused.cache` showing as not found, having stale files, or not passing arguments through.
+- Removed the `n` keyword argument from `get_udfs` and `get_apps`.
+- Fixed bugs with HEAD requests to UDF endpoint.
+- `fused.submit` will warn about conflicting arguments.
+- `/tmp/` size has been increased in realtime instances.
+- `fused.api.list` and related functions supports `/mount` paths.
+- Improved the performance of GitHub sync.
+- Changed defaults for `JobPool.cancel` and fixed a bug where it would continue to retry.
+- Fixed bugs with `JobPool.df` and UDF runs that result in exceptions.
+- Fixed encoding URL paths in `fused.api.download` and related functions.
+
+**[Workbench](/workbench/)**
+
+New Features:
+- Added AI editing and AI chat capabilities in the UDF builder.
+- Workbench will now show how much time was taken on each line of a UDF.
+- Added new Dashboard builder mode (experimental).
+- Added new Table data view mode.
+- GitHub integration has a new page and is no longer beta.
+- Fused apps uses a newer version of Streamlit and Stlite.
+- Added a menu item to take a screenshot in higher-than-screen resolution.
+- Added type-to-filter in File Explorer.
+- File Explorer can be browsed without logging in.
+- File Explorer now shows a summary of the current directory.
+- File preview UDFs can now be specified with regular expressions.
+- Cmd+Click on shared tokens will now take you to the UDF catalog.
+
+Bug Fixes:
+- Results panel shows when memory usage is unknown.
+- Share code is more consistent with the selected output format.
+- Fixed bugs with read-only app UI.
+- The large data warning will now show in File Explorer as well when applicable.
+- Fixed bugs with app/UDF catalog layout and sorting.
+- Adjusted the UI for visualization settings and parameters in the UDF list.
+- Reordered menu items in File Explorer.
+- Cursor position will be remembered when switching between UDFs.
+- Share tokens that are already shown on the page are no longer redacted.
+- GitHub integration remembers relevant open PRs better.
+- Map tooltip can now be scrolled.
+
 ## v1.20.1 (2025-06-09)
 
 **[`fused-py`](/python-sdk/)**
