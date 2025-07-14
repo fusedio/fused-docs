@@ -19,6 +19,18 @@ const sidebars: SidebarsConfig = {
         "tutorials/load-export-data",
         {
           type: "category",
+          label: "Geospatial Analysis in Fused",
+          collapsed: true,
+          link: { type: "doc", id: "tutorials/Geospatial Analysis in Fused/index" },
+          items: [
+            "tutorials/Geospatial Analysis in Fused/Best Practices/index",
+            "tutorials/Geospatial Analysis in Fused/Read Data/index", 
+            "tutorials/Geospatial Analysis in Fused/Write Data/index",
+            "tutorials/Geospatial Analysis in Fused/Processing & Statistics/index"
+          ],
+        },
+        {
+          type: "category",
           label: "Others",
           collapsed: true,
           link: { type: "doc", id: "tutorials/others/others" },
