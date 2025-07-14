@@ -23,10 +23,11 @@ const sidebars: SidebarsConfig = {
           collapsed: true,
           link: { type: "doc", id: "tutorials/Geospatial Analysis in Fused/index" },
           items: [
-            "tutorials/Geospatial Analysis in Fused/Best Practices/index",
-            "tutorials/Geospatial Analysis in Fused/Read Data/index", 
-            "tutorials/Geospatial Analysis in Fused/Write Data/index",
-            "tutorials/Geospatial Analysis in Fused/Processing & Statistics/index"
+            "tutorials/Geospatial Analysis in Fused/best-practices",
+            "tutorials/Geospatial Analysis in Fused/read-data", 
+            "tutorials/Geospatial Analysis in Fused/write-data",
+            "tutorials/Geospatial Analysis in Fused/processing-statistics",
+            "tutorials/Geospatial Analysis in Fused/other-integrations"
           ],
         },
         {
