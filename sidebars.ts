@@ -27,6 +27,7 @@ const sidebars: SidebarsConfig = {
             "tutorials/Geospatial Analysis in Fused/read-data", 
             "tutorials/Geospatial Analysis in Fused/write-data",
             "tutorials/Geospatial Analysis in Fused/processing-statistics",
+            "tutorials/Geospatial Analysis in Fused/visualization",
             "tutorials/Geospatial Analysis in Fused/gee_bigquery",
             "tutorials/Geospatial Analysis in Fused/filetile",
             "tutorials/Geospatial Analysis in Fused/other-integrations"
