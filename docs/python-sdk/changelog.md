@@ -18,11 +18,11 @@ Bug Fixes:
 - Fixed issues starting batch jobs.
 
 **[Workbench](/workbench/)**
-- Removed experimental feature toggles.
+- Removed experimental feature toggles. They are now enabled.
 - Improved AI context.
 - App builder now integrates with the new version control page.
-- Fixed saving and layout issues on the Dashboard view.
 - Fixed scrolling on the version control page.
+- Fixed saving and layout issues on the Canvas view.
 
 ## v1.21.0 (2025-07-11)
 
@@ -64,7 +64,7 @@ Bug Fixes:
 New Features:
 - Added AI editing and AI chat capabilities in the UDF builder.
 - Workbench now has a code profiler: each line of code will show its execution runtime
-- Added new Dashboard builder mode (experimental).
+- Added new Canvas dashboard builder mode (experimental).
 - Added new Table data view mode.
 - GitHub integration has a new page and is no longer beta.
 - GitHub integration remembers relevant open PRs better.
