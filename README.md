@@ -10,7 +10,7 @@ This website is built using [Docusaurus](https://docusaurus.io/), a modern stati
 
 ```
 npm install
-npx docusaurus start
+npm run install
 ```
 
 ## 2. Deploy
@@ -18,4 +18,4 @@ npx docusaurus start
 Create a PR on this repo.
 
 - Once PRs merge to `main`, GitHub actions will run to re-deploy the docs site to `https://docs.fused.io/`.
-- Similarly, merges to `staging` branch deploy to `https://docs-staging.fused.io/`.
+- PRs automatically create a preview build at `https://docs-staging.fused.io/`.
