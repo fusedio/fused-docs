@@ -7,9 +7,9 @@ sidebar_label: DeckGL (HTML)
 
 This guide shows how to load data from Fused into DeckGL maps created from a single standalone HTML page with the following layer types:
 
-- [H3HexagonLayer](/examples/out/deckgl/#h3hexagonlayer)
-- [Vector Tile Layer](/examples/out/deckgl/#vector-tile-layers)
-- [Raster Tile Layer](/examples/out/deckgl/#raster-tile-layers)
+- [H3HexagonLayer](/tutorials/others/out/deckgl/#h3hexagonlayer)
+- [Vector Tile Layer](/tutorials/others/out/deckgl/#vector-tile-layers)
+- [Raster Tile Layer](/tutorials/others/out/deckgl/#raster-tile-layers)
 
 ## 1. Generate a signed URL for a UDF
 
