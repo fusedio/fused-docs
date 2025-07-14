@@ -7,6 +7,20 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.21.1 (2025-07-14)
+
+**[`fused-py`](/python-sdk/)**
+
+- Updated LanceDB to 0.24.1.
+- Fixed issues starting batch jobs.
+
+**[Workbench](/workbench/)**
+
+- AI Assistant now sees all UDFs in Workbench & has access to updated Fused documentation
+- App builder now integrates with the new version control page.
+- Fixed scrolling on the version control page.
+- Fixed saving and layout issues on the Canvas view.
+
 ## v1.21.0 (2025-07-11)
 
 **[`fused-py`](/python-sdk/)**
@@ -47,7 +61,7 @@ Bug Fixes:
 New Features:
 - Added AI editing and AI chat capabilities in the UDF builder.
 - Workbench now has a code profiler: each line of code will show its execution runtime
-- Added new Dashboard builder mode (experimental).
+- Added new Canvas dashboard builder mode (experimental).
 - Added new Table data view mode.
 - GitHub integration has a new page and is no longer beta.
 - GitHub integration remembers relevant open PRs better.
