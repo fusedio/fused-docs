@@ -19,18 +19,18 @@ const sidebars: SidebarsConfig = {
         "tutorials/load-export-data",
         {
           type: "category",
-          label: "Geospatial Analysis in Fused",
+          label: "Geospatial with Fused",
           collapsed: true,
-          link: { type: "doc", id: "tutorials/Geospatial Analysis in Fused/index" },
+          link: { type: "doc", id: "tutorials/Geospatial with Fused/index" },
           items: [
-            "tutorials/Geospatial Analysis in Fused/best-practices",
-            "tutorials/Geospatial Analysis in Fused/read-data", 
-            "tutorials/Geospatial Analysis in Fused/write-data",
-            "tutorials/Geospatial Analysis in Fused/processing-statistics",
-            "tutorials/Geospatial Analysis in Fused/visualization",
-            "tutorials/Geospatial Analysis in Fused/gee_bigquery",
-            "tutorials/Geospatial Analysis in Fused/filetile",
-            "tutorials/Geospatial Analysis in Fused/other-integrations"
+            "tutorials/Geospatial with Fused/best-practices",
+            "tutorials/Geospatial with Fused/read-data", 
+            "tutorials/Geospatial with Fused/write-data",
+            "tutorials/Geospatial with Fused/processing-statistics",
+            "tutorials/Geospatial with Fused/visualization",
+            "tutorials/Geospatial with Fused/gee_bigquery",
+            "tutorials/Geospatial with Fused/filetile",
+            "tutorials/Geospatial with Fused/other-integrations"
           ],
         },
         {
