@@ -16,7 +16,7 @@ sidebar_position: 8
 
 **[Workbench](/workbench/)**
 
-- Improved AI context.
+- AI Assistant now sees all UDFs in Workbench & has access to updated Fused documentation
 - App builder now integrates with the new version control page.
 - Fixed scrolling on the version control page.
 - Fixed saving and layout issues on the Canvas view.
