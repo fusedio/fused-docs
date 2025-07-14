@@ -268,12 +268,7 @@ const config: Config = {
         anonymizeIP: true,
       },
     ],
-    [
-      "docusaurus-plugin-generate-llms-txt",
-      {
-        outputFile: "llms.txt",
-      },
-    ],
+
   ],
 };
 
