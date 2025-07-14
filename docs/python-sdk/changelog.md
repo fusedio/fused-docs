@@ -11,13 +11,11 @@ sidebar_position: 8
 
 **[`fused-py`](/python-sdk/)**
 
-New Features
 - Updated LanceDB to 0.24.1.
-
-Bug Fixes:
 - Fixed issues starting batch jobs.
 
 **[Workbench](/workbench/)**
+
 - Removed experimental feature toggles. They are now enabled.
 - Improved AI context.
 - App builder now integrates with the new version control page.
