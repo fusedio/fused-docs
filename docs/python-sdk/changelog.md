@@ -7,6 +7,23 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.21.1 (2025-07-14)
+
+**[`fused-py`](/python-sdk/)**
+
+New Features
+- Updated LanceDB to 0.24.1.
+
+Bug Fixes:
+- Fixed issues starting batch jobs.
+
+**[Workbench](/workbench/)**
+- Removed experimental feature toggles.
+- Improved AI context.
+- App builder now integrates with the new version control page.
+- Fixed saving and layout issues on the Dashboard view.
+- Fixed scrolling on the version control page.
+
 ## v1.21.0 (2025-07-11)
 
 **[`fused-py`](/python-sdk/)**
