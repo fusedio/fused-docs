@@ -16,7 +16,6 @@ sidebar_position: 8
 
 **[Workbench](/workbench/)**
 
-- Removed experimental feature toggles. They are now enabled.
 - Improved AI context.
 - App builder now integrates with the new version control page.
 - Fixed scrolling on the version control page.
