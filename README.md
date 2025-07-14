@@ -10,7 +10,7 @@ This website is built using [Docusaurus](https://docusaurus.io/), a modern stati
 
 ```
 npm install
-npm run install
+npm run start
 ```
 
 ## 2. Deploy
