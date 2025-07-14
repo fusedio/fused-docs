@@ -3053,6 +3053,2860 @@ Go to the "Embed" tab to see your chart:
 
 ================================================================================
 
+## Load & Export Data
+Path: tutorials/load_and_save_data.mdx
+URL: https://docs.fused.io/tutorials/load_and_save_data/
+
+# Load & Export Data 
+
+Common examples for loading and saving data in Fused.
+
+## Load Data
+
+### `pandas`
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/housing_2024.csv"):
+
+    return pd.read_csv(path)
+```
+
+### `duckdb`
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/housing_2024.parquet"):
+
+    conn = duckdb.connect()
+    result = conn.execute(f"""
+        SELECT * 
+        FROM ''
+        LIMIT 10
+    """).df()
+    
+    return result
+```
+
+### From other UDFs
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds):
+    overture_udf = fused.load('https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example/')
+    buildings = fused.run(overture_udf, bounds=bounds, theme='buildings', overture_type='building')
+ 
+    return buildings
+```
+
+### Download data to shared Fused mount
+
+```python
+@fused.udf
+def udf(url='https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_COLUMBIA/11/tl_rd22_11_bg.zip'):
+    out_path = fused.download(url=url, file_path='out.zip')
+    return str(out_path)
+```
+
+Files will be written to `/mount/tmp/`, where any other UDF can then access them.
+
+Read more about `fused.download()` here
+
+## Export Data
+
+### Fused managed storage: `fd://`
+
+```python
+df.to_parquet("fd://my-dataset/data.parquet")
+```
+
+Read more about about `fd://` S3 Bucket
+
+### Fused mount disk: `/mnt/cache`
+
+```python
+df.to_parquet("/mnt/cache/data.parquet")
+```
+
+Read more about about `/mnt/cache` mount disk
+
+### AWS S3: `s3://`
+
+```python
+df.to_parquet("s3://my-bucket/data.parquet")
+```
+
+### Google Cloud Storage: `gcs://`
+
+```python
+df.to_parquet("gcs://my-bucket/data.parquet")
+```
+
+### Use as API (No file saving required)
+
+You can directly call your UDFs as APIs, removing the need to even save your data at all!
+
+After creating a Shared Token for your UDF, you can change the output format of your HTTPS endpoint:
+
+```bash
+https://fused.io/.../run/file?dtype_out_vector=json
+```
+
+**Tabular data downloads:**
+
+```bash
+?dtype_out_vector=csv          # CSV download
+?dtype_out_vector=geojson      # GeoJSON download
+?dtype_out_vector=parquet      # Parquet download
+?dtype_out_vector=json         # JSON download
+?dtype_out_vector=mvt          # Mapbox Vector Tile download
+```
+
+**Image data downloads:**
+
+```bash
+?dtype_out_raster=png          # PNG image
+?dtype_out_raster=tiff         # GeoTIFF download
+```
+
+### Integrate with Other Tools
+
+Call your UDFs from other tools after creating a Shared Token for your UDF:
+
+**DuckDB:** 
+
+```bash
+select * from read_parquet('https://fused.io/.../run/file?');
+```
+
+**Curl:** 
+
+```bash
+curl -L -XGET 'https://fused.io/.../run/file?'
+```
+
+**Google Sheets:** 
+
+```bash
+=importData('https://fused.io/.../run/file?')
+```
+
+**Notion:** 
+
+- Use `/embed` block with UDF endpoint: `'https://fused.io/.../run/file?'`
+
+## Geospatial Data
+
+### `geopandas`
+
+```python
+@fused.udf
+def udf(path: str = 's3://fused-sample/demo_data/subway_stations.geojson'):
+
+    return gpd.read_file(path)
+```
+
+### `xarray`
+
+```python
+@fused.udf
+def udf():
+
+    # Download data from S3 to mount disk for NetCDF to be read properly
+    path = fused.download('s3://fused-sample/demo_data/2025_01_01_ERA5_surface.nc','2025_01_01_ERA5_surface.nc')
+    ds = xr.open_dataset(path)
+    
+    # Convert to DataFrame
+    df = ds.to_dataframe().reset_index()
+    
+    return df.head()
+```
+
+### STAC Catalog (Satellite Imagery)
+
+Loading an digital elevation model (DEM) from the Microsoft Planetary Computer STAC Catalog:
+
+```python
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-122.463,37.755,-122.376,37.803],
+):
+
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        modifier=planetary_computer.sign_inplace,
+    )
+
+    # Loading Elevation model
+    items = catalog.search(collections=["cop-dem-glo-30"],bbox=bounds).item_collection()
+    
+    xarray_dataset = odc.stac.load(
+        items,
+        crs="EPSG:3857",
+        bands=["data"],
+        resolution=100,
+        bbox=bounds,
+    ).astype(int)
+    
+    return xarray_dataset["data"], bounds
+```
+
+================================================================================
+
+## Aggregating Data in H3
+Path: tutorials/others/_hex/aggregating-h3.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_hex/aggregating-h3/
+
+# Aggregating Data in H3
+
+🚧 **Work in Progress** 🚧
+
+Given a dataset of H3 hexagons we'll show you how to aggregate data at higher levels (to create heatmaps)
+
+---
+
+</div>
+
+================================================================================
+
+## H3 Hexagons
+Path: tutorials/others/_hex/hex-deep-dive.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_hex/hex-deep-dive/
+
+# H3 Hexagons Deep Dive
+
+[Image: Open Water in US from CDL]
+
+_We'll show you how to manipulate huge datasets with H3 & Fused like this example: Crop Data Layer filtered to only show open waters in the US_
+
+## What you'll learn
+
+Hexagons are the bestagons, especially for analysing large datasets. We think so, and we'll show you: 
+
+- When to use H3 Hexagons to simplify & speed up your analysis
+- How to do simple aggregations & spatial joins of H3 data to answer questions
+- Using DuckDB with Fused for fast queries
+- Ways to display your results
+- Use advanced Fused concepts like caching, parallel computing with `fused.submit()`
+
+## Prerequisites
+
+**Knowledge**
+
+It will be helpful if you have some familiarity with:
+- Fused, Python
+- Some geospatial concepts like spatial joins & aggregation.
+
+We'll do our best to explain all the Fused concepts and any operations we do. If you ever have questions, reach out to us on Discord or send an email to `info@fused.io` if you get stuck!
+
+**Access**
+
+Different Fused accounts will allow you to:
+
+| Feature | Guest (Free) | Personal (Free) | Team (and above) |
+|---------|-------|----------|-------|
+| Access data | ✅ | ✅ | ✅ |
+| Run public UDF code | ✅ | ✅ | ✅ |
+| Edit & replicate code | ❌ | ❌ | ✅ |
+
+## Table of Contents
+
+1. Why using Hexagons to begin with
+2. Ingesting Datasets into H3
+3. Aggregating Data
+4. Joining Multiple Datasets Together
+5. Visualizing H3 Hexagons
+6. Leveraging MCP & LLMs to ask questions to your data
+
+Each section provides detailed information and practical examples to help you master working with H3 hexagons in your projects.
+
+================================================================================
+
+## Ingesting Datasets into H3
+Path: tutorials/others/_hex/ingesting-h3.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_hex/ingesting-h3/
+
+# Ingesting Datasets into H3
+
+_How to ingest data into H3 cells_
+
+### For small datasets
+
+If you want to ingest a small dataset we have a dedicated page to do this with a public UDF: Raster to Hexagon
+
+### For large datasets
+
+🚧 **This section is still a Work in Progress** 🚧 
+
+For the rest of this guide we'll be using data already ingested into H3 cells, and available on Source Cooperative. 
+
+Source Cooperative is a free repository of data, handled & managed by the Radiant Earth Foundation. Fused simply provides a partitioned & H3 tiled version of the USDA's Crop Data Layer & US Census data.
+
+[Image: Source Coop CDL Visualization hex]
+
+---
+
+</div>
+
+================================================================================
+
+## Joining Multiple Datasets in H3
+Path: tutorials/others/_hex/joining-h3.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_hex/joining-h3/
+
+# Joining Multiple Datasets in H3
+
+🚧 **Work in Progress** 🚧
+
+Things get more complicated (and more fun) when there's more than 1 dataset.
+
+---
+
+</div>
+
+================================================================================
+
+## Leveraging MCP & LLMs with H3 Data
+Path: tutorials/others/_hex/mcp-llm-h3.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_hex/mcp-llm-h3/
+
+# Leveraging MCP & LLMs with H3 Data
+
+🚧 **Work in Progress** 🚧
+
+AI this, AI that. But what about AI can talk to your data? Turns out H3 is a great tool to allow your LLM to query huge datasets.
+
+See what's we've announced so far
+
+---
+
+</div>
+
+================================================================================
+
+## Visualizing H3 Hexagons
+Path: tutorials/others/_hex/visualizing-h3.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_hex/visualizing-h3/
+
+# Visualizing H3 Hexagons
+
+🚧 **Work in Progress** 🚧
+
+You've made an analysis. Pretty sure you want to show it to someone!
+
+---
+
+</div>
+
+================================================================================
+
+## Why using Hexagons
+Path: tutorials/others/_hex/why-hexagons.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_hex/why-hexagons/
+
+# Why using Hexagons
+
+**Because they're the bestagons of course!**
+
+🚧 (For real, we're still working on this section!) 🚧
+
+This section will cover:
+- Benefits of using H3 tiling
+- When to use / not use
+
+---
+
+</div>
+
+================================================================================
+
+## ✋ Logging in
+Path: tutorials/others/_login.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_login/
+
+Here's a quick guide to help you log into Fused using Google or GitHub, and how to fix any account setup scenarios you might run into
+
+## Step 1: Sign up for Fused
+
+Fused is currently in private beta. 
+
+To join, sign up for the waitlist and coordinate with the Fused team to ensure your account is properly set up. 
+
+Once your account is confirmed, you'll be able to log in.
+
+## Step 2: Choose how to log in
+
+Visit the login page here: fused.io/workbench and follow the authentication flow. You can log into Fused using:
+1. Google Email
+2. GitHub
+
+## Troubleshoot authentication issues
+
+Follow these steps if you encounter any issues logging into Fused or executing UDFs.
+
+### 1. Try to run a UDF
+
+To verify if your account is active, navigate to the UDF Builder then create and run a User Defined Function (UDF). If your account is configured correctly, the map should show "Changes pending" and begin to render the UDF output. If you see the following error message, the email you used to sign in may not be associated with an active execution environment.
+
+```text
+Access is not configured for you in the Fused Workbench.
+
+Please refresh the page if you think this is an error,
+or get in touch if you require further help.
+
+Cause: Realtime instance not configured.
+```
+
+### 2. Check User Preferences
+
+Click the gear icon in the bottom-left corner to open Preferences and confirm your execution environment settings.
+
+### 3. Contact the Fused team for further assistance
+
+If the issue persists, reach out to the Fused team for further assistance. Provide them with screenshots or error messages to help them diagnose the problem.
+
+================================================================================
+
+## Explore Overture
+Path: tutorials/others/_use-cases/_del_overture.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/_del_overture/
+
+<LinkButtons
+  githubUrl="https://github.com/fusedio/fused-docs/blob/main/docs/basics/tutorials/overture.ipynb"
+  colabUrl="https://githubtocolab.com/fusedio/fused-docs/blob/main/docs/basics/tutorials/overture.ipynb"
+/>
+
+# Overture Buildings
+
+Welcome! This Notebook designed to perform a spatial query on the Overture Buildings
+dataset.
+
+The original dataset is several GB in size. The Fused User Defined Function (UDF) below
+fetches only the buildings that fall within the area of interest. This means you can use
+this code to simplify your workflows by loading only the fraction of data you care
+about.
+
+<img src="https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/overture_spatial_query.png" alt="overture" width="600"/>
+
+The Notebook shows how to:
+
+1. Define an area of interest by drawing a polygon on a Leaflet map
+1. Perform a spatial query over the dataset with a UDF
+1. View the output on a map
+
+It shows examples for using both `ipyleaflet` and `geemap`.
+
+Let's begin!
+
+```python showLineNumbers
+# !pip install fused ipyleaflet geopandas -q
+```
+
+```python showLineNumbers
+# If on colab, Enable the ipyleaflet widget (might require restarting the kernel)
+
+# !pip install ipywidgets==7.7.1 -q
+# from google.colab import output
+# output.enable_custom_widget_manager()
+```
+
+# 1. Load Fused UDF
+
+This User Defined Function (UDF) queries a geo partitioned version of the Overture
+Buildings Dataset (hosted on an S3 bucket) that corresponds to the area of an input
+GeoDataFrame. It returns a GeoDataFrame containing the subsampled data, which gets
+cached to the local environment for added speed.
+
+```python showLineNumbers
+
+from shapely.geometry import shape
+
+# Create a map centered at the given location
+MAP_LOCATION = (37.7749, -122.4194)
+```
+
+```python showLineNumbers
+udf = fused.load(
+    "https://github.com/fusedio/udfs/tree/0905bef/public/Overture_Maps_Example"
+)
+```
+
+# 2. Draw polygon to query buildings
+
+## ipyleaflet
+
+Draw a polygon around the AOI and on the map and wait for building polygons to load.
+
+Note: the workflow is designed to work with a single polygon.
+
+```python showLineNumbers
+from ipyleaflet import DrawControl, GeoData, Map, basemap_to_tiles, basemaps
+
+m = Map(
+    layers=(basemap_to_tiles(basemaps.OpenStreetMap.Mapnik),),
+    center=MAP_LOCATION,
+    zoom=13,
+)
+
+def on_draw(self, action, geo_json):
+    print("Running...")
+    gdf = gpd.GeoDataFrame(
+        index=[0], crs="epsg:4326", geometry=[shape(geo_json.get("geometry"))]
+    )
+    gdf_buildings = udf(bounds=gdf).run_local()
+    m.add(GeoData(geo_dataframe=gdf_buildings))
+    print("Done!")
+
+draw_control = DrawControl()
+draw_control.on_draw(on_draw)
+draw_control.polygon = ,
+    "drawError": ,
+    "allowIntersection": False,
+}
+
+draw_control.rectangle = }
+
+m.add(draw_control)
+```
+
+```python showLineNumbers
+
+```
+
+================================================================================
+
+## Object Detection
+Path: tutorials/others/_use-cases/dl4eo.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/dl4eo/
+
+================================================================================
+
+## DEM Query with DuckDB
+Path: tutorials/others/_use-cases/duckdbdem.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/duckdbdem/
+
+================================================================================
+
+## FCC Fiber Network Accessibility
+Path: tutorials/others/_use-cases/fcc.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/fcc/
+
+================================================================================
+
+## Create timelapse of GOES 16 & 18
+Path: tutorials/others/_use-cases/goes.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/goes/
+
+================================================================================
+
+## Create gif from NOAA GOES
+Path: tutorials/others/_use-cases/noaa.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/noaa/
+
+### 2.2 Set bounds for area of interest (AOI)
+
+The AOI should be defined in a 1-row GeoDataFrame with a single `geometry` column.
+
+```python showLineNumbers
+# Sample geometry and crs
+roi_wkt = ', "geometry": }]}'
+crs = 'PROJCRS["WGS84 / Lambert_Conformal_Conic_2SP",BASEGEOGCRS["WGS84",DATUM["World Geodetic System 1984",ELLIPSOID["WGS 84",6378137,298.257223563,LENGTHUNIT["metre",1,ID["EPSG",9001]]]],PRIMEM["Greenwich",0,ANGLEUNIT["degree",0.0174532925199433]]],CONVERSION["unnamed",METHOD["Lambert Conic Conformal (2SP)",ID["EPSG",9802]],PARAMETER["Latitude of false origin",33,ANGLEUNIT["degree",0.0174532925199433],ID["EPSG",8821]],PARAMETER["Longitude of false origin",-125,ANGLEUNIT["degree",0.0174532925199433],ID["EPSG",8822]],PARAMETER["Latitude of 1st standard parallel",21,ANGLEUNIT["degree",0.0174532925199433],ID["EPSG",8823]],PARAMETER["Latitude of 2nd standard parallel",45,ANGLEUNIT["degree",0.0174532925199433],ID["EPSG",8824]],PARAMETER["Easting at false origin",0,LENGTHUNIT["Meter",1],ID["EPSG",8826]],PARAMETER["Northing at false origin",0,LENGTHUNIT["Meter",1],ID["EPSG",8827]]],CS[Cartesian,2],AXIS["easting",east,ORDER[1],LENGTHUNIT["Meter",1]],AXIS["northing",north,ORDER[2],LENGTHUNIT["Meter",1]]]'
+json_data = json.loads(roi_wkt)
+
+# Input geodataframe
+roi = gpd.GeoDataFrame(
+    geometry=[
+        Polygon(feature["geometry"]["coordinates"][0])
+        for feature in json_data["features"]
+    ],
+    crs=crs,
+)
+roi
+```
+
+|    | geometry                                          |
+|---:|:--------------------------------------------------|
+|  0 | POLYGON ((-4000000.000 2500000.000, 3000000.00... |
+
+```python showLineNumbers
+roi.geometry.iloc[0]
+```
+
+## 3. Generate frames from band 8 of the GOES-18 dataset
+
+The next cell declares and previews function to call the UDF that returns the data as an
+array.
+
+The subsequent cells create parallel calls, then stitch returned arrays to create the
+gif.
+
+### 3.1 Structure parameters
+
+```python showLineNumbers
+# Set parameters to call the UDF
+datestr: str = selected_datetime.value.strftime("%Y-%m-%d")
+start_i: int = 0
+end_i: int = n_frames.value  # Number of frames at 10-minute intervals after start time
+band: int = 8  # Target band in the GOES-18 datasets
+product_name: str = "ABI-L2-CMIPF"  # Imagery product in NOAA's S3 bucket
+
+# Geometry in serializable representation
+roi_wkt = roi.geometry.buffer(-90001).to_json()
+crs = str(roi.crs)
+```
+
+### 3.2 Define and preview functions that create the array from NOAA imagery 🛰️
+
+🎓 The `call_udf` structures calls to the remote UDF with the convenient
+`fused.core.run_file` wrapper. The appendix shows how to view and modify the Python code
+behind that UDF.
+
+#### 3.2.1 UDF to determine how to subsample array
+
+The first UDF call, to the UDF named `GOES_18_Partitions`, generates array coordinates
+to subsample NOAA image to the size of the original geometry.
+
+```python showLineNumbers
+df = fused.core.run_file("sina@fused.io", "GOES_18_Partitions")
+partition_str = df.to_json()
+partition_str
+```
+
+#### 3.2.2 UDF to subsample array
+
+The second UDF call, to the UDF named `GOES_18_Async`, subsamples the array and returns
+an array that corresponds to different frames for the gif to generate. It's wrapped in
+the `call_udf` function to make it easy to run in a loop.
+
+```python showLineNumbers
+def call_udf(
+    start_end_i: List[int] = [0, 32],
+    band: int = 8,
+    datestr: str = datestr,
+    product_name: str = "ABI-L2-CMIPF",
+    roi_wkt: str = ', "geometry": }]}',
+    crs: str = 'PROJCRS["WGS84 / Lambert_Conformal_Conic_2SP",BASEGEOGCRS["WGS84",DATUM["World Geodetic System 1984",ELLIPSOID["WGS 84",6378137,298.257223563,LENGTHUNIT["metre",1,ID["EPSG",9001]]]],PRIMEM["Greenwich",0,ANGLEUNIT["degree",0.0174532925199433]]],CONVERSION["unnamed",METHOD["Lambert Conic Conformal (2SP)",ID["EPSG",9802]],PARAMETER["Latitude of false origin",33,ANGLEUNIT["degree",0.0174532925199433],ID["EPSG",8821]],PARAMETER["Longitude of false origin",-125,ANGLEUNIT["degree",0.0174532925199433],ID["EPSG",8822]],PARAMETER["Latitude of 1st standard parallel",21,ANGLEUNIT["degree",0.0174532925199433],ID["EPSG",8823]],PARAMETER["Latitude of 2nd standard parallel",45,ANGLEUNIT["degree",0.0174532925199433],ID["EPSG",8824]],PARAMETER["Easting at false origin",0,LENGTHUNIT["Meter",1],ID["EPSG",8826]],PARAMETER["Northing at false origin",0,LENGTHUNIT["Meter",1],ID["EPSG",8827]]],CS[Cartesian,2],AXIS["easting",east,ORDER[1],LENGTHUNIT["Meter",1]],AXIS["northing",north,ORDER[2],LENGTHUNIT["Meter",1]]]',
+    partition_str: str = ',"x_stop":,"y_start":,"y_stop":,"fused_index":}',
+) -> List[Any]:
+    """
+    Executes a UDF to process satellite imagery data based on the given parameters.
+
+    Args:
+        start_end_i (int): The start & end indices for the imagery frames to process.
+        band (int, optional): The satellite imagery band to process. Defaults to 8.
+        datestr (str): The date string representing the target date for the satellite imagery data.
+        product_name (str, optional): The name of the satellite imagery product. Defaults to "ABI-L2-CMIPF".
+        roi_wkt (str, optional): A string representing the region of interest (ROI) in Well-Known Text (WKT) format for GeoJSON.
+        crs (str, optional): The Coordinate Reference System (CRS) for the ROI.
+        partition_str (str, optional): A string representing partition information for processing.
+
+    Returns:
+        List[Any]: A flattened list representing the processed image frames.
+
+    This function calls a remote UDF, passing parameters for the date, index range, band, and imagery product name,
+    and returns a list containing processed satellite imagery data.
+    """
+    start_i = start_end_i[0]
+    end_i = start_end_i[1]
+    df = fused.core.run_file(
+        "sina@fused.io",  # This public UDF is published under Sina's account and available to all users
+        "GOES_18_Async",  # Name of UDF
+        datestr=datestr,
+        start_i=start_i,
+        end_i=end_i,
+        band=band,
+        product_name=product_name,
+        roi_wkt=roi_wkt,
+        crs=crs,
+        partition_str=partition_str,
+    )
+    arr = df["arr"].apply(lambda x: x.reshape(df["shape"][0]))[0]
+    return arr
+
+# Call the UDF to preview its output array
+arr = call_udf([start_i, end_i])
+
+# Display the array shape and preview the first and last frames
+print(
+    f"The array shape is  which represents  frames of m x n pixels each."
+)
+
+i = 1  # Number of frames to preview from start and end of array
+print("Array:\n", np.concatenate([arr[:i], arr[-i:]], axis=0))
+```
+
+### 3.3 Now run in parallel ⚡
+
+```python showLineNumbers
+def run_async(fn, arr_args):
+    """
+    Runs an asynchronous function concurrently for each set of arguments in a list.
+
+    This function takes an asynchronous function `fn` and a list of arguments `arr_args`.
+    Each set of arguments in `arr_args` is passed to `fn`, and all the calls are executed concurrently.
+    It uses `asyncio.to_thread` to run the asynchronous tasks in separate threads, allowing for
+    concurrent execution even if the tasks are CPU-bound.
+
+    Parameters:
+    - fn (Callable[[Any], Coroutine[Any, Any, Any]]): An asynchronous function to be executed concurrently.
+      The function should accept a single argument and return a coroutine.
+    - arr_args (List[Any]): A list of arguments to be passed to `fn`. Each element in the list is a set of
+      arguments for a single execution of `fn`.
+
+    Returns:
+    - List[Any]: A list of results from the concurrent execution of `fn` with each set of arguments from `arr_args`.
+
+    Note:
+    This function applies `nest_asyncio.apply()` to allow the event loop to be nested. This is useful for
+    running asyncio applications in environments where an event loop is already running, such as Jupyter notebooks.
+    """
+
+    nest_asyncio.apply()
+    a = []
+    for i in arr_args:
+        a.append(asyncio.to_thread(fn, i))
+
+    async def main():
+        return await asyncio.gather(*a)
+
+    return asyncio.run(main())
+```
+
+```python showLineNumbers
+# Break-up the input arguments into individual chunks
+BLOCK_SIZE = 12  # Number of frames to process in each call to the UDF
+L = np.arange(start_i, end_i, BLOCK_SIZE)
+arg_list = [[i, i + BLOCK_SIZE] for i in L[:-1]] + [(L[-1], end_i)]
+arg_list
+```
+
+```python showLineNumbers
+# Call the UDF for each chunk of input arguments
+frames = run_async(call_udf, arg_list)
+
+# Stack frames 🥞
+frames_raw = np.vstack(frames)
+```
+
+## 4. Stitch gif
+
+The cell above made an array of `k` x `m` x `n` dimensions, where `k` is the number of
+frames, and `m` & `n` are the vertical and horizontal dimensions of the image. The next
+step stitches these together to create a gif.
+
+```python showLineNumbers
+def to_gif(
+    frames: List[np.ndarray], file_name: str, duration: int = 150, loop: int = 1000
+) -> str:
+    """
+    Converts a list of image frames into a GIF and returns a base64-encoded data URL of the GIF.
+
+    This function processes each frame to clip and stretch its pixel values to the 0-255 range,
+    compiles these frames into a GIF file saved to the specified file name, and then encodes the
+    file's contents into a base64 data URL.
+
+    Parameters:
+    - frames (List[np.ndarray]): A list of image frames, where each frame is represented as a NumPy
+      array of pixel values.
+    - file_name (str): The name of the file where the GIF should be saved.
+    - duration (int, optional): The duration (in milliseconds) of each frame in the GIF. Default is 150ms.
+    - loop (int, optional): The number of times the GIF should loop. Default is 1000, where 0 means
+      an infinite loop.
+
+    """
+
+    def _func(frame: np.ndarray) -> np.ndarray:
+        min_val = 0
+        max_val = 255
+        arr = np.array(frame)
+        arr_clipped = np.clip(arr, min_val, max_val)
+        arr_stretched = ((arr_clipped - min_val) / (max_val - min_val) * 255).astype(
+            "uint8"
+        )
+        return arr_stretched
+
+    frames = [_func(arr) for arr in frames]
+    imageio.mimsave(file_name, frames, format="GIF", duration=duration, loop=loop)
+
+    with open(file_name, "rb") as file_:
+        contents = file_.read()
+        data_url = base64.b64encode(contents).decode("utf-8")
+```
+
+```python showLineNumbers
+# Configure output gif
+gif_duration = 20  # Between 20 and 100 seconds
+coarsen = 1  # Between 1 and 5. Reduces file size, take every second pixel in the x & y directions.
+gif_slice = slice(0, 1000, 1)
+
+# Structure gif
+frames_gif = [i[::coarsen, ::coarsen] for i in frames_raw]
+_ = to_gif(frames_gif[gif_slice], gif_file_name.value, duration=gif_duration)
+
+# Display gif
+display(Image(filename=gif_file_name.value))
+```
+
+<img src="https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/gifs/animation.gif" width="40%" />
+
+# Appendix I: View and modify UDF code
+
+The 2 UDFs above are published under Sina's account. You can load them into your
+notebook with `get_udfs` then show code with `render`.
+
+```python showLineNumbers
+# Note: may require text/html "presentation" on VSCODE to show repr
+my_udf_goes_18_partitions = fused.get_udfs(whose="public")["GOES_18_Partitions"]
+my_udf_goes_18_partitions
+```
+
+```python showLineNumbers
+my_udf_goes_18_async = fused.get_udfs(whose="public")["GOES_18_Async"]
+my_udf_goes_18_async
+```
+
+```python showLineNumbers
+# (Optionally) Render the UDF's code in a new notebook cell
+# my_udf_goes_18_partitions.render()
+```
+
+================================================================================
+
+## Object Detection with NAIP
+Path: tutorials/others/_use-cases/objectdetection.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/objectdetection/
+
+================================================================================
+
+## Overture Buildengs
+Path: tutorials/others/_use-cases/overture.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/overture/
+
+================================================================================
+
+## Joining NSI with Overture Building Footprints
+Path: tutorials/others/_use-cases/overturensi.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/overturensi/
+
+This use case shows how to join the Overture Buildings dataset with the NSI dataset using a point in polygon operation. Overture has polygon geometries, NSI has info on risk, by joining them we have spatially aware dataset
+
+This can provide a rich set of information of risk distribution across broad urban areas or a portfolio of assets.
+
+## Introduction
+In geospatial analysis, enriching data by joining multiple datasets can unlock new insights and enable more informed decisionmaking. The Overture Buildings dataset is a global collection of building footprints that is commonly used to enrich datasets with spatial representation of build environments. Analysts commonly add data on top of this datasets to create perspectives around different use cases such as identifying buildings within flood zones, assess infrastructure risk, or conduct detailed marken analysis.
+
+Joining the Buliding footprints with the National Structure Inventory (NSI) dataset can provide a rich set of information of risk distribution across broad urban areas or a portfolio of assets.
+
+## ...Why?
+
+## Datasets
+
+- The Buildings data schema includes the building footprint `Polygons` and a small set of properties (e.g. building category, height, name).
+
+- The NSI dataset includes rich information of man-made structures in USA. The data schema includes building location `Points`, function, and attributes related to risk management.
+
+## UDF: Point in Polygon
+
+This UDF performs a spatial join between the Overture Building Footprints and the National Structures Inventory (NSI) datasets, enriching the building footprints with additional attributes from the NSI dataset within a specified bounding box. The result is a GeoDataFrame that combines the spatial data from both sources, retaining the polygon geometries of the building footprints.
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.TileGDF = None):
+    # Load datasets
+    utils = fused.load("https://github.com/fusedio/udfs/tree/9c5c8bf/public/Nsi_Overture").utils
+    gdf_overture = utils.load_overture_gdf(bounds, overture_type="building")
+    gdf_nsi = utils.load_nsi_gdf(bounds)
+
+    # Spatial join - keeps the polygon geometry
+    return gdf_overture.sjoin(gdf_nsi)
+```
+
+## App example
+
+##### [stash]
+
+overture aims to keep the dataset up to date if buildings change, so can keep datasets up to date by joining. usings GERS (The Global Entity Reference System (GERS) is a framework for structuring, encoding, and matching map data to a shared universal reference. )
+
+todo: link, size, number of points
+
+App:
+DESCRIPTION WHAT IS THIS, show it for a small town.
+TABLE: compare neighborhoods in a table, top 10 value buildings
+
+Get it right bc this is the template for others to follow.
+
+Structure first.
+
+What is point in polygon, why does it matter. A cookiecutter.
+
+================================================================================
+
+## Pachama
+Path: tutorials/others/_use-cases/pachama.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/pachama/
+
+================================================================================
+
+## Joining SalesForce with Postgres
+Path: tutorials/others/_use-cases/salesforce.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/salesforce/
+
+================================================================================
+
+## Census similarity analysis for cities
+Path: tutorials/others/_use-cases/similarity.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/similarity/
+
+================================================================================
+
+## Sylvera
+Path: tutorials/others/_use-cases/sylvera.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/sylvera/
+
+================================================================================
+
+## Sylvera
+Path: tutorials/others/_use-cases/sylverra.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/sylverra/
+
+================================================================================
+
+## Landcover vicinity scores
+Path: tutorials/others/_use-cases/vicinity.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/vicinity/
+
+================================================================================
+
+## Wildfire overall flux of burnt carbon
+Path: tutorials/others/_use-cases/wildfire.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/wildfire/
+
+================================================================================
+
+## Forest Cover Zonal Statistics
+Path: tutorials/others/_use-cases/zonalstats.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/zonalstats/
+
+================================================================================
+
+## NAIP Zonal Stats
+Path: tutorials/others/_use-cases/zstatsnaip.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/_use-cases/zstatsnaip/
+
+================================================================================
+
+## Earth on AWS
+Path: tutorials/others/in/awsearth.mdx
+URL: https://docs.fused.io/tutorials/others/in/awsearth/
+
+Fused loads data from the Earth on AWS data catalog with the Python `pystac_client` library.
+
+This UDF loads data from an endpoint by Element 84. It first searches for items in the `cop-dem-glo-30` collection within the area specified by `bounds` then loads their data with `odc.stac.load`.
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds):
+
+    from pystac.extensions.eo import EOExtension as eo
+
+    utils = fused.load(
+        "https://github.com/fusedio/udfs/tree/bb712a5/public/common/"
+    ).utils
+    zoom = utils.estimate_zoom(bounds)
+    tile = utils.get_tiles(bounds, zoom=zoom)
+
+    odc.stac.configure_s3_access(aws_unsigned=True)
+    catalog = pystac_client.Client.open("https://earth-search.aws.element84.com/v1")
+
+    items = catalog.search(
+        collections=["cop-dem-glo-30"],
+        bbox=bounds.total_bounds,
+    ).item_collection()
+
+    resolution = int(20 * 2 ** (13 - zoom))
+
+    ds = odc.stac.load(
+        items,
+        crs="EPSG:3857",
+        bands=["data"],
+        resolution=resolution,
+        bbox=bounds,
+    ).astype(float)
+    arr = ds["data"].max(dim="time")
+    return utils.arr_to_plasma(arr.values, min_max=(0, 500), reverse=False)
+```
+
+================================================================================
+
+## BigQuery
+Path: tutorials/others/in/bigquery.mdx
+URL: https://docs.fused.io/tutorials/others/in/bigquery/
+
+Fused integrates with Google BigQuery with the Python `bigquery` library.
+
+## 1. Authenticate with a Google Service Account
+
+Create a UDF to set your Google Service Account credentials in your Fused runtime disk in a file in the `/mnt/cache` directory.
+
+```python showLineNumbers
+@fused.udf
+def udf():
+
+    # Google Key as JSON
+    data = 
+
+    # Define the target path for the new GEE credentials file
+    key_path = '/mnt/cache/bq_creds.json'
+
+    # Write the loaded JSON data to the new file
+    with open(key_path, 'w') as file:
+        json.dump(data, file)
+```
+
+## 2. Load data from BigQuery
+
+Create a UDF to perform a query on a BigQuery dataset and return the results as a DataFrame or GeoDataFrame. Authenticate by passing the key file path to `service_account.Credentials`.
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.TileGDF=None, geography_column=None):
+    from google.cloud import bigquery
+    from google.oauth2 import service_account
+
+    # This UDF will only work on runtime with mounted EFS
+    key_path = "/mnt/cache/bq_creds.json"
+
+    # Authenticate BigQuery
+    credentials = service_account.Credentials.from_service_account_file(
+        key_path, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+
+    # Create a BigQuery client
+    client = bigquery.Client(credentials=credentials, project=credentials.project_id)
+
+    # Structure spatial query
+    query = f"""
+        SELECT * FROM `bigquery-public-data.new_york.tlc_yellow_trips_2015`
+        LIMIT 10
+    """
+
+    if geography_column:
+        return client.query(query).to_geodataframe(geography_column=geography_column)
+    else:
+        return client.query(query).to_dataframe()
+```
+
+================================================================================
+
+## CSV
+Path: tutorials/others/in/csv.mdx
+URL: https://docs.fused.io/tutorials/others/in/csv/
+
+Load CSV files in a Fused UDF using pandas. Upload a CSV file to your Fused environment's S3 bucket through the file browser or link to a public CSV file.
+
+```python showLineNumbers
+@fused.udf
+def udf():
+
+    # Read csv file
+    df = pd.read_csv("https://pasteur.epa.gov/uploads/10.23719/1528686/SupplyChainGHGEmissionFactors_v1.2_NAICS_CO2e_USD2021.csv")
+    return df
+```
+
+================================================================================
+
+## DuckDB
+Path: tutorials/others/in/duckdb.mdx
+URL: https://docs.fused.io/tutorials/others/in/duckdb/
+
+Fused interfaces DuckDB with the Python `duckdb` library.
+
+This example UDF shows how to query the NYC Taxi dataset with a DuckDB.
+
+```python showLineNumbers
+@fused.udf
+def udf(agg_factor=3, min_count=5):
+    common = fused.load("https://github.com/fusedio/udfs/tree/b41216d/public/common/").utils
+    con = common.duckdb_connect()
+
+    df = con.sql(f"""
+    SELECT
+        round(pickup_longitude*,3)/ lng,
+        round(pickup_latitude*,3)/ lat,
+        count(1) cnt
+    FROM
+        read_parquet('s3://fused-asset/docs/user_guide/yellow_tripdata_2010-01.parquet')
+    GROUP BY
+        round(pickup_longitude*,3),
+        round(pickup_latitude*,3)
+    HAVING
+        cnt> AND
+        lat>40 AND
+        lat<41
+    """).df()
+
+    print("Number of trips:", df.cnt.sum())
+    gdf = common.to_gdf(df)
+    return gdf
+```
+
+We have done 2 things to simplify this example:
+1. Uploaded the NYC Taxi dataset to S3.
+2. Using the `common.duckdb_connect()` helper function, which we built to simplify setting up a DuckDB connection. Check the code here.
+:::
+
+================================================================================
+
+## Excel
+Path: tutorials/others/in/excel.mdx
+URL: https://docs.fused.io/tutorials/others/in/excel/
+
+Read an Excel file from a URL with `pd.read_excel`.
+
+```python showLineNumbers
+@fused.udf
+def udf():
+
+    # Read census .xlsx file
+    df = pd.read_excel(
+        "https://www2.census.gov/programs-surveys/acs/summary_file/2021/sequence-based-SF/documentation/tech_docs/ACS_2021_SF_5YR_Appendices.xlsx"
+    )
+
+    return df
+```
+
+================================================================================
+
+## Google Earth Engine
+Path: tutorials/others/in/gee.mdx
+URL: https://docs.fused.io/tutorials/others/in/gee/
+
+Fused interfaces Google Earth Engine with the Python `earthengine-api` library. This example shows how to load data from GEE datasets into Fused UDFs and read it with xarray.
+
+## 1. Authenticate with a Google Service Account
+
+Create a UDF to set your Google Service Account credentials in your Fused runtime disk in a file in the `/mnt/cache` directory.
+
+```python showLineNumbers
+@fused.udf
+def udf():
+
+    # Google Key as JSON
+    data = 
+
+    # Define the target path for the new GEE credentials file
+    key_path = '/mnt/cache/gee_creds.json'
+
+    # Write the loaded JSON data to the new file
+    with open(key_path, 'w') as file:
+        json.dump(data, file)
+```
+
+## 2. Load data from Google Earth Engine
+
+Create a UDF to load data from a GEE ImageCollection and open it with xarray. Authenticate by passing the key file path to `ee.ServiceAccountCredentials`.
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.TileGDF=None, n=10):
+
+    utils = fused.load("https://github.com/fusedio/udfs/tree/f928ee1/public/common/").utils
+
+    # Authenticate GEE
+    key_path = '/mnt/cache/gee_creds.json'
+    credentials = ee.ServiceAccountCredentials("fused-account@fused-gee.iam.gserviceaccount.com", key_path)
+    ee.Initialize(opt_url="https://earthengine-highvolume.googleapis.com", credentials=credentials)
+
+    # Generate GEE bounding box for spatial filter
+    geom = ee.Geometry.Rectangle(*bounds.total_bounds)
+    scale = 1 / 2 ** max(0, bounds.z[0])  # A larger scale will increase your resolution per z but slow down the loading
+
+    # Load data from a GEE ImageCollection
+    ic = ee.ImageCollection("MODIS/061/MOD13A2").filter(
+        ee.Filter.date("2023-01-01", "2023-06-01")
+    )
+
+    # Open with xarray (the `xee` package must be present for engine="ee" to work)
+    ds = xarray.open_dataset(ic, engine="ee", geometry=geom, scale=scale).isel(time=0)
+
+    # Transform image color with a utility function
+    arr = utils.arr_to_plasma(ds["NDVI"].values.squeeze().T, min_max=(0, 8000))
+    return arr
+
+```
+
+================================================================================
+
+## GeoJSON
+Path: tutorials/others/in/geojson.mdx
+URL: https://docs.fused.io/tutorials/others/in/geojson/
+
+Load a GeoJSON file to create a GeoDataFrame with GeoPandas.
+
+```python showLineNumbers
+@fused.udf
+def udf():
+
+    data = requests.get("https://raw.githubusercontent.com/python-visualization/folium-example-data/main/us_states.json").json()
+    print(data)
+
+    gdf = gpd.GeoDataFrame.from_features(data)
+    return gdf
+```
+
+================================================================================
+
+## GeoTIFF
+Path: tutorials/others/in/geotiff.mdx
+URL: https://docs.fused.io/tutorials/others/in/geotiff/
+
+Read a GeoTIFF with the Fused `utils.read_tiff` utility function, which reads a portion of a tiff file based on the spatial extent of a provided `bounds`.
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.TileGDF=None, year="2022", chip_len=256):
+
+    utils = fused.load(
+        "https://github.com/fusedio/udfs/tree/f928ee1/public/common/"
+    ).utils
+
+    input_tiff_path = f"s3://fused-asset/data/cdls/_30m_cdls.tif"
+    arr, color_map = utils.read_tiff(
+        bounds, input_tiff_path, output_shape=(chip_len, chip_len), return_colormap=True
+    )
+
+    colored_array = (
+        np.array([color_map[value] for value in arr.flat], dtype=np.uint8)
+        .reshape(arr.shape + (4,))
+        .transpose(2, 0, 1)
+    )
+    return colored_array
+```
+
+================================================================================
+
+## Get data in
+Path: tutorials/others/in/index.mdx
+URL: https://docs.fused.io/tutorials/others/in/
+
+Learn to load data into UDFs from the following sources and formats.
+
+<DocCardList className="DocCardList--no-description"/>
+
+================================================================================
+
+## Planetary Computer
+Path: tutorials/others/in/pc.mdx
+URL: https://docs.fused.io/tutorials/others/in/pc/
+
+Fused loads data from the Microsoft Planetary Computer data catalog with the Python `pystac_client` library.
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.TileGDF=None, time_of_interest="2023-11-01/2023-12-30"):
+
+    utils = fused.load(
+        "https://github.com/fusedio/udfs/tree/f928ee1/public/common/"
+    ).utils
+
+    red_band = "B04"
+    nir_band = "B08"
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        modifier=planetary_computer.sign_inplace,
+    )
+
+    items = catalog.search(
+        collections=["sentinel-2-l2a"],
+        bbox=bounds.total_bounds,
+        datetime=time_of_interest,
+        query=},
+    ).item_collection()
+
+    resolution = int(5 * 2 ** (15 - bounds.z[0]))
+    ds = odc.stac.load(
+        items,
+        crs="EPSG:3857",
+        bands=[nir_band, red_band],
+        resolution=resolution,
+        bbox=bounds.total_bounds,
+    ).astype(float)
+
+    # Calculate NDVI
+    ndvi = (ds[nir_band] - ds[red_band]) / (ds[nir_band] + ds[red_band])
+
+    arr = ndvi.max(dim="time")
+    return utils.arr_to_plasma(arr.values, min_max=(0, 0.8), reverse=False)
+```
+
+================================================================================
+
+## Shapefile
+Path: tutorials/others/in/shapefile.mdx
+URL: https://docs.fused.io/tutorials/others/in/shapefile/
+
+Load shapefiles with GeoPandas.
+
+```python showLineNumbers
+@fused.udf
+def udf():
+
+    # Shape file as zip
+    url = "https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_COLUMBIA/11/tl_rd22_11_bg.zip"
+    gdf = gpd.read_file(url)
+    return gdf
+```
+
+================================================================================
+
+## WMS Tile
+Path: tutorials/others/in/wmstile.mdx
+URL: https://docs.fused.io/tutorials/others/in/wmstile/
+
+This UDF fetches WMS tiles from Terrestris OpenStreetMap WMS, using the `OSM-WMS` layer, which provides standard OpenStreetMap imagery. This function requests tiles based on bounding box coordinates ```bounds```, coordinate reference system ```CRS```, and image size ```256x256 pixels```. The result is a NumPy array that can be displayed as an image on the tiles.
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = None,
+    wms_url: str = "https://ows.terrestris.de/osm/service",
+    layer: str = "OSM-WMS",
+    width: int = 256,
+    height: int = 256
+):  
+
+    from utils import fetch_wms
+
+    z = utils.common.estimate_zoom(bounds)
+    print(f"Estimated zoom level: ")
+    
+    if z < 4:
+        print("WARNING: Please zoom in more for better visualization. Zoom level should be at least 4.")
+
+        return np.zeros((4, height, width), dtype=np.uint8)
+    
+    data = fetch_wms(
+        wms_url=wms_url,
+        layer=layer,
+        bbox_coords=bounds,
+        width=width,
+        height=height 
+    )
+    
+    return data
+```
+
+The ```fetch_wms``` Utils function looks like this. 
+
+```python showLineNumbers
+common = fused.load("https://github.com/fusedio/udfs/blob/main/public/common/utils.py").utils
+
+def fetch_wms(
+    wms_url: str, 
+    layer: str, 
+    bbox_coords: tuple, 
+    width: int, 
+    height: int, 
+    version: str = "1.3.0", 
+    format: str = "image/png", 
+    crs: str = "EPSG:4326", 
+    transparent: bool = True
+):
+
+    from io import BytesIO
+    from PIL import Image
+
+    try:
+        minx, miny, maxx, maxy = bbox_coords
+        
+        # Handle bbox order based on WMS version and CRS
+        if version == "1.3.0" and crs.upper() in ["EPSG:4326", "CRS:84"]:
+
+            bbox_str = f",,,"
+        else:
+
+            bbox_str = f",,,"
+        
+        # Construct WMS parameters
+        params = 
+
+        response = requests.get(wms_url, params=params)
+
+        if response.status_code != 200:
+            print(f"Error: HTTP status ")
+        
+        # Check content type
+        content_type = response.headers.get('Content-Type', '')
+        
+        # Process image response
+        if 'image' in content_type.lower() or response.content[:4] in [b'\xff\xd8\xff\xe0', b'\x89PNG']:
+            img = Image.open(BytesIO(response.content))
+            array = np.array(img)
+            
+            # Convert to channels-first format
+            if len(array.shape) == 3:  # RGB or RGBA
+                array = array.transpose(2, 0, 1)
+            else:  # Grayscale
+                array = array[np.newaxis, :, :]
+            
+            return array
+        else:
+            print(f"Error: Response not an image. Content type: ")
+
+    except Exception as e:
+        print(f"Error fetching WMS: ")
+
+```
+
+## WMS Examples to try out in the UDF
+
+The wms_url and layer parameters can be set to any WMS service and layer you want to visualize. Here are some examples to get you started:
+
+- **wms_url** (str): The base URL of the WMS service
+- **layer** (str): The layer name to request
+
+## 1. NASA GIBS (Global Imagery)
+**URL:** https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi  
+**Layers:**
+- `MODIS_Terra_CorrectedReflectance_TrueColor` - Satellite imagery
+- `MODIS_Terra_Snow_Cover` - Snow cover data
+- `MODIS_Terra_NDVI_8Day` - Vegetation index
+
+---
+
+## 2. OpenStreetMap
+**URL:** https://ows.terrestris.de/osm/service  
+**Layers:**
+- `OSM-WMS` - OpenStreetMap base map
+- `TOPO-WMS` - Topographic view
+
+---
+
+## 3. Swiss Federal Geoportal
+**URL:** https://wms.geo.admin.ch/  
+**Layers:**
+- `ch.swisstopo.pixelkarte-farbe` - Swiss national map
+- `ch.swisstopo.swissimage` - Aerial imagery
+
+---
+
+================================================================================
+
+## Others
+Path: tutorials/others/index.mdx
+URL: https://docs.fused.io/tutorials/others/
+
+Additional examples and reference materials for using Fused.
+
+<DocCardList className="DocCardList--no-description"/>
+
+================================================================================
+
+## DeckGL (HTML)
+Path: tutorials/others/out/deckgl.md
+URL: https://docs.fused.io/tutorials/others/out/deckgl/
+
+DeckGL is a highly framework to create interactive map visualizations that handle large datasets.
+
+This guide shows how to load data from Fused into DeckGL maps created from a single standalone HTML page with the following layer types:
+
+- H3HexagonLayer
+- Vector Tile Layer
+- Raster Tile Layer
+
+## 1. Generate a signed URL for a UDF
+
+First create a UDF and generate an HTTP endpoint.
+
+## 2. Create a DeckGL HTML map
+
+Create an `.html` file following this template. This code creates a DeckGL map then introduces a layer that renders data from the specified Fused endpoint.
+
+```html
+
+```
+
+### H3HexagonLayer
+
+Create an `H3HexagonLayer`.
+
+```js
+new H3HexagonLayer(),
+```
+
+### Vector Tile Layer
+
+Vector Tile layers are created by placing a `GeoJsonLayer` sublayer within a `TileLayer`. Use the following snippet to introduce a vector layer.
+
+The layer in the sample map comes from Overture Buildings UDF.
+
+```js
+new TileLayer(//?dtype_out_vector=geojson",
+  maxZoom: 19,
+  minZoom: 0,
+
+  renderSubLayers: (props) =>  = props.tile;
+
+    return new GeoJsonLayer(props, );
+  },
+});
+```
+
+### Raster Tile Layer
+
+Raster Tile layers are created by placing a `BitmapLayer` sublayer within a `TileLayer`. Use the following snippet to introduce a raster layer. The sample layer below was created from the NAIP Tile UDF.
+
+```js
+new TileLayer(//?dtype_out_raster=png`,
+  maxZoom: 19,
+  minZoom: 0,
+
+  renderSubLayers: (props) =>  = props.tile;
+
+    return new BitmapLayer(props, );
+  },
+  pickable: true,
+});
+```
+
+================================================================================
+
+## duckdb.md
+Path: tutorials/others/out/duckdb.md
+URL: https://docs.fused.io/tutorials/others/out/duckdb/
+
+# DuckDB
+
+DuckDB is an open source, in-process, analytical database. Its can natively read several of output formats that Fused HTTP Endpoints return.
+
+## 1. Generate a signed URL for a UDF
+
+First create a UDF and generate an HTTP endpoint.
+
+## 2. Install and load `httpfs`
+
+To load Parquet files from remote endpoints from within DuckDB, you can install the `httpfs` extension.
+
+```sql
+INSTALL httpfs;
+LOAD httpfs;
+```
+
+## 3. Query using `read_parquet`
+
+Now you can make a query using the UDF URL, with the dtype_out_vector set to `parquet`:
+
+```sql
+SELECT *
+FROM read_parquet('https://www.fused.io/server/v1/realtime-shared/221aa65f3d96f1a320ed0f4eea0d320724c0ddc0c75cbf70df711def11e2ecc5/run/file?dtype_out_vector=parquet');
+```
+
+You can pass parameters into the URL from the query:
+
+```sql
+SELECT *
+FROM read_parquet('https://www.fused.io/server/v1/realtime-shared/221aa65f3d96f1a320ed0f4eea0d320724c0ddc0c75cbf70df711def11e2ecc5/run/file?dtype_out_vector=parquet&resolution=13');
+```
+
+================================================================================
+
+## felt
+Path: tutorials/others/out/felt.mdx
+URL: https://docs.fused.io/tutorials/others/out/felt/
+
+# Felt
+
+Felt is an interactive and collaborative map making platform. Teams use it to quickly create stunning map visualizations - without needing to move data or install software. Sign up for a free account here.
+
+## 1. Generate a signed URL for a UDF
+
+First, create a UDF and generate an HTTP endpoint.
+
+## 2. Load data into Felt
+
+There are 2 ways to load data from Fused into Felt, depending on whether the UDF returns a raster or vector data type. Both are passed through the "Upload from URL" modal, but require particular URL structures. Read the Felt docs for a deeper dive into this feature.
+
+### Raster Tiles
+
+Dynamically render XYZ raster tiles on the Felt map.
+
+As an example, the "Sentinel Tile Example" public UDF returns an XYZ tile URL of NDVI from the Sentinel dataset. Create a new instance of it on your workbench and ensure it successfully renders data under `Tile` mode. Next, generate a shared URL and modify it as such:
+
+- Set `dtype_out_raster` to `png`.
+- Set replace the values after `/run/tiles` with the `///` template.
+- Set UDF parameters as needed.
+
+For example:
+
+```bash
+https://www.fused.io/server/v1/realtime-shared/da71c7bf79376f2e88b37be9ecd2679f2e40a5b79f9b0f2c75e7ea9a3f0c5171/run/tiles///?dtype_out_raster=png
+```
+
+This should render the raster output tiles on the map. This example shows NDVI on the area surrounding the Panama Canal.
+
+### Vector
+
+Load vector data in a one-off manner onto the Felt map.
+
+As an example, the "Single Route" public UDF returns a composite vector line of driving directions between an origin and destination locations. Create a new instance of it on your workbench and ensure it successfully renders data under `File` mode. Next, generate a shared URL and modify it as such:
+
+- Set `dtype_out_vector` to `csv` or `parquet`.
+- Set UDF parameters as needed.
+
+For example:
+
+```bash
+https://www.fused.io/server/v1/realtime-shared/4f8fe6b81811ce011d7045b9fffbcfb43663637a4c626955821566fe62e6fb57/run/file?dtype_out_vector=csv&lat_start=35.0154145&lng_start=-114.2253804&lat_end=33.9422&lng_end=-114.4036
+```
+
+Click "Upload from URL", paste the URL, and click "Add to map".
+
+This should load the data and render it on the map.
+
+Note that once the data is loaded, it's cached in the Felt platform so it won't be affected by modifications to the UDF.
+
+================================================================================
+
+## Geemap
+Path: tutorials/others/out/geemap.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/out/geemap/
+
+Geemap is a Python package to visually analyze geospatial data
+with Google Earth Engine (GEE).
+
+The following examples show how to use Geemap with Fused to create a raster tile layer, a vector tile layer, and an EE Object layer.
+
+## Install
+
+Install Geemap, Fused, and ipyleaflet with pip.
+
+```bash
+pip install geemap fused ipyleaflet
+```
+
+## Authenticate Google Earth Engine
+
+Run this script to authenticate Google Earth Engine.
+
+```python showLineNumbers
+
+ee.Authenticate()
+ee.Initialize()
+```
+
+## Create a Raster Tile Layer
+
+Create a TileLayer to load raster tiles with an HTTP endpoint of the Cropland Data Layer (CDL) UDF HTTP endpoint.
+
+```python showLineNumbers
+
+from ipyleaflet import Map, TileLayer
+
+# Create map
+Map = geemap.Map(center=(37.8798, -121.2423), zoom=12, basemap="CartoDB.DarkMatter")
+
+# Create Raster Tile
+crop_type = "corn"
+tiles = TileLayer(
+    url=f"https://www.fused.io/server/v1/realtime-shared/UDF_CDLs_Tile_Example/run/tiles/}/}/}?dtype_out_raster=png&crop_type=",
+    name="CDLs Raster Tiles",
+)
+Map.add_layer(tiles)
+
+Map
+
+```
+
+## Create a Vector Tile Layer
+
+Create a VectorTileLayer to load Vector Tiles with an HTTP endpoint of the Public Overture Maps Example UDF.
+
+```python showLineNumbers
+
+from ipyleaflet import Map, VectorTileLayer
+
+# Create map
+Map = geemap.Map(center=(51.5129,-0.1241), zoom=15, basemap="CartoDB.DarkMatter")
+
+# Create Overture Buildings VectorTileLayer
+vector_layer = VectorTileLayer(
+    url="https://staging.fused.io/server/v1/realtime-shared/UDF_Overture_Maps_Example/run/tiles///?dtype_out_vector=mvt",
+    name="Overture Buildings Vector Tiles",
+)
+Map.add_layer(vector_layer)
+
+Map
+```
+
+## Create an EE Object Layer from a custom UDF
+
+Write and run a custom UDF to buffer the geometry of a GeoDataFrame and display it as an EE Object using geopandas_to_ee. This will run in the local Python process by default and if the environment is authenticated it may run on the Fused server.
+
+```python showLineNumbers
+
+from ipyleaflet import Map
+
+# Create map
+Map = geemap.Map(center=(38.8938,-77.0146), zoom=11)
+
+# Define UDF
+@fused.udf
+def udf(url="https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_COLUMBIA/11/tl_rd22_11_bg.zip"):
+
+    gdf = gpd.read_file(url)
+    gdf.geometry = gdf.geometry.buffer(0.0001)
+    return gdf
+
+# Run UDF
+gdf = fused.run(udf)
+
+# Create EE Object Layer
+ee_object = geemap.geopandas_to_ee(gdf)
+Map.add_layer(ee_object, , "EE Object GeoJSON")
+
+Map
+```
+
+## Create an EE Object Layer from a public UDF
+
+Run the Public Isochrone UDF and display the returned GeoDataFrame using geopandas_to_ee. Public UDFs run on the Fused server for free.
+
+```python showLineNumbers
+
+from ipyleaflet import Map
+
+# Create map
+Map = geemap.Map(center=(40.8072,-73.8469), zoom=10)
+
+# Run UDF
+gdf = fused.run("UDF_Get_Isochrone",  lat=40.776732, lng=-73.73708).set_crs("WGS84")
+
+# Create EE Object Layer
+ee_object = geemap.geopandas_to_ee(gdf)
+Map.add_layer(ee_object, , "EE Object GeoJSON")
+
+Map
+```
+
+================================================================================
+
+## Google Sheets
+Path: tutorials/others/out/googlesheets.mdx
+URL: https://docs.fused.io/tutorials/others/out/googlesheets/
+
+The Google Sheets importData
+command imports data at from a given url in `.csv` format. You can use it to load data
+from a UDF into a Google Sheets cell.
+
+[Image: alt text]
+
+## 1. Create a UDF in Fused Hosted API
+
+Create a UDF that returns a table then save it on Workbench to automatically create an
+endpoint.
+
+This example retrieves Caltrain live location data from GTFS realtime feed, and returns
+it as a dataframe.
+
+```python showLineNumbers
+@fused.udf
+def udf():
+
+    r = requests.get(f"https://www.caltrain.com/files/rt/vehiclepositions/CT.json")
+    j = r.json()
+    df = pd.json_normalize(j["Entities"])
+    return df
+```
+
+## 2. Create a URL for the UDF
+
+Now, create a shareable Tile HTTP endpoint for the UDF.
+
+Append this query parameter to the end of the URL to structure the response as a CSV
+type: `?dtype_out_vector=csv`.
+
+The generated URL should look like this:
+
+`https://www.fused.io/server/v1/realtime-shared/940c7d75bb3f12f2c411beeee7293729d35a9429ebb3760df29fa84c3166b7b9/run/file?dtype_out_vector=csv`
+
+## 3. Call the UDF in a cell
+
+Paste the `importData` function with the UDF endpoint in a cell.
+
+`=importData("https://www.fused.io/server/v1/realtime-shared/940c7d75bb3f12f2c411beeee7293729d35a9429ebb3760df29fa84c3166b7b9/run/file?dtype_out_vector=csv")`
+
+When you enter this formula into a cell, Google Sheets will call the UDF, and the
+returned dataframe will be loaded into the spreadsheet.
+
+Google Sheets' `importData` imposes data size constraints that will require the UDF to
+return a conservative number of rows. Otherwise it may show the following error message.
+
+================================================================================
+
+## HTTP Requests
+Path: tutorials/others/out/http.mdx
+URL: https://docs.fused.io/tutorials/others/out/http/
+
+Call a UDF via HTTP requests and pass geometries as query parameters or as XYZ tiles.
+
+## Specify geometry
+
+There are 2 ways to specify geometries. The first method involves specifying XYZ tiles as path parameters and the second method entails passing a geometry query parameter.
+
+### With an XYZ Tile
+
+```bash showLineNumbers
+curl -L -XGET "https://www.fused.io/server/v1/realtime-shared/UDF_Overture_Maps_Example/run/tiles/16/11242/26162?dtype_out_vector=csv"
+```
+
+## With parameters for latitude and longitude pairs
+
+This sample URL passes a geometry's polygon pairs in the `lng_list` and `lat_list`
+parameters. It also passes parameters for `census_variable`, `costing`, `duration`,
+`count`, and `buffer`.
+
+```bash showLineNumbers
+curl -L -XGET "https://app-staging.fused.io/server/v1/realtime-shared/efff19cb8e3e12d0df1f307c0198384c746b961635d404eb1302cf15ad031485/run/file?dtype_out_vector=csv&census_variable=median household income&lng_list=-74.01, -74.010901, -74.000008, -73.98255, -73.9830327, -73.99468, -73.9905&lat_list=40.71021, 40.714353, 40.728349, 40.731949, 40.7150147, 40.7252, 40.730013&costing=auto&duration=20&count=TRUE&buffer=5"
+```
+
+## With a GeoJSON
+
+When parameters are passed to a User Defined Function (UDF) via HTTP requests, they must be encodable. This is because HTTP is a text-based protocol, and any data transmitted over it, including parameters, must be represented in a format that is compatible with the protocol.
+
+The best way to pass a geometry as a query parameter is to use a URL-encoded GeoJSON. It's possible to encode a GeoJSON with `jq`.
+
+```bash showLineNumbers
+apt-get install jq -q
+```
+
+```bash showLineNumbers
+echo $GEOJSON_ENCODED && \
+curl -L -XGET "https://www.fused.io/server/v1/realtime-shared/UDF_Overture_Maps_Example/run/file?dtype_out_vector=geojson&bbox=$"
+```
+
+================================================================================
+
+## Get data out
+Path: tutorials/others/out/index.mdx
+URL: https://docs.fused.io/tutorials/others/out/
+
+Learn how to call UDFs from 3rd party applications to load data.
+
+<DocCardList className="DocCardList--no-description"/>
+
+================================================================================
+
+## kepler.md
+Path: tutorials/others/out/kepler.md
+URL: https://docs.fused.io/tutorials/others/out/kepler/
+
+# Kepler
+
+Kepler is a powerful open source too to visualize large geospatial datasets. Data analysts use it to create data-driven maps, gain insights from location data, and embed dynamic maps into custom applications.
+
+<ReactPlayer className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/kepler.mp4" width="100%" />
+
+The UDF Builder can load the data returned by a UDF call into Kepler. When visualizing a vector dataset, click "Open in Kepler.gl" button located on the top-right menu of the map, wait for data to be transferred and then click "Open in Kepler.gl" in the bottom-right.
+
+================================================================================
+
+## Leaflet
+Path: tutorials/others/out/leaflet.mdx
+URL: https://docs.fused.io/tutorials/others/out/leaflet/
+
+Display responsive Tile maps in Jupyter Notebooks with the `ipyleaflet` library.
+
+[Image: alt text]
+
+## 1. Create UDF in Workbennch
+
+Create a signed HTTP endpoint for a raster Tile UDF.
+
+## 2. Create a Leaflet map
+
+### Raster Tile layers
+
+Modify the HTTP endpoint to introduce templatized XYZ Tile parameters (`}/}/}`) as well as query strings for other UDF-specific parameters (`?crop_type=`), and pass it to the `TileLayer`.
+
+```python showLineNumbers
+
+crop_type = "almond"
+m = ipyleaflet.Map(
+    center=(37.316, -120.69),
+    zoom=10,
+    basemap=ipyleaflet.basemaps.CartoDB.PositronOnlyLabels,
+)
+l = ipyleaflet.TileLayer(
+    url=f"https://www.fused.io/server/v1/realtime-shared/8110ef6e0c66f07f0c73f39843db27ece3960f98f268f38ef2f79f3623faae01/run/tiles/}/}/}?crop_type=",
+    tile_size=512,
+    zoom_offset=-1,
+    cross_origin=True,
+    show_loading=True,
+)
+m.add_layer(l)
+m
+```
+
+### Vector Tile layers
+
+Similarly, Vector Tiles are rendered by passing the HTTP endpoint to a `VectorTileLayer`.
+
+```python showLineNumbers
+
+m = ipyleaflet.Map(center=(37.7749, -122.4194), zoom=17)
+
+l = ipyleaflet.VectorTileLayer(
+    url="https://www.fused.io/server/v1/realtime-shared/fsh_5M8jCBuswIF8PcFvZBP9k9/run/tiles///?dtype_out_vector=mvt"
+)
+m.add_layer(l)
+m
+```
+
+If on Colab, Enable the ipyleaflet widget (might require restarting the kernel).
+
+```python showLineNumbers
+# !pip install ipywidgets==7.7.1 -q
+# from google.colab import output
+# output.enable_custom_widget_manager()
+```
+
+================================================================================
+
+## Lonboard
+Path: tutorials/others/out/lonboard.mdx
+URL: https://docs.fused.io/tutorials/others/out/lonboard/
+
+<img src="https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/lonboard_cdl.png" alt="overture" width="600"/>
+
+## 1. Create UDF in Workbench
+
+Create a UDF in Workbench that works as a `Tile`, and generate a
+Tile HTTP endpoint
+for the UDF.
+
+## 2. Create a Lonboard map
+
+Render the CDLs Tile Example UDF as a Lonboard BitmapTileLayer.
+
+```python showLineNumbers
+
+crop_type = "almond"
+url = f"https://www.fused.io/server/v1/realtime-shared/8110ef6e0c66f07f0c73f39843db27ece3960f98f268f38ef2f79f3623faae01/run/tiles/}/}/}?crop_type="
+layer = lonboard.BitmapTileLayer(
+    data=url, tile_size=256, max_requests=-1, min_zoom=0, max_zoom=19
+)
+map = lonboard.Map(
+    layers=[layer],
+    view_state=,
+    basemap_style=lonboard.basemap.CartoBasemap.Voyager,
+    show_tooltip=True,
+)
+map
+```
+
+================================================================================
+
+## Mapbox (HTML)
+Path: tutorials/others/out/mapbox.mdx
+URL: https://docs.fused.io/tutorials/others/out/mapbox/
+
+Create Mapbox GL JS maps that load data from UDF HTTP endpoints.
+
+You'll first generate a signed UDF URL and render it on an HTML map. You can then use the HTML map in a low-code app like Retool or render it as an `iframe` in an app such as Notion.
+
+## 1. Generate a signed URL for a UDF
+
+First, create a UDF and generate an HTTP endpoint.
+
+## 2. Create a Mapbox HTML map
+
+Create an `.html` file following this template. This code creates a mapbox map, adds a source, and then a layer that renders data from that source. Supported layer types are:
+
+- Vector Tiles
+- Raster Tiles
+
+```html
+
+```
+
+### Vector Tile layers
+
+Use the following snippet to create a vector layer. The layer in the sample map comes from Overture Buildings UDF.
+
+When rendering `mvt` data types, Mapbox may clip features that exceed the bounds of the tile. A workaround is for the UDF to clip the output at the `bounds` bounds or to only return features within the `bounds`. See Discord thread for more information.
+
+The dynamic map only shows data when zoomed in. If zoomed out too much we don’t load data to prevent slowing down the docs. Make sure to zoom in to see buildings
+
+```html
+
+```
+
+### Raster Tile layers
+
+Use the following snippet to create a raster layer. The layer in the sample map comes from the Solar Irradiance UDF.
+
+The dynamic map only shows data when zoomed in. If zoomed out too much we don’t load data to prevent slowing down the docs. Make sure to zoom in to see buildings
+
+```html
+
+```
+
+================================================================================
+
+## Excel
+Path: tutorials/others/out/microsoft_excel.mdx
+URL: https://docs.fused.io/tutorials/others/out/microsoft_excel/
+
+Microsoft Excel can load data from a UDF's HTTP Endpoint that returns a `.csv`.
+
+## 1. Create a UDF
+
+This example retrieves Caltrain live location data from GTFS real-time feed and returns it as a `DataFrame`.
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.TileGDF=None):
+
+    r = requests.get(f'https://www.caltrain.com/files/rt/vehiclepositions/CT.json')
+    j = r.json()
+    df = pd.json_normalize(j['Entities'])
+    return df
+```
+
+## 2. Create a URL for the UDF
+
+Now, create an HTTP endpoint for the UDF.
+
+Append this query parameter to the end of the URL to structure the response as a CSV type: `?dtype_out_vector=csv`.
+
+The generated URL should look like this:
+
+`https://www.fused.io/server/v1/realtime-shared/ccd781317018362a6966c9f12b27e95f1fe2fd88ff339de90eb9ac35b87cf439/run/file?dtype_out_vector=csv`
+
+## 3. Import Data to Excel
+
+Open Excel, then click the `Data` tab in the top ribbon. Click `From Web`.
+
+[Image: alt text]
+
+In the From Web dialog box, paste in the URL from your UDF, and click `OK`.
+
+[Image: alt text]
+
+A preview of the data will be shown. Click `Load` to import the data to your Excel sheet. Optionally, you can click `Transform` to transform the data if needed.
+
+[Image: alt text]
+
+The UDF will run and load its output data in a new Excel sheet.
+
+[Image: alt text]
+
+**_Note:_** The desktop version of Microsoft Excel is required. Microsoft Excel Online does not support loading data from web sources.
+
+================================================================================
+
+## Motherduck
+Path: tutorials/others/out/motherduck.md
+URL: https://docs.fused.io/tutorials/others/out/motherduck/
+
+MotherDuck is a serverless SQL analytics platform. It's popular for its hybrid DuckDB execution engine, simplified database sharing, diverse integrations ecosystem, and SQL notebook-like UI. It runs DuckDB, so it supports several of the table output formats that Fused can serve - particularly Parquet files.
+
+To follow along, you'll need a Motherduck account - which you can create for free.
+
+## 1. Generate a signed URL for a UDF
+
+First, create an HTTP endpoint for a UDF. Set `dtype_out_vector` to `parquet`. You can optionally pass UDF parameters as URL-encoded strings, which can be configured to change based on query input.
+
+This example uses an instance of the DEM Raster to Vector public UDF.
+
+## 2. Run a query
+
+Now you can make a query using the UDF URL.
+
+[Image: alt text]
+
+### Parquet
+
+With the `dtype_out_vector` query parameter set to `parquet`:
+
+```sql
+SELECT wkt, area
+FROM read_parquet('https://www.fused.io/server/v1/realtime-shared/' ||
+  '1e35c9b9cadf900265443073b0bd99072f859b8beddb72a45e701fb5bcde807d' ||
+  '/run/file?dtype_out_vector=parquet&min_elevation=500')
+LIMIT 10;
+```
+
+### CSV
+
+With the `dtype_out_vector` query parameter set to `csv`:
+
+```sql
+SELECT wkt, area
+FROM read_csv('https://www.fused.io/server/v1/realtime-shared/' ||
+  '1e35c9b9cadf900265443073b0bd99072f859b8beddb72a45e701fb5bcde807d' ||
+  '/run/file?dtype_out_vector=csv&min_elevation=500',
+  AUTO_DETECT=TRUE)
+LIMIT 10;
+```
+
+================================================================================
+
+## notion
+Path: tutorials/others/out/notion.mdx
+URL: https://docs.fused.io/tutorials/others/out/notion/
+
+# Notion
+
+_Embed responsive apps directly inside a Notion page._
+
+## 1. Create an app with Fused App Builder
+
+We assume you already have created an app with Fused App Builder. The next step is to:
+- Save your app (either click "Save" like for saving a UDF or hit `Cmd + S` / `Ctrl + S`)
+- Similar to sharing a UDF click the "Share" button in the left panel, just below the application name, to open the Share view
+- In the Share view, click the second "Share" button to generate a shareable token.
+
+This will give you a URL link like: `https://www.fused.io/app/fsh...`
+
+## 2. Embed the map into Notion
+
+On a Notion page, type `/embed` to create an embed component. Paste the app URL in the menu that appears. You may publish the page as a Notion site.
+
+[Image: Embedded app in Notion]
+
+This Notion Page shows what a sample Notion page looks like with embedded apps.
+
+================================================================================
+
+## QGIS
+Path: tutorials/others/out/qgis.mdx
+URL: https://docs.fused.io/tutorials/others/out/qgis/
+
+QGIS is an Open Source Desktop GIS platform. Since its inception in 2002, it's become a staple in the geospatial data stack. Download QGIS here.
+
+Fused UDFs can be configured to return raster tile and vector data in formats that QGIS can load. The QGIS User Guide describes how QGIS handles different data types. This walkthrough shows how to generate URL endpoints to easily load data into QGIS.
+
+## 1. Generate a signed URL for a UDF
+
+First, create a UDF and generate an HTTP endpoint.
+
+## 2. Load data into QGIS
+
+QGIS supports loading data from UDFs called as both File and Tile.
+
+### Raster Tiles (Streamed data)
+
+Dynamically render XYZ raster tiles on the QGIS map.
+
+As an example, the "Sentinel Tile Example" public UDF returns an XYZ tile URL of NDVI from the Sentinel dataset. Create a new instance of it on your workbench, generate a shared URL, then modify the URL query parameters:
+
+- Set `dtype_out_raster` to `png`.
+- Set replace the values after `/run/tiles` with the `///` template.
+- Set UDF parameters as needed.
+
+For example:
+
+```bash
+https://www.fused.io/server/v1/realtime-shared/da71c7bf79376f2e88b37be9ecd2679f2e40a5b79f9b0f2c75e7ea9a3f0c5171/run/tiles///?dtype_out_raster=png
+```
+
+Open the modal to create a new raster XYZ layer by right-clicking: `XYZ Tiles` -> `New Connection`. Now paste the UDF URL in the URI field and configure the layer as shown.
+
+This should render the raster output tiles on the map. This example shows NDVI in the area surrounding Santa Rosa Island, off the coast of Southern California.
+
+Note that the QGIS client is liable to timeout errors if it encounters a high number of concurrent requests and might show a warning similar to this one. Issues generally resolve after waiting some time.
+
+```bash
+2024-04-12T12:10:06     WARNING    Network request https://www.fused.io/server/v1/realtime-shared/da71c7bf79376f2e88b37be9ecd2679f2e40a5b79f9b0f2c75e7ea9a3f0c5171/run/tiles/14/2722/6554?dtype_out_raster=png timed out`
+```
+
+### Vector Tiles (Streamed data)
+
+Load large vector files as tiles. This is helpful to stream Tile UDF
+
+You can follow QGIS instructions here
+
+We'll use the Overture Maps Example public UDF as an example:
+
+- In the "Share page" for the UDF, set `dtype_out_vector` to `mvt`:
+```
+https://www.fused.io/server/v1/realtime-shared/UDF_Overture_Maps_Example/run/tiles///?dtype_out_raster=png&dtype_out_vector=geojson
+```
+(Make sure the tiles are set to `//?` so QGIS can load the data as you pan around)
+
+[Image: QGIS setting up vector tiles]
+
+- In QGIS create a new "Vector Tiles" layer by right-clicking: `Vector Tiles` -> `New Connection`. Now paste the UDF URL in the URI field and configure the layer as shown.
+- Load the layer in QGIS and stat panning around!
+
+[Image: QGIS vector tiles loaded]
+
+### Vector File (Small file)
+
+Load vector data onto the QGIS map.
+
+As an example, the "Single Route" public UDF returns a composite vector line of driving directions between an origin and destination locations. Create a new instance of it on your workbench, generate a shared URL, and then modify the URL query parameters:
+
+- Set `dtype_out_vector` to `geojson`.
+- Set UDF parameters as needed.
+
+For example:
+
+```bash
+https://www.fused.io/server/v1/realtime-shared/4f8fe6b81811ce011d7045b9fffbcfb43663637a4c626955821566fe62e6fb57/run/file?dtype_out_vector=csv&lat_start=37.7954425&lng_start=-122.3961885&lat_end=37.8592408&lng_end=-122.5349321
+```
+
+Open the modal to create a new vector layer by clicking: `Layer` -> `New Layer` -> `Add Vector Layer`. Now paste the UDF URL in the URI field and configure the layer as shown.
+
+This should load the data and render it on the map.
+
+Note that QGIS might cache the response of endpoint calls, which means UDF changes might not propagate immediately.
+
+================================================================================
+
+## Retool
+Path: tutorials/others/out/retool.mdx
+URL: https://docs.fused.io/tutorials/others/out/retool/
+
+Retool is a low-code platform to build internal software. This guide shows how to create a vector map from a UDF on a Mapbox GL JS map with a custom Retool component. You'll first generate a signed UDF URL then introduce it into a custom map component that can input and output data across other Retool components.
+
+## 1. Create an HTML map
+
+Follow this guide to create a mapbox `.html` map that renders vector tiles from a UDF.
+
+## 2. Create a custom Retool component
+
+In a Retool app, create a custom Retool component. In the `IFrame Code` box, paste the code Mapbox HTML map created in the first step.
+
+[Image: alt text]
+
+## 3. Pass data from a UI component to the map
+
+Create a component that accepts user input which will be passed as a query parameter to the Fused endpoint.
+
+This example uses a `select` component. Add options to the component - in this case `building`, `water`, and `place` because in the sample UDF these are passed in the `type` parameter to select different "theme" layers of the Overture dataset.
+
+[Image: alt text]
+
+In Retool custom components, variables are passed through the Model. The IFrame code receives updates from Retool via a subcribe function.
+
+In the custom component's `Model` box, paste a snippet like this one to pass data from the `select` component.
+
+```json
+}
+}
+```
+
+Now subscribe the sections of code that will make use of the model values by wrapping all map components within a `window.Retool.subscribe` function. In this example, the value of `model.theme` is passed to a query parameter via string interpolation. When the value changes in the UI element, the value will update for the map.
+
+```js
+window.Retool.subscribe(function (model) );
+
+    map.on('load', () => //?dtype_out_vector=mvt&type=$`
+            ],
+            'minzoom': 6,
+            'maxzoom': 14
+        });
+
+        map.addLayer(
+            ...
+        );
+    })
+})
+```
+
+The result should look like this.
+
+[Image: alt text]
+
+## 4. Pass data from the map to a UI component
+
+Passing data from the map component to another Retool component follows a similar process. This example introduces a drawing tool to draw custom polygons on the preceding map, then pass the polygons' geojson to a `jsonExplorer` Retool component.
+
+First, update the custom component's model to include a `data` key with an empty dictionary as a value. This is where the map component will pass data.
+
+```json
+},
+  "data": 
+}
+```
+
+Then, introduce these headers and snippet to the map IFrame.
+
+```html
+
+<link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.2.1/mapbox-gl-draw.css" type="text/css">
+```
+
+This is a MapboxDraw component. Ensure it's wrapped within the same `window.Retool.subscribe` function introduced in step 3 so Retool updates the `data` field when a change in the draw component triggers the `updateData` function.
+
+```js
+var draw = new MapboxDraw(
+});
+map.addControl(draw);
+
+map.on('draw.create', updateData);
+map.on('draw.delete', updateData);
+map.on('draw.update', updateData);
+
+function updateData(e) )
+}
+```
+
+Finally, create a `jsonExplorer` component with the following value `}` which will receive the GeoJSON when a polygon is drawn on the map.
+
+[Image: alt text]
+
+This GeoJSON can be used in subsequent operations. For example, it could be passed as a parameter to downstream UDF calls as explained here.
+
+================================================================================
+
+## Streamlit
+Path: tutorials/others/out/streamlit.mdx
+Status: UNLISTED
+URL: https://docs.fused.io/tutorials/others/out/streamlit/
+
+Streamlit is an open source Python app builder to turn data scripts into shareable web apps. You can run Fused UDFs from Streamlit to create apps powered by UDFs. In fact, the Fused App Builder runs a serverless version of Streamlit.
+
+[Image: streamlit]
+
+## Basic walkthrough
+
+### 1: Install Streamlit
+
+Prepare an environment and install Streamlit.
+
+```bash
+pip install streamlit
+```
+
+### 2: Create a UDF
+
+As an example, this minimalist UDF returns a `DataFrame` with polygons for each administrative zone in Washington DC.
+
+```python showLineNumbers
+@fused.udf
+def my_udf(url='https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_COLUMBIA/11/tl_rd22_11_bg.zip'):
+
+    return gpd.read_file(url)
+```
+
+### 3: Create app
+
+Create a new Python script for your Streamlit app - in this case in a file called `app.py`. This script will be the entry point of your application.
+
+This script creates a minimalist Streamlit app that runs the UDF and then displays its output `DataFrame`.
+
+```python showLineNumbers
+
+st.title("🌎 Dataframe generator")
+
+@fused.udf
+def my_udf(url='https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_COLUMBIA/11/tl_rd22_11_bg.zip'):
+
+    return gpd.read_file(url)
+
+df = fused.run(udf=my_udf)
+st.dataframe(df)
+```
+
+### 4. Run your Streamlit app
+
+Start the app using Streamlit's CLI command.
+
+```bash
+streamlit run app.py
+```
+
+## Intermediate Vector example
+
+Copy and save the Isochrone UDF on your Workbench. Create a Streamlit app with this code and paste your UDF's token below.
+
+```python showLineNumbers
+
+from streamlit_folium import st_folium
+
+# Parameters
+st.markdown("# Isochrone calculator")
+costing = st.selectbox(
+    "Select transportation mode",
+    ["auto", "pedestrian", "bicycle", "truck", "bus", "motor_scooter"],
+)
+lat = 39.949610
+lng = -75.150282
+
+# Run UDF
+TOKEN = "53bcd145dc75d8056045470f6c23861c8bd37fe7d0ee42eae716e755cebe2765"
+gdf = fused.run(TOKEN, costing=costing, lat=float(lat), lng=float(lng))
+gdf.set_crs(epsg=4326, inplace=True)
+
+# Generate map
+m = folium.Map([lat, lng], zoom_start=10, tiles="OpenStreetMap.Mapnik")
+
+# Generate point and vector layers
+folium.GeoJson(gdf).add_to(m)
+folium.Marker(location=[lat, lng], icon=folium.Icon(icon="cloud")).add_to(m)
+
+# Render map
+folium_data = st_folium(m)
+```
+
+## Intermediate Raster Tiles example
+
+Copy and save the CDLs Tile UDF on your Workbench. Create a Streamlit app with this code and paste your UDF's token below.
+
+```python showLineNumbers
+
+from streamlit_folium import st_folium
+
+# Create map
+m = folium.Map(location=[37.43997405227058, -120.9375], zoom_start=11, tiles="Stadia.AlidadeSmoothDark")
+
+# Widgets
+st.markdown("# 🚀 Streamlit + Folium + Fused 🚀")
+st.markdown("""This UDF shows how to open Cropland Data Layer (CDL) tiff files. The CDL is a categorical land cover dataset that provides information about the types of crops and land cover on agricultural lands in the United States. The CDL is produced by the United States Department of Agriculture (USDA) National Agricultural Statistics Service (NASS) on an annual basis.""")
+crop_type = st.selectbox("🌽 Select crop", ["corn", "soy", "wheat", "all", "almond", "grass"])
+
+# Structure URL
+TOKEN = "8110ef6e0c66f07f0c73f39843db27ece3960f98f268f38ef2f79f3623faae01"
+url = f"https://www.fused.io/server/v1/realtime-shared//run/tiles/}/}/}?dtype_out_raster=png"
+if crop_type != "all": url += f"&crop_type="
+
+# Create raster tile layer
+folium.TileLayer(
+    tiles=url,
+    attr="Fused",
+    name="fused",
+    max_zoom=19,
+    subdomains=["a", "b", "c"],
+).add_to(m)
+
+# Render map
+st_folium(m, width=300, height=500, use_container_width=True)
+```
+
+================================================================================
+
+## DuckDB
+Path: tutorials/others/transform/generic/duckdb.mdx
+URL: https://docs.fused.io/tutorials/others/transform/generic/duckdb/
+
+Fused runs User Defined Functions (UDFs) behind HTTP endpoints. DuckDB can call those endpoints and run SQL on their output.
+
+This guide provides support material for the blog post DuckDB + Fused: Fly beyond the serverless horizon. It can be followed in this Jupyter Notebook.
+
+## 1. Run DuckDB in a Fused UDF
+
+As an example of running DuckDB within a Fused UDF, take the case of loading a geospatial Parquet dataset. The "DuckDB H3" sample UDF runs an SQL query with DuckDB on the NYC Taxi Trip Record Dataset. It uses the bounds argument to spatially filter the dataset and automatically parallelize the operation.
+
+To try this example, you can run the cell below. You can find the code of the UDF in the Fused public UDF repo. Alternatively, you can import the "DuckDB H3 Example Tile" UDF into your Fused Workbench environment.
+
+This pattern gives DuckDB easy parallel operations. Fused spatially filters the dataset via the \`bounds parameter, runs the operation for each encompassing tile, and stitches the results together. Because Fused breaks down operations to only a fraction of the dataset, it's easy to transition between SQL and Python.
+
+[Image: New York City]
+
+```python showLineNumbers
+
+udf = fused.load("https://github.com/fusedio/udfs/tree/ea99f07/public/DuckDB_H3_Example_Tile")
+gdf = fused.run(udf=udf, x=2412, y=3078, z=13, engine='local')
+gdf.head()
+```
+
+## 2. Call Fused UDFs from DuckDB
+
+Any database that supports querying data via HTTP can call and load data from Fused UDF
+endpoints using common formats like Parquet or CSV. This means that DuckDB can dispatch
+operations to Fused that otherwise would be too complex or impossible to express with
+SQL, or would be unsupported in the local runtime.
+
+As an example of calling a Fused endpoint from within DuckDB, take an operation to
+vectorize a raster dataset. This might be necessary to determine the bounds of areas
+with pixel value within a certain threshold range in an Earth observation image - such
+as a Digital Elevation Model. SQL is not geared to support raster operations, but these
+are easy to do in Python.
+
+<img src="https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/gifs/sql.gif" alt="overture" width="600"/>
+
+In this example, a Fused UDF returns a table where each record is a polygon generated
+from the contour of a raster provided by the
+Copernicus Digital Elevation Model
+as a Cloud Optimized GeoTIFF. DuckDB can easily trigger a UDF
+and load its output with this simple query, which specifies that the UDF endpoint
+returns a Parquet file.
+
+This SQL query uses DuckDB's
+read_parquet function to call an
+endpoint of a UDF instance of the "DEM Raster to Vector" UDF.
+
+You can find the code of the UDF in the Fused Public UDF repo.
+
+To try this example, simply run the following SQL query on the cell below or in a
+DuckDB shell%0ALIMIT-10~>).
+Change the `min_elevation` parameter to run the UDF for parts of California at different
+elevations. (Note: for DuckDB WASM, the file will be requested as CSV.)
+
+```python showLineNumbers
+
+con = duckdb.connect()
+
+con.sql("""
+    SELECT
+        wkt,
+        ROUND(area,1) AS area
+    FROM read_parquet('https://www.fused.io/server/v1/realtime-shared/1e35c9b9cadf900265443073b0bd99072f859b8beddb72a45e701fb5bcde807d/run/file?min_elevation=500&dtype_out_vector=parquet')
+    LIMIT 5
+""")
+```
+
+This pattern enables DuckDB to perform operations and handle data formats that would otherwise be challenging or impossible, such as raster operations, API calls, and control flow logic.
+
+## 3. Integrate DuckDB in applications using Fused
+
+Fused can act like the glue layer between DuckDB and other 3rd party apps. It enables seamless integrations that
+trigger Fused UDFs and load their results with simple parameterized HTTP calls.
+
+DuckDB is an embedded database engine and doesn't have built-in capability to share
+results other than writing out files. With Fused, DuckDB can query and transform data and seamlessly integrate the results into any workflow or app.
+
+As an example, take the case of loading the output of a DuckDB query into Google Sheets.
+Sheets can easily structure the Fused UDF endpoint to pass parameters defined in
+specific cells as URL query parameters. In this example, the
+importData command calls the
+endpoint for the UDF above and loads its output data in CSV format. It constructs the
+endpoint string by concatenating a base URL with the `B2`, `B3`, and `B4` cell values as
+query parameters.
+
+```bash
+=importData(CONCATENATE("https://www.fused.io/server/v1/realtime-shared/aba7b238d9445d576e15b2d6b780dc353bfdee55f02a285a85a3917b72835600/run/file?dtype_out_vector=csv&resolution=", B2, "&min_count=", B3, "&head=", B4))
+```
+
+<img src="https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/gifs/sheets.gif" alt="overture" width="600"/>
+
+To try this example simply make a copy of
+this
+Google Sheets spreadsheet (File > Make a copy) and click, and modify the parameters in
+`B2:4` to trigger the Fused UDF endpoint and load data.
+
+This pattern brings the power of DuckDB no-code tools like Google Sheets, Retool, and beyond - without the need to build bespoke integrations with closed-source systems. With this, a Python developer can abstract away the UDF and deliver data to end users.
+
+================================================================================
+
+## Generic
+Path: tutorials/others/transform/generic/index.mdx
+URL: https://docs.fused.io/tutorials/others/transform/generic/
+
+# Generic
+
+Walkthroughs of operations with common datasets and analytics tools.
+
+<DocCardList className="DocCardList--no-description"/>
+
+================================================================================
+
+## Buffer Analysis
+Path: tutorials/others/transform/geospatial/buffer.mdx
+URL: https://docs.fused.io/tutorials/others/transform/geospatial/buffer/
+
+# Buffer: A Comprehensive Guide
+
+Buffer analysis is a geospatial technique used to extract meaningful insights from location-based data. It helps determine which objects fall within a certain distance of Areas of Interest (AOIs) and account for possible inaccuracies in GPS data. This technique has various applications such as visit attribution and proximity analysis.
+
+This tutorial shows a buffer analysis between a Point table and a LineString table to identify which vehicles are using specific roads. This approach can also be applied to other industry scenarios, such as determining which stores are within a certain distance of an area of interest (AOI) or which buildings are close to a body of water.
+
+_Visual representation of buffer around GeoPandas `Point`, `LineString`, and `Polygon` objects._ Reference.
+
+## Applications
+
+- Proximity analysis: Identify roads within a certain distance of specific landmarks
+- Safety assessment: Pinpoint intersections prone to accidents
+- Visit attribution: Determine visitors based on mobile GPS data to optimize store locations
+- Site selection: Find buildings adjacent to parks
+- Environmental monitoring: Identify watersheds within a certain distance of pollutant sources
+
+## Implementing buffer analysis
+
+### Implementation steps
+
+To illustrate, we'll determine which vehicle GPS points fall within a buffer around a road. We can create a buffer zone around the road and check which GPS point fall within this area. Here's how to do this:
+
+1. Represent road segments as `LineStrings` and vehicle GPS locations as `Points`
+1. Create a buffer around a set of target roads
+2. Call the `within` method to check which GPS points fall within the buffer
+
+### Example UDF
+
+```python showLineNumbers
+@fused.udf
+def udf(n_points: int=1000, buffer: float=0.0025):
+
+    from shapely.geometry import Point, Polygon, LineString
+
+    # Create LineString to represent a road
+    linestring_columbus = LineString([[-122.4194,37.8065],[-122.4032,37.7954]])
+    gdf_road = gpd.GeoDataFrame()
+
+    # Create Points to represent GPS pings
+    minx, miny, maxx, maxy = gdf_road.total_bounds
+    points = [Point(random.uniform(minx, maxx), random.uniform(miny, maxy)) for _ in range(n_points)]
+    gdf_points = gpd.GeoDataFrame()
+
+    # Create a buffer around the road
+    buffered_polygon = gdf_road.buffer(buffer)
+
+    # Color the points that fall within the buffered polygon
+    points_within = gdf_points[gdf_points.geometry.within(buffered_polygon.unary_union)]
+    gdf_points = gdf_points.loc[points_within.index]
+
+    return gdf_points
+```
+
+## Conclusion
+
+Buffer analysis is a powerful technique, but it's important to consider its limitations and potential complexities of the data. For example, in some scenarios you'll often find that buffers of different Areas of Interest (AOI) intersect which can lead to ambiguous situations where a single point falls within multiple buffers. The significance of a point falling within multiple buffers depends on the specifics of the use-case. For example:
+- For road analysis, a car can't physically be on two roads simultaneously. In such cases, you'll need to employ additional techniques to resolve ambiguities, like determine speed or direction of travel.
+- In other scenarios, like identifying "all buildings within 100m of any water body" overlapping buffers might not be problematic and could actually provide valuable insights.
+
+  requirements=
+/> */}
+
+================================================================================
+
+## Geospatial
+Path: tutorials/others/transform/geospatial/index.mdx
+URL: https://docs.fused.io/tutorials/others/transform/geospatial/
+
+# Geospatial
+
+Walkthroughs of common operations on geospatial data.
+
+<DocCardList className="DocCardList--no-description"/>
+
+================================================================================
+
+## Point in polygon
+Path: tutorials/others/transform/geospatial/point-polygon.mdx
+URL: https://docs.fused.io/tutorials/others/transform/geospatial/point-polygon/
+
+# Point in Polygon: A Guide With Overture & NSI
+
+Point in polygon operations ask whether a given set of points in a map falls within a polygon. This technique is commonly used to enrich data from one dataset with information from another.
+
+This walkthrough shows how to enrich Overture Maps building polygons with hazard metadata from the National Structure Inventory (NSI) using point in polygon analysis. The Overture Maps buildings footprints is a `Polygon` dataset while NSI is a `Point` dataset with metadata related to natural and man-made hazards. The two can be joined to visualize buildings at risk from hazards.
+
+Furthermore, features in the Overture dataset are assigned Global Entity Reference System (GERS) IDs, which is a universal reference framework to match features across datasets. Enriching features with Overture GERS IDS is a common operation that enables joining datasets.
+
+The dynamic map only shows data when zoomed in. If zoomed out too much we don’t load data to prevent slowing down the docs. Make sure to zoom in to see buildings
+
+_Building `Polygon` objects colored based on NSI values._
+
+## Applications
+
+- Disaster risk assessment (e.g. flood or fire)
+- Insurance risk modeling
+- Urban planning and zoning
+- Emergency response and evacuation planning
+
+## Implementing point in polygon analysis
+
+### Implementation steps
+
+1. Load data for each dataset as a `GeoDataFrame` for a spatially filtered subregion.
+2. Use the `GeoPandas` method `sjoin` to determine which points lie within each polygon.
+3. Structure the output table.
+
+### Example UDF
+
+This UDF loads the Overture and NSI datasets (with pre-defined subsets of columns), performs a spatial join to enrich the building polygons with hazard metadata, and returns the enriched GeoDataFrame. It can be used within a larger analysis workflow to enrich building polygons to calculate risk indices.
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds=None):
+    # Import utility functions
+    utils = fused.load("https://github.com/fusedio/udfs/blob/main/public/Nsi_Overture/").utils
+
+    # Load both datasets
+    gdf_overture = utils.load_overture_gdf(bounds, overture_type = "building")
+    gdf_nsi = utils.load_nsi_gdf(bounds)
+
+    # Spatial join - keeps the polygon geometry
+    gdf_enriched_buildings = gdf_overture.sjoin(gdf_nsi)
+
+    # Drop cases where two points fall within one polygon
+    gdf_enriched_buildings.drop_duplicates(subset='id', keep='first', inplace=True, ignore_index=True)
+    return gdf_enriched_buildings
+```
+
+The UDF would return a `GeoDataFrame` with the Overture building geometry and the selected NSI columns:
+
+```text
+┌─────────┬──────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────┬───────────┬─────────┬────────────┬────────────┬────────────┬───────────┐
+│ column0 │          id          │                                        geometry                                         │                          names                          │ st_damcat │ occtype │ med_yr_blt │ val_struct │  val_cont  │ val_vehic │
+│  int64  │       varchar        │                                         varchar                                         │                         varchar                         │  varchar  │ varchar │   int64    │   double   │   double   │  double   │
+├─────────┼──────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────┼───────────┼─────────┼────────────┼────────────┼────────────┼───────────┤
+│       0 │ 08b489e34622dfff02…  │ POLYGON ((-97.7532121 30.2694096, -97.7532879 30.2692591, -97.7533541 30.2691264, -97…  │  │ COM       │ COM4    │       2003 │ 963089.123 │ 963089.123 │   27000.0 │
+│       1 │ 08b489e346229fff02…  │ POLYGON ((-97.7530941 30.2695412, -97.7530164 30.2695137, -97.7529916 30.269566, -97.…  │                                                         │ COM       │ COM8    │       2003 │  228292.24 │  228292.24 │   45000.0 │
+└─────────┴──────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────┴───────────┴─────────┴────────────┴────────────┴────────────┴───────────┘
+```
+
+### Conclusion
+
+Point-in-polygon is a powerful technique to enrich datasets. By combining the detailed building footprints from Overture Maps with the comprehensive hazard and value information from the National Structure Inventory, we can generate rich, informative risk maps and indices.
+
+However, it is important to consider the limitations and potential complexities of the data, such as quality and completeness, temporal alignment between datasets, scale and resolution differences, and cases where multiple points fall within a single polygon.
+
+## Demo app
+
+================================================================================
+
+## Raster to H3
+Path: tutorials/others/transform/geospatial/raster_to_h3.mdx
+URL: https://docs.fused.io/tutorials/others/transform/geospatial/raster_to_h3/
+
+# Raster to Hexagon
+
+_Transforming raster data into H3 cells_
+
+[Image: Raster to H3]
+
+## When to use
+
+Transforming raster data into H3 cells is useful when you need to:
+- Want to have spatial statistics about a raster (heatmap like visualization)
+- A fast way to run statistics across different disparate datasets by combining them all to hexagons
+
+## Code implementation
+
+We've made a Public UDF `Hexagonify_raster_from_url` that you can use in your own UDFs or any workflow.
+
+To call a public UDF you need to use the prefix `UDF_` in front of the name. 
+
+This allows you to run this UDF without needing an environment setup on your account.
+
+```python showLineNumbers
+hex_df = fused.run(
+    "UDF_Hexagonify_raster_from_url",
+    raster_path="https://s3.amazonaws.com/elevation-tiles-prod/geotiff/4/4/6.tif", 
+    stats_type="mean", 
+    h3_res=4
+)
+```
+
+[Image: Raster to hex operation]
+
+## Example application
+
+- DEM_Tile_Hexify Public UDF. 
+    - This UDF takes a Raster Tile from an open S3 bucket containing an elevation model and converts a tile into H3 on the fly
+
+================================================================================
+
+## Zonal Stats
+Path: tutorials/others/transform/geospatial/zonal_stats.mdx
+URL: https://docs.fused.io/tutorials/others/transform/geospatial/zonal_stats/
+
+# Zonal Statistics: A Comprehensive Guide
+
+Zonal statistics calculates aggregate statistics (e.g., mean, sum, maximum) of the pixel values of a raster that fall within areas defined by a `Polygon` dataset. The method has diverse applications such as determining vegetation health in an agricultural field, assessing surface water availability, or approximating building heights from DSM rasters.
+The dynamic map only shows data when zoomed in. If zoomed out too much we don’t load data to prevent slowing down the docs. Make sure to zoom in to see buildings
+
+_Building `Polygon` features colored based on DSM aggregate values._
+
+## Applications
+
+- Height approximation: Estimate the height of buildings from DSM
+- Crop yield estimation: Determine vegetation health within crop polygons using NDVI rasters
+- Water resource management: Assess surface water availability in watersheds using NDWI rasters
+- Forestry: Track changes in forest cover over time within administrative boundaries
+
+## Implementing zonal statistics
+
+The analysis involves first determining the pixels within a polygon and then calculating their aggregate statistics, such as their count, mean, sum, or maximum.
+
+### Implementation steps
+
+To perform this operation, first load a raster and a vector dataset for spatially overlapping areas, then perform zonal aggregations as shown below using the `xarray` and `GeoPandas` libraries.
+
+1. Load overlapping the raster and vector data
+2. For the extent of each `Polygon`, clip the raster to create a mask array
+3. Perform an aggregation operation (e.g., mean, sum, max) on each masked array
+4. Return the results in a `GeoDataFrame`, where each row corresponds to a `Polygon` and the columns contain the value for the aggregate zonal statistics
+
+### Example UDF
+
+This example UDF loads the building footprint table `gdf` and DSM raster `arr` from S3 only for a section defined by `bounds`, which corresponds to a map tile. It then calculates the zonal statistics and returns the results as the `GeoDataFrame` `gdf_zonal`. This process enables Fused Workbench to perform the calculation dynamically as users scroll and zoom in on the map.
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds=None, min_zoom=15, table="s3://fused-asset/infra/building_msft_us/"
+):
+    dsm_to_tile = fused.load("https://github.com/fusedio/udfs/tree/91845c4/public/DSM_JAXA_Example").utils.dsm_to_tile
+    utils = fused.load("https://github.com/fusedio/udfs/tree/2a76b6a/public/common/").utils
+
+    gdf = utils.table_to_tile(bounds, table, min_zoom)
+    arr = dsm_to_tile(bounds, z_levels=[4, 6, 9, 11], verbose=False)
+    gdf_zonal = utils.geom_stats(gdf, arr)
+    return gdf_zonal
+```
+
+The UDF would return a `GeoDataFrame` like the following, with an aggregate `stats` column for each input `Polygon`:
+
+```plaintext
+                                                geometry      stats  count
+660    POLYGON ((-122.39806 37.76221, -122.39806 37.7...      22.00      5
+661    POLYGON ((-122.39881 37.76219, -122.39876 37.7...      21.99    193
+1452   POLYGON ((-122.39619 37.76326, -122.39613 37.7...      13.50      2
+1458   POLYGON ((-122.39774 37.76327, -122.39776 37.7...      11.00     28
+3033   POLYGON ((-122.39680 37.76362, -122.39701 37.7...      10.20      5
+...
+```
+
+## Conclusion
+
+While zonal statistics is a valuable tool, it's often just the starting point for more complex analyses. Combining zonal statistics with other techniques such timeseries analysis or machine learning approaches can provide even richer insights into your data.
+
+## Demo app
+
+================================================================================
+
+## Transform data
+Path: tutorials/others/transform/index.mdx
+URL: https://docs.fused.io/tutorials/others/transform/
+
+Learn how to implement transformations and operations on data with UDFs.
+
+<DocCardList className="DocCardList--no-description"/>
+
+================================================================================
+
 # PYTHON SDK
 
 ## fused.api
@@ -7328,7 +10182,7 @@ In this example, we're going to showcase a basic implementation of a similar ana
 
 Here's the result of our analysis, running in real time in Fused:
 
- className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/dark-vessel-detection/output_analysis_S1_ais.mp4" width="100%" /> */}
+ className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/others/dark-vessel-detection/output_analysis_S1_ais.mp4" width="100%" /> */}
 
      For the nerds out there, we're using the Ground Range Detected product, not the Radiometrically Terrain Corrected because we're looking at boats in the middle of the ocean, so terrain shouldn't be any issue.
     - This dataset is available as Cloud Optimized GeoTiff through a STAC Catalog, meaning we can directly use this data as is.
@@ -7520,7 +10374,7 @@ This is a simple analysis, that makes a lot of relatively naive assumptions (for
 This could be improved in a few ways:
 - Masking out any shore or known areas with static infrastructure (to limit potential false positives around coastal wind mill farms)
 
-<ReactPlayer playsinline= className="video__player" playing= muted= controls height="80%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/dark-vessel-detection/false_positive_wind_mills.mp4" width="80%" />
+<ReactPlayer playsinline= className="video__player" playing= muted= controls height="80%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/others/dark-vessel-detection/false_positive_wind_mills.mp4" width="80%" />
 Example of the Block Island Wind Farm in Rhode Island showing up as false positive "potential dark vessel": Wind mills appear as bright spots but don't have any AIS data associated to them
 (`bounds=[-71.08534386325134,41.06338103121641,-70.89011235861962,41.15718153299125]` & `s1_acquisition_month_day_hour_min = "2024-09-03T22:43:33"`)
 
@@ -7728,7 +10582,7 @@ First we can use the Results Tab to find the URL of an image we'd like to displa
     playing= 
     muted= 
     controls height="100%" 
-    url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/maxar_stac/maxar_choosing_image.mp4"
+    url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/others/maxar_stac/maxar_choosing_image.mp4"
     width="100%" 
 />
 
@@ -7809,7 +10663,7 @@ This allows us to introduce 2 concepts in Workbench:
 
 After getting the extent of our image, we're going to Zoom to layer and set this view as the default view:
 
-<ReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/maxar_stac/zoom_to_layer_default_view.mp4" width="100%" />
+<ReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/others/maxar_stac/zoom_to_layer_default_view.mp4" width="100%" />
 
 This allows us to to any change we want to this UDF or pan anywhere on the map and always be able to zoom back to this default view!
 
@@ -7866,7 +10720,7 @@ We can change this by setting Workbench to "Tile" mode:
     playing= 
     muted= 
     controls height="100%" 
-    url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/maxar_stac/workbench_image_switching_to_tile_video.mp4"
+    url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/others/maxar_stac/workbench_image_switching_to_tile_video.mp4"
     width="100%" 
 />
 
