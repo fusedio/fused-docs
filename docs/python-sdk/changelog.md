@@ -156,7 +156,7 @@ Bug Fixes:
 
 Breaking changes:
 - [Large (batch) jobs](/core-concepts/run-udfs/run_large/) have been updated to pass parameters into the UDF the same way as other UDF runs. For compatibility, if the parameters passed into the job do not correspond with the parameters, a dictionary parameter is passed into the UDF instead. This will be deprecated and removed in a future release.
-- The `context` and [`bbox`](/core-concepts/filetile/#legacy-bbox-object) parameters to a UDF are no longer treated as special.
+- The `context` and [`bbox`](/tutorials/Geospatial%20with%20Fused/filetile/#legacy-bbox-object) parameters to a UDF are no longer treated as special.
 - Python 3.9 support, which was previously deprecated, is now removed. The minimum Python version for the `fused` package is now 3.10.
 
 New Features:
