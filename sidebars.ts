@@ -17,6 +17,7 @@ const sidebars: SidebarsConfig = {
         "tutorials/fused-quick-wins",
         "tutorials/advanced-fused",
         "tutorials/load-export-data",
+        "tutorials/vibe-coding",
         {
           type: "category",
           label: "Geospatial with Fused",
