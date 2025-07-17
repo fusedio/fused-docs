@@ -17,6 +17,10 @@ from griffe2md.rendering import default_config
 from griffe2md.main import render_object_docs
 
 
+import fused
+print(f"Generating reference docs for fused version {fused.__version__}")
+
+
 ROOT = Path(__file__).parent / ".."
 
 # We assume `fused` is installed in the env where we run this script (when running 
