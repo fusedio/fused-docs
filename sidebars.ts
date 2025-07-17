@@ -15,9 +15,9 @@ const sidebars: SidebarsConfig = {
       link: { type: "doc", id: "tutorials" },
       items: [
         "tutorials/fused-quick-wins",
+        "tutorials/vibe-coding",
         "tutorials/advanced-fused",
         "tutorials/load-export-data",
-        "tutorials/vibe-coding",
         {
           type: "category",
           label: "Geospatial with Fused",
