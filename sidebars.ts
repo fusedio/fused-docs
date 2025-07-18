@@ -14,10 +14,12 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       link: { type: "doc", id: "tutorials" },
       items: [
-        "tutorials/fused-quick-wins",
-        "tutorials/vibe-coding",
-        "tutorials/advanced-fused",
+        "tutorials/2min-with-fused",
         "tutorials/load-export-data",
+        "tutorials/engineering-etl",
+        "tutorials/data-science-ai",
+        "tutorials/analytics-dashboard",
+        "tutorials/advanced-fused",
         {
           type: "category",
           label: "Geospatial with Fused",
