@@ -18,8 +18,8 @@ const sidebars: SidebarsConfig = {
         "tutorials/load-export-data",
         "tutorials/engineering-etl",
         "tutorials/data-science-ai",
-        // "tutorials/analytics-dashboard", // Remove this page once I'm done moving things back in.
-        "tutorials/advanced-fused",
+        "tutorials/analytics-dashboard",
+        // "tutorials/advanced-fused", // Remove this page once I'm done moving things back in.
         {
           type: "category",
           label: "Geospatial with Fused",
