@@ -18,7 +18,7 @@ const sidebars: SidebarsConfig = {
         "tutorials/load-export-data",
         "tutorials/engineering-etl",
         "tutorials/data-science-ai",
-        "tutorials/analytics-dashboard",
+        // "tutorials/analytics-dashboard", // Remove this page once I'm done moving things back in.
         "tutorials/advanced-fused",
         {
           type: "category",
