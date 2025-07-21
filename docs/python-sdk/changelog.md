@@ -392,7 +392,7 @@ General:
 - Improvements to Navigation in [Command Pallette](/core-concepts/best-practices/workbench-best-practices/#using-keyboard-shortcuts-command-palette). Try it out in Workbench by doing `Cmd + K` (`Ctrl + K` on Windows / Linux)
 - Autocomplete now works with `Tab` in [Code Editor](/workbench/udf-builder/code-editor/) with `Tab`
 - Added a Delete Button in the Shared Tokens page (under [Account page](/workbench/account/))
-- Ability to upload images for UDF Preview in [Settings Page](/workbench/udf-builder/code-editor/#settings)
+- Ability to upload images for UDF Preview in [Settings Page](/workbench/preferences/)
 - Adding “Fullscreen” toggle in [Map View](/workbench/udf-builder/map/)
 - Improved `colorContinuous` in [Visualize Tab](/workbench/udf-builder/styling/)
 - Allowing users to configure public/team access scopes for share tokens 
