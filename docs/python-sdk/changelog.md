@@ -7,6 +7,37 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.21.2 (2025-07-21)
+
+**New Features:**
+- Added ability to record audio into AI input.
+- Added auto-share UDF on save functionality.
+- Added compact mode for Canvas view.
+- Added connection and save notifications for Canvas.
+- Added ability to copy common load commands to clipboard.
+- Added cache hit rate display on user profile.
+
+**Improvements:**
+- Enhanced AI Assistant with better UI/UX for changes and settings menu.
+- Workbench will automatically add a default UDF, and updated the default UDF template.
+- String return types will be assumed to be HTML by default.
+- Improved version control page performance and styling. Clicking on the changes pending asterisk (`*`) will now go directly to the version control page.
+- Improved performance of the GitHub integration.
+- Improved saving all UDFs to do so in parallel.
+- Enhanced map widget integration in Canvas.
+- Shift+Enter will turn on the currently selected UDF.
+- Changed default for `fused.ingest` to `target_num_chunks=500`.
+
+**Bug Fixes:**
+- Fixed issues with `fused.run` behaving differently for saved UDFs.
+- Fixed issues with new apps not showing changes indicator
+- Fixed selected preview tab in UDF builder flickering.
+- Fixed preview image uploads during GitHub pushes.
+- Fixed user assignment issues on GitHub PR creation.
+- Fixed an issue with linking to GitHub accounts.
+- Fixed an issue with tailing batch job logs.
+- Fixed `fused.__version__` not being populated correctly.
+
 ## v1.21.1 (2025-07-14)
 
 **[`fused-py`](/python-sdk/)**
