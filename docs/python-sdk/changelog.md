@@ -11,7 +11,7 @@ sidebar_position: 8
 
 **New Features:**
 - Added ability to record audio into AI input.
-- Added auto-share UDF on save functionality.
+- Added auto-share UDF on save functionality. (a shared token is created on first save for all new UDFs)
 - Added compact mode for Canvas view.
 - Added connection and save notifications for Canvas.
 - Added ability to copy common load commands to clipboard.
