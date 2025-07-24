@@ -8,7 +8,7 @@
 # ]
 # ///
 #
-# Use as `uv run utils/generate_reference_docs.py` in the root of this repo
+# Use as `uv run --reinstall-package fused utils/generate_reference_docs.py` in the root of this repo
 
 from pathlib import Path
 
@@ -298,4 +298,49 @@ for meth in methods:
     result += docstring + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "jobpool.mdx", "w") as f:
+    f.write(result)
+
+
+## `Udf` page
+
+result = """\
+---
+sidebar_label: Udf
+title: Udf
+toc_max_heading_level: 5
+---
+
+"""
+
+result += """\
+## Udf
+
+The `Udf` class is the object you get when defining a UDF with the
+[`@fused.udf`](/python-sdk/top-level-functions/#fusedudf) decorator, or when loading
+a saved UDF with [`fused.load()`](/python-sdk/top-level-functions/#fusedload).
+
+"""
+
+# listing and rendering the methods separately to avoid including the Udf 
+# class signature and docstring (which is not public)
+methods = [
+    "to_fused",
+    "to_directory",
+    "to_file",
+    "create_access_token",
+    "get_access_tokens",
+    "delete_saved",
+    "delete_cache",
+    "catalog_url",
+]
+
+config = dict(default_config)
+config["heading_level"] = default_config["heading_level"] + 1
+config["show_root_full_path"] = False
+
+for meth in methods:
+    docstring = render_object_docs(mod["models"]["Udf"][meth], config)
+    result += docstring + "\n---\n\n"
+
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w") as f:
     f.write(result)
