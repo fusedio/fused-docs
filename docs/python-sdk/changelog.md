@@ -7,6 +7,23 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.21.3 (2025-07-23)
+
+**New Features:**
+- Added support for speak-to-AI in the AI chat.
+- Improved AI chat with one-click prompt suggestions and better tooltips.
+
+**Improvements:**
+- Improved color code handling in the editor.
+- Moved experimental inline AI features behind feature flag.
+- File-opener UDFs moved to the community catalog.
+
+**Bug Fixes:**
+- Fixed issues with undo-ing AI chat changes.
+- Fixed issues with AI chat disconnections.
+- Fixed caching for HTML return values from UDFs.
+- Fixed handling of request parameters for UDF runs.
+
 ## v1.21.2 (2025-07-21)
 
 **New Features:**
