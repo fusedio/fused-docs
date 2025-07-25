@@ -9,6 +9,8 @@ sidebar_position: 8
 
 ## v1.21.3 (2025-07-23)
 
+Launching [udf.ai](https://udf.ai/)! Ask your data questoins, get AI to help you build answers
+
 **New Features:**
 - Added support for speak-to-AI in the AI chat.
 - Improved AI chat with one-click prompt suggestions and better tooltips.
