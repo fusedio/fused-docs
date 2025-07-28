@@ -7,9 +7,28 @@ sidebar_position: 8
 
 # Changelog
 
+## v1.21.5
+
+
+**New Features:**
+- Added self service signup for new users!
+- Added voice input to udf.ai and to rich text frames.
+
+**Improvements:**
+- AI chat can now see results printed from a UDF.
+- Profile modal now shows usage quota, when applicable.
+- `@fused.cache` functions can now be profiled.
+- Canvas now shows controls on hover.
+- AI chat styling changes.
+- Sped up UDF executions when `cache_max_age=0` was specified.
+
+**Bug Fixes:**
+- Fixed saving UDFs where the UDF had previously been deleted on the server.
+- Adjusted the default run timeout to match the backend run timeout.
+
 ## v1.21.3 (2025-07-23)
 
-Launching [udf.ai](https://udf.ai/)! Ask your data questoins, get AI to help you build answers
+Launching [udf.ai](https://udf.ai/)! Ask your data questions, get AI to help you build answers.
 
 **New Features:**
 - Added support for speak-to-AI in the AI chat.
