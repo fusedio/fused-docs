@@ -247,6 +247,10 @@ const config: Config = {
             to: "/core-concepts/onprem",
             from: ["/core-concepts/setup-profile/"],
           },
+          {
+            to: "/tutorials/Geospatial%20with%20Fused/use-cases/",
+            from: ["/use-cases/"],
+          },
         ],
         // createRedirects(existingPath) {
         //   if (existingPath.includes("/user-guide/out")) {
