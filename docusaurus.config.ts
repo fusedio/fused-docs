@@ -248,7 +248,7 @@ const config: Config = {
             from: ["/core-concepts/setup-profile/"],
           },
           {
-            to: "/tutorials/Geospatial%20with%20Fused/use-cases/",
+            to: "/tutorials/Geospatial%20with%20Fused/geospatial-use-cases/",
             from: ["/use-cases/"],
           },
         ],

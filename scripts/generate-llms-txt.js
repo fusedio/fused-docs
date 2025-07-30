@@ -14,7 +14,7 @@ const SECTIONS = {
   'Tutorials': 'tutorials', 
   'Python SDK': 'python-sdk',
   'Workbench': 'workbench',
-  'Use Cases': 'tutorials/Geospatial with Fused/use-cases'
+  'Use Cases': 'tutorials/Geospatial with Fused/geospatial-use-cases'
 };
 
 function extractFrontmatter(filePath, isFullVersion = false) {
@@ -278,7 +278,7 @@ Learn the fundamental concepts behind Fused's serverless geospatial platform.
 ## Examples & Use Cases
 
 - [Load & Export Data](${BASE_URL}/tutorials/load-export-data/) - Learn to work with various data formats
-- [Use Cases](${BASE_URL}/tutorials/Geospatial%20with%20Fused/use-cases/) - Real-world applications and case studies
+- [Use Cases](${BASE_URL}/tutorials/Geospatial%20with%20Fused/geospatial-use-cases/) - Real-world applications and case studies
 
 ---
 
