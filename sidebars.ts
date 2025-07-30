@@ -40,6 +40,7 @@ const sidebars: SidebarsConfig = {
             "tutorials/Geospatial with Fused/gee_bigquery",
             "tutorials/Geospatial with Fused/filetile",
             "tutorials/Geospatial with Fused/other-integrations",
+            "tutorials/Geospatial with Fused/geo-faq",
           ],
         },
 
