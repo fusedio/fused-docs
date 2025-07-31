@@ -3255,6 +3255,29 @@ def udf(bounds: fused.types.TileGDF=None, geography_column=None):
 
 ================================================================================
 
+## Geospatial FAQ
+Path: tutorials/Geospatial with Fused/geo-faq.mdx
+URL: https://docs.fused.io/tutorials/Geospatial with Fused/geo-faq/
+
+Python is the go-to language for spatial data science. Although spatial SQL joins and transformations can be efficiently performed using PostGIS in an external database, you may eventually need to convert that data to Pandas and NumPy for further processing and analysis, especially for detailed operations on raster arrays. Additionally, you can run SQL directly on Fused using Python libraries like DuckDB, combining the strengths of both approaches.
+
+It enables efficient reading of large datasets by strategically partitioning GeoParquet files. Fused's GeoParquet format includes metadata that allows for spatial filtering of any dataset, loading only the chunks relevant to a specific area of interest. This approach reduces memory usage and allows you to work with any size dataset with just Python.
+
+Use cases like creating chips may call for running a UDF across a set of tiles that fall within a given geometry. This can be done by creating a list of tiles with the mercantile library then calling the UDF in parallel.
+
+```python showLineNumbers
+
+bounds = [32.4203, -14.0933, 34.6186, -12.42826]
+
+tile_list = list(mercantile.tiles(*bounds,zooms=[15]))
+```
+
+You can use the App Builder create an app that loads the UDF's data then create a shareable link.
+
+</details>
+
+================================================================================
+
 ## index
 Path: tutorials/Geospatial with Fused/index.mdx
 URL: https://docs.fused.io/tutorials/Geospatial with Fused/
@@ -3262,6 +3285,8 @@ URL: https://docs.fused.io/tutorials/Geospatial with Fused/
 # Geospatial Analysis in Fused
 
 Welcome to geospatial analysis with Fused! This section covers everything you need to know to work with geospatial data in Fused.
+
+<LazyReactPlayer url="https://www.youtube.com/watch?v=btIhyq2KbN0" />
 
 <DocCardList className="DocCardList--no-description"/>
 
@@ -3807,6 +3832,981 @@ def udf(
     
     return xarray_dataset["data"], bounds
 ```
+
+================================================================================
+
+## Use Cases
+Path: tutorials/Geospatial with Fused/use-cases.mdx
+URL: https://docs.fused.io/tutorials/Geospatial with Fused/use-cases/
+
+Explore practical use Cases of using Fused for various geospatial and data processing tasks.
+
+<DocCardList className="DocCardList--no-description"/>
+
+================================================================================
+
+## Climate Dashboard
+Path: tutorials/Geospatial with Fused/use-cases/climate-dashboard.mdx
+URL: https://docs.fused.io/tutorials/Geospatial with Fused/use-cases/climate-dashboard/
+
+# Building a Climate dashboard
+
+We're going to build an interactive dashboard of global temperature data, after processing 1TB of data in a few minutes!
+
+### Install `fused`
+
+```python
+pip install "fused[all]"
+```
+
+Read more about installing Fused here.
+
+In a notebook:
+
+```python
+from fused.api import NotebookCredentials
+
+credentials = NotebookCredentials()
+print(credentials.url)
+```
+
+Follow the link to authenticate.
+
+Read more about authenticating in Fused.
+
+Each file being about 140MB a quick back of the envelope calculation gives us:
+```python
+recent_days = [day for day in available_days if day.split('datestr=')[1][:7] in recent_months]
+len(recent_days) * 140 / 1000 # size in GB of files we'll process
+```
+
+```bash
+1005.62
+```
+</details>
+
+Fused allows us to run a UDF in parallel. So we'll process 1 month of data across hundreds of jobs:
+
+```python
+results = fused.submit(
+  udf, 
+  recent_months, 
+  max_workers=250, 
+  collect=False
+)
+```
+
+See a progress bar of jobs running:
+
+```python
+results.wait()
+```
+
+See how long all the jobs took:
+
+```python
+results.total_time()
+```
+
+```bash
+>>> datetime.timedelta(seconds=40, ...)
+```
+
+**We just processed 20 years of worldwide global data, over 1TB in 40s!!**
+
+All we need to do now is aggregate the data by month:
+
+```python
+@fused.udf(cache_max_age='0s')
+def udf():
+
+    monthlys = fused.api.list(fused.file_path(f"monthly_climate/"))
+    file_list = "', '".join(monthlys)
+    
+    result = duckdb.sql(f"""
+       SELECT 
+           LEFT(datestr, 7) as month,
+           ROUND(AVG(daily_mean_temp), 2) as monthly_mean_temp
+       FROM read_parquet([''])
+       GROUP BY month
+       ORDER BY month
+    """).df()
+
+    return result
+```
+
+Instead of running this locally, we'll open it in Workbench, Fused's web-based IDE:
+
+```python
+# Save to Fused
+udf.to_fused("monthly_mean_temp")
+
+# Load again to get the Workbench URL
+loaded_udf = fused.load("monthly_mean_temp")
+```
+
+Return `loaded_udf` in a notebook and you'll get a URL that takes you to Workbench:
+
+```python
+loaded_udf
+```
+
+Click on the link to open the UDF in Workbench. Click "+ Add to UDF Builder" 
+
+[Image: Monthly temperature aggregation in Workbench]
+
+### Interactive graph (with AI)
+
+You can use the AI Assistant to help you vibe code an interactive timeseries of your data
+
+Simply ask the AI:
+
+```
+Make an interactive graph of the monthly temperature data
+```
+
+You can then share your graph:
+- Save (`Cmd + S` on MacOS or click the "Save" button)
+- Click "URL" button to see deployed graph!
+
+Any time you make an update, your graph will automatically update!
+
+<LazyReactPlayer 
+  playsinline= 
+  className="video__player" 
+  playing= 
+  muted= 
+  controls 
+  height="100%" 
+  url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/climate_dashboard/sharing_grpah.mp4" 
+  width="100%" 
+/>
+
+================================================================================
+
+## Dark Vessel Detection
+Path: tutorials/Geospatial with Fused/use-cases/dark-vessel-detection.mdx
+URL: https://docs.fused.io/tutorials/Geospatial with Fused/use-cases/dark-vessel-detection/
+
+_A complete example show casing how to use Fused to ingest data into a geo-partitioned, cloud friendly format, process images & vectors and use UDFs to produce an analysis_
+
+### Requirements
+- Access to Fused
+- Access to a Jupyter Notebook
+- Installing `fused` with `[all]` dependencies (mainly to have `pandas` & `geopandas`):
+
+```python showLineNumbers
+pip install "fused[all]"
+```
+
+## 1. The problem: Detecting illegal boats
+
+Monitoring what happens at sea isn't the easiest task. Shores are outfitted with radars and each ship has a transponder to publicly broadcast their location (using Automatic Identification System, AIS), but ships sometimes want to hide their location when taking part in illegal activities.
+
+Global Fishing Watch has reported on "dark vessels" comparing Sentinel 1 radar images to public AIS data and matching the two to compare where boats report being versus where they _actually_ are.
+
+In this example, we're going to showcase a basic implementation of a similar analysis to identify _potential_ dark vessels, all in Fused.
+
+[Image: Dark Vessel Detection workflow]
+
+Here's the result of our analysis, running in real time in Fused:
+
+     For the nerds out there, we're using the Ground Range Detected product, not the Radiometrically Terrain Corrected because we're looking at boats in the middle of the ocean, so terrain shouldn't be any issue.
+    - This dataset is available as Cloud Optimized GeoTiff through a STAC Catalog, meaning we can directly use this data as is.
+
+</Tabs>
+
+`merged_gdf` now returns a column called `S1_acquisition_time` with the time the Sentinel 1 image was taken.
+
+If we save and call this UDF with a token we can call it from anywhere, from a Jupyter Notebook or from another UDF. Let's create a new UDF in Workbench:
+
+```python  showLineNumbers
+# This is a new UDF
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds=None,
+    time_of_interest: int="2024-09-03/2024-09-10",
+):
+
+    @fused.cache()
+    def get_s1_detection(
+        time_of_interest=time_of_interest,
+        bounds=bounds):
+
+        return fused.run(
+            "fsh_673giUH9R6KqWFCOQtRfb3",
+            time_of_interest=time_of_interest,
+            bounds=bounds,
+        )
+
+    s1_detections = get_s1_detection()
+    print(f"Found  Unique Sentinel 1 detections")
+
+    # We want to keep AIS data only right around the time the S1 image was acquired
+    s1_acquisition_date = s1_detections['S1_acquisition_time'].values[0]
+    s1_acquisition_month = str(s1_acquisition_date.astype('datetime64[M]'))
+    s1_acquisition_month_day_hour_min = s1_acquisition_date.astype('datetime64[s]').astype(str).replace('T', ' ')
+    print(f"Sentinel 1 image was acquired at : ")
+
+    return s1_detections
+```
+
+This prints out:
+
+```bash
+Found 16 Unique Sentinel 1 detections
+Sentinel 1 image was acquired at : 2024-09-04 00:19:09
+```
+
+We can now create another UDF that will take this `s1_acquisition_month_day_hour_min` date + a bounding box in input and returns all the AIS points in that time + area.
+
+We're going to leverage code from the community for this part, namely reading the AIS data from a geo-partitioned GeoParquet. Fused allows us to easily re-use any code we want and freeze it to a specific commit so it doesn't break our pipelines (read more about this here)
+
+We can use this bit of code called `table_to_tile` which will either load the AIS data or the bounding box depending on our zoom level to keep our UDF fast & responsive.
+
+    You could write a GeoParquet reader from scratch or call a UDF that you have that already does this, you don't have to use this option. But we want to show you how you can re-use bits of code from others here.
+
+```python  showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = None,
+    s1_acquisition_month_day_hour_min:str = '2024-09-04T00:19:09.175874',
+    time_delta_in_hours: float = 0.1, # by default 6min (60min * 0.1)
+    min_zoom_to_load_data: int = 14,
+    ais_table_path: str = "s3://fused-users/fused/demo_user/AIS_2024_ingester/prod_2024_09", # This is the location where we had ingested our geo-partitioned AIS data
+    ):
+    """Reading AIS data from Fused partitioned AIS data from NOAA (data only available in US)"""
+
+    from datetime import datetime, timedelta
+
+    # Load the utils module
+    local_utils = fused.load("https://github.com/fusedio/udfs/tree/bb712a5/public/common/").utils
+    zoom = local_utils.estimate_zoom(bounds)
+
+    sentinel1_time = pd.to_datetime(s1_acquisition_month_day_hour_min)
+    time_delta_in_hours = timedelta(hours=time_delta_in_hours)
+
+    month_date = sentinel1_time.strftime('%Y_%m')
+    monthly_ais_table = f"prod_/"
+    print(f"")
+
+    @fused.cache
+    def getting_ais_from_s3(bounds, monthly_table):
+        return local_utils.table_to_tile(
+            bounds,
+            table=monthly_ais_table,
+            use_columns=None,
+            min_zoom=min_zoom_to_load_data
+        )
+
+    ais_df = getting_ais_from_s3(bounds, monthly_ais_table)
+
+    if ais_df.shape[0] == 0:
+        print("No AIS data within this bounds & timeframe. Change bounds or timeframe")
+        return ais_df
+
+    if zoom > min_zoom_to_load_data:
+        print(f"Zoom is  | Only showing bounds")
+        return ais_df
+
+    print(f"")
+    ais_df['datetime'] = pd.to_datetime(ais_df['BaseDateTime'])
+    mask = (ais_df['datetime'] >= sentinel1_time - time_delta_in_hours) & (ais_df['datetime'] <= sentinel1_time + time_delta_in_hours)
+    filtered_ais_df = ais_df[mask]
+    print(f'')
+    return filtered_ais_df
+```
+
+In workbench UDF builder we can now see the output of both of our UDF:
+
+[Image: Notebook run remote print]
+
+We can now see that 1 of these boats doesn't have an associated AIS point (in red).
+
+    You can change the styling of your layers in the Visualize tab to make them look like the screenshot above
+
+Now all we need to do is merge these 2 datasets together and keep all the boats that don't match an AIS point.
+
+## 7. Merging the 2 datasets together
+
+We can expand the UDF we had started in section 6. to call our AIS UDF by passing a bounding box + `s1_acquisition_month_day_hour_min`.
+
+We'll get the AIS data and join it with the Sentinel 1 detected boats by using geopandas `sjoin_nearest` to get the nearest distance of each boat to an AIS point.
+
+Any point with the closest AIS point >100m from the Sentinel 1 boat will be considered a potentiel "dark vessel".
+
+```python  showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds=None,
+    time_of_interest: str="2024-09-03/2024-09-10",
+    ais_search_distance_in_meters: int=10,
+):
+
+    @fused.cache()
+    def get_s1_detection(
+        time_of_interest=time_of_interest,
+        bounds=bounds):
+
+        return fused.run(
+            "fsh_673giUH9R6KqWFCOQtRfb3",
+            time_of_interest=time_of_interest,
+            bounds=bounds,
+        )
+
+    s1_detections = get_s1_detection()
+    print(f"Found  Unique Sentinel 1 detections")
+
+    # We want to keep AIS data only right around the time the S1 image was acquired
+    s1_acquisition_date = s1_detections['S1_acquisition_time'].values[0]
+    s1_acquisition_month = str(s1_acquisition_date.astype('datetime64[M]'))
+    s1_acquisition_month_day_hour_min = s1_acquisition_date.astype('datetime64[s]').astype(str).replace('T', ' ')
+    print(f"Sentinel 1 image was acquired at : ")
+
+    @fused.cache()
+    def get_ais_from_s1_date(s1_acquisition_month_day_hour_min=s1_acquisition_month_day_hour_min, bounds=bounds):
+        return fused.run("fsh_FI1FTq2CVK9sEiX0Uqakv", s1_acquisition_month_day_hour_min=s1_acquisition_month_day_hour_min, bounds=bounds)
+
+    ais_gdf = get_ais_from_s1_date()
+
+    # Making sure both have the same CRS
+    s1_detections.set_crs(ais_gdf.crs, inplace=True)
+
+    # Buffering AIS points to leverage spatial join
+    ais_gdf['geometry'] = ais_gdf.geometry.buffer(0.005)
+
+    joined = s1_detections.to_crs(s1_detections.estimate_utm_crs()).sjoin_nearest(
+        ais_gdf.to_crs(s1_detections.estimate_utm_crs()),
+        how="inner", # Using left, i.e. s1 as keys
+        distance_col='distance_in_meters',
+    )
+
+    # Dark vessels will be unique S1 points that don't have an AIS point within 10m
+    potential_dark_vessels = joined[joined['distance_in_meters'] > ais_search_distance_in_meters]
+    print(f"Found  potential dark vessels")
+
+    # back to EPSG:4326
+    potential_dark_vessels.to_crs(s1_detections.crs, inplace=True)
+    return potential_dark_vessels
+```
+
+And now we have a UDF that takes a `time_of_interest` and bounding box and returns potential dark vessel:
+
+[Image: potential dark vessel detection]
+
+## Limitations & Next steps
+
+This is a simple analysis, that makes a lot of relatively naive assumptions (for ex: all bright spots in SAR are boats for example, which only works in open water and not near the shore or around solid structures like ocean wind mills or oil rigs). There's a lot of ways in which it could be improved but provides a good starting point.
+
+This could be improved in a few ways:
+- Masking out any shore or known areas with static infrastructure (to limit potential false positives around coastal wind mill farms)
+
+<LazyReactPlayer playsinline= className="video__player" playing= muted= controls height="80%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/dark-vessel-detection/false_positive_wind_mills.mp4" width="80%" />
+Example of the Block Island Wind Farm in Rhode Island showing up as false positive "potential dark vessel": Wind mills appear as bright spots but don't have any AIS data associated to them
+(`bounds=[-71.08534386325134,41.06338103121641,-70.89011235861962,41.15718153299125]` & `s1_acquisition_month_day_hour_min = "2024-09-03T22:43:33"`)
+
+- Using a more sophisticated algorithm to detect boats. The current algorithm is naive, doesn't return bounding boxes but rather general shapes.
+- Return more information derived from AIS data: Sometimes boats go dark for a certain period of time only, making it possible to tie a boat that was dark for a certain time to a known ship when it does have it's AIS on.
+- Running this over all the coast of the continental US and/or over a whole year. This would be closer to the Global Fishing Watch dark vessel detection project.
+
+If you want to take this a bit further check out:
+- Running UDFs at scale with `run_remote()`. You could use this to run this pipeline over a larger area or over a much longer time series (or both!) to find out more potentiel dark vessels
+- More about Fused core concepts like chosing between running UDFs based on Tile or File
+
+================================================================================
+
+## Exploring Maxar Open Data
+Path: tutorials/Geospatial with Fused/use-cases/exploring_maxar_data.mdx
+URL: https://docs.fused.io/tutorials/Geospatial with Fused/use-cases/exploring_maxar_data/
+
+_A guide showing how to use Fused to get all of Maxar's Open Data from all the available STAC catalogs and explore the imagery_
+
+### Requirements
+- Access to Fused
+
+## Summary 
+
+Working with Fused UDFs also give you the option to easily use functions defined in other UDFs. In practice this means we've created a `common` public UDF that contains some functions we've found useful when working with any type of data.
+
+You can explore it yourself by directly reading the code in Github. If you see any functions you'd like to use, we strongly recommend you use `fused.load()` and pass the latest commit hash at the time you want to use it:
+
+```python
+commit_hash = "39d93ca" # Latest commit hash of https://github.com/fusedio/udfs/blob/main/public/common/utils.py at time of writing
+common = fused.load(f"https://github.com/fusedio/udfs/tree//public/common/").utils
+```
+
+Each Maxar Event itself contains multiple collections. We created a simple function that loops over all the available `UNIQUE_ID/collection.json`, reads them an appends them into a single GeoDataFrame:
+
+Looking at the `WildFires-LosAngeles-Jan-2025/collections.json` file:
+```json
+,
+
+    ],
+    "extent": ,
+        "temporal": 
+    },
+    "title": "Los Angeles Wildfires 2025",
+    "description": "Driven by strong Santa Ana winds, multiple wildfires are burning in the Los Angeles, California, area. More than 40,000 acres and more than 12,300 structures have burned; at least 19 people have died.",
+    "license": "CC-BY-NC-4.0"
+}
+```
+
+So we create `stac_to_gdf_maxar` to:
+- Loop over all the `UNIQUE_ID/collection.json` files
+- Read each `collection.json` file
+- Extract the metadata & extent of each collection 
+- Convert the `extent` into a GeoDataFrame
+- Concat all into a single GeoDataFrame
+
+Once again, you can directly read the code in Github to see exactly how we do this
+
+</details>
+
+You can easily rename your UDFs in Workbench. Rename this UDF to `Maxar_Open_Data_STAC_single_catalog` so we can call it later directly by name.
+
+Make sure to save your UDF with `Cmd + S` (or `Ctrl + S` on Windows / Linux) or in the Workbench UI for these changes to take effect.
+
+[Image: Renaming UDF]
+
+And here we get all the images for the Los Angeles Wildfires 2025 event:
+
+[Image: Single collection Maxar STAC]
+
+## Aggregating all available data
+
+### Getting all `events`
+
+To be able to explore all of Maxar's Open Data Program we now need to run this specific UDF over all the available events. 
+
+We'll do this in 2 steps:
+- Fetch all the event names 
+- Use `fused.submit()` to fetch all the STAC Collections for each event name
+
+```python showLineNumbers
+@fused.udf
+def udf():
+
+    from pystac import Catalog
+
+    @fused.cache
+    def getting_stac_collection(stac_url = "https://maxar-opendata.s3.amazonaws.com/events/catalog.json"):
+        root_catalog = Catalog.from_file(stac_url)
+        collections = root_catalog.get_collections()
+        return [collection.id for collection in collections]
+
+    collections = getting_stac_collection()
+    print(f"")
+
+    return collections
+```
+
+Let's break this UDF down:
+- We're using `@fused.cache` to cache the Catalog request so our UDF doesn't need to do this request each time we execute it. It prevents being rate limited and doing the same request over and over against the same endpoint
+- We're returning a list (`collections`) so if you run this in Workbench you'll notice nothing shows up on the map! That's also why we print the first 5 rows. 
+
+Read through the Best Practices for more handy tips on how to write efficient and easy to debug UDFs
+
+This UDF returns a list of all the available event names currently accessible through Maxar's Open STAC Catalog:
+
+```python 
+>>> print(f"")
+['BayofBengal-Cyclone-Mocha-May-23', 'Belize-Wildfires-June24', 'Brazil-Flooding-May24', 'Cyclone-Chido-Dec15', 'Earthquake-Myanmar-March-2025']
+```
+
+[Image: Maxar STAC Events]
+
+### Preparing `fused.submit()` to run in parallel
+
+We're going to use `fused.submit()` to run our first UDF in parallel. To do this we need a few things:
+- Prepare our inputs (in this case the name of all the `events`). We recommend doing this as a dataframe as it's simple to read & work with
+- Pass our first UDF to `fused.submit()`
+
+```python  showLineNumbers
+@fused.udf
+def udf():
+
+    from pystac import Catalog
+
+    @fused.cache
+    def getting_stac_collection(stac_url = "https://maxar-opendata.s3.amazonaws.com/events/catalog.json"):
+        root_catalog = Catalog.from_file(stac_url)
+        collections = root_catalog.get_collections()
+        return [collection.id for collection in collections]
+
+    collections = getting_stac_collection()
+    collections_df = pd.DataFrame()
+
+    dfs_out = fused.submit(
+        "Maxar_Open_Data_STAC_single_catalog",
+        collections_df,
+        debug_mode=True # Using debug to run just the 1st event at first
+    )
+    print(f"")
+
+    return dfs_out
+```
+
+Let's unpack this:
+- We're calling the UDF called `"Maxar_Open_Data_STAC_single_catalog"` that we renamed earlier over `collections_df`. At the time of writing this example this represents 46 events§
+- We use `fused.submit(..., debug_mode = True)` to run only the 1st value from `collections_df`. This allows us to test that our `fused.submit()` job is written correctly. 
+
+`fused.submit()` allows you to run a single over a list / dataframe of inputs in parallel. Under the hood Fused spins up many realtime instances (see technical docs for details) that will each run the given UDF (in this case `"Maxar_Open_Data_STAC_single_catalog"`) all at the same time.
+
+This is a powerful way to scale a process with just a single function call.
+
+Read the dedicated Docs section on `fused.submit()` for more
+
+[Image: Maxar submit debug mode]
+
+### Getting all Maxar open data
+
+Once we're confident that our `fused.submit()` job setup is correct, we can remove `debug_mode=True` (it's set to `False` by default) and run our UDF across all events.
+
+We can also increase the number of `max_workers`, as we have 46 events and the default `max_workers` is set to 32. We can ask Fused server to thus spin up more instances for us so this parallel job is even faster:
+
+```python  showLineNumbers
+@fused.udf
+def udf():
+
+    from pystac import Catalog
+
+    @fused.cache
+    def getting_stac_collection(stac_url = "https://maxar-opendata.s3.amazonaws.com/events/catalog.json"):
+        root_catalog = Catalog.from_file(stac_url)
+        collections = root_catalog.get_collections()
+        return [collection.id for collection in collections]
+
+    collections = getting_stac_collection()
+    collections_df = pd.DataFrame()
+
+    dfs_out = fused.submit(
+        "Maxar_Open_Data_STAC_single_catalog",
+        collections_df,
+        max_workers=50, # Increasing the number of max_workers as we have more than events than the default value
+    )
+    print(f"")
+
+    return dfs_out
+```
+
+After a few seconds, we get back a `GeoDataFrame` containing all the Maxar open data STAC catalogs:
+
+[Image: Maxar submit all STACs]
+
+This allows us to do a few different things:
+- Explore _all_ of the available Maxar Open Data on a map directly. This helps us see what data Maxar has available that might be of interest, to compare image quality across areas for example. 
+- Offer a wide variety of high resolution imagery to query against. For example retrieving as much the cloud free imagery as possible
+
+## Choosing 1 Event to display
+
+With access to all the images from Maxar, we can navigate the map and choose any image we'd like to display. Let's select one and display it in Workbench.
+
+First we can use the Results Tab to find the URL of an image we'd like to display:
+
+<ReactPlayer 
+    playsinline= 
+    className="video__player" 
+    playing= 
+    muted= 
+    controls height="100%" 
+    url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/maxar_stac/maxar_choosing_image.mp4"
+    width="100%" 
+/>
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds, 
+    path: str = "https://maxar-opendata.s3.amazonaws.com/events/Emilia-Romagna-Italy-flooding-may23/ard/33/031111210233/2023-05-23/1050010033C95B00-visual.tif", 
+    chip_len=256,
+    display_extent: bool = True
+):
+
+    from shapely.geometry import box
+    from rasterio.session import AWSSession
+
+    # Getting just bounds of image so we can zoom to layer
+    if display_extent:
+        print("Returning extent")
+        with rasterio.Env(session=AWSSession()):
+            with rasterio.open(path) as src:
+                bbox_gdf = gpd.GeoDataFrame(geometry=[box(*src.bounds)],crs=src.crs)
+        bbox_gdf.to_crs(4326, inplace=True)
+    
+        return bbox_gdf
+
+    # Otherwise reading the GeoTiff
+    else:
+        print("Returning image")
+        utils = fused.load("https://github.com/fusedio/udfs/tree/5432edc/public/common/").utils
+        tiles = utils.get_tiles(bounds)
+    
+        arr = utils.read_tiff(tiles, path, output_shape=(chip_len, chip_len))
+        print(f"")
+        return arr
+```
+
+Unpacking this UDF:
+- This UDF takes :
+    - a `bounds` object. This allows us to pass the current Workbench Map Viewport to our UDF
+    - `path` represents the path on S3 to one of the images we want to display
+    - `chip_len`: The size of the chip size we'd like our image to display in
+
+These images can be loaded using `bounds` and Tile mode because Maxar has provided these images as Cloud Optimized Geotiffs. This allows us to leverage their tiles & overviews and only load the data we need as we pan around the map
+
+We can check this by reading the metadata in CLI with `gdalinfo` and see that each band has `Block`, meaning is tiled:
+
+```bash  
+gdalinfo /vsis3/maxar-opendata/events/Cyclone-Chido-Dec15/ard/38/300200022120/2024-06-11/104001009713BA00-visual.tif
+
+>>>
+Driver: GTiff/GeoTIFF
+
+...
+
+Band 1 Block=512x512 Type=Byte, ColorInterp=Red
+  Overviews: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
+  Mask Flags: PER_DATASET
+  Overviews of mask band: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
+Band 2 Block=512x512 Type=Byte, ColorInterp=Green
+  Overviews: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
+  Mask Flags: PER_DATASET
+  Overviews of mask band: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
+Band 3 Block=512x512 Type=Byte, ColorInterp=Blue
+  Overviews: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
+  Mask Flags: PER_DATASET
+  Overviews of mask band: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
+```
+
+Running the above UDF we can for now return the extent of the image:
+
+[Image: maxar return img extent]
+
+This allows us to introduce 2 concepts in Workbench:
+- 1. Zoom to layer
+- 2. Tile / File modes
+
+### 1. Setting a default view in Workbench
+
+After getting the extent of our image, we're going to Zoom to layer and set this view as the default view:
+
+<ReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/maxar_stac/zoom_to_layer_default_view.mp4" width="100%" />
+
+This allows us to to any change we want to this UDF or pan anywhere on the map and always be able to zoom back to this default view!
+
+### 2. Displaying the image
+
+Now we can edit our UDF to return the image by changing `display_extent` to `False`:
+
+```python  showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds, 
+    path: str = "https://maxar-opendata.s3.amazonaws.com/events/Emilia-Romagna-Italy-flooding-may23/ard/33/031111210233/2023-05-23/1050010033C95B00-visual.tif", 
+    chip_len=256,
+    display_extent: bool = False
+):
+
+    from shapely.geometry import box
+    from rasterio.session import AWSSession
+
+    # Getting just bounds of image so we can zoom to layer
+    if display_extent:
+        print("Returning extent")
+        with rasterio.Env(session=AWSSession()):
+            with rasterio.open(path) as src:
+                bbox_gdf = gpd.GeoDataFrame(geometry=[box(*src.bounds)],crs=src.crs)
+        bbox_gdf.to_crs(4326, inplace=True)
+    
+        return bbox_gdf
+
+    # Otherwise reading the GeoTiff
+    else:
+        print("Returning image")
+        utils = fused.load("https://github.com/fusedio/udfs/tree/5432edc/public/common/").utils
+        tiles = utils.get_tiles(bounds)
+    
+        arr = utils.read_tiff(tiles, path, output_shape=(chip_len, chip_len))
+        print(f"")
+        return arr
+```
+
+This change returns the image instead of the extent, but it returns the image all at once, because Workbench is set to "File" mode by default
+
+[Image: File mode array return]
+
+If you reproduce this yourself and pan around the map you'll notice:
+- We see the whole image but with a relatively low resolution.
+- Nothing changes as we pan around the map (resolution doesn't change)
+
+We can change this by setting Workbench to "Tile" mode:
+
+<ReactPlayer 
+    playsinline= 
+    className="video__player" 
+    playing= 
+    muted= 
+    controls height="100%" 
+    url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/maxar_stac/workbench_image_switching_to_tile_video.mp4"
+    width="100%" 
+/>
+
+Under the hood, switching to "Tile" mode tells Workbench to run this UDF not only 1 times, but by breaking it up into Mercantile tiles. This is why you see the image being broken up into a grid of tiles.
+
+These different modes don't change _what_ code is being executed, as our `udf` didn't change. It's only changing what geospatial parameters are being passed:
+- "File" mode passes the `bounds` of the current viewport (run 1 time§)
+- "Tile" mode passes the `bounds` of the current viewport broken up into a grid of tiles (run 1 per each tile)
+
+## Next steps
+
+We've shown you how to:
+- Use `fused.submit()` to run a UDF in parallel
+- Use `@fused.cache` to cache requests to reduce costs and improve performance
+- Use Workbench to display images in different modes
+
+If you want to go a bit further you could:
+- Explore the Best Practices to make the most of UDFs or learn handy tips to use Workbench as its fullest
+- Go more in depth with "File" & "Tile" modes in Workbench
+- Dive into the different ways Fused allows you to use caching to improve performance
+
+================================================================================
+
+## Vibe Coded Timeseries
+Path: tutorials/Geospatial with Fused/use-cases/vibe-coded-dashboard.mdx
+URL: https://docs.fused.io/tutorials/Geospatial with Fused/use-cases/vibe-coded-dashboard/
+
+# Vibe Coded Timeseries
+
+_This is a shorter version of the Climate Dashboard use case, but vibe coding our way to a timeseries dashboard!._
+
+We already ingested 20y of ERA5 weather data, available on Fused: `s3://fused-sample/demo_data/ERA5/climate_data/`
+
+### Read a single file
+
+Taking the first file, we can simply ask the AI Assistant to read it:
+
+```
+Read this file with DuckDB and return the first 10 rows: s3://fused-sample/demo_data/ERA5/climate_data/2005-01.pq
+```
+
+<LazyReactPlayer 
+  playsinline= 
+  className="video__player" 
+  playing= 
+  muted= 
+  controls 
+  height="100%" 
+  url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/climate_dashboard/opening_a_file_with_ai.mp4" 
+  width="100%" 
+/>
+
+### Reading all available files
+
+Next up:
+
+```
+Read all available files with DuckDB in the director and give me the monthly average
+```
+
+<LazyReactPlayer 
+  playsinline= 
+  className="video__player" 
+  playing= 
+  muted= 
+  controls 
+  height="100%" 
+  url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/climate_dashboard/scaling_to_all_files_in_bucket.mp4" 
+  width="100%" 
+/>
+
+### Making a time series graph
+
+```
+Make an interactive time series graph of the monthly average temperature
+```
+
+<LazyReactPlayer 
+  playsinline= 
+  className="video__player" 
+  playing= 
+  muted= 
+  controls 
+  height="100%" 
+  url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/climate_dashboard/graphing_data_compressed.mp4" 
+  width="100%" 
+/>
+
+### Sharing your graph
+
+- Save (`Cmd + S` on MacOS or click the "Save" button)
+- Click "URL" button to see deployed dashboard!
+
+Any time you make an update, your graph will automatically update!
+
+<LazyReactPlayer 
+  playsinline= 
+  className="video__player" 
+  playing= 
+  muted= 
+  controls 
+  height="100%" 
+  url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/climate_dashboard/sharing_grpah.mp4" 
+  width="100%" 
+/>
+
+================================================================================
+
+## Zonal stats with Fused: 10 minute guide
+Path: tutorials/Geospatial with Fused/use-cases/zonal-stats.mdx
+URL: https://docs.fused.io/tutorials/Geospatial with Fused/use-cases/zonal-stats/
+
+_A step-by-step guide for data scientists._
+
+### Requirements
+
+- access to Fused
+- access to a Jupyter Notebook
+- the following Python packages installed locally:
+  - `fused`
+  - `pandas`
+  - `geopandas`
+
+## 1. Using Fused for a Zonal Statistics Example
+
+In this guide, we'll estimate how much alfalfa grows in zones defined by polygon geometries.
+This will show you how to:
+- Bring in your data
+- Write a UDF to process the data
+- Run the UDF remotely & in parallel
+- Create an app that shows your results and can be shared with anyone
+
+```mermaid
+---
+title: Overview of Zonal Stats
+---
+graph LR
+    A("Continuous Field<br/>(raster image)") --> D
+    B("Areas of Interest<br/>(vector polygons)") --> D
+    D --> E(Areas of Interest<br/>w/ Attributes)
+```
+
+## 2. Bring in your data
+
+You'll first upload your own vector table with `fused.ingest`. This spatially partitions the table and writes it in your specified S3 bucket as a GeoParquet file. You'll then calculate zonal stats over a raster array of alfalfa crops in the USDA Cropland Data Layer (CDL) dataset.
+
+This example shows how to geo partition polygons of Census Block Groups for Utah, which is a Parquet table with a `geometry` column. You can follow along with this file or any vector table you'd like. Read about other supported formats in Ingest your own data.
+
+First, set up a local Python environment, install the latest Fused SDK with `pip install fused`, and authenticate.
+
+Now, write the following script to geo partition your data. Pass the URL of the table to `fused.ingest`. When you kick off an ingest job with `run_remote`, Fused spins up a server to geo partition your table and writes the output to the path specified by the `output` parameter. In the codeblock below, `fd://tl_2023_49_bg/` is the base path to your account's S3 bucket.
+
+```python showLineNumbers
+
+  job = fused.ingest(
+    input="https://www2.census.gov/geo/tiger/TIGER2023/BG/tl_2023_49_bg.zip",
+    output="fd://tl_2023_49_bg/"
+  )
+  job_id = job.run_remote()
+  ```
+
+After running the preceeding code, open fused.io/jobs to view the job status and logs.
+
+Once the job is complete, you can preview the output dataset in the File Explorer.
+
+You can also ingest data without installing anything by using this Fused App.
+
+For the next step you can use the path to the data you just ingested or, if you prefer, this public sample table: `s3://fused-asset/data/tl_2023_49_bg/`.
+
+[Image: Zonal Stats Parquet Files in Workbench File Explorer]
+
+## 3. Write a UDF to process the data
+
+To see the data as we process it, we will write a UDF in the Fused Workbench. As you write code in the UDF Builder you'll see how visualization results, logs, and errors show up immediately.
+
+To write a UDF simply wrap a Python function with the decorator `@fused.udf`.
+
+The first parameter of this UDF, `bounds`. It is reserved for Fused to pass a `GeoDataFrame` which the UDF may use to spatially filter datasets, and usually corresponds to a web map tile. This enables Fused to run the UDF for each tile in the viewport to distribute processing across multiple workers.
+
+The `year` parameter is used to structure the S3 path of the CDL GeoTiff which the utility function `read_tiff` reads for the area defined by `bounds`. The `crop_id` parameter 36 corresponds to alfalfa the CDL colormap, which the UDF uses to mask the raster array.
+
+Fused lets you import utility Modules from other UDFs with `fused.load`. Their code lives in the public UDFs repo.
+
+- `read_tiff` loads an array of the CDL dataset for the specified `bounds` extent and `year`
+- `table_to_tile` loads the table you geo partitioned for the specified `bounds` extent
+- `geom_stats` calculates zonal statistics by aggregating the `arr` variable over the geometries specified by the `gdf`
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = None,
+    year: int = 2020,
+    crop_id: int = 36
+):
+
+    # Convert bounds to tile
+    utils = fused.load("https://github.com/fusedio/udfs/tree/bb712a5/public/common/").utils
+    zoom = utils.estimate_zoom(bounds)
+    tile = utils.get_tiles(bounds, zoom=zoom)
+
+    # Load CDLS data
+    arr = utils.read_tiff(
+      tile,
+      input_tiff_path=f"s3://fused-asset/data/cdls/_30m_cdls.tif"
+    )
+
+    # Mask for crop
+    arr = np.where(np.isin(arr, [crop_id]), 1, 0)
+
+    # Load polygons
+    gdf = utils.table_to_tile(
+      bounds,
+      table='s3://fused-asset/data/tl_2023_49_bg/',
+      min_zoom=5,
+      use_columns=['NAMELSAD', 'GEOID', 'MTFCC', 'FUNCSTAT', 'geometry']
+    )
+    gdf.crs = 4326
+
+    # Calculate zonal stats
+    return utils.geom_stats(gdf, arr)
+```
+
+Try running the UDF in the UDF Builder and visually inspect the output on the map. See what happens when you change `year`. Try introducing print statements such as `print(arr)` and `print(gdf)` to show logs in the console.
+
+[Image: Zonal Stats Map]
+
+You might receive a timeout error in the `Results` tab. Try zooming into Utah on the map where the zonal areas are highlighted, to reduce the size of the tile being passed into the UDF from the map.
+
+```json showLineNumbers
+,
+  "rasterLayer": ,
+  "vectorLayer": ,
+    "getLineColor": [
+      208,
+      208,
+      208,
+      40
+    ]
+  }
+}
+```
+
+</div>
+
+\
+Click "Copy shareable link" to share the app with others!
+
+## 6. Conclusion and next steps
+
+We've shown how you can use Fused to develop a distributed Python workflow to power an app. Through a simple sequence of steps we loaded data, wrote analytics code, and created an app to interact with the data. With a single click you went from experimental development code to a live application.
+
+We hope this overview gives you a glimpse of what you can build with Fused. You can continue to learn how to read data, process data, and integrate with other applications.
+
+Find inspiration for your next project, ask questions, or share your work with the Fused community.
+
+- GitHub
+- Discord
+- LinkedIn
+- Twitter
 
 ================================================================================
 
@@ -5070,7 +6070,133 @@ async def run_shared_file_async(
 
 Asynchronously executes a shared file-based UDF using the specific access token.
 
-Constructs a URL to run an operation on a file accessible via a shared token, enabling customization of the output data types for vector and raster data. It accommodates additional parameters for the operation's execution.
+## Udf
+Path: python-sdk/api-reference/udf.mdx
+URL: https://docs.fused.io/python-sdk/api-reference/udf/
+
+## Udf
+
+The `Udf` class is the object you get when defining a UDF with the
+`@fused.udf` decorator, or when loading
+a saved UDF with `fused.load()`.
+
+### to_fused
+
+```python
+to_fused(
+    slug: str | None = ...,
+    over_id: str | UUID | None = None,
+    as_new: bool | None = None,
+    inplace: bool = True,
+    overwrite: bool | None = None,
+)
+```
+
+Save this UDF on the Fused service.
+
+**Parameters:**
+
+- **slug** (<code>str | None</code>) – ID to refer to this UDF as in URLs.
+- **over_id** (<code>str | UUID | None</code>) – ID to save the UDF over.
+- **as_new** (<code>bool | None</code>) – If True, force saving this UDF as new.
+- **inplace** (<code>bool</code>) – If True (default), update the UDF object with the new saved ID.
+- **overwrite** (<code>bool | None</code>) – If True, overwrite existing remote UDF with the UDF object.
+
+---
+
+### to_directory
+
+```python
+to_directory(where: str | Path | None = None, *, overwrite: bool = False)
+```
+
+Write the UDF to disk as a directory (folder).
+
+**Parameters:**
+
+- **where** (<code>str | Path | None</code>) – A path to a directory. If not provided, uses the UDF function name.
+
+**Other Parameters:**
+
+- **overwrite** (<code>bool</code>) – If true, overwriting is allowed.
+
+---
+
+### to_file
+
+```python
+to_file(where: str | Path | BinaryIO, *, overwrite: bool = False)
+```
+
+Write the UDF to disk or the specified file-like object.
+
+The UDF will be written as a Zip file.
+
+**Parameters:**
+
+- **where** (<code>str | Path | BinaryIO</code>) – A path to a file or a file-like object.
+
+**Other Parameters:**
+
+- **overwrite** (<code>bool</code>) – If true, overwriting is allowed.
+
+---
+
+### create_access_token
+
+```python
+create_access_token(
+    *,
+    client_id: str | Ellipsis | None = ...,
+    public_read: bool | None = None,
+    access_scope: str | None = None,
+    cache: bool = True,
+    metadata_json: dict[str, Any] | None = None,
+    enabled: bool = True
+) -> UdfAccessToken
+```
+
+---
+
+### get_access_tokens
+
+```python
+get_access_tokens() -> UdfAccessTokenList
+```
+
+---
+
+### delete_saved
+
+```python
+delete_saved(inplace: bool = True)
+```
+
+---
+
+### delete_cache
+
+```python
+delete_cache()
+```
+
+---
+
+### catalog_url
+
+```python
+catalog_url: str | None
+```
+
+Returns the link to open this UDF in the Workbench Catalog, or None if the UDF is not saved.
+
+---
+
+================================================================================
+
+## Authentication
+Path: python-sdk/authentication.mdx
+URL: https://docs.fused.io/python-sdk/authentication/
 
 **Arguments**:
 
@@ -5261,7 +6387,26 @@ def print_logs(since_ms: Optional[int] = None,
                file: Optional[IO] = None) -> None
 ```
 
-Fetch and print logs
+## v1.21.3 (2025-07-23)
+
+Launching udf.ai! Ask your data questoins, get AI to help you build answers
+
+**New Features:**
+- Added support for speak-to-AI in the AI chat.
+- Improved AI chat with one-click prompt suggestions and better tooltips.
+
+**Improvements:**
+- Improved color code handling in the editor.
+- Moved experimental inline AI features behind feature flag.
+- File-opener UDFs moved to the community catalog.
+
+**Bug Fixes:**
+- Fixed issues with undo-ing AI chat changes.
+- Fixed issues with AI chat disconnections.
+- Fixed caching for HTML return values from UDFs.
+- Fixed handling of request parameters for UDF runs.
+
+## v1.21.2 (2025-07-21)
 
 **Arguments**:
 
@@ -6162,14 +7307,69 @@ fused.api.job_tail_logs("df335890-4406-4832-bf93-6a3b092e496d")
 ================================================================================
 
 ## Changelog
-Path: python-sdk/changelog.md
+Path: python-sdk/changelog.mdx
 URL: https://docs.fused.io/python-sdk/changelog/
 
 # Changelog
 
+## v1.21.5 (2025-07-30)
+
+**New Features:**
+- Added self service signup for new users!
+- Added voice input to udf.ai and to rich text frames.
+
+<LazyReactPlayer 
+    playsinline=
+    className="video__player"
+    playing=
+    muted=
+    controls
+    height="350px"
+    width="600px"
+    url="https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/changelog/1.21.5_mic_demo.mp4"
+/>
+
+**Improvements:**
+
+AI Assistant:
+- AI chat can now see results printed from a UDF.
+- AI chat can now see sample rows returned from a UDF.
+- AI chat can now show the code diff with generated code.
+
+General:
+- Profile modal now shows usage quota, when applicable.
+- `@fused.cache` functions can now be profiled, and now supports object storage.
+- Canvas now shows controls on hover.
+- Canvas now has an Embed, Table, and Histogram frame types.
+- Sped up UDF executions when `cache_max_age=0` was specified.
+- Default UDF in Workbench is much simpler.
+
+Canvas:
+- Canvas now shows controls on hover.
+
+<LazyReactPlayer 
+    playsinline=
+    className="video__player"
+    playing=
+    muted=
+    controls
+    height="350px"
+    width="600px"
+    url="https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/changelog/1.21.5_canvas_controls_on_hover.mp4"
+/>
+
+**Bug Fixes:**
+- Fixed saving UDFs where the UDF had previously been deleted on the server.
+- Adjusted the default run timeout to match the backend run timeout.
+- Fixed `fused.run` with `sync=False`.
+
+## v1.21.4 (2025-07-24)
+
+Minor bug fixes.
+
 ## v1.21.3 (2025-07-23)
 
-Launching udf.ai! Ask your data questoins, get AI to help you build answers
+Launching udf.ai! Ask your data questions, get AI to help you build answers.
 
 **New Features:**
 - Added support for speak-to-AI in the AI chat.
@@ -8106,7 +9306,9 @@ In Workbench, without defining else we would get `1.5` back:
 
 [Image: default python params]
 
-Now we can set default parameters in the UDF layer UI:
+<LazyReactPlayer playsinline= className="video__player" playing= muted= controls height="80%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/dark-vessel-detection/false_positive_wind_mills.mp4" width="80%" />
+Example of the Block Island Wind Farm in Rhode Island showing up as false positive "potential dark vessel": Wind mills appear as bright spots but don't have any AIS data associated to them
+(`bounds=[-71.08534386325134,41.06338103121641,-70.89011235861962,41.15718153299125]` & `s1_acquisition_month_day_hour_min = "2024-09-03T22:43:33"`)
 
 ### Rationale
 
@@ -8591,973 +9793,6 @@ To add a UDF to the community repository, select community from the dropdown bef
 <ReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/push_udf_to_github_edit3.mp4" width="100%" />
 
 Note that once the UDF is committed to the main branch of the repo, you can expect to wait up to 3 minutes for it to deploy and appear in the UDF Catalog.
-
-================================================================================
-
-# USE CASES
-
-## Climate Dashboard
-Path: use-cases/climate-dashboard.mdx
-URL: https://docs.fused.io/use-cases/climate-dashboard/
-
-# Building a Climate dashboard
-
-We're going to build an interactive dashboard of global temperature data, after processing 1TB of data in a few minutes!
-
-### Install `fused`
-
-```python
-pip install "fused[all]"
-```
-
-Read more about installing Fused here.
-
-In a notebook:
-
-```python
-from fused.api import NotebookCredentials
-
-credentials = NotebookCredentials()
-print(credentials.url)
-```
-
-Follow the link to authenticate.
-
-Read more about authenticating in Fused.
-
-Each file being about 140MB a quick back of the envelope calculation gives us:
-```python
-recent_days = [day for day in available_days if day.split('datestr=')[1][:7] in recent_months]
-len(recent_days) * 140 / 1000 # size in GB of files we'll process
-```
-
-```bash
-1005.62
-```
-</details>
-
-Fused allows us to run a UDF in parallel. So we'll process 1 month of data across hundreds of jobs:
-
-```python
-results = fused.submit(
-  udf, 
-  recent_months, 
-  max_workers=250, 
-  collect=False
-)
-```
-
-See a progress bar of jobs running:
-
-```python
-results.wait()
-```
-
-See how long all the jobs took:
-
-```python
-results.total_time()
-```
-
-```bash
->>> datetime.timedelta(seconds=40, ...)
-```
-
-**We just processed 20 years of worldwide global data, over 1TB in 40s!!**
-
-All we need to do now is aggregate the data by month:
-
-```python
-@fused.udf(cache_max_age='0s')
-def udf():
-
-    monthlys = fused.api.list(fused.file_path(f"monthly_climate/"))
-    file_list = "', '".join(monthlys)
-    
-    result = duckdb.sql(f"""
-       SELECT 
-           LEFT(datestr, 7) as month,
-           ROUND(AVG(daily_mean_temp), 2) as monthly_mean_temp
-       FROM read_parquet([''])
-       GROUP BY month
-       ORDER BY month
-    """).df()
-
-    return result
-```
-
-Instead of running this locally, we'll open it in Workbench, Fused's web-based IDE:
-
-```python
-# Save to Fused
-udf.to_fused("monthly_mean_temp")
-
-# Load again to get the Workbench URL
-loaded_udf = fused.load("monthly_mean_temp")
-```
-
-Return `loaded_udf` in a notebook and you'll get a URL that takes you to Workbench:
-
-```python
-loaded_udf
-```
-
-Click on the link to open the UDF in Workbench. Click "+ Add to UDF Builder" 
-
-[Image: Monthly temperature aggregation in Workbench]
-
-### Interactive graph (with AI)
-
-You can use the AI Assistant to help you vibe code an interactive timeseries of your data
-
-Simply ask the AI:
-
-```
-Make an interactive graph of the monthly temperature data
-```
-
-You can then share your graph:
-- Save (`Cmd + S` on MacOS or click the "Save" button)
-- Click "URL" button to see deployed graph!
-
-Any time you make an update, your graph will automatically update!
-
-<LazyReactPlayer 
-  playsinline= 
-  className="video__player" 
-  playing= 
-  muted= 
-  controls 
-  height="100%" 
-  url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/climate_dashboard/sharing_grpah.mp4" 
-  width="100%" 
-/>
-
-================================================================================
-
-## Dark Vessel Detection
-Path: use-cases/dark-vessel-detection.mdx
-URL: https://docs.fused.io/use-cases/dark-vessel-detection/
-
-_A complete example show casing how to use Fused to ingest data into a geo-partitioned, cloud friendly format, process images & vectors and use UDFs to produce an analysis_
-
-### Requirements
-- Access to Fused
-- Access to a Jupyter Notebook
-- Installing `fused` with `[all]` dependencies (mainly to have `pandas` & `geopandas`):
-
-```python showLineNumbers
-pip install "fused[all]"
-```
-
-## 1. The problem: Detecting illegal boats
-
-Monitoring what happens at sea isn't the easiest task. Shores are outfitted with radars and each ship has a transponder to publicly broadcast their location (using Automatic Identification System, AIS), but ships sometimes want to hide their location when taking part in illegal activities.
-
-Global Fishing Watch has reported on "dark vessels" comparing Sentinel 1 radar images to public AIS data and matching the two to compare where boats report being versus where they _actually_ are.
-
-In this example, we're going to showcase a basic implementation of a similar analysis to identify _potential_ dark vessels, all in Fused.
-
-[Image: Dark Vessel Detection workflow]
-
-Here's the result of our analysis, running in real time in Fused:
-
-     For the nerds out there, we're using the Ground Range Detected product, not the Radiometrically Terrain Corrected because we're looking at boats in the middle of the ocean, so terrain shouldn't be any issue.
-    - This dataset is available as Cloud Optimized GeoTiff through a STAC Catalog, meaning we can directly use this data as is.
-
-</Tabs>
-
-`merged_gdf` now returns a column called `S1_acquisition_time` with the time the Sentinel 1 image was taken.
-
-If we save and call this UDF with a token we can call it from anywhere, from a Jupyter Notebook or from another UDF. Let's create a new UDF in Workbench:
-
-```python  showLineNumbers
-# This is a new UDF
-@fused.udf
-def udf(
-    bounds: fused.types.Bounds=None,
-    time_of_interest: int="2024-09-03/2024-09-10",
-):
-
-    @fused.cache()
-    def get_s1_detection(
-        time_of_interest=time_of_interest,
-        bounds=bounds):
-
-        return fused.run(
-            "fsh_673giUH9R6KqWFCOQtRfb3",
-            time_of_interest=time_of_interest,
-            bounds=bounds,
-        )
-
-    s1_detections = get_s1_detection()
-    print(f"Found  Unique Sentinel 1 detections")
-
-    # We want to keep AIS data only right around the time the S1 image was acquired
-    s1_acquisition_date = s1_detections['S1_acquisition_time'].values[0]
-    s1_acquisition_month = str(s1_acquisition_date.astype('datetime64[M]'))
-    s1_acquisition_month_day_hour_min = s1_acquisition_date.astype('datetime64[s]').astype(str).replace('T', ' ')
-    print(f"Sentinel 1 image was acquired at : ")
-
-    return s1_detections
-```
-
-This prints out:
-
-```bash
-Found 16 Unique Sentinel 1 detections
-Sentinel 1 image was acquired at : 2024-09-04 00:19:09
-```
-
-We can now create another UDF that will take this `s1_acquisition_month_day_hour_min` date + a bounding box in input and returns all the AIS points in that time + area.
-
-We're going to leverage code from the community for this part, namely reading the AIS data from a geo-partitioned GeoParquet. Fused allows us to easily re-use any code we want and freeze it to a specific commit so it doesn't break our pipelines (read more about this here)
-
-We can use this bit of code called `table_to_tile` which will either load the AIS data or the bounding box depending on our zoom level to keep our UDF fast & responsive.
-
-    You could write a GeoParquet reader from scratch or call a UDF that you have that already does this, you don't have to use this option. But we want to show you how you can re-use bits of code from others here.
-
-```python  showLineNumbers
-@fused.udf
-def udf(
-    bounds: fused.types.Bounds = None,
-    s1_acquisition_month_day_hour_min:str = '2024-09-04T00:19:09.175874',
-    time_delta_in_hours: float = 0.1, # by default 6min (60min * 0.1)
-    min_zoom_to_load_data: int = 14,
-    ais_table_path: str = "s3://fused-users/fused/demo_user/AIS_2024_ingester/prod_2024_09", # This is the location where we had ingested our geo-partitioned AIS data
-    ):
-    """Reading AIS data from Fused partitioned AIS data from NOAA (data only available in US)"""
-
-    from datetime import datetime, timedelta
-
-    # Load the utils module
-    local_utils = fused.load("https://github.com/fusedio/udfs/tree/bb712a5/public/common/").utils
-    zoom = local_utils.estimate_zoom(bounds)
-
-    sentinel1_time = pd.to_datetime(s1_acquisition_month_day_hour_min)
-    time_delta_in_hours = timedelta(hours=time_delta_in_hours)
-
-    month_date = sentinel1_time.strftime('%Y_%m')
-    monthly_ais_table = f"prod_/"
-    print(f"")
-
-    @fused.cache
-    def getting_ais_from_s3(bounds, monthly_table):
-        return local_utils.table_to_tile(
-            bounds,
-            table=monthly_ais_table,
-            use_columns=None,
-            min_zoom=min_zoom_to_load_data
-        )
-
-    ais_df = getting_ais_from_s3(bounds, monthly_ais_table)
-
-    if ais_df.shape[0] == 0:
-        print("No AIS data within this bounds & timeframe. Change bounds or timeframe")
-        return ais_df
-
-    if zoom > min_zoom_to_load_data:
-        print(f"Zoom is  | Only showing bounds")
-        return ais_df
-
-    print(f"")
-    ais_df['datetime'] = pd.to_datetime(ais_df['BaseDateTime'])
-    mask = (ais_df['datetime'] >= sentinel1_time - time_delta_in_hours) & (ais_df['datetime'] <= sentinel1_time + time_delta_in_hours)
-    filtered_ais_df = ais_df[mask]
-    print(f'')
-    return filtered_ais_df
-```
-
-In workbench UDF builder we can now see the output of both of our UDF:
-
-[Image: Notebook run remote print]
-
-We can now see that 1 of these boats doesn't have an associated AIS point (in red).
-
-    You can change the styling of your layers in the Visualize tab to make them look like the screenshot above
-
-Now all we need to do is merge these 2 datasets together and keep all the boats that don't match an AIS point.
-
-## 7. Merging the 2 datasets together
-
-We can expand the UDF we had started in section 6. to call our AIS UDF by passing a bounding box + `s1_acquisition_month_day_hour_min`.
-
-We'll get the AIS data and join it with the Sentinel 1 detected boats by using geopandas `sjoin_nearest` to get the nearest distance of each boat to an AIS point.
-
-Any point with the closest AIS point >100m from the Sentinel 1 boat will be considered a potentiel "dark vessel".
-
-```python  showLineNumbers
-@fused.udf
-def udf(
-    bounds: fused.types.Bounds=None,
-    time_of_interest: str="2024-09-03/2024-09-10",
-    ais_search_distance_in_meters: int=10,
-):
-
-    @fused.cache()
-    def get_s1_detection(
-        time_of_interest=time_of_interest,
-        bounds=bounds):
-
-        return fused.run(
-            "fsh_673giUH9R6KqWFCOQtRfb3",
-            time_of_interest=time_of_interest,
-            bounds=bounds,
-        )
-
-    s1_detections = get_s1_detection()
-    print(f"Found  Unique Sentinel 1 detections")
-
-    # We want to keep AIS data only right around the time the S1 image was acquired
-    s1_acquisition_date = s1_detections['S1_acquisition_time'].values[0]
-    s1_acquisition_month = str(s1_acquisition_date.astype('datetime64[M]'))
-    s1_acquisition_month_day_hour_min = s1_acquisition_date.astype('datetime64[s]').astype(str).replace('T', ' ')
-    print(f"Sentinel 1 image was acquired at : ")
-
-    @fused.cache()
-    def get_ais_from_s1_date(s1_acquisition_month_day_hour_min=s1_acquisition_month_day_hour_min, bounds=bounds):
-        return fused.run("fsh_FI1FTq2CVK9sEiX0Uqakv", s1_acquisition_month_day_hour_min=s1_acquisition_month_day_hour_min, bounds=bounds)
-
-    ais_gdf = get_ais_from_s1_date()
-
-    # Making sure both have the same CRS
-    s1_detections.set_crs(ais_gdf.crs, inplace=True)
-
-    # Buffering AIS points to leverage spatial join
-    ais_gdf['geometry'] = ais_gdf.geometry.buffer(0.005)
-
-    joined = s1_detections.to_crs(s1_detections.estimate_utm_crs()).sjoin_nearest(
-        ais_gdf.to_crs(s1_detections.estimate_utm_crs()),
-        how="inner", # Using left, i.e. s1 as keys
-        distance_col='distance_in_meters',
-    )
-
-    # Dark vessels will be unique S1 points that don't have an AIS point within 10m
-    potential_dark_vessels = joined[joined['distance_in_meters'] > ais_search_distance_in_meters]
-    print(f"Found  potential dark vessels")
-
-    # back to EPSG:4326
-    potential_dark_vessels.to_crs(s1_detections.crs, inplace=True)
-    return potential_dark_vessels
-```
-
-And now we have a UDF that takes a `time_of_interest` and bounding box and returns potential dark vessel:
-
-[Image: potential dark vessel detection]
-
-## Limitations & Next steps
-
-This is a simple analysis, that makes a lot of relatively naive assumptions (for ex: all bright spots in SAR are boats for example, which only works in open water and not near the shore or around solid structures like ocean wind mills or oil rigs). There's a lot of ways in which it could be improved but provides a good starting point.
-
-This could be improved in a few ways:
-- Masking out any shore or known areas with static infrastructure (to limit potential false positives around coastal wind mill farms)
-
-<LazyReactPlayer playsinline= className="video__player" playing= muted= controls height="80%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/dark-vessel-detection/false_positive_wind_mills.mp4" width="80%" />
-Example of the Block Island Wind Farm in Rhode Island showing up as false positive "potential dark vessel": Wind mills appear as bright spots but don't have any AIS data associated to them
-(`bounds=[-71.08534386325134,41.06338103121641,-70.89011235861962,41.15718153299125]` & `s1_acquisition_month_day_hour_min = "2024-09-03T22:43:33"`)
-
-- Using a more sophisticated algorithm to detect boats. The current algorithm is naive, doesn't return bounding boxes but rather general shapes.
-- Return more information derived from AIS data: Sometimes boats go dark for a certain period of time only, making it possible to tie a boat that was dark for a certain time to a known ship when it does have it's AIS on.
-- Running this over all the coast of the continental US and/or over a whole year. This would be closer to the Global Fishing Watch dark vessel detection project.
-
-If you want to take this a bit further check out:
-- Running UDFs at scale with `run_remote()`. You could use this to run this pipeline over a larger area or over a much longer time series (or both!) to find out more potentiel dark vessels
-- More about Fused core concepts like chosing between running UDFs based on Tile or File
-
-================================================================================
-
-## Exploring Maxar Open Data
-Path: use-cases/exploring_maxar_data.mdx
-URL: https://docs.fused.io/use-cases/exploring_maxar_data/
-
-_A guide showing how to use Fused to get all of Maxar's Open Data from all the available STAC catalogs and explore the imagery_
-
-### Requirements
-- Access to Fused
-
-## Summary 
-
-Working with Fused UDFs also give you the option to easily use functions defined in other UDFs. In practice this means we've created a `common` public UDF that contains some functions we've found useful when working with any type of data.
-
-You can explore it yourself by directly reading the code in Github. If you see any functions you'd like to use, we strongly recommend you use `fused.load()` and pass the latest commit hash at the time you want to use it:
-
-```python
-commit_hash = "39d93ca" # Latest commit hash of https://github.com/fusedio/udfs/blob/main/public/common/utils.py at time of writing
-common = fused.load(f"https://github.com/fusedio/udfs/tree//public/common/").utils
-```
-
-Each Maxar Event itself contains multiple collections. We created a simple function that loops over all the available `UNIQUE_ID/collection.json`, reads them an appends them into a single GeoDataFrame:
-
-Looking at the `WildFires-LosAngeles-Jan-2025/collections.json` file:
-```json
-,
-
-    ],
-    "extent": ,
-        "temporal": 
-    },
-    "title": "Los Angeles Wildfires 2025",
-    "description": "Driven by strong Santa Ana winds, multiple wildfires are burning in the Los Angeles, California, area. More than 40,000 acres and more than 12,300 structures have burned; at least 19 people have died.",
-    "license": "CC-BY-NC-4.0"
-}
-```
-
-So we create `stac_to_gdf_maxar` to:
-- Loop over all the `UNIQUE_ID/collection.json` files
-- Read each `collection.json` file
-- Extract the metadata & extent of each collection 
-- Convert the `extent` into a GeoDataFrame
-- Concat all into a single GeoDataFrame
-
-Once again, you can directly read the code in Github to see exactly how we do this
-
-</details>
-
-You can easily rename your UDFs in Workbench. Rename this UDF to `Maxar_Open_Data_STAC_single_catalog` so we can call it later directly by name.
-
-Make sure to save your UDF with `Cmd + S` (or `Ctrl + S` on Windows / Linux) or in the Workbench UI for these changes to take effect.
-
-[Image: Renaming UDF]
-
-And here we get all the images for the Los Angeles Wildfires 2025 event:
-
-[Image: Single collection Maxar STAC]
-
-## Aggregating all available data
-
-### Getting all `events`
-
-To be able to explore all of Maxar's Open Data Program we now need to run this specific UDF over all the available events. 
-
-We'll do this in 2 steps:
-- Fetch all the event names 
-- Use `fused.submit()` to fetch all the STAC Collections for each event name
-
-```python showLineNumbers
-@fused.udf
-def udf():
-
-    from pystac import Catalog
-
-    @fused.cache
-    def getting_stac_collection(stac_url = "https://maxar-opendata.s3.amazonaws.com/events/catalog.json"):
-        root_catalog = Catalog.from_file(stac_url)
-        collections = root_catalog.get_collections()
-        return [collection.id for collection in collections]
-
-    collections = getting_stac_collection()
-    print(f"")
-
-    return collections
-```
-
-Let's break this UDF down:
-- We're using `@fused.cache` to cache the Catalog request so our UDF doesn't need to do this request each time we execute it. It prevents being rate limited and doing the same request over and over against the same endpoint
-- We're returning a list (`collections`) so if you run this in Workbench you'll notice nothing shows up on the map! That's also why we print the first 5 rows. 
-
-Read through the Best Practices for more handy tips on how to write efficient and easy to debug UDFs
-
-This UDF returns a list of all the available event names currently accessible through Maxar's Open STAC Catalog:
-
-```python 
->>> print(f"")
-['BayofBengal-Cyclone-Mocha-May-23', 'Belize-Wildfires-June24', 'Brazil-Flooding-May24', 'Cyclone-Chido-Dec15', 'Earthquake-Myanmar-March-2025']
-```
-
-[Image: Maxar STAC Events]
-
-### Preparing `fused.submit()` to run in parallel
-
-We're going to use `fused.submit()` to run our first UDF in parallel. To do this we need a few things:
-- Prepare our inputs (in this case the name of all the `events`). We recommend doing this as a dataframe as it's simple to read & work with
-- Pass our first UDF to `fused.submit()`
-
-```python  showLineNumbers
-@fused.udf
-def udf():
-
-    from pystac import Catalog
-
-    @fused.cache
-    def getting_stac_collection(stac_url = "https://maxar-opendata.s3.amazonaws.com/events/catalog.json"):
-        root_catalog = Catalog.from_file(stac_url)
-        collections = root_catalog.get_collections()
-        return [collection.id for collection in collections]
-
-    collections = getting_stac_collection()
-    collections_df = pd.DataFrame()
-
-    dfs_out = fused.submit(
-        "Maxar_Open_Data_STAC_single_catalog",
-        collections_df,
-        debug_mode=True # Using debug to run just the 1st event at first
-    )
-    print(f"")
-
-    return dfs_out
-```
-
-Let's unpack this:
-- We're calling the UDF called `"Maxar_Open_Data_STAC_single_catalog"` that we renamed earlier over `collections_df`. At the time of writing this example this represents 46 events§
-- We use `fused.submit(..., debug_mode = True)` to run only the 1st value from `collections_df`. This allows us to test that our `fused.submit()` job is written correctly. 
-
-`fused.submit()` allows you to run a single over a list / dataframe of inputs in parallel. Under the hood Fused spins up many realtime instances (see technical docs for details) that will each run the given UDF (in this case `"Maxar_Open_Data_STAC_single_catalog"`) all at the same time.
-
-This is a powerful way to scale a process with just a single function call.
-
-Read the dedicated Docs section on `fused.submit()` for more
-
-[Image: Maxar submit debug mode]
-
-### Getting all Maxar open data
-
-Once we're confident that our `fused.submit()` job setup is correct, we can remove `debug_mode=True` (it's set to `False` by default) and run our UDF across all events.
-
-We can also increase the number of `max_workers`, as we have 46 events and the default `max_workers` is set to 32. We can ask Fused server to thus spin up more instances for us so this parallel job is even faster:
-
-```python  showLineNumbers
-@fused.udf
-def udf():
-
-    from pystac import Catalog
-
-    @fused.cache
-    def getting_stac_collection(stac_url = "https://maxar-opendata.s3.amazonaws.com/events/catalog.json"):
-        root_catalog = Catalog.from_file(stac_url)
-        collections = root_catalog.get_collections()
-        return [collection.id for collection in collections]
-
-    collections = getting_stac_collection()
-    collections_df = pd.DataFrame()
-
-    dfs_out = fused.submit(
-        "Maxar_Open_Data_STAC_single_catalog",
-        collections_df,
-        max_workers=50, # Increasing the number of max_workers as we have more than events than the default value
-    )
-    print(f"")
-
-    return dfs_out
-```
-
-After a few seconds, we get back a `GeoDataFrame` containing all the Maxar open data STAC catalogs:
-
-[Image: Maxar submit all STACs]
-
-This allows us to do a few different things:
-- Explore _all_ of the available Maxar Open Data on a map directly. This helps us see what data Maxar has available that might be of interest, to compare image quality across areas for example. 
-- Offer a wide variety of high resolution imagery to query against. For example retrieving as much the cloud free imagery as possible
-
-## Choosing 1 Event to display
-
-With access to all the images from Maxar, we can navigate the map and choose any image we'd like to display. Let's select one and display it in Workbench.
-
-First we can use the Results Tab to find the URL of an image we'd like to display:
-
-<ReactPlayer 
-    playsinline= 
-    className="video__player" 
-    playing= 
-    muted= 
-    controls height="100%" 
-    url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/maxar_stac/maxar_choosing_image.mp4"
-    width="100%" 
-/>
-
-```python showLineNumbers
-@fused.udf
-def udf(
-    bounds: fused.types.Bounds, 
-    path: str = "https://maxar-opendata.s3.amazonaws.com/events/Emilia-Romagna-Italy-flooding-may23/ard/33/031111210233/2023-05-23/1050010033C95B00-visual.tif", 
-    chip_len=256,
-    display_extent: bool = True
-):
-
-    from shapely.geometry import box
-    from rasterio.session import AWSSession
-
-    # Getting just bounds of image so we can zoom to layer
-    if display_extent:
-        print("Returning extent")
-        with rasterio.Env(session=AWSSession()):
-            with rasterio.open(path) as src:
-                bbox_gdf = gpd.GeoDataFrame(geometry=[box(*src.bounds)],crs=src.crs)
-        bbox_gdf.to_crs(4326, inplace=True)
-    
-        return bbox_gdf
-
-    # Otherwise reading the GeoTiff
-    else:
-        print("Returning image")
-        utils = fused.load("https://github.com/fusedio/udfs/tree/5432edc/public/common/").utils
-        tiles = utils.get_tiles(bounds)
-    
-        arr = utils.read_tiff(tiles, path, output_shape=(chip_len, chip_len))
-        print(f"")
-        return arr
-```
-
-Unpacking this UDF:
-- This UDF takes :
-    - a `bounds` object. This allows us to pass the current Workbench Map Viewport to our UDF
-    - `path` represents the path on S3 to one of the images we want to display
-    - `chip_len`: The size of the chip size we'd like our image to display in
-
-These images can be loaded using `bounds` and Tile mode because Maxar has provided these images as Cloud Optimized Geotiffs. This allows us to leverage their tiles & overviews and only load the data we need as we pan around the map
-
-We can check this by reading the metadata in CLI with `gdalinfo` and see that each band has `Block`, meaning is tiled:
-
-```bash  
-gdalinfo /vsis3/maxar-opendata/events/Cyclone-Chido-Dec15/ard/38/300200022120/2024-06-11/104001009713BA00-visual.tif
-
->>>
-Driver: GTiff/GeoTIFF
-
-...
-
-Band 1 Block=512x512 Type=Byte, ColorInterp=Red
-  Overviews: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
-  Mask Flags: PER_DATASET
-  Overviews of mask band: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
-Band 2 Block=512x512 Type=Byte, ColorInterp=Green
-  Overviews: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
-  Mask Flags: PER_DATASET
-  Overviews of mask band: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
-Band 3 Block=512x512 Type=Byte, ColorInterp=Blue
-  Overviews: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
-  Mask Flags: PER_DATASET
-  Overviews of mask band: 8704x8704, 4352x4352, 2176x2176, 1088x1088, 544x544, 272x272
-```
-
-Running the above UDF we can for now return the extent of the image:
-
-[Image: maxar return img extent]
-
-This allows us to introduce 2 concepts in Workbench:
-- 1. Zoom to layer
-- 2. Tile / File modes
-
-### 1. Setting a default view in Workbench
-
-After getting the extent of our image, we're going to Zoom to layer and set this view as the default view:
-
-<ReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/maxar_stac/zoom_to_layer_default_view.mp4" width="100%" />
-
-This allows us to to any change we want to this UDF or pan anywhere on the map and always be able to zoom back to this default view!
-
-### 2. Displaying the image
-
-Now we can edit our UDF to return the image by changing `display_extent` to `False`:
-
-```python  showLineNumbers
-@fused.udf
-def udf(
-    bounds: fused.types.Bounds, 
-    path: str = "https://maxar-opendata.s3.amazonaws.com/events/Emilia-Romagna-Italy-flooding-may23/ard/33/031111210233/2023-05-23/1050010033C95B00-visual.tif", 
-    chip_len=256,
-    display_extent: bool = False
-):
-
-    from shapely.geometry import box
-    from rasterio.session import AWSSession
-
-    # Getting just bounds of image so we can zoom to layer
-    if display_extent:
-        print("Returning extent")
-        with rasterio.Env(session=AWSSession()):
-            with rasterio.open(path) as src:
-                bbox_gdf = gpd.GeoDataFrame(geometry=[box(*src.bounds)],crs=src.crs)
-        bbox_gdf.to_crs(4326, inplace=True)
-    
-        return bbox_gdf
-
-    # Otherwise reading the GeoTiff
-    else:
-        print("Returning image")
-        utils = fused.load("https://github.com/fusedio/udfs/tree/5432edc/public/common/").utils
-        tiles = utils.get_tiles(bounds)
-    
-        arr = utils.read_tiff(tiles, path, output_shape=(chip_len, chip_len))
-        print(f"")
-        return arr
-```
-
-This change returns the image instead of the extent, but it returns the image all at once, because Workbench is set to "File" mode by default
-
-[Image: File mode array return]
-
-If you reproduce this yourself and pan around the map you'll notice:
-- We see the whole image but with a relatively low resolution.
-- Nothing changes as we pan around the map (resolution doesn't change)
-
-We can change this by setting Workbench to "Tile" mode:
-
-<ReactPlayer 
-    playsinline= 
-    className="video__player" 
-    playing= 
-    muted= 
-    controls height="100%" 
-    url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/maxar_stac/workbench_image_switching_to_tile_video.mp4"
-    width="100%" 
-/>
-
-Under the hood, switching to "Tile" mode tells Workbench to run this UDF not only 1 times, but by breaking it up into Mercantile tiles. This is why you see the image being broken up into a grid of tiles.
-
-These different modes don't change _what_ code is being executed, as our `udf` didn't change. It's only changing what geospatial parameters are being passed:
-- "File" mode passes the `bounds` of the current viewport (run 1 time§)
-- "Tile" mode passes the `bounds` of the current viewport broken up into a grid of tiles (run 1 per each tile)
-
-## Next steps
-
-We've shown you how to:
-- Use `fused.submit()` to run a UDF in parallel
-- Use `@fused.cache` to cache requests to reduce costs and improve performance
-- Use Workbench to display images in different modes
-
-If you want to go a bit further you could:
-- Explore the Best Practices to make the most of UDFs or learn handy tips to use Workbench as its fullest
-- Go more in depth with "File" & "Tile" modes in Workbench
-- Dive into the different ways Fused allows you to use caching to improve performance
-
-================================================================================
-
-## Vibe Coded Timeseries
-Path: use-cases/vibe-coded-dashboard.mdx
-URL: https://docs.fused.io/use-cases/vibe-coded-dashboard/
-
-# Vibe Coded Timeseries
-
-_This is a shorter version of the Climate Dashboard use case, but vibe coding our way to a timeseries dashboard!._
-
-We already ingested 20y of ERA5 weather data, available on Fused: `s3://fused-sample/demo_data/ERA5/climate_data/`
-
-### Read a single file
-
-Taking the first file, we can simply ask the AI Assistant to read it:
-
-```
-Read this file with DuckDB and return the first 10 rows: s3://fused-sample/demo_data/ERA5/climate_data/2005-01.pq
-```
-
-<LazyReactPlayer 
-  playsinline= 
-  className="video__player" 
-  playing= 
-  muted= 
-  controls 
-  height="100%" 
-  url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/climate_dashboard/opening_a_file_with_ai.mp4" 
-  width="100%" 
-/>
-
-### Reading all available files
-
-Next up:
-
-```
-Read all available files with DuckDB in the director and give me the monthly average
-```
-
-<LazyReactPlayer 
-  playsinline= 
-  className="video__player" 
-  playing= 
-  muted= 
-  controls 
-  height="100%" 
-  url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/climate_dashboard/scaling_to_all_files_in_bucket.mp4" 
-  width="100%" 
-/>
-
-### Making a time series graph
-
-```
-Make an interactive time series graph of the monthly average temperature
-```
-
-<LazyReactPlayer 
-  playsinline= 
-  className="video__player" 
-  playing= 
-  muted= 
-  controls 
-  height="100%" 
-  url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/climate_dashboard/graphing_data_compressed.mp4" 
-  width="100%" 
-/>
-
-### Sharing your graph
-
-- Save (`Cmd + S` on MacOS or click the "Save" button)
-- Click "URL" button to see deployed dashboard!
-
-Any time you make an update, your graph will automatically update!
-
-<LazyReactPlayer 
-  playsinline= 
-  className="video__player" 
-  playing= 
-  muted= 
-  controls 
-  height="100%" 
-  url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/climate_dashboard/sharing_grpah.mp4" 
-  width="100%" 
-/>
-
-================================================================================
-
-## Zonal stats with Fused: 10 minute guide
-Path: use-cases/zonal-stats.mdx
-URL: https://docs.fused.io/use-cases/zonal-stats/
-
-_A step-by-step guide for data scientists._
-
-### Requirements
-
-- access to Fused
-- access to a Jupyter Notebook
-- the following Python packages installed locally:
-  - `fused`
-  - `pandas`
-  - `geopandas`
-
-## 1. Using Fused for a Zonal Statistics Example
-
-In this guide, we'll estimate how much alfalfa grows in zones defined by polygon geometries.
-This will show you how to:
-- Bring in your data
-- Write a UDF to process the data
-- Run the UDF remotely & in parallel
-- Create an app that shows your results and can be shared with anyone
-
-```mermaid
----
-title: Overview of Zonal Stats
----
-graph LR
-    A("Continuous Field<br/>(raster image)") --> D
-    B("Areas of Interest<br/>(vector polygons)") --> D
-    D --> E(Areas of Interest<br/>w/ Attributes)
-```
-
-## 2. Bring in your data
-
-You'll first upload your own vector table with `fused.ingest`. This spatially partitions the table and writes it in your specified S3 bucket as a GeoParquet file. You'll then calculate zonal stats over a raster array of alfalfa crops in the USDA Cropland Data Layer (CDL) dataset.
-
-This example shows how to geo partition polygons of Census Block Groups for Utah, which is a Parquet table with a `geometry` column. You can follow along with this file or any vector table you'd like. Read about other supported formats in Ingest your own data.
-
-First, set up a local Python environment, install the latest Fused SDK with `pip install fused`, and authenticate.
-
-Now, write the following script to geo partition your data. Pass the URL of the table to `fused.ingest`. When you kick off an ingest job with `run_remote`, Fused spins up a server to geo partition your table and writes the output to the path specified by the `output` parameter. In the codeblock below, `fd://tl_2023_49_bg/` is the base path to your account's S3 bucket.
-
-```python showLineNumbers
-
-  job = fused.ingest(
-    input="https://www2.census.gov/geo/tiger/TIGER2023/BG/tl_2023_49_bg.zip",
-    output="fd://tl_2023_49_bg/"
-  )
-  job_id = job.run_remote()
-  ```
-
-After running the preceeding code, open fused.io/jobs to view the job status and logs.
-
-Once the job is complete, you can preview the output dataset in the File Explorer.
-
-You can also ingest data without installing anything by using this Fused App.
-
-For the next step you can use the path to the data you just ingested or, if you prefer, this public sample table: `s3://fused-asset/data/tl_2023_49_bg/`.
-
-[Image: Zonal Stats Parquet Files in Workbench File Explorer]
-
-## 3. Write a UDF to process the data
-
-To see the data as we process it, we will write a UDF in the Fused Workbench. As you write code in the UDF Builder you'll see how visualization results, logs, and errors show up immediately.
-
-To write a UDF simply wrap a Python function with the decorator `@fused.udf`.
-
-The first parameter of this UDF, `bounds`. It is reserved for Fused to pass a `GeoDataFrame` which the UDF may use to spatially filter datasets, and usually corresponds to a web map tile. This enables Fused to run the UDF for each tile in the viewport to distribute processing across multiple workers.
-
-The `year` parameter is used to structure the S3 path of the CDL GeoTiff which the utility function `read_tiff` reads for the area defined by `bounds`. The `crop_id` parameter 36 corresponds to alfalfa the CDL colormap, which the UDF uses to mask the raster array.
-
-Fused lets you import utility Modules from other UDFs with `fused.load`. Their code lives in the public UDFs repo.
-
-- `read_tiff` loads an array of the CDL dataset for the specified `bounds` extent and `year`
-- `table_to_tile` loads the table you geo partitioned for the specified `bounds` extent
-- `geom_stats` calculates zonal statistics by aggregating the `arr` variable over the geometries specified by the `gdf`
-
-```python showLineNumbers
-@fused.udf
-def udf(
-    bounds: fused.types.Bounds = None,
-    year: int = 2020,
-    crop_id: int = 36
-):
-
-    # Convert bounds to tile
-    utils = fused.load("https://github.com/fusedio/udfs/tree/bb712a5/public/common/").utils
-    zoom = utils.estimate_zoom(bounds)
-    tile = utils.get_tiles(bounds, zoom=zoom)
-
-    # Load CDLS data
-    arr = utils.read_tiff(
-      tile,
-      input_tiff_path=f"s3://fused-asset/data/cdls/_30m_cdls.tif"
-    )
-
-    # Mask for crop
-    arr = np.where(np.isin(arr, [crop_id]), 1, 0)
-
-    # Load polygons
-    gdf = utils.table_to_tile(
-      bounds,
-      table='s3://fused-asset/data/tl_2023_49_bg/',
-      min_zoom=5,
-      use_columns=['NAMELSAD', 'GEOID', 'MTFCC', 'FUNCSTAT', 'geometry']
-    )
-    gdf.crs = 4326
-
-    # Calculate zonal stats
-    return utils.geom_stats(gdf, arr)
-```
-
-Try running the UDF in the UDF Builder and visually inspect the output on the map. See what happens when you change `year`. Try introducing print statements such as `print(arr)` and `print(gdf)` to show logs in the console.
-
-[Image: Zonal Stats Map]
-
-You might receive a timeout error in the `Results` tab. Try zooming into Utah on the map where the zonal areas are highlighted, to reduce the size of the tile being passed into the UDF from the map.
-
-```json showLineNumbers
-,
-  "rasterLayer": ,
-  "vectorLayer": ,
-    "getLineColor": [
-      208,
-      208,
-      208,
-      40
-    ]
-  }
-}
-```
-
-</div>
-
-\
-Click "Copy shareable link" to share the app with others!
-
-## 6. Conclusion and next steps
-
-We've shown how you can use Fused to develop a distributed Python workflow to power an app. Through a simple sequence of steps we loaded data, wrote analytics code, and created an app to interact with the data. With a single click you went from experimental development code to a live application.
-
-We hope this overview gives you a glimpse of what you can build with Fused. You can continue to learn how to read data, process data, and integrate with other applications.
-
-Find inspiration for your next project, ask questions, or share your work with the Fused community.
-
-- GitHub
-- Discord
-- LinkedIn
-- Twitter
 
 ================================================================================
 
@@ -12105,5 +12340,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2025-07-30
+Generated automatically from Fused documentation. Last updated: 2025-07-31
 Total sections: 5
