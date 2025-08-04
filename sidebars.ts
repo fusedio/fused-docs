@@ -16,7 +16,15 @@ const sidebars: SidebarsConfig = {
       items: [
         "tutorials/2min-with-fused",
         "tutorials/load-export-data",
-        "tutorials/analytics-dashboard",
+        {
+          type: "category",
+          label: "Analytics & Dashboard",
+          collapsed: true,
+          link: { type: "doc", id: "tutorials/Analytics & Dashboard/analytics-dashboard" },
+          items: [
+            "tutorials/Analytics & Dashboard/stack-overflow-surveys",
+          ],
+        },
         "tutorials/data-science-ai",
         "tutorials/engineering-etl",
         // "tutorials/advanced-fused", // Remove this page once I'm done moving things back in.
