@@ -24,6 +24,7 @@ const sidebars: SidebarsConfig = {
           items: [
             "tutorials/Analytics & Dashboard/stack-overflow-surveys",
             "tutorials/Analytics & Dashboard/currency-trading-prediction",
+            "tutorials/Analytics & Dashboard/airbnb-price-regression",
           ],
         },
         "tutorials/data-science-ai",
