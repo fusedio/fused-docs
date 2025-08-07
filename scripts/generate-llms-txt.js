@@ -145,7 +145,7 @@ function generateLlmsTxt(isFullVersion = false) {
     // Generate comprehensive full-text version
     let content = `# Fused Documentation - Complete Reference
 
-> Fused is an end-to-end cloud platform for data analytics, built around User Defined Functions (UDFs): Python functions that can be run via HTTP requests from anywhere, without any install required.
+> Fused is an end-to-end cloud platform for data analytics, built around User Defined Functions (UDFs): Python functions that can be run via HTTPS requests from anywhere, without any install required.
 
 This comprehensive reference contains the complete text of all Fused documentation, including all API methods, examples, tutorials, and guides.
 
@@ -227,7 +227,7 @@ This comprehensive reference contains the complete text of all Fused documentati
     // Generate curated link version (existing logic)
     let content = `# Fused Documentation
 
-> Fused is an end-to-end cloud platform for data analytics, built around User Defined Functions (UDFs): Python functions that can be run via HTTP requests from anywhere, without any install required.
+> Fused is an end-to-end cloud platform for data analytics, built around User Defined Functions (UDFs): Python functions that can be run via HTTPS requests from anywhere, without any install required.
 
 ## Core Concepts
 
