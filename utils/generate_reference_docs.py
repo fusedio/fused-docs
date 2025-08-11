@@ -61,7 +61,7 @@ run_remote_addition = """
 #### `job.run_remote`
 
 ```python showLineNumbers
-def run_remote(output_table: Optional[str] = ...,
+def run_batch(output_table: Optional[str] = ...,
     instance_type: Optional[WHITELISTED_INSTANCE_TYPES] = None,
     *,
     region: str | None = None,
@@ -100,7 +100,7 @@ job = fused.ingest(
 )
 
 # Start ingest job
-job_id = job.run_remote()
+job_id = job.run_batch()
 ```
 
 Fetch the job status.
