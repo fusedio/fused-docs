@@ -135,7 +135,7 @@ job_id.cancel()
 
 ---
 
-#### `job.run_batch`
+#### `job.run_remote`
 
 Alias of `job.run_batch` for backwards compatibility. See `job.run_batch` above
 for details.
