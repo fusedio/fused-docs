@@ -19,3 +19,12 @@ Create a PR on this repo.
 
 - Once PRs merge to `main`, GitHub actions will run to re-deploy the docs site to `https://docs.fused.io/`.
 - PRs automatically create a preview build at `https://docs-staging.fused.io/`.
+
+
+## Updating Fused-py functions
+
+Run:
+
+```
+uv run --reinstall-package fused utils/generate_reference_docs.py
+```
