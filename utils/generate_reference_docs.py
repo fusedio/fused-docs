@@ -135,6 +135,13 @@ job_id.cancel()
 
 ---
 
+#### `job.run_remote`
+
+Alias of `job.run_batch` for backwards compatibility. See `job.run_batch` above
+for details.
+
+---
+
 """
 
 for obj in api_listing:
