@@ -57,7 +57,7 @@ toc_max_heading_level: 4
 
 """
 
-run_remote_addition = """
+run_batch_addition = """
 #### `job.run_batch`
 
 ```python showLineNumbers
@@ -135,7 +135,7 @@ job_id.cancel()
 
 ---
 
-#### `job.run_remote`
+#### `job.run_batch`
 
 Alias of `job.run_batch` for backwards compatibility. See `job.run_batch` above
 for details.
@@ -148,8 +148,8 @@ for obj in api_listing:
     docstring = render_object_docs(mod[obj], default_config)
     result += docstring + "\n---\n\n"
     if obj == "ingest":
-        # TODO run_remote does not yet have a proper docstring to include automatically
-        result += run_remote_addition
+        # TODO run_batch does not yet have a proper docstring to include automatically
+        result += run_batch_addition
 
 
 # some post-processing
