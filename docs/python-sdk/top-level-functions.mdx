@@ -10,26 +10,17 @@ toc_max_heading_level: 4
 udf(
     fn: Optional[Callable] = None,
     *,
-    schema: Union[Schema, Dict, None] = None,
     name: Optional[str] = None,
     cache_max_age: Optional[str] = None,
     default_parameters: Optional[Dict[str, Any]] = None,
-    headers: Optional[Sequence[Union[str, Header]]] = None
+    headers: Optional[Sequence[Union[str, Header]]] = None,
+    **kwargs: dict[str, Any]
 ) -> Callable[..., Udf]
 ```
 
 A decorator that transforms a function into a Fused UDF.
 
 **Parameters:**
-
-- **schema** (<code>Union[Schema, Dict, None]</code>) – The schema for the DataFrame returned by the UDF. The schema may be either
-  a string (in the form `"field_name:DataType field_name2:DataType"`, or as JSON),
-  as a Python dictionary representing the schema, or a `Schema` model object.
-
-  Defaults to None, in which case a schema must be evaluated by calling `run_local`
-  for a job to be able to write output. The return value of `run_local` will also
-  indicate how to include the schema in the decorator so `run_local` does not need
-  to be run again.
 
 - **name** (<code>Optional[str]</code>) – The name of the UDF object. Defaults to the name of the function.
 
@@ -74,12 +65,14 @@ def udf(bbox, table_path="s3://fused-asset/infra/building_msft_us"):
 cache(
     func: Callable[..., Any] | None = None,
     cache_max_age: str | int = DEFAULT_CACHE_MAX_AGE,
-    path: str = "tmp",
+    cache_folder_path: str = "tmp",
     concurrent_lock_timeout: str | int = 120,
     cache_reset: bool | None = None,
-    storage: StorageStr = "auto",
+    cache_storage: StorageStr | None = None,
     cache_key_exclude: Iterable[str] = None,
     cache_verbose: bool | None = None,
+    path: str | None = None,
+    storage: StorageStr | None = None,
     reset: bool | None = None,
 ) -> Callable[..., Any]
 ```
@@ -96,11 +89,11 @@ keyword arguments.
   returns a partial decorator with the passed keyword arguments.
 - **cache_max_age** (<code>str | int</code>) – A string with a numbered component and units. Supported units are seconds (s), minutes (m), hours (h), and
   days (d) (e.g. "48h", "10s", etc.).
-- **path** (<code>str</code>) – Folder to append to the configured cache directory.
+- **cache_folder_path** (<code>str</code>) – Folder to append to the configured cache directory.
 - **concurrent_lock_timeout** (<code>str | int</code>) – Max amount of time in seconds for subsequent concurrent calls to wait for a previous
   concurrent call to finish execution and to write the cache file.
 - **cache_reset** (<code>bool | None</code>) – Ignore `cache_max_age` and overwrite cached result.
-- **storage** (<code>StorageStr</code>) – Set where the cache data is stored. Supported values are "auto", "mount" and "local". Auto will
+- **cache_storage** (<code>StorageStr | None</code>) – Set where the cache data is stored. Supported values are "auto", "mount" and "local". Auto will
   automatically select the storage location defined in options (mount if it exists, otherwise local) and
   ensures that it exists and is writable. Mount gets shared across executions where local will only be shared
   within the same execution.
@@ -201,7 +194,7 @@ udf = fused.load("username@fused.io/REM_with_HyRiver")
 ```python
 run(
     udf: Union[str, None, UdfJobStepConfig, Udf, UdfAccessToken] = None,
-    *args: Union[str, None, UdfJobStepConfig, Udf, UdfAccessToken],
+    *,
     x: Optional[int] = None,
     y: Optional[int] = None,
     z: Optional[int] = None,
@@ -210,7 +203,6 @@ run(
     type: Optional[Literal["tile", "file"]] = None,
     max_retry: int = 0,
     cache_max_age: Optional[str] = None,
-    cache: bool = True,
     parameters: Optional[Dict[str, Any]] = None,
     _return_response: Optional[bool] = False,
     _ignore_unknown_arguments: bool = False,
@@ -247,7 +239,6 @@ path based on the provided parameters.
 - **cache_max_age** (<code>Optional[str]</code>) – The maximum age when returning a result from the cache.
   Supported units are seconds (s), minutes (m), hours (h), and days (d) (e.g. “48h”, “10s”, etc.).
   Default is `None` so a UDF run with `fused.run()` will follow `cache_max_age` defined in `@fused.udf()` unless this value is changed.
-- **cache** (<code>bool</code>) – Set to False as a shortcut for `cache_max_age='0s'` to disable caching.
 - **verbose** – Set to False to suppress any print statements from the UDF.
 - **parameters** (<code>Optional\[Dict[str, Any]\]</code>) – Additional parameters to pass to the UDF.
 - \*\***kw_parameters** – Additional parameters to pass to the UDF.
@@ -305,6 +296,7 @@ submit(
     max_retry: int = 2,
     debug_mode: bool = False,
     collect: bool = True,
+    batch_type: BatchType = "thread_pool",
     cache_max_age: Optional[str] = None,
     cache: bool = True,
     ignore_exceptions: bool = False,
@@ -312,7 +304,7 @@ submit(
     _before_run: Optional[float] = None,
     _before_submit: Optional[float] = 0.01,
     **kwargs: Optional[float],
-) -> Union[JobPool, ResultType, pd.DataFrame]
+) -> Union[BaseJobPool, ResultType, pd.DataFrame]
 ```
 
 Executes a user-defined function (UDF) multiple times for a list of input
@@ -340,9 +332,11 @@ See `fused.run` for more details on the UDF execution.
   containing the results. If False, returns a JobPool object, which is non-blocking
   and allows you to inspect the individual results and logs.
   Default is True.
+- **batch_type** (<code>BatchType</code>) – The type of batching to use. Either "thread_pool" (default) for
+  ThreadPoolExecutor-based concurrency or "async_loop" for asyncio-based concurrency.
 - **cache_max_age** (<code>Optional[str]</code>) – The maximum age when returning a result from the cache.
   Supported units are seconds (s), minutes (m), hours (h), and days (d)
-  (e.g. “48h”, “10s”, etc.).
+  (e.g. "48h", "10s", etc.).
   Default is `None` so a UDF run with `fused.run()` will follow
   `cache_max_age` defined in `@fused.udf()` unless this value is changed.
 - **cache** (<code>bool</code>) – Set to False as a shortcut for `cache_max_age='0s'` to disable caching.
@@ -357,7 +351,7 @@ See `fused.run` for more details on the UDF execution.
 
 **Returns:**
 
-- <code>[Union](#typing.Union)\[[JobPool](#fused._submit.JobPool), [ResultType](#fused._run.ResultType), [DataFrame](#pandas.DataFrame)\]</code> – JobPool
+- <code>[Union](#typing.Union)\[[BaseJobPool](#fused._submit.BaseJobPool), [ResultType](#fused._run.ResultType), [DataFrame](#pandas.DataFrame)\]</code> – JobPool, AsyncJobPool, or DataFrame depending on batch_type and collect parameters
 
 **Examples:**
 
@@ -366,6 +360,12 @@ positional argument of the UDF:
 
 ```py
 df = fused.submit("username@fused.io/my_udf_name", range(10))
+```
+
+Using async batch type:
+
+```py
+df = fused.submit(udf, range(10), batch_type="async_loop")
 ```
 
 Being explicit about the parameter name:
@@ -452,7 +452,7 @@ ingest(
     subdivide_start: float | None = None,
     subdivide_stop: float | None = None,
     split_identical_centroids: bool = True,
-    target_num_chunks: int = 5000,
+    target_num_chunks: int = 500,
     lonlat_cols: tuple[str, str] | None = None,
     partitioning_schema_input: str | pd.DataFrame | None = None,
     gdal_config: GDALOpenConfig | dict[str, Any] | None = None
@@ -515,6 +515,7 @@ Ingest a dataset into the Fused partitioned format.
   "partitioning_maximum_per_chunk".
 
 - **target_num_chunks** (<code>int</code>) – The target for the number of files if `partitioning_maximum_per_file` is None. Note that this number is only a _target_ and the actual number of files generated can be higher or lower than this number, depending on the spatial distribution of the data itself.
+  Defaults to 500, rough default to use in most cases.
 
 - **lonlat_cols** (<code>tuple[str, str] | None</code>) – Names of longitude, latitude columns to construct point geometries from.
 
@@ -573,10 +574,10 @@ job = fused.ingest(
 ---
 
 
-#### `job.run_remote`
+#### `job.run_batch`
 
 ```python showLineNumbers
-def run_remote(output_table: Optional[str] = ...,
+def run_batch(output_table: Optional[str] = ...,
     instance_type: Optional[WHITELISTED_INSTANCE_TYPES] = None,
     *,
     region: str | None = None,
@@ -590,7 +591,7 @@ def run_remote(output_table: Optional[str] = ...,
     overwrite: Optional[bool] = None) -> RunResponse
 ```
 
-Begin execution of the ingestion job by calling `run_remote` on the job object.
+Begin execution of the ingestion job by calling `run_batch` on the job object.
 
 **Arguments**:
 
@@ -605,7 +606,7 @@ Begin execution of the ingestion job by calling `run_remote` on the job object.
 
 #### Monitor and manage job
 
-Calling `run_remote` returns a `RunResponse` object with helper methods.
+Calling `run_batch` returns a `RunResponse` object with helper methods.
 
 ```python showLineNumbers
 # Declare ingest job
@@ -615,7 +616,7 @@ job = fused.ingest(
 )
 
 # Start ingest job
-job_id = job.run_remote()
+job_id = job.run_batch()
 ```
 
 Fetch the job status.
@@ -647,6 +648,13 @@ Cancel the job.
 ```python showLineNumbers
 job_id.cancel()
 ```
+
+---
+
+#### `job.run_remote`
+
+Alias of `job.run_batch` for backwards compatibility. See `job.run_batch` above
+for details.
 
 ---
 

@@ -58,10 +58,10 @@ toc_max_heading_level: 4
 """
 
 run_remote_addition = """
-#### `job.run_remote`
+#### `job.run_batch`
 
 ```python showLineNumbers
-def run_remote(output_table: Optional[str] = ...,
+def run_batch(output_table: Optional[str] = ...,
     instance_type: Optional[WHITELISTED_INSTANCE_TYPES] = None,
     *,
     region: str | None = None,
@@ -75,7 +75,7 @@ def run_remote(output_table: Optional[str] = ...,
     overwrite: Optional[bool] = None) -> RunResponse
 ```
 
-Begin execution of the ingestion job by calling `run_remote` on the job object.
+Begin execution of the ingestion job by calling `run_batch` on the job object.
 
 **Arguments**:
 
@@ -90,7 +90,7 @@ Begin execution of the ingestion job by calling `run_remote` on the job object.
 
 #### Monitor and manage job
 
-Calling `run_remote` returns a `RunResponse` object with helper methods.
+Calling `run_batch` returns a `RunResponse` object with helper methods.
 
 ```python showLineNumbers
 # Declare ingest job
@@ -100,7 +100,7 @@ job = fused.ingest(
 )
 
 # Start ingest job
-job_id = job.run_remote()
+job_id = job.run_batch()
 ```
 
 Fetch the job status.
@@ -132,6 +132,13 @@ Cancel the job.
 ```python showLineNumbers
 job_id.cancel()
 ```
+
+---
+
+#### `job.run_remote`
+
+Alias of `job.run_batch` for backwards compatibility. See `job.run_batch` above
+for details.
 
 ---
 
@@ -287,7 +294,7 @@ submitted jobs from [`fused.submit()`](/python-sdk/top-level-functions/#fusedsub
 # listing and rendering the methods separately to avoid including the JobPool 
 # class signature and docstring (which is not public -> use submit() to get this object)
 import fused
-methods = [key for key in fused._submit.JobPool.__dict__.keys() if not key.startswith("_")]
+methods = [key for key in fused._submit.BaseJobPool.__dict__.keys() if not key.startswith("_")]
 
 config = dict(default_config)
 config["heading_level"] = default_config["heading_level"] + 1
