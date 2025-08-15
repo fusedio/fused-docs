@@ -76,7 +76,7 @@ def udf(bounds: fused.types.TileGDF=None, n=10):
 ```
 
 
-## BigQuery
+## BigQuery - Option 1: Credentials file
 
 Fused integrates with [Google BigQuery](https://cloud.google.com/bigquery/docs/introduction) with the Python [`bigquery`](https://cloud.google.com/python/docs/reference/bigquery/latest) library.
 
@@ -144,4 +144,47 @@ def udf(bounds: fused.types.TileGDF=None, geography_column=None):
         return client.query(query).to_geodataframe(geography_column=geography_column)
     else:
         return client.query(query).to_dataframe()
+```
+
+
+## Big Query - Option 2: Secrets
+
+If you already have a `gcs_secret` in Fused secrets, you can use it to access your GCP secrets. Otherwise you can simply create new secrets in the Fused secrets manager with:
+- `GS_ACCESS_KEY_ID`
+- `GS_SECRET_ACCESS_KEY`
+
+You can for example use this to access the [Github Activity Data](https://console.cloud.google.com/marketplace/product/github/github-repos?inv=1&invt=Ab5M6w)
+
+```python showLineNumbers
+@fused.udf
+def udf(repo_name: str = "athasdev/athas"):
+    import os
+    # This is not required if your account already has the `gcs_secret` in Fused secrets
+    os.environ['GS_ACCESS_KEY_ID'] = fused.secrets["GS_ACCESS_KEY_ID"]
+    os.environ['GS_SECRET_ACCESS_KEY'] = fused.secrets["GS_SECRET_ACCESS_KEY"]
+    
+    from google.cloud import bigquery
+    # Initialize BigQuery client
+    client = bigquery.Client()
+    
+    # Get total stars 
+    total_query = f"""
+        SELECT 
+            repo.name as repository,
+            COUNT(*) as total_stars
+        FROM `githubarchive.day.202508*`
+        WHERE type = 'WatchEvent' 
+ --           AND repo.name = '{repo_name}'
+        GROUP BY repository
+    """
+    
+    total_query = f""" SELECT  * FROM `githubarchive.day.202508*` limit 10"""
+    
+    # Run the query
+    query_job = client.query(total_query)
+    
+    # Convert to pandas DataFrame
+    total_df = query_job.to_dataframe()
+     
+    return total_df
 ```
