@@ -2217,7 +2217,6 @@ These jobs run in "real-time" with no start-up time, so are quick to run, but wi
 The simplest way to call a public UDF is using a public UDF name and calling it as: `UDF_` + name. Let's take this UDF that returns the location of the Eiffel Tower in a `GeoDataFrame` as an example:
 
 ```python showLineNumbers
-
 fused.run("UDF_Single_point_Eiffel_Tower")
 ```
 
@@ -2283,6 +2282,7 @@ You can get the token from a UDF either in Workbench (Save your UDF then click "
 Here's a toy UDF that we want others to be able to run, but we don't want them to see the code:
 
 ```python showLineNumbers
+# This example is from a notebook
 
 @fused.udf()
 def my_super_duper_private_udf(my_udf_input):
@@ -2294,6 +2294,7 @@ def my_super_duper_private_udf(my_udf_input):
 We then need to save this UDF to Fused server to make it accessible from anywhere.
 
 ```python showLineNumbers
+# This example is from a notebook
 my_super_duper_private_udf.to_fused()
 ```
 
@@ -2983,6 +2984,7 @@ Run the following code snippets in a notebook for best interactivity!
 Calculate the average prices of houses over the years:
 
 ```python
+# This example is from a notebook, not workbench
 
 @fused.udf
 def udf(path: str = "s3://fused-sample/demo_data/housing/housing_2024.csv"):
@@ -3020,6 +3022,7 @@ Read more about running your code in parallel here
 Run larger jobs that exceed the memory & time constraints of a single UDF job.
 
 ```python
+# This example is from a notebook, not workbench
 @fused.udf
 def udf(val):
 
@@ -3322,7 +3325,7 @@ def udf(bounds: fused.types.TileGDF=None, n=10):
 
 ```
 
-## BigQuery
+## BigQuery - Option 1: Credentials file
 
 Fused integrates with Google BigQuery with the Python `bigquery` library.
 
@@ -3376,6 +3379,48 @@ def udf(bounds: fused.types.TileGDF=None, geography_column=None):
         return client.query(query).to_geodataframe(geography_column=geography_column)
     else:
         return client.query(query).to_dataframe()
+```
+
+## Big Query - Option 2: Secrets
+
+If you already have a `gcs_secret` in Fused secrets, you can use it to access your GCP secrets. Otherwise you can simply create new secrets in the Fused secrets manager with:
+- `GS_ACCESS_KEY_ID`
+- `GS_SECRET_ACCESS_KEY`
+
+You can for example use this to access the Github Activity Data
+
+```python showLineNumbers
+@fused.udf
+def udf(repo_name: str = "athasdev/athas"):
+
+    # This is not required if your account already has the `gcs_secret` in Fused secrets
+    os.environ['GS_ACCESS_KEY_ID'] = fused.secrets["GS_ACCESS_KEY_ID"]
+    os.environ['GS_SECRET_ACCESS_KEY'] = fused.secrets["GS_SECRET_ACCESS_KEY"]
+    
+    from google.cloud import bigquery
+    # Initialize BigQuery client
+    client = bigquery.Client()
+    
+    # Get total stars 
+    total_query = f"""
+        SELECT 
+            repo.name as repository,
+            COUNT(*) as total_stars
+        FROM `githubarchive.day.202508*`
+        WHERE type = 'WatchEvent' 
+ --           AND repo.name = ''
+        GROUP BY repository
+    """
+    
+    total_query = f""" SELECT  * FROM `githubarchive.day.202508*` limit 10"""
+    
+    # Run the query
+    query_job = client.query(total_query)
+    
+    # Convert to pandas DataFrame
+    total_df = query_job.to_dataframe()
+     
+    return total_df
 ```
 
 ================================================================================
@@ -7293,6 +7338,58 @@ URL: https://docs.fused.io/python-sdk/changelog/
 
 # Changelog
 
+## v1.22.1 (2025-08-19)
+
+**Improvements:**
+- Inline AI editing is enabled by default.
+- Improved data table component filtering.
+- `fused.submit` results are cached by default.
+- AI chat will now suggest new users to login after first prompt 
+- Multiple open tabs message will appear at the top of the page instead of as a modal.
+
+**Bug Fixes:**
+- Fixed a bug when loading some HTML UDF outputs that caused them to not load scripts.
+- Fixed bugs with AI prompts.
+- Fixed bugs with navigating to particular UDFs on the version page.
+- You can opt to keep a changed version of a UDF instead of reloading with changes.
+- Fixed file explorer for basic tier users.
+- Fixed the Add Billing modal appearing when it was not supposed to.
+- The UDF selector has a minimum width and is no longer editable.
+
+## v1.22.0 (2025-08-18)
+
+**New Features:**
+- Free tier is now open for all. Signing in to Fused now gives you access to a shared, free compute environment with a daily quota.
+- New simplified UDF editor layout. The previous UDF editor with map view is still available as the *Advanced UDF editor*.
+
+**Improvements:**
+- Added inline AI editing features as an experimental feature.
+- Added `@`-sign to select context in AI chat.
+- Added profile selection in AI chat.
+- Added new models to AI chat.
+- AI chat context will understand the results history.
+- Many adjustments to AI prompts.
+- Table widget has more filter capabilities.
+- Many widgets now load via Parquet for faster and better loading.
+- UDF list has had many buttons consolidated into the three dot menu in the advanced UDF builder.
+
+**Bug Fixes:**
+- Significant improvements to self-service in Workbench.
+- Fixed duplicate UDF and conflicting UDF modal bugs.
+- Versions page will remember the last selected repository.
+- Workbench will prompt to load new versions from GitHub.
+- File explorer will show `/mount` instead of `file:///` URL.
+- Fixed issues where HTML results would not be rendered with UTF-8 charset.
+- Fixed issues where share token may not get cleared in Workbench when duplicating UDFs.
+- Fixed bugs with the canvas map widget loading, filtering, and coloring. 
+- Improved error messages and `run_*_async` when using `fused` from within Pyodide, for Pyodide-specific considerations.
+- `to_fused(overwrite=True)` will delete the original UDF as expected.
+- stderr will always be displayed for UDF runs.
+
+**API changes:**
+- Renamed `run_remote` to `run_batch`.
+- Deprecate `fused.utils`, which has been replaced with `fused.load`.
+
 ## v1.21.6 (2025-07-31)
 
 **New Features:**
@@ -9929,6 +10026,8 @@ Through the comprehensive auditing process overseen by Insight Assurance, we've 
 to the stringent requirements outlined by the SOC 2 Type 1 standard, reinforcing our dedication to safeguarding
 sensitive data and maintaining operational resilience.
 
+Request the full report by email.
+
 We're actively pursuing SOC 2 Type 2 certification, building on our existing Type 1 compliance.
 
 ================================================================================
@@ -12411,5 +12510,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2025-08-14
+Generated automatically from Fused documentation. Last updated: 2025-08-21
 Total sections: 5
