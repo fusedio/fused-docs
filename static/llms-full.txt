@@ -2335,6 +2335,125 @@ We can create a token for this `my_super_duper_private_udf` and share it:
 
     This takes a few more seconds, but not 100s. `fused.submit()` is a helpful way to scale a single UDF to many inputs in a timely manner.
 
+</details>
+
+### Example use cases
+
+`fused.submit()` is used in many places across our docs, here are some examples:
+
+- ⛴️ In the Dark Vessel Detection example to scale retrieving daily AIS `.zip` files from NOAA over 30 days.
+- 🛰️ Retrieving all of Maxar's Open Data STAC Catalogs across every events they have imagery for.
+- 💡 Check the Best Practices for more on when to use `submit()` and when to use other methods.
+
+## HTTPS requests
+
+You can call Saved UDFs via HTTPs calls, effecitvaly turning your data in an API!
+
+The same can be done with the Fused Python SDK.
+
+#### Shared token
+
+When you save a UDF for the first time, it by default creates a shared token for you, something like:
+
+```
+fsh_**********h4t
+```
+
+This is a unique token that is used to identify your UDF and call it via HTTPS requests
+
+Here is what a UDF endpoint looks like:
+
+```
+https://www.fused.io/server/v1/realtime-shared/******/run/file?dtype_out_raster=png
+```
+
+Manage your account's shared tokens in here.
+
+### Passing parameters
+
+You can also pass parameters to your UDF via the URL by adding query parameters (`&param=value`) to the URL.
+
+For example a UDF that takes `lat` and `lon` as parameters:
+
+```python showLineNumbers
+@fused.udf
+def udf(lat, lon):
+    return pd.DataFrame()
+```
+
+Could be called with:
+
+```
+https://www.fused.io/...&lat=37.7749&lon=-121.4194
+```
+
+### Tiling 
+
+You can integrate your UDF as a vector or raster tile server y adding `tiles` path parameter, followed by templated `///` path parameters.
+
+You need to make sure:
+- Your UDF is set to Tile mode
+- You properly pass `///` instead of default value
+- Depending on your server type, you might need to add `dtype_out_raster` or `dtype_out_vector` parameters. For example QGIS requires you to use `dtype_out_vector=mvt` for vector tile servers
+
+```
+https://www.fused.io/server/v1/realtime-shared/******/run/tiles///?dtype_out_raster=png
+```
+
+See our integration guides for examples.
+
+### Private token
+
+Calling UDFs with Bearer authentication requires an account's private token. The URL structure to run UDFs with the private token varies slightly, as the URL specifies the UDF's name and the owner's user account.
+
+```bash
+curl -XGET "https://app.fused.io/server/v1/realtime/fused/api/v1/run/udf/saved/user@fused.io/caltrain_live_location?dtype_out_raster=png" -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+Do not share your Bearer token with anyone. These allow to impersonate your account and should be treated as such.
+
+The `dtype_out_vector` and `dtype_out_raster` parameters define the output data type for vector tables and raster arrays, respectively.
+
+- The supported types for vector tables are `parquet`, `geojson`, `json`, `feather`, `csv`, `mvt`, `html`, `excel`, and `xml`.
+- For raster array: `png`, `gif`, `jpg`, `jpeg`, `webp`, `tif`, and `tiff`.
+
+```
+https://www.fused.io/server/v1/realtime-shared/****/run/file?dtype_out_raster=png
+```
+
+Read how to structure HTTPS endpoints to call the UDF as a Map Tile & File.
+
+### Calling UDFs without Python SDK 
+
+You can also run a whole UDF directly in the HTTP request without needing Python when making the call
+
+You first do need to retrieve your bearer token (this requires Python):
+```python showLineNumbers
+# Figure out your bearer token:
+from fused._auth import AUTHORIZATION
+AUTHORIZATION.credentials.access_token
+```
+
+This returns something like:
+```bash
+'eyJ4K9pL2Mx...'
+```
+
+Next we need to do a POST request to the Fused server endpoint: `'https://www.fused.io/server/v1/realtime/basic-tier/api/v1/run/udf'`
+
+You'll need the client_id:
+
+**Without an environment (Basic Tier)**
+
+Simply use `basic-tier` as your client_id name.
+
+**With environment**
+
+1. In Workbench, go to "Preferences"
+2. Write down the "Kernel" name you see displayed, in this case `fused`:
+
+[Image: Finding your kernel name in Workbench]
+
 Here is an example call with a simple "Hello World" UDF using the `basic-tier` account:
 
 ```bash
@@ -4119,11 +4238,787 @@ Here's the result of our analysis, running in real time in Fused:
 
 </Tabs>
 
+### 3.2 - Writing a UDF to open each AIS dataset
+
+The rest of the logic is write a UDF to open each file, read it as a CSV and write it to parquet.
+
+```python showLineNumbers
+@fused.udf()
+def read_ais_from_noaa_udf(datestr:str='2023_03_29', overwrite:bool=False):
+
+    # This is the specific URL where daily AIS data is available
+    url=f'https://coast.noaa.gov/htdata/CMSP/AISDataHandler//AIS_.zip'
+
+    # This is our local mount file path
+    path=fused.file_path(f'/AIS//')
+    daily_ais_parquet = f'/.parquet'
+
+    # Skipping any existing files
+    if os.path.exists(daily_ais_parquet) and not overwrite:
+        print(f' exist')
+        return pd.DataFrame()
+
+    # Download ZIP file to mounted disk
+    r=requests.get(url)
+    if r.status_code == 200:
+        with zipfile.ZipFile(io.BytesIO(r.content), 'r') as z:
+            with z.open(f'AIS_.csv') as f:
+                df = pd.read_csv(f)
+                # MMSI is the unique identifier of each boat. This is a simple clean up for demonstration
+                df['MMSI'] = df['MMSI'].astype(str)
+                df.to_parquet(daily_ais_parquet)
+                print(f"Saved ")
+        return pd.DataFrame()
+    else:
+        return pd.DataFrame(']})
+```
+
+We can run this UDF a single time to make sure it works:
+
+```python showLineNumbers
+# Run this locally - not in Workbench
+single_ais_month = fused.run(read_ais_from_noaa_udf, datestr="2024_09_01")
+
+>>> Saved /mnt/cache/AIS/2024_09/01.parquet
+```
+
+To recap what we've done so far:
+- Build a UDF that takes a date, fetches a `.zip` file from NOAA's AISDataHandler portal and saves it to our UDFs' mount (so other UDFs can access it)
+- Run this UDF 1 time for a specific date
+
+### 3.3 - Run this UDF over a month of AIS data
+
+Next step: Run this for a whole period!
+
+Since each UDF takes a few seconds to run per date, we're going to use `fused.submit()` to call a large numbers of UDFs all at once that will each run over a single date.
+
+With a bit of Python gymnastics we can create a `DataFrame` of all the dates we'd like to process. Preparing to get all of September 2024 would look like this:
+
+```python showLineNumbers
+# Run this locally - not in Workbench
+
+date_ranges = pd.DataFrame()
+print(f"")
+print(date_ranges.head())
+
+>>> date_ranges.shape=(30, 1)
+      datestr
+0  2024_09_01
+1  2024_09_02
+2  2024_09_03
+3  2024_09_04
+4  2024_09_05
+```
+
+`fused.submit()` requires inputs as a list or `DataFrame`, in which case columns should have the argument names that our UDF expects, in this case `datestr`. We also recommend you always do a first run with `debug_mode=True` to test your submit job:
+
+```python  showLineNumbers
+# Run this locally - not in Workbench
+fused.submit(
+    read_ais_from_noaa_udf, 
+    date_ranges, 
+    debug_mode=True
+)
+
+>>> Saved /mnt/cache/tmp/AIS/2024_09/01.parquet
+  |status  | file_path
+-------------------------------------------------
+0 |Done    | /mnt/cache/tmp/AIS/2024_09/01.parquet
+
+```
+
+`debug_mode=True` runs the 1st value inside `date_ranges` with `fused.run()`. This allows you to make sure your UDF + arg_list combo is working properly. 
+
+Now that we've seen our UDF is working we can run all 30 jobs in parallel by removing `debug_mode=True`:
+
+```python showLineNumbers
+# Run this locally - not in Workbench
+fused.submit(read_ais_from_noaa_udf, date_ranges)
+```
+
+We've now unzipped, opened & saved 30 days of data!
+
+`fused.submit()` has more parameters you can control allowing you to change the number of `max_workers`, `engine` or the retry policies. Also take a look at the technical docs for more details.
+
+One handy way to make sure our data is in the right place is to check it in the Workbench File Explorer. In the search bar type: `file:///mount/AIS/2024_09/`:
+
+[Image: Pool Runner live results]
+
+You'll see all our daily files! Notice how each file is a few 100 Mb. These files are still big individual files, i.e. would take a little while to read.
+
+### 3.4 - Ingest 1 month of AIS data into a geo-partitioned format
+
+These individual parquet files are now store on our mount disk. We could save them directly onto cloud storage but before that we can geo-partition them to make them even faster to read. This will make us reduce the time it takes to access our data from minutes to seconds.
+Fused provides a simple way to do this with the ingestion process.
+
+[Image: A simple overview of Geoparquet benefits]
+
+_Image credit from the Cloud Native Geo slideshow_
+
+To do this we need a few things:
+- **Our input dataset**: in this case our month of AIS data.
+   
+- **A target cloud bucket**: We're going to create a bucket to store our month of geo-partitioned AIS data in parquet files
+- A target number of chunks to partition our data in. For now we're going to keep it at 500
+- Latitude / Longitude columns to determine the location of each point
+
+```python showLineNumbers
+# Run this locally - not in Workbench
+ais_daily_parquets = [f'file:///mnt/cache/AIS//.parquet' for day in range_of_ais_dates]
+
+job = fused.ingest(
+    ais_daily_parquets,
+    's3://fused-users/fused/demo_user/AIS_2024_ingester/prod_2024_09',
+    target_num_chunks=500,
+    lonlat_cols=('LON','LAT')
+)
+```
+
+We'll send this job to a large instance using `job.run_batch()` as we latency doesn't matter much (we can wait a few extra seconds) and we'd rather have a larger machine & a larger storage:
+
+```python showLineNumbers
+# Run this locally - not in Workbench
+job.run_batch(
+    instance_type='r5.8xlarge', # We want why big beefy machine to do the partitioning in parallel, so large amounts of CPUs
+    disk_size_gb=999 # Set a large amount of disk because this job will open each output parquet file to calculate centroid
+)
+```
+
+Running this in a notebook gives us a link to logs so we can follow the progress of the job on the offline machine:
+
+[Image: Workbench run remote logs]
+
+Following the link shows us the live logs of what our job is doing:
+
+[Image: Workbench run remote logs]
+
+We can once again check that our geo-partitioned images are available using File Explorer. This time because our files are a lot faster to read we can even see the preview in the map view:
+
+<LazyReactPlayer playsinline= className="video__player" playing= muted= controls height="60%" width="80%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/dark-vessel-detection/geopartioned_AIS_file_explorer.mp4"/>
+
+Our AIS data is ready to be use for the entire month of September 2024. To narrow down our search, we now need to get a Sentinel 1 image. Since these images are taken every 6 to 12 days depending on the region, we'll find a Sentinel 1 image and then narrow our AIS data to just a few minutes before and after the acquisition time of the Sentinel 1 image.
+
+## 4. Retrieving Sentinel 1 images
+
+Sentinel 1 images are free & open, so thankfully for us others have already done the work of turning the archive into cloud native formats (and continue to maintain the ingestion as new data comes in).
+
+We're going to use the Microsoft Planetary Computer Sentinel-1 Ground Range Detected dataset, because it offers:
+- Access through a STAC Catalog helping us only get the data we need and nothing else
+- Images are in Cloud Optimized Geotiff giving us tiled images that load even faster
+- Examples of how to access the data so most of our work will be copy pasta
+
+    Most of the following section was written in Workbench's UDF Builder rather than in Jupyter Notebooks.
+
+    We'll have the code in code blocks, you can run these anywhere but as we're looking at images, it's helpful to have UDF Builders' live map updated as you write your code.
+
+Let's start with a basic UDF just returning our area of interest:
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+):
+    common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
+    # Convert bounds to GeoDataFrame using Fused common function
+    bounds = common.bounds_to_gdf(bounds)
+    return bounds
+```
+
+The code above demonstrates a basic User-Defined Function (UDF) that utilizes Fused's common functions. These utilities provide a some general functions for geospatial operations and transformations. 
+The utility function `bounds_to_gdf` is mentioned above is defined as:
+
+```python
+def bounds_to_gdf(bounds_list, crs=4326):
+
+    box = shapely.box(*bounds_list)
+    return gpd.GeoDataFrame(geometry=[box], crs=crs)
+```
+
+This function converts a bounding box into a GeoDataFrame .
+
+This UDF simply returns our Map viewport as a `gpd.GeoDataFrame`, this is a good starting point for our UDF returning Sentinel 1 images
+
+While you can do this anywhere around the continental US (our AIS dataset covered shores around the US, so we want to limit ourselves there), if you want to follow along this is the area of interest we'll be using. You can overwrite this in the UDF directly:
+
+```python  showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+):
+    # Define our specific bounds
+    specific_bounds = [-93.90425364, 29.61879782, -93.72767384, 29.7114987]
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds = common.bounds_to_gdf(specific_bounds)
+    return bounds
+```
+
+Following the Microsoft Planetary Computer examples for getting Sentinel-1 we can add a few of the imports we need and call the STAC catalog:
+
+```python  showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+):
+
+    # Define our specific bounds and convert to GeoDataFrame
+    specific_bounds = [-93.90425364, 29.61879782, -93.72767384, 29.7114987]
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds = common.bounds_to_gdf(specific_bounds)
+
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+        modifier=planetary_computer.sign_inplace,
+    )
+
+    return bounds
+```
+
+We already have a bounding box, but let's narrow down our search to the first week of September:
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+):
+
+    time_of_interest="2024-09-03/2024-09-04"
+    specific_bounds = [-93.90425364, 29.61879782, -93.72767384, 29.7114987]
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds = common.bounds_to_gdf(specific_bounds)
+
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+        modifier=planetary_computer.sign_inplace,
+    )
+
+    items = catalog.search(
+        collections=["sentinel-1-grd"],
+        bbox=bounds.total_bounds,
+        datetime=time_of_interest,
+        query=None,
+    ).item_collection()
+    print(f"")
+    return bounds
+```
+
+This print statement should return something like:
+
+```bash
+Returned 15 Items
+```
+
+This will be the number of unique Sentinel 1 images covering our `bounds` and `time_of_interest`.
+
+We can now use the `odc` package to load the first image & we'll use the VV polarisation from Sentinel 1 (VH could also work, and it would be good to iterate on this to visually assess which one would work best. We're keeping it simple for now, but feel free to test out both!).
+
+We'll get an `xarray.Dataset` object back that we can simply open & return as a `uint8` array:
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+):
+
+    time_of_interest="2024-09-03/2024-09-04"
+    bands = ["vv"]
+
+    # Convert bounds to GeoDataFrame for STAC operations
+    specific_bounds = [-93.90425364, 29.61879782, -93.72767384, 29.7114987]
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds = common.bounds_to_gdf(specific_bounds)
+
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+        modifier=planetary_computer.sign_inplace,
+    )
+
+    items = catalog.search(
+        collections=["sentinel-1-grd"],
+        bbox=bounds.total_bounds,
+        datetime=time_of_interest,
+        query=None,
+    ).item_collection()
+    print(f"")
+
+    ds = odc.stac.load(
+        items,
+        crs="EPSG:3857",
+        bands=bands,
+        resolution=10, # We want to use the native Sentinel 1 resolution which is 10m
+        bbox=bounds.total_bounds,
+    ).astype(float)
+
+    da = ds[bands[0]].isel(time=0)
+    image = da.values * 1.0
+    return image.astype('uint8')
+```
+
+Which gives us a Sentinel 1 image over our area of interest:
+
+[Image: Notebook run remote print]
+
+We've simplified the process quite a bit here, you could also:
+- Instead of loading `image.astype('uint8')`, do a more controlled calibration and conversation to dB
+- Select a more specific image rather than the 1st one in our stack
+- Use a different band or band combination
+- Use Radiometrically Terrain Corrected images
+
+### 4.1 Cleaning our Sentinel 1 UDF
+
+Before adding any new functionality, we're going to clean our UDF up a bit more:
+- Move some of the functionality into separate functions
+- Adding common error catching (so our UDF doesn't fail if no Sentinel 1 images are found within our AOI + date range if it's too narrow)
+- Add a cache decorator to code functions that retrieve data to speed up the UDF & reduce costs.
+
+This will allow us to keep our UDF more readable (by abstracting code away) and more responsive. Cached functions store their result to disk, which makes a common query a lot more responsive and less expensive by using less compute
+
+Here's our cleaned up UDF:
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+    bands: list=["vv"],
+    resolution: int=10,
+    time_of_interest: str="2024-09-03/2024-09-10",
+):
+
+    da = get_data(bounds, time_of_interest, resolution, bands)
+
+    image = da.values * 1.0
+    return image.astype('uint8')
+
+@fused.cache
+def get_data(
+    bounds: fused.types.Bounds,
+    time_of_interest: str,
+    resolution: int,
+    bands: list,
+    data_name: str="sentinel-1-grd"
+):
+    """
+    Getting Sentinel Data from MPC
+    Resolution is defined in meters as we're using EPSG:3857
+    """
+
+    # Convert bounds to GeoDataFrame
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds = common.bounds_to_gdf(bounds)
+
+    if resolution < 10:
+        print("Resolution shouldn't be lower than Sentinel 1 or 2 native resolution. Bumping to 10m")
+        resolution = 10
+        print(f"")
+
+    catalog = pystac_client.Client.open(
+            "https://planetarycomputer.microsoft.com/api/stac/v1",
+            # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+            modifier=planetary_computer.sign_inplace,
+        )
+
+    items = catalog.search(
+        collections=[data_name],
+        bbox=bounds.total_bounds,
+        datetime=time_of_interest,
+        query=None,
+    ).item_collection()
+
+    if len(items) < 1:
+        print(f'No items found. Please either zoom out or move to a different area')
+    else:
+        print(f"Returned  Items")
+
+        def odc_load(bbox,resolution, time_of_interest):
+            ds = odc.stac.load(
+                    items,
+                    crs="EPSG:3857",
+                    bands=bands,
+                    resolution=resolution,
+                    bbox=bounds.total_bounds,
+                ).astype(float)
+            return ds
+
+        ds=odc_load(bounds,resolution, time_of_interest)
+        da = ds[bands[0]].isel(time=0)
+        return da
+```
+
+## 5. Simple boat detection in Sentinel 1 radar images
+
+Now that we have a Sentinel 1 image over a Area of Interest and time range, we can write a simple algorithm to return bounding boxes of the boats in the image. We're going to keep this very basic as we're optimizing for:
+- **Speed of execution**: We want our boat detection algorithm to run in a few seconds at most while we're iterating. Especially at first when we're developing our pipeline, we want a fast feedback loop
+- **Simplicity**: We're focused on demo-ing how to build an end-to-end pipeline with Fused in this example, not making the most thorough analysis possible. This should be a baseline for you to build upon!
+
+Radar images over calm water tend to look black (as all the radar signal is reflect _away_ from the sensor), while (mostly metallic) boats reflect back to the sensor appearing like bright spots in our image. A simple "boat detecting" algorithm is thus to do a 2D convolution and threshold the output to a certain pixel value:
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+    bands: list=["vv"],
+    resolution: int=10,
+    time_of_interest: str="2024-09-03/2024-09-10",
+):
+
+    da = get_data(bounds, time_of_interest, resolution, bands)
+    image = da.values * 1.0
+
+    convoled_image = quick_convolution(np.array(image), kernel_size=2)
+
+    return convoled_image.astype('uint8')
+
+@fused.cache
+def get_data(
+    bounds: fused.types.Bounds,
+    time_of_interest: str,
+    resolution: int,
+    bands: list,
+    data_name: str="sentinel-1-grd"
+):
+    """
+    Getting Sentinel Data from MPC
+    Resolution is defined in meters as we're using EPSG:3857
+    """
+
+    # Convert bounds to GeoDataFrame
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds = common.bounds_to_gdf(bounds)
+
+    if resolution < 10:
+        print("Resolution shouldn't be lower than Sentinel 1 or 2 native resolution. Bumping to 10m")
+        resolution = 10
+        print(f"")
+
+    catalog = pystac_client.Client.open(
+            "https://planetarycomputer.microsoft.com/api/stac/v1",
+            # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+            modifier=planetary_computer.sign_inplace,
+        )
+
+    items = catalog.search(
+        collections=[data_name],
+        bbox=bounds.total_bounds,
+        datetime=time_of_interest,
+        query=None,
+    ).item_collection()
+
+    if len(items) < 1:
+        print(f'No items found. Please either zoom out or move to a different area')
+    else:
+        print(f"Returned  Items")
+
+        def odc_load(bounds,resolution, time_of_interest):
+            ds = odc.stac.load(
+                    items,
+                    crs="EPSG:3857",
+                    bands=bands,
+                    resolution=resolution,
+                    bbox=bounds.total_bounds,
+                ).astype(float)
+            return ds
+
+        ds=odc_load(bounds,resolution, time_of_interest)
+        da = ds[bands[0]].isel(time=0)
+
+        return da
+
+def quick_convolution(input_array, kernel_size):
+
+    shifted_images = []
+
+    # Shifting the image in all combinations of directions (x, y) with padding
+    for x in [-kernel_size, 0, kernel_size]:  # Shift left (kernel_size), no shift (0), right (kernel_size)
+        for y in [-kernel_size, 0, kernel_size]:  # Shift up (kernel_size), no shift (0), down (kernel_size)
+            shifted = pad_and_shift_image(input_array, x, y, pad_value=0, kernel_size=kernel_size)
+            shifted_images.append(shifted)
+
+    stacked_image = np.stack(shifted_images)
+    return stacked_image.std(axis=0)
+
+def pad_and_shift_image(img, x_shift, y_shift, pad_value=0, kernel_size: int = 3):
+
+    """Pad and shift an image by x_shift and y_shift with specified pad_value."""
+
+    padded_img = np.pad(img, pad_width=kernel_size, mode='constant', constant_values=pad_value)
+    shifted_img = np.roll(np.roll(padded_img, y_shift, axis=0), x_shift, axis=1)
+
+    return shifted_img[kernel_size:-kernel_size, kernel_size:-kernel_size]
+```
+
+This returns a filtered image highlighting the brightest spots and reducing the natural speckle of the radar image
+
+[Image: Workbench run remote logs]
+
+This is now relatively simple to vectorise (turn into a vector object, from image to polygons):
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+    bands: list=["vv"],
+    resolution: int=10,
+    time_of_interest: str="2024-09-03/2024-09-10",
+):
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds_gdf = common.bounds_to_gdf(bounds)
+    da = get_data(bounds, time_of_interest, resolution, bands)
+    image = da.values * 1.0
+
+    convoled_image = quick_convolution(np.array(image), kernel_size=2)
+
+    gdf_predictions = vectorise_raster(
+        raster=convoled_image.astype("uint8"),
+        bounds=bounds_gdf,
+        threshold=200 # Taking a high threshold in 0-255 range to keep only very bright spots
+    )
+
+    # Merging close polygons together into a single polygon so 1 polygon <-> 1 boat
+    buffer_distance = 0.0001  # eyeballed a few meters in EPSG:4326 (degrees are annoying to work with ¯\_(ツ)_/¯)
+    merged = gdf_predictions.geometry.buffer(buffer_distance).unary_union.buffer(
+        -buffer_distance/2
+    )
+    merged_gdf = gpd.GeoDataFrame(geometry=[merged], crs=bounds.crs).explode()
+
+    return merged_gdf
+
+@fused.cache
+def get_data(
+    bounds: fused.types.Bounds,
+    time_of_interest: str,
+    resolution: int,
+    bands: list,
+    data_name: str="sentinel-1-grd"
+):
+    """
+    Getting Sentinel Data from MPC
+    Resolution is defined in meters as we're using EPSG:3857
+    """
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds = common.bounds_to_gdf(bounds)
+    if resolution < 10:
+        print("Resolution shouldn't be lower than Sentinel 1 or 2 native resolution. Bumping to 10m")
+        resolution = 10
+        print(f"")
+
+    catalog = pystac_client.Client.open(
+            "https://planetarycomputer.microsoft.com/api/stac/v1",
+            # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+            modifier=planetary_computer.sign_inplace,
+        )
+    items = catalog.search(
+        collections=[data_name],
+        bbox=bounds.total_bounds,
+        datetime=time_of_interest,
+        query=None,
+    ).item_collection()
+
+    if len(items) < 1:
+        print(f'No items found. Please either zoom out or move to a different area')
+    else:
+        print(f"Returned  Items")
+
+        def odc_load(bounds,resolution, time_of_interest):
+            ds = odc.stac.load(
+                    items,
+                    crs="EPSG:3857",
+                    bands=bands,
+                    resolution=resolution,
+                    bbox=bounds.total_bounds,
+                ).astype(float)
+            return ds
+
+        ds=odc_load(bounds,resolution, time_of_interest)
+        da =  ds[bands[0]].isel(time=0)
+
+        return da
+
+def quick_convolution(input_array, kernel_size):
+
+    shifted_images = []
+
+    # Shifting the image in all combinations of directions (x, y) with padding
+    for x in [-kernel_size, 0, kernel_size]: # Shift left (kernel_size), no shift (0), right (kernel_size)
+        for y in [-kernel_size, 0, kernel_size]:  # Shift up (kernel_size), no shift (0), down (kernel_size)
+            shifted = pad_and_shift_image(input_array, x, y, pad_value=0, kernel_size=kernel_size)
+            shifted_images.append(shifted)
+
+    stacked_image = np.stack(shifted_images)
+    return stacked_image.std(axis=0)
+
+def pad_and_shift_image(img, x_shift, y_shift, pad_value=0, kernel_size: int = 3):
+
+    """Pad and shift an image by x_shift and y_shift with specified pad_value."""
+
+    padded_img = np.pad(img, pad_width=kernel_size, mode='constant', constant_values=pad_value)
+    shifted_img = np.roll(np.roll(padded_img, y_shift, axis=0), x_shift, axis=1)
+
+    return shifted_img[kernel_size:-kernel_size, kernel_size:-kernel_size]
+
+@fused.cache
+def vectorise_raster(raster, bounds, threshold: float = 0.5):
+    from rasterio import features
+
+    transform = rasterio.transform.from_bounds(*bounds.total_bounds, raster.shape[1], raster.shape[0])
+
+    shapes = features.shapes(
+        source=raster.astype(np.uint8),
+        mask = (raster > threshold).astype('uint8'),
+        transform=transform
+    )
+
+    gdf = gpd.GeoDataFrame(
+        geometry=[shapely.geometry.shape(shape) for shape, shape_value in shapes],
+        crs=bounds.crs
+    )
+    return gdf
+```
+
+And that's how we have turned our Sentinel 1 image into a vector `gpd.GeoDataFrame` of bright objects:
+
+[Image: Workbench run remote logs]
+
+## 6. Retrieving AIS data for our time of Interest
+
+To get our AIS data, we now need to retrieve the exact moment our Sentinel 1 images were acquired. We can use this information to only keep AIS points within just a few minutes around that time.
+
+```python showLineNumbers@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+    bands: list=["vv"],
+    resolution: int=10,
+    time_of_interest: str="2024-09-03/2024-09-10",
+):
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds_gdf = common.bounds_to_gdf(bounds)
+
+    da = get_data(bounds, time_of_interest, resolution, bands)
+    image = da.values * 1.0
+
+    convoled_image = quick_convolution(np.array(image), kernel_size=2)
+
+    gdf_predictions = vectorise_raster(
+        raster=convoled_image.astype("uint8"),
+        bounds=bounds_gdf,
+        threshold=200 # Using higher threshold to make sure only bright spots are taken
+    )
+
+    # Merging close polygons together
+    buffer_distance = 0.0001  # eyeballed value in EPSG:4326 so need to use degrees. I don't like degrees
+    merged = gdf_predictions.geometry.buffer(buffer_distance).unary_union.buffer(
+        -buffer_distance/2
+    )
+    merged_gdf = gpd.GeoDataFrame(geometry=[merged], crs=bounds.crs).explode()
+
+    # Keeping metadata close by for merging with AIS data
+    merged_gdf['S1_acquisition_time'] = da['time'].values
+
+    return merged_gdf
+
+@fused.cache
+def get_data(
+    bounds: fused.types.Bounds,
+    time_of_interest: str,
+    resolution: int,
+    bands: list,
+    data_name: str="sentinel-1-grd"
+):
+    """
+    Getting Sentinel Data from MPC
+    Resolution is defined in meters as we're using EPSG:3857
+    """
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds = common.bounds_to_gdf(bounds)
+
+    if resolution < 10:
+        print("Resolution shouldn't be lower than Sentinel 1 or 2 native resolution. Bumping to 10m")
+        resolution = 10
+        print(f"")
+
+    catalog = pystac_client.Client.open(
+            "https://planetarycomputer.microsoft.com/api/stac/v1",
+            # Details as to why we need to sign it are addressed here: https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+            modifier=planetary_computer.sign_inplace,
+        )
+    items = catalog.search(
+        collections=[data_name],
+        bbox=bounds.total_bounds,
+        datetime=time_of_interest,
+        query=None,
+    ).item_collection()
+
+    if len(items) < 1:
+        print(f'No items found. Please either zoom out or move to a different area')
+    else:
+        print(f"Returned  Items")
+
+        def odc_load(bounds,resolution, time_of_interest):
+            ds = odc.stac.load(
+                    items,
+                    crs="EPSG:3857",
+                    bands=bands,
+                    resolution=resolution,
+                    bbox=bounds.total_bounds,
+                ).astype(float)
+            return ds
+
+        ds=odc_load(bounds,resolution, time_of_interest)
+        da =  ds[bands[0]].isel(time=0)
+
+        return da
+
+def quick_convolution(input_array, kernel_size):
+
+    shifted_images = []
+
+    # Shifting the image in all combinations of directions (x, y) with padding
+    for x in [-kernel_size, 0, kernel_size]:  # Shift left (kernel_size), no shift (0), right (kernel_size)
+        for y in [-kernel_size, 0, kernel_size]:  # Shift up (kernel_size), no shift (0), down (kernel_size)
+            shifted = pad_and_shift_image(input_array, x, y, pad_value=0, kernel_size=kernel_size)
+            shifted_images.append(shifted)
+
+    stacked_image = np.stack(shifted_images)
+    return stacked_image.std(axis=0)
+
+def pad_and_shift_image(img, x_shift, y_shift, pad_value=0, kernel_size: int = 3):
+
+    """Pad and shift an image by x_shift and y_shift with specified pad_value."""
+
+    padded_img = np.pad(img, pad_width=kernel_size, mode='constant', constant_values=pad_value)
+    shifted_img = np.roll(np.roll(padded_img, y_shift, axis=0), x_shift, axis=1)
+
+    return shifted_img[kernel_size:-kernel_size, kernel_size:-kernel_size]
+
+@fused.cache
+def vectorise_raster(raster, bounds, threshold: float = 0.5):
+    from rasterio import features
+
+    transform = rasterio.transform.from_bounds(*bounds.total_bounds, raster.shape[1], raster.shape[0])
+
+    shapes = features.shapes(
+        source=raster.astype(np.uint8),
+        mask = (raster > threshold).astype('uint8'),
+        transform=transform
+    )
+
+    gdf = gpd.GeoDataFrame(
+        geometry=[shapely.geometry.shape(shape) for shape, shape_value in shapes],
+        crs=bounds.crs
+    )
+    return gdf
+```
+
 `merged_gdf` now returns a column called `S1_acquisition_time` with the time the Sentinel 1 image was taken.
 
 If we save and call this UDF with a token we can call it from anywhere, from a Jupyter Notebook or from another UDF. Let's create a new UDF in Workbench:
 
-```python  showLineNumbers
+```python showLineNumbers
 # This is a new UDF
 @fused.udf
 def udf(
@@ -4169,7 +5064,7 @@ We can use this bit of code called `table_to_tile` which will either load the AI
 
     You could write a GeoParquet reader from scratch or call a UDF that you have that already does this, you don't have to use this option. But we want to show you how you can re-use bits of code from others here.
 
-```python  showLineNumbers
+```python showLineNumbers
 @fused.udf
 def udf(
     bounds: fused.types.Bounds = None,
@@ -4238,7 +5133,7 @@ We'll get the AIS data and join it with the Sentinel 1 detected boats by using g
 
 Any point with the closest AIS point >100m from the Sentinel 1 boat will be considered a potentiel "dark vessel".
 
-```python  showLineNumbers
+```python showLineNumbers
 @fused.udf
 def udf(
     bounds: fused.types.Bounds=None,
@@ -4334,8 +5229,8 @@ Working with Fused UDFs also give you the option to easily use functions defined
 You can explore it yourself by directly reading the code in Github. If you see any functions you'd like to use, we strongly recommend you use `fused.load()` and pass the latest commit hash at the time you want to use it:
 
 ```python
-commit_hash = "39d93ca" # Latest commit hash of https://github.com/fusedio/udfs/blob/main/public/common/utils.py at time of writing
-common = fused.load(f"https://github.com/fusedio/udfs/tree//public/common/").utils
+commit_hash = "fbf5682" # Latest commit hash of https://github.com/fusedio/udfs/blob/main/public/common at time of writing
+common = fused.load(f"https://github.com/fusedio/udfs/tree//public/common/")
 ```
 
 Each Maxar Event itself contains multiple collections. We created a simple function that loops over all the available `UNIQUE_ID/collection.json`, reads them an appends them into a single GeoDataFrame:
@@ -4541,10 +5436,10 @@ def udf(
     # Otherwise reading the GeoTiff
     else:
         print("Returning image")
-        utils = fused.load("https://github.com/fusedio/udfs/tree/5432edc/public/common/").utils
-        tiles = utils.get_tiles(bounds)
+        common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")  
+        tiles = common.get_tiles(bounds)
     
-        arr = utils.read_tiff(tiles, path, output_shape=(chip_len, chip_len))
+        arr = common.read_tiff(tiles, path, output_shape=(chip_len, chip_len))
         print(f"")
         return arr
 ```
@@ -4626,10 +5521,10 @@ def udf(
     # Otherwise reading the GeoTiff
     else:
         print("Returning image")
-        utils = fused.load("https://github.com/fusedio/udfs/tree/5432edc/public/common/").utils
-        tiles = utils.get_tiles(bounds)
+        common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")      
+        tiles = common.get_tiles(bounds)
     
-        arr = utils.read_tiff(tiles, path, output_shape=(chip_len, chip_len))
+        arr = common.read_tiff(tiles, path, output_shape=(chip_len, chip_len))
         print(f"")
         return arr
 ```
@@ -4848,12 +5743,12 @@ def udf(
 ):
 
     # Convert bounds to tile
-    utils = fused.load("https://github.com/fusedio/udfs/tree/bb712a5/public/common/").utils
-    zoom = utils.estimate_zoom(bounds)
-    tile = utils.get_tiles(bounds, zoom=zoom)
+    common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
+    zoom = common.estimate_zoom(bounds)
+    tile = common.get_tiles(bounds, zoom=zoom)
 
     # Load CDLS data
-    arr = utils.read_tiff(
+    arr = common.read_tiff(
       tile,
       input_tiff_path=f"s3://fused-asset/data/cdls/_30m_cdls.tif"
     )
@@ -4862,7 +5757,7 @@ def udf(
     arr = np.where(np.isin(arr, [crop_id]), 1, 0)
 
     # Load polygons
-    gdf = utils.table_to_tile(
+    gdf = common.table_to_tile(
       bounds,
       table='s3://fused-asset/data/tl_2023_49_bg/',
       min_zoom=5,
@@ -4871,7 +5766,7 @@ def udf(
     gdf.crs = 4326
 
     # Calculate zonal stats
-    return utils.geom_stats(gdf, arr)
+    return common.geom_stats(gdf, arr)
 ```
 
 Try running the UDF in the UDF Builder and visually inspect the output on the map. See what happens when you change `year`. Try introducing print statements such as `print(arr)` and `print(gdf)` to show logs in the console.
@@ -7262,6 +8157,69 @@ URL: https://docs.fused.io/python-sdk/changelog/
 
 # Changelog
 
+## v1.22.5 (2025-08-26)
+
+**New Features:**
+- Experimental Canvas mode.
+
+**Improvements:**
+- Added Deepseek v3.1 model to AI chat.
+
+<LazyReactPlayer 
+    playsinline=
+    className="video__player"
+    playing=
+    muted=
+    controls
+    height="350px"
+    width="600px"
+    url="https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/changelog/1.22.5_added_deepseek_v3.gif"
+/>
+
+- AI chat has better layout and indicators for its settings. AI chat also shows user input when asking for more instructions.
+- Versions button has moved to the bottom of the Workbench sidebar.
+
+<LazyReactPlayer 
+    playsinline=
+    className="video__player"
+    playing=
+    muted=
+    controls
+    height="350px"
+    width="600px"
+    url="https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/changelog/1.22.5_versions_tab_below.gif"
+/>
+
+- Versions page shows the difference between upstream and a saved copy of a UDF.
+- Versions page shows team repositories first, and will prompt when changing repository to a public one.
+- Data table widget has `bigint` support, copy to clipboard, improved headers, and better filter support.
+
+<LazyReactPlayer 
+    playsinline=
+    className="video__player"
+    playing=
+    muted=
+    controls
+    height="350px"
+    width="600px"
+    url="https://fused-magic.s3.us-west-2.amazonaws.com/docs_assets/changelog/1.22.5_table_copy_to_clipboard.gif"
+/>
+
+- Added html5lib package to the runtime.
+
+**Bug Fixes:**
+- AI chat will not suggest charting very small dataframes, along with other improvements to its suggestions and auto-fixes.
+- Fixed bugs with the visualization menu in the map view. It works again and will not crash when no UDF is selected.
+- Workbench won't show delete and versions button when they cannot do anything.
+- Bug fixes for the conflict modal in Workbench not working or not updating the existing UDF.
+- Fixed Workbench profile text for enterprise users.
+
+**API changes:**
+- Large jobs can now be run using `fused.run` and the `instance_type` parameter.
+
+**Deprecations:**
+- Parameters under the UDF in the advanced UDF editor is deprecated. It can be turned back on from the Workbench Preferences.
+
 ## v1.22.1 (2025-08-19)
 
 **Improvements:**
@@ -9434,15 +10392,22 @@ If the "Save" icon appears greyed out, it means you're viewing a read-only versi
 
 [Image: Save Icon]
 
+## Auto, Tile, and Single (Viewport, Parameter)
+
+On UDF Builder, UDFs can explicitly be set to run as Tile or File - or autoselect between the two if the `bounds` object is typed.
+
+[Image: File]
+
 ## Utils Module [Legacy]
 
-It is only available as a legacy feature (available to turn on in the Workbench Settings).
+It is only available as a legacy feature (available to turn on in the Workbench Preferences).
 
 A Fused UDF can import Python objects from its accompanying utils Module, defined in the Utils Tab's code editor. You can import functions from it in your UDF with `from utils import my_function`.
 
-Here is an example in the Public Overture_Maps_example UDF:
+Here is an example in an old version ofthe Public Overture_Maps_example UDF:
 
 ```python showLineNumbers
+# This is an old version of the code for demonstration purposes
 @fused.udf
 def udf(
     bounds: fused.types.Bounds,
@@ -9457,12 +10422,6 @@ def udf(
     return gdf
 ```
 [Image: UDF Builder Utils]
-
-### Auto, Tile, and Single (Viewport, Parameter)
-
-On UDF Builder, UDFs can explicitly be set to run as Tile or File - or autoselect between the two if the `bounds` object is typed.
-
-[Image: File]
 
 ================================================================================
 
@@ -12436,5 +13395,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2025-08-26
+Generated automatically from Fused documentation. Last updated: 2025-08-27
 Total sections: 5
