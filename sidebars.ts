@@ -22,6 +22,7 @@ const sidebars: SidebarsConfig = {
           collapsed: true,
           link: { type: "doc", id: "tutorials/Analytics & Dashboard/analytics-dashboard" },
           items: [
+            "tutorials/Analytics & Dashboard/let-anyone-talk-to-your-data",
             "tutorials/Analytics & Dashboard/stack-overflow-surveys",
             "tutorials/Analytics & Dashboard/currency-trading-prediction",
           ],
