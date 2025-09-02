@@ -12,6 +12,7 @@ udf(
     *,
     name: Optional[str] = None,
     cache_max_age: Optional[str] = None,
+    instance_type: Optional[str] = None,
     default_parameters: Optional[Dict[str, Any]] = None,
     headers: Optional[Sequence[Union[str, Header]]] = None,
     **kwargs: dict[str, Any]
@@ -25,6 +26,9 @@ A decorator that transforms a function into a Fused UDF.
 - **name** (<code>Optional[str]</code>) – The name of the UDF object. Defaults to the name of the function.
 
 - **cache_max_age** (<code>Optional[str]</code>) – The maximum age when returning a result from the cache.
+
+- **instance_type** (<code>Optional[str]</code>) – The default type of instance to use for remote execution
+  ('realtime' or 'batch').
 
 - **default_parameters** (<code>Optional\[Dict[str, Any]\]</code>) – Parameters to embed in the UDF object, separately from the arguments
   list of the function. Defaults to None for empty parameters.
@@ -71,9 +75,7 @@ cache(
     cache_storage: StorageStr | None = None,
     cache_key_exclude: Iterable[str] = None,
     cache_verbose: bool | None = None,
-    path: str | None = None,
-    storage: StorageStr | None = None,
-    reset: bool | None = None,
+    **kwargs: Any
 ) -> Callable[..., Any]
 ```
 
@@ -200,9 +202,11 @@ run(
     z: Optional[int] = None,
     sync: bool = True,
     engine: Optional[Literal["remote", "local"]] = None,
+    instance_type: Optional[InstanceType] = None,
     type: Optional[Literal["tile", "file"]] = None,
     max_retry: int = 0,
     cache_max_age: Optional[str] = None,
+    cache: bool = True,
     parameters: Optional[Dict[str, Any]] = None,
     _return_response: Optional[bool] = False,
     _ignore_unknown_arguments: bool = False,
@@ -233,12 +237,18 @@ path based on the provided parameters.
 - **x, y, z** (<code>int</code>) – Tile coordinates for tile-based UDF execution.
 - **sync** (<code>bool</code>) – If True, execute the UDF synchronously. If False, execute asynchronously.
 - **engine** (<code>Optional\[Literal['remote', 'local']\]</code>) – The execution engine to use ('remote' or 'local').
+- **instance_type** (<code>Optional[InstanceType]</code>) – The type of instance to use for remote execution ('realtime',
+  or 'small', 'medium', 'large' or one of the whitelisted instance types).
+  If not specified, gets the default from the UDF (if specified in the
+  `@fused.udf()` decorator, and the UDF is not run as a shared token),
+  or otherwise defaults to 'realtime'.
 - **type** (<code>Optional\[Literal['tile', 'file']\]</code>) – The type of UDF execution ('tile' or 'file').
 - **max_retry** (<code>int</code>) – The maximum number of retries to attempt if the UDF fails.
   By default does not retry.
 - **cache_max_age** (<code>Optional[str]</code>) – The maximum age when returning a result from the cache.
   Supported units are seconds (s), minutes (m), hours (h), and days (d) (e.g. “48h”, “10s”, etc.).
   Default is `None` so a UDF run with `fused.run()` will follow `cache_max_age` defined in `@fused.udf()` unless this value is changed.
+- **cache** (<code>bool</code>) – Set to False as a shortcut for `cache_max_age='0s'` to disable caching.
 - **verbose** – Set to False to suppress any print statements from the UDF.
 - **parameters** (<code>Optional\[Dict[str, Any]\]</code>) – Additional parameters to pass to the UDF.
 - \*\***kw_parameters** – Additional parameters to pass to the UDF.
@@ -287,8 +297,8 @@ It is designed to be flexible and support various UDF execution scenarios.
 
 ```python
 submit(
-    udf,
-    arg_list,
+    udf: AnyBaseUdf | FunctionType | str,
+    arg_list: AnyBaseUdf | FunctionType | str,
     /,
     *,
     engine: Optional[Literal["remote", "local"]] = "remote",
@@ -296,7 +306,7 @@ submit(
     max_retry: int = 2,
     debug_mode: bool = False,
     collect: bool = True,
-    batch_type: BatchType = "thread_pool",
+    execution_type: ExecutionType = "thread_pool",
     cache_max_age: Optional[str] = None,
     cache: bool = True,
     ignore_exceptions: bool = False,
@@ -311,11 +321,15 @@ Executes a user-defined function (UDF) multiple times for a list of input
 parameters, and return immediately a "lazy" JobPool object allowing
 to inspect the jobs and wait on the results.
 
+Each individual UDF run will be cached following the standard caching logic as with `fused.run()`
+and the specified `cache_max_age`. Additionally, when `collect=True` (the default), the collected results
+are cached locally for the duration of `cache_max_age` or 12h by default.
+
 See `fused.run` for more details on the UDF execution.
 
 **Parameters:**
 
-- **udf** – the UDF to execute.
+- **udf** (<code>AnyBaseUdf | FunctionType | str</code>) – the UDF to execute.
   See `fused.run` for more details on how to specify the UDF.
 - **arg_list** – a list of input parameters for the UDF. Can be specified as:
   - a list of values for parametrizing over a single parameter, i.e.
@@ -332,7 +346,7 @@ See `fused.run` for more details on the UDF execution.
   containing the results. If False, returns a JobPool object, which is non-blocking
   and allows you to inspect the individual results and logs.
   Default is True.
-- **batch_type** (<code>BatchType</code>) – The type of batching to use. Either "thread_pool" (default) for
+- **execution_type** (<code>ExecutionType</code>) – The type of batching to use. Either "thread_pool" (default) for
   ThreadPoolExecutor-based concurrency or "async_loop" for asyncio-based concurrency.
 - **cache_max_age** (<code>Optional[str]</code>) – The maximum age when returning a result from the cache.
   Supported units are seconds (s), minutes (m), hours (h), and days (d)
@@ -351,7 +365,7 @@ See `fused.run` for more details on the UDF execution.
 
 **Returns:**
 
-- <code>[Union](#typing.Union)\[[BaseJobPool](#fused._submit.BaseJobPool), [ResultType](#fused._run.ResultType), [DataFrame](#pandas.DataFrame)\]</code> – JobPool, AsyncJobPool, or DataFrame depending on batch_type and collect parameters
+- <code>[Union](#typing.Union)\[[BaseJobPool](#fused._submit.BaseJobPool), [ResultType](#fused._run.ResultType), [DataFrame](#pandas.DataFrame)\]</code> – JobPool, AsyncJobPool, or DataFrame depending on execution_type and collect parameters
 
 **Examples:**
 
@@ -365,7 +379,7 @@ df = fused.submit("username@fused.io/my_udf_name", range(10))
 Using async batch type:
 
 ```py
-df = fused.submit(udf, range(10), batch_type="async_loop")
+df = fused.submit(udf, range(10), execution_type="async_loop")
 ```
 
 Being explicit about the parameter name:
@@ -455,7 +469,9 @@ ingest(
     target_num_chunks: int = 500,
     lonlat_cols: tuple[str, str] | None = None,
     partitioning_schema_input: str | pd.DataFrame | None = None,
-    gdal_config: GDALOpenConfig | dict[str, Any] | None = None
+    gdal_config: GDALOpenConfig | dict[str, Any] | None = None,
+    overwrite: bool = False,
+    as_udf: bool = False
 ) -> GeospatialPartitionJobStepConfig
 ```
 
@@ -551,6 +567,16 @@ Ingest a dataset into the Fused partitioned format.
       }
   )
   ```
+
+- **overwrite** (<code>bool</code>) – If True, overwrite the output directory if it already exists
+  (by first removing all existing content of the directory, i.e. it
+  does not only overwrite conflicting files).
+  Defaults to False.
+
+- **as_udf** (<code>bool</code>) – Return the ingestion workflow as a UDF that can be executed using
+  `fused.run()`. Local files or python objects passed to `input` or
+  `partitioning_schema_input` are still uploaded to S3 first such that
+  those are available when executing the UDF remotely. Defaults to False.
 
 **Returns:**
 
