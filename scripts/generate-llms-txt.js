@@ -120,7 +120,7 @@ function walkDirectory(dir, basePath = '', isFullVersion = false) {
         items.push({
           title: frontmatter.title,
           description: frontmatter.description,
-          url: `${BASE_URL}/${urlPath}/`,
+          url: `${BASE_URL}/${urlPath}`,
           path: relativePath,
           unlisted: frontmatter.unlisted,
           fullContent: frontmatter.fullContent,
