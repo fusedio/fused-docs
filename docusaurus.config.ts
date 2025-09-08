@@ -240,7 +240,7 @@ const config: Config = {
             from: ["/workbench/viz-styling/"],
           },
           {
-            to: "/core-concepts/data-ingestion",
+            to: "/core-concepts/generic-data-ingestion",
             from: ["/core-concepts/data_ingestion/"],
           },
           {
