@@ -11,7 +11,31 @@ There are 2 main ways to work with spatial data in Fused:
 
 ## Single UDF
 
-Single UDFs are the default behavior in Fused. The UDF is run 1 time with the current viewport bounds
+Single UDFs are the default behavior in Fused. The UDF is run 1 time with the current viewport bounds.
+
+There are 2 types of Spatial Single UDFs:
+
+### Single (Viewport)
+
+Will prioritize the current MAP VIEWPORT bounds, regardless of the `bounds` parameter.
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds = [-74.38,40.32,-73.31,41.29]):
+    print(bounds) # This will be the current MAP VIEWPORT bounds, regardless of the `bounds` parameter
+    return bounds
+```
+
+### Single (Parameter)
+
+Will use the `bounds` parameter, regardless of the current MAP VIEWPORT bounds.
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds = [-74.38,40.32,-73.31,41.29]):
+    print(bounds) # This will be the `bounds` parameter, regardless of the current MAP VIEWPORT bounds
+    return bounds
+```
 
 ### Example UDF
 
@@ -36,10 +60,51 @@ Tile UDFs tile the users viewport into a grid of smaller tiles and running a UDF
 | Feature | Single UDF | Tile UDF |
 |---------|------------|-----------|
 | UDF Calls | 1 | Multiple |
-| Parameters | `bounds` | `bounds` or `x`, `y`, `z` |
+| Parameters | `bounds` (Optional) | `bounds` or `x`, `y`, `z` |
 | Map rendering | Static | Dynamic |
 | HTTP Call | Single Call | Tile Server calls |
 | Use when | Small static data | Calling large dataset through tile server |
+
+## `bounds`
+
+`bounds` is simply a list of 4 coordinates representing the bounds of a geometry. The 4 coordinates represent `[xmin, ymin, xmax, ymax]` of the bounds.
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds=None):
+    print(bounds)
+
+>>> [-1.52244399, 48.62747869, -1.50004107, 48.64359255]
+```
+
+### `bounds` to `GeoDataFrame`
+
+Converting `bounds` (list of 4 coordinates) to a `GeoDataFrame`:
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+<Tabs className="unique-tabs">
+  <TabItem value="fused" label="Fused common function" default>
+    ```python showLineNumbers
+    @fused.udf
+    def udf(bounds: fused.types.Bounds=None):
+        common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
+        return common.bounds_to_gdf(bounds)
+    ```
+</TabItem>
+  <TabItem value="Python Libraries" label="shapely & geopandas">
+        ```python showLineNumbers
+        @fused.udf
+        def udf(bounds: fused.types.Bounds=None):
+            import shapely
+            import geopandas as gpd
+            box = shapely.box(*bounds)
+            return gpd.GeoDataFrame(geometry=[box], crs=4326)
+        ```
+</TabItem>
+</Tabs>
+
 
 --- 
 
@@ -98,55 +163,6 @@ You can see a few other differences:
 :::tip
 
 The mode you select for a UDF is saved with the UDF. You can decide which mode you prefer people to use for your UDF by selecting the mode in the UDF editor.
-:::
-
-## The `bounds` object
-
-A UDF may use the `bounds` parameter to spatially filter datasets and load into memory only the data that corresponds to the `bounds` spatial bounds. This reduces latency and data transfer costs.
-
-[Cloud-optimized formats](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/geospatial-file-formats) are particularly suited for these operations - they include [Cloud Optimized GeoTiff](https://www.cogeo.org/), [Geoparquet](https://geoparquet.org/), and [GeoArrow](https://geoarrow.org/format.html).
-
-### `bounds` object types
-
-The `bounds` object defines the spatial bounds of the Tile, which can be represented as a geometry object or XYZ index.
-
-#### `fused.types.Bounds`
-
-This is a `list` of 4 points representing the bounds (extent) of a geometry. The 4 points represent `[xmin, ymin, xmax, ymax]` of the bounds.
-
-```python showLineNumbers
-@fused.udf
-def udf(bounds: fused.types.Bounds=None):
-    print(bounds)
-
->>> [-1.52244399, 48.62747869, -1.50004107, 48.64359255]
-```
-
-:::note
-`fused.types.Bounds` is a list of 4 points so it might be helpful to convert it to a `GeoDataFrame` when returning spatial data:
-
-```python showLineNumbers
-@fused.udf
-def udf(bounds: fused.types.Bounds=None):
-    import shapely
-    import geopandas as gpd
-    box = shapely.box(*bounds)
-    return gpd.GeoDataFrame(geometry=[box], crs=4326)
-```
-
-The `fused` module also comes with many [handy utils functions](https://github.com/fusedio/udfs/blob/e74035a1/public/common/utils.py#L1891) that allow you to quickly access these common operations. For example, you can use the `bounds_to_gdf` utility function to perform the same operation as above. You can also use `estimate_zoom` to estimate the zoom level that matches the bounds.
-
-```python showLineNumbers
-@fused.udf
-def udf(bounds: fused.types.Bounds=None):
-    common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
-    bounds = common.bounds_to_gdf(bounds)
-    zoom = common.estimate_zoom(bounds)
-    print(zoom)
-    return bounds
-```
-
-
 :::
 
 ### Legacy types
