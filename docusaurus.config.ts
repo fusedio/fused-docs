@@ -12,7 +12,7 @@ const config: Config = {
     fusedPyVersion: '1.20.1',
   },
 
-  trailingSlash: false,
+  trailingSlash: true,
   // url: "https://fusedio.github.io/",
   // url: "https://docs.fused.io",
   // // Set the /<baseUrl>/ pathname under which your site is served
