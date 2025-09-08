@@ -115,12 +115,14 @@ function walkDirectory(dir, basePath = '', isFullVersion = false) {
         const urlPath = relativePath
           .replace(/\\/g, '/') // Convert Windows paths
           .replace(/\.mdx?$/, '') // Remove file extension
-          .replace(/\/index$/, ''); // Remove /index
+          .replace(/\/index$/, '') // Remove /index
+          .replace(/_/g, '-') // Convert underscores to hyphens (Docusaurus convention)
+          .toLowerCase(); // Convert to lowercase (Docusaurus convention)
         
         items.push({
           title: frontmatter.title,
           description: frontmatter.description,
-          url: `${BASE_URL}/${urlPath}/`,
+          url: `${BASE_URL}/${urlPath}`,
           path: relativePath,
           unlisted: frontmatter.unlisted,
           fullContent: frontmatter.fullContent,

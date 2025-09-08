@@ -23,7 +23,7 @@ Create a PR on this repo.
 
 ## Updating Fused-py functions
 
-Run:
+On every new deployment of `fused-py`, update the Python SDK docs with:
 
 ```
 uv run --reinstall-package fused utils/generate_reference_docs.py
