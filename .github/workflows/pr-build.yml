@@ -75,6 +75,38 @@ jobs:
             IS_STAGING: 'true'
           run: npm run build
         
+        - name: Test critical links locally
+          run: |
+            # Start local server in background
+            npx serve build -l 8080 &
+            SERVER_PID=$!
+            
+            # Wait for server to be ready (with timeout)
+            echo "Waiting for server to start..."
+            for i in {1..10}; do
+              if curl -s http://localhost:8080/ > /dev/null; then
+                echo "Server ready after ${i} attempts"
+                break
+              fi
+              if [ $i -eq 10 ]; then
+                echo "❌ Server failed to start after 10 attempts"
+                kill $SERVER_PID
+                exit 1
+              fi
+              sleep 1
+            done
+            
+            # Test critical pages
+            echo "Testing critical links..."
+            curl -f http://localhost:8080/ || (echo "❌ Homepage failed" && exit 1)
+            curl -f http://localhost:8080/blog/ || (echo "❌ Blog failed" && exit 1)
+            curl -f http://localhost:8080/quickstart/ || (echo "❌ Quickstart failed" && exit 1)
+            curl -f http://localhost:8080/tutorials/ || (echo "❌ Tutorials failed" && exit 1)
+            
+            # Kill server
+            kill $SERVER_PID
+            echo "✅ All critical links work locally"
+        
         # Is this correct? 
         - name: Copy Docusaurus website to staging bucket to new PR prefix ${{env.BUCKET_NAME}}/pr/${{github.event.number}}/
           run: |
@@ -84,3 +116,32 @@ jobs:
           shell: bash
           run: |
             aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_ID --paths '/pr/${{github.event.number}}/*'
+            
+        - name: Wait for deployment and test staging links
+          run: |
+            STAGING_URL="https://docs-staging.fused.io/pr/${{github.event.number}}"
+            echo "Testing staging deployment at $STAGING_URL"
+            
+            # Wait for staging to be ready (with timeout)
+            echo "Waiting for staging deployment to be accessible..."
+            for i in {1..20}; do
+              if curl -s -f "$STAGING_URL/" > /dev/null; then
+                echo "Staging ready after ${i} attempts"
+                break
+              fi
+              if [ $i -eq 20 ]; then
+                echo "❌ Staging deployment not accessible after 20 attempts"
+                exit 1
+              fi
+              sleep 3
+            done
+            
+            # Test critical pages on staging
+            echo "Testing all critical staging links..."
+            curl -f "$STAGING_URL/" || (echo "❌ Staging homepage failed" && exit 1)
+            curl -f "$STAGING_URL/blog/" || (echo "❌ Staging blog failed" && exit 1)
+            curl -f "$STAGING_URL/quickstart/" || (echo "❌ Staging quickstart failed" && exit 1)
+            curl -f "$STAGING_URL/tutorials/" || (echo "❌ Staging tutorials failed" && exit 1)
+            
+            echo "✅ All critical links work on staging"
+            
