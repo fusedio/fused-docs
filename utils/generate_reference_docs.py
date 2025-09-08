@@ -43,6 +43,7 @@ api_listing = [
     "submit",
     "download",
     "ingest",
+    "ingest_nongeospatial",
     "file_path",
     "get_chunks_metadata",
     "get_chunk_from_table",
