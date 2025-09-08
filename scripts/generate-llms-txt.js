@@ -116,7 +116,8 @@ function walkDirectory(dir, basePath = '', isFullVersion = false) {
           .replace(/\\/g, '/') // Convert Windows paths
           .replace(/\.mdx?$/, '') // Remove file extension
           .replace(/\/index$/, '') // Remove /index
-          .replace(/_/g, '-'); // Convert underscores to hyphens (Docusaurus convention)
+          .replace(/_/g, '-') // Convert underscores to hyphens (Docusaurus convention)
+          .toLowerCase(); // Convert to lowercase (Docusaurus convention)
         
         items.push({
           title: frontmatter.title,
