@@ -254,10 +254,73 @@ For now we're showing how to ingest, but not how to read ingested data
 
 `fused.ingest` also supports writing output to any S3 bucket as long as you have the appropriate permissions:
 
-{/* TODO: Show people how to do that */}
-1. Provide write IAM permissions to your S3 bucket 
+1. Get the Fused role for your account:
 
-2. Write the output to your S3 bucket using the `output` parameter:
+```python showLineNumbers
+# Run this in a notebook - not in Workbench
+@fused.udf
+def udf(name: str = "world"):
+    import boto3
+
+    sts = boto3.client("sts")
+    identity = sts.get_caller_identity()
+    
+    print(identity)
+
+policy = udf().run_batch()
+```
+
+This should return something like this:
+```json {4} showLineNumbers
+{
+    "UserId": "AROA5PMTHNTZZNK22MHAM:rt-dev-fused",
+    "Account": "926411091187", 
+    "Arn": "arn:aws:sts::926411091187:assumed-role/rt-dev-fused/rt-dev-fused",
+    "ResponseMetadata": {
+        "RequestId": "a12032e0-9961-48fd-817b-86d9bb0e22ea",
+        "HTTPStatusCode": 200,
+        "HTTPHeaders": {
+            "x-amzn-requestid": "a12032e0-9961-48fd-817b-86d9bb0e22ea",
+            "x-amz-sts-extended-request-id": "MTp1cy1lYXN0LTE6MTc1NzM0ODMyMDAzMzpHOlJBNjJjaWhB",
+            "content-type": "text/xml", 
+            "content-length": "443",
+            "date": "Mon, 08 Sep 2025 16:18:40 GMT"
+        },
+        "RetryAttempts": 0
+    }
+}
+```
+
+You want to keep the last part of the `Arn` (in this case `rt-dev-fused`) and replace `YOUR_FUSED_ROLE` with it:
+
+2. Provide write IAM permissions to your S3 bucket:
+
+In the AWS S3 console, go over to the "Permissions" tab and add the following policy:
+```json {9,13,14} showLineNumbers
+{
+  "Version": "2012-10-17",
+  "Id": "BucketPolicyForCrossAccountRole",
+  "Statement": [
+    {
+      "Sid": "AllowFullAccessToSpecificRole",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::926411091187:role/YOUR_FUSED_ROLE" # Replace this with your Fused role found from above
+      },
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::my-bucket", # Replace with your S3 bucket name
+        "arn:aws:s3:::my-bucket/*" # Replace with your S3 bucket name
+      ]
+    }
+  ]
+}
+```
+
+Save this policy in the AWS S3 Policy tab. 
+
+
+3. Write the output to your S3 bucket using the `output` parameter:
 
 ```python showLineNumbers
 # Assuming s3://my-bucket/ is your own managed S3 bucket
