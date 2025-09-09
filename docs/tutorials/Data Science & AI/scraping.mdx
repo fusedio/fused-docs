@@ -1,0 +1,137 @@
+---
+slug: ai-for-web-scraping
+title: "Scraping structured data from web pages"
+authors: [iamsdas]
+tags: [web scraping, ai]
+category: use_cases
+unlisted: false
+hide_table_of_contents: false
+keywords: [web scraping, ai]
+---
+
+In this article I show how to use Fused User Defined Functions ([UDF](/core-concepts/write/)) to scrape web pages and get structured data for a list of public schools of a given area.
+
+
+## Introduction
+
+Let's say we want to compile a list of public schools of a given area and create a dataset out of it. A quick google search get's us to this [Top Ranked Public Schools](https://www.publicschoolreview.com/top-ranked-public-schools) webapge. Upon further inspection, we can find that it has multiple subpages for different localtions like [Connecticut](https://www.publicschoolreview.com/top-ranked-public-schools/connecticut) or [New York](https://www.publicschoolreview.com/top-ranked-public-schools/new-york).
+And each individual pages also only display a limited number of schools until you click on the "see more" button. Given the top level page, we want to be able to generate CSV files for whatever location we want without manually searching for the page.
+
+import SeeMoreImg from '/docs/tutorials/Data Science & AI/see_more.png';
+
+<div style={{textAlign: 'center'}}>
+<img src={SeeMoreImg} alt="File" style={{}} />
+</div>
+
+## Individual page scraping
+
+When we know the exact page we want to scrape along with whether or not it is paginated, we can use the [scrapegraph web scraper UDF](https://www.fused.io/workbench/udf/catalog/scrapegraph_web_scraper-0a121078-1b03-4c62-ba23-274ffb4c7568) to get the structured data we want.
+
+### Supported Parameters
+
+The scrapegraph web scraper UDF supports the following parameters:
+
+- **url**: The target webpage URL to scrape
+- **query**: Natural language description of what data to extract from the page
+- **output_schema**: Optional dictionary defining the expected structure of the output data
+- **pagination_pages**: Optional parameter to specify how many paginated pages to scrape
+- **scroll_pages**: Optional parameter to specify how many scroll actions to perform for infinite scroll pages
+
+### Usage
+
+With fused-py sdk:
+
+```python
+import fused
+
+df = fused.run(
+    "https://unstable.fused.io/server/v1/realtime-shared/fsh_TlnNmpoPNYe0dDSx8LVnN/run/file?dtype_out_vector=csv",
+    url="https://www.publicschoolreview.com/top-ranked-public-schools/connecticut/tab/all/num/1",
+    query="Extract school names, ranks, and addresses",
+    pagination_pages=2
+)
+
+print(df)
+```
+
+Or with curl:
+
+```bash
+curl "https://www.fused.io/server/v1/realtime-shared/fsh_3A1QcdR5kJEwmDSkYxc934/run/file?dtype_out_vector=csv"
+```
+
+## Multiple page scraping
+
+If we want know multiple specific pages from which we want to scrape data, we can use the [scrapegraph multi scraper UDF](https://www.fused.io/workbench/udf/catalog/scrapegraph_multi_scraper-8aaafa63-3888-4f12-8d31-6e3f9098b2ae) to get the structured data we want.
+This will internally create a common output schema for all the pages based on the query and then scrape the data from each page using a fused.submit call.
+
+### Supported Parameters
+
+The scrapegraph multi scraper UDF supports the following parameters:
+
+- **urls**: A list of webpage URLs to scrape in batch
+- **query**: Natural language description of what data to extract from all pages
+- **pagination_pages**: Optional parameter to specify how many paginated pages to scrape for each URL
+- **scroll_pages**: Optional parameter to specify how many scroll actions to perform for infinite scroll pages
+
+### Usage
+
+With fused-py sdk:
+
+```python
+import fused
+
+df = fused.run(
+    "fsh_5WETmX04oWgWtSCxwv1ZNr",
+    urls=[
+        "https://www.publicschoolreview.com/top-ranked-public-schools/new-york/tab/all/num/1",
+        "https://www.publicschoolreview.com/top-ranked-public-schools/new-york/tab/all/num/3",
+    ],
+    query="Extract school names, ranks, and addresses for all NYC schools"
+)
+
+print(df)
+```
+
+Or with curl:
+
+```bash
+curl "https://www.fused.io/server/v1/realtime-shared/fsh_5WETmX04oWgWtSCxwv1ZNr/run/file?&dtype_out_vector=csv"
+```
+
+## Scraping with crawling
+
+When we only know the top level page, but not the specific pages we want to scrape, we can use the [firecrawl search UDF](https://www.fused.io/workbench/udf/catalog/firecrawl_search-43935d03-7e82-4173-baa8-2f0e63d0c473) to get the list of meaningful links to scrape.
+This will internally crawl for all pages linked from the top level page and then pick the best matching page based on the search prompt and then scrape the data from the page.
+
+### Supported Parameters
+
+The firecrawl search UDF supports the following parameters:
+
+- **url**: The base URL to crawl and search for relevant pages
+- **search_prompt**: Natural language description of what type of content to find on the website
+- **extraction_prompt**: Natural language description of what data to extract from the found pages
+
+### Usage
+
+With fused-py sdk:
+
+```python
+import fused
+
+df = fused.run(
+    "fsh_6mpu2dqoEBc1W80GjhZLSM",
+    url="https://www.publicschoolreview.com",
+    search_prompt="best public schools in connecticut",
+    extraction_prompt="Extract school names, ranks, and addresses"
+)
+
+print(df)
+```
+
+Or with curl:
+
+```bash
+curl "https://www.fused.io/server/v1/realtime-shared/fsh_6mpu2dqoEBc1W80GjhZLSM/run/file?dtype_out_vector=csv"
+```
+
