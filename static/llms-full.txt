@@ -2673,73 +2673,129 @@ You can reset the view by running the "Reset 3D view to top-down" shortcut from 
 Path: tutorials/Geospatial with Fused/filetile.mdx
 URL: https://docs.fused.io/tutorials/geospatial with fused/filetile
 
-# Displaying Spatial Data: Tile vs Single (Viewport, Parameter)
+# Working with Spatial Data: Single vs Tile
 
-When spatial UDFs are called (i.e. that return spatial data like a `GeoDataFrame` or an array of `GeoTiff` tiles), they run and return the output of the execution like any UDF. However they can be called in two ways that influence how Fused handles them: `Tile` and `Single`.
+There are 2 main ways to work with spatial data in Fused:
 
-This is an important distinction and can be changed in Workbench at the top of the UDF editor:
+## Single UDF
 
-<ReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/File_Tile_Viewport3.mp4" width="100%" />
+Single UDFs are the default behavior in Fused. The UDF is run 1 time with the current viewport bounds.
 
-We'll demonstrate the differences with a simple UDF that takes a `bounds` object as input and display how it behaves differently in each mode:
+[Image: Single UDF Mode]
+
+Characteristics:
+- 1 Single UDF is called on the entire Map Viewport
+- Panning Map does NOT re-run the UDF
+- "Results" Tab shows the output of the unique UDF called
+
+### Single HTTPS Call
+
+A Single UDF is called like any other UDF via an HTTPS endpoint:
+
+```bash
+https://www.fused.io/.../run/file?dtype_out_vector=csv
+```
+
+Or via the Fused Python SDK:
 
 ```python showLineNumbers
-@fused.udf
-def udf(bounds: fused.types.Bounds):
-
-    from shapely.geometry import box
-    
-    # Returning bounds to gdf
-    gdf = gpd.GeoDataFrame(geometry=[box(*bounds)], crs=4326)
-    return gdf
+fused.run("single_udf")
 ```
+
+There are 2 types of Spatial Single UDFs:
 
 ### Single (Viewport)
 
-Selecting `Single (Viewport)` mode, the UDF runs within a single call.
+Will prioritize the current MAP VIEWPORT bounds, regardless of the `bounds` parameter.
 
-If you run the example UDF, make sure to select `Single (Viewport)` mode in the UDF editor, execute it with "Shift + Enter" and zoom out you'll see that `gdf` covers the viewport you had:
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds = [-74.38,40.32,-73.31,41.29]):
+    print(bounds) # This will be the current MAP VIEWPORT bounds, regardless of the `bounds` parameter
+    return bounds
+```
 
-[Image: File (Viewport)]
+### Single (Parameter)
 
-**We generally recommend using `Single (Viewport)` mode when :**
-- Working with smaller datasets that fit into memory
-- Wanting to load data that doesn’t move each time you pan around
-- Wanting 1 seamless layer without tiling artifacts
-- Wanting data at a specific resolution
+Will use the `bounds` parameter, regardless of the current MAP VIEWPORT bounds.
 
-### Tile
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds = [-74.38,40.32,-73.31,41.29]):
+    print(bounds) # This will be the `bounds` parameter, regardless of the current MAP VIEWPORT bounds
+    return bounds
+```
 
-By contrast, `Tile` mode runs your UDF multiple times over a grid of Mercator Tiles that cover the viewport. We aim to use anywhere from 2 to 15 tiles to cover the current viewport. 
+### Example UDF
 
-Looking at the same UDF and selecting `Tile` mode, we get many different tiles:
+- Get Isochrone
+    - Returns an isochrone (how far a person cal walk / drive) polygon for a given point
 
-<ReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/Tile_bounds_udf2.mp4" width="100%" />
+## Tile UDF
 
-You can see a few other differences:
-- This UDF is called each time you move around the Map Viewport
-- We need to "Freeze" the viewport for it to stop rendering. This is in contrast to `Single (Viewport)` mode where the UDF is called once and panning in Map View doesn't re-run the UDF
+Tile UDFs tile the users viewport into a grid of smaller tiles and running a UDF for each.
 
-**We generally recommend using `Tile` mode when :**
-- Loading a lot of data at once (since the UDF is called multiple times over a smaller extent each time)
-- Wanting a more dynamic, responsive panning & scrolling experience
-- Wanting a dynamic resolution to be calculated for your image rendering based on your current zoom level
+[Image: Tile UDF Mode]
 
-The mode you select for a UDF is saved with the UDF. You can decide which mode you prefer people to use for your UDF by selecting the mode in the UDF editor.
+Characteristics:
+- Multiple Tile UDFs are called to cover the current Map Viewport
+- Panning Map re-runs the UDF for each tile
+- "Results" Tab shows the output of the _latest_ tile called
 
-## The `bounds` object
+### Tile HTTPS Call
 
-A UDF may use the `bounds` parameter to spatially filter datasets and load into memory only the data that corresponds to the `bounds` spatial bounds. This reduces latency and data transfer costs.
+A Tile UDF is called by passing Web mercator XYZ tiles.
 
-Cloud-optimized formats are particularly suited for these operations - they include Cloud Optimized GeoTiff, Geoparquet, and GeoArrow.
+**Two ways to call the HTTPS endpoint:**
 
-### `bounds` object types
+**1. Dynamic tile server (for map applications)**
+```bash
+https://www.fused.io/.../run/tiles///?dtype_out_vector=csv
+```
+Use this template URL in mapping libraries - `//` gets automatically replaced with tile coordinates as users pan and zoom.
 
-The `bounds` object defines the spatial bounds of the Tile, which can be represented as a geometry object or XYZ index.
+**2. Specific tile call**
+```bash
+# Calls a single tile - San Francisco center at zoom 13
+https://www.fused.io/.../run/tiles/13/1316/3169?dtype_out_vector=csv
+```
+Use this to fetch data for one specific tile location.
 
-#### `fused.types.Bounds`
+Or via the Fused Python SDK:
 
-This is a `list` of 4 points representing the bounds (extent) of a geometry. The 4 points represent `[xmin, ymin, xmax, ymax]` of the bounds.
+```python showLineNumbers
+# With bounds parameter
+fused.run("tile_udf", bounds=bounds)
+```
+
+```python showLineNumbers
+# With x, y, z parameters
+fused.run("tile_udf", x=1, y=2, z=3)
+```
+
+### Example UDF
+
+- Overture Maps Example
+    - Shows _all_ the buildings from the Overture Maps dataset
+- Landsat Tile Example
+    - Returns NDVI tile computed on the fly from Landsat data
+
+## Comparing Single and Tile UDFs
+
+| Feature | Single UDF | Tile UDF |
+|---------|------------|-----------|
+| UDF Calls | 1 | Multiple |
+| Parameters | `bounds` (Optional) | `bounds` or `x`, `y`, `z` |
+| Map rendering | Static | Dynamic |
+| HTTP Call | Single Call | Tile Server calls |
+| Results | Unique output of the UDF called | Output of the _latest_ tile called |
+| Use when | Small static data | Calling large dataset through tile server |
+
+## `bounds`
+
+`bounds` is simply a list of 4 coordinates representing the bounds of a geometry. The 4 coordinates represent `[xmin, ymin, xmax, ymax]` of the bounds.
+
+In Fused it is defined with the `fused.types.Bounds` type:
 
 ```python showLineNumbers
 @fused.udf
@@ -2749,27 +2805,11 @@ def udf(bounds: fused.types.Bounds=None):
 >>> [-1.52244399, 48.62747869, -1.50004107, 48.64359255]
 ```
 
-`fused.types.Bounds` is a list of 4 points so it might be helpful to convert it to a `GeoDataFrame` when returning spatial data:
+### `bounds` to `GeoDataFrame`
 
-```python showLineNumbers
-@fused.udf
-def udf(bounds: fused.types.Bounds=None):
+Converting `bounds` (list of 4 coordinates) to a `GeoDataFrame`:
 
-    box = shapely.box(*bounds)
-    return gpd.GeoDataFrame(geometry=[box], crs=4326)
-```
-
-The `fused` module also comes with many handy utils functions that allow you to quickly access these common operations. For example, you can use the `bounds_to_gdf` utility function to perform the same operation as above. You can also use `estimate_zoom` to estimate the zoom level that matches the bounds.
-
-```python showLineNumbers
-@fused.udf
-def udf(bounds: fused.types.Bounds=None):
-    common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
-    bounds = common.bounds_to_gdf(bounds)
-    zoom = common.estimate_zoom(bounds)
-    print(zoom)
-    return bounds
-```
+</Tabs>
 
 ### Legacy types
 
@@ -13552,5 +13592,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2025-09-08
+Generated automatically from Fused documentation. Last updated: 2025-09-09
 Total sections: 5
