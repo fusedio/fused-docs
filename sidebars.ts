@@ -27,7 +27,15 @@ const sidebars: SidebarsConfig = {
             "tutorials/Analytics & Dashboard/currency-trading-prediction",
           ],
         },
-        "tutorials/data-science-ai",
+        {
+          type: "category",
+          label: "Data Science & AI",
+          collapsed: true,
+          link: { type: "doc", id: "tutorials/Data Science & AI/data-science-ai" },
+          items: [
+            "tutorials/Data Science & AI/scraping",
+          ],
+        },
         "tutorials/engineering-etl",
         // "tutorials/advanced-fused", // Remove this page once I'm done moving things back in.
         {
