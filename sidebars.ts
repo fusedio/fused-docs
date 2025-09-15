@@ -34,6 +34,7 @@ const sidebars: SidebarsConfig = {
           link: { type: "doc", id: "tutorials/Data Science & AI/data-science-ai" },
           items: [
             "tutorials/Data Science & AI/scraping",
+            "tutorials/Data Science & AI/competitor_analysis",
           ],
         },
         "tutorials/engineering-etl",
