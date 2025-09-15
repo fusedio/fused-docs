@@ -22,6 +22,7 @@ const sidebars: SidebarsConfig = {
           collapsed: true,
           link: { type: "doc", id: "tutorials/Analytics & Dashboard/analytics-dashboard" },
           items: [
+            "tutorials/Analytics & Dashboard/interactive-graphs-for-your-data",
             "tutorials/Analytics & Dashboard/let-anyone-talk-to-your-data",
             "tutorials/Analytics & Dashboard/stack-overflow-surveys",
             "tutorials/Analytics & Dashboard/currency-trading-prediction",
@@ -33,6 +34,7 @@ const sidebars: SidebarsConfig = {
           collapsed: true,
           link: { type: "doc", id: "tutorials/Data Science & AI/data-science-ai" },
           items: [
+            "tutorials/Data Science & AI/discover_data",
             "tutorials/Data Science & AI/scraping",
             "tutorials/Data Science & AI/pdf_scraping",
             "tutorials/Data Science & AI/competitor_analysis",
@@ -47,7 +49,7 @@ const sidebars: SidebarsConfig = {
           link: { type: "doc", id: "tutorials/Geospatial with Fused/index" },
           items: [
             "tutorials/Geospatial with Fused/best-practices",
-            "tutorials/Geospatial with Fused/read-data", 
+            "tutorials/Geospatial with Fused/read-data",
             "tutorials/Geospatial with Fused/write-data",
             {
               type: "category",
