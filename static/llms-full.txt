@@ -2423,15 +2423,240 @@ Consider the prompts as a starting point, but not the final answer.
 
 ## Getting Data
 
+We're going to use datasets we found online to this analysis. We'll consider:
+- Starbucks point locations as our target stores. Available on Kaggle
+- McDonald's point locations as our competitor stores. Available on Kaggle
+- Census Data to get population and average income of the area around each store.
+
+### Starbucks & McDonalds locations
+
+We can ask the AI to write a UDF to load these from the Kaggle `cURL` api:
+
+[Image: Downloading Starbucks data from Kaggle]
+
+```text
+Open this specific dataset and return points as a dataframe based on this Kaggle curl request:
+
+#!/bin/bash
+curl -L -o ~/Downloads/store-locations.zip\
+  https://www.kaggle.com/api/v1/datasets/download/starbucks/store-locations
+```
+
+In order to simplify this tutorial we've already downloaded the data and saved it to a bucket in Fused:
+
+- Starbucks: `s3://fused-sample/demo_data/catchment_analysis/starbucks_location.pq`
+- McDonalds: `s3://fused-sample/demo_data/catchment_analysis/macdonalds_location.pq`
+
+### Census Data
+
+You can get all the relevant Census Data on the official US Census website. 
+
+For simplicity however we've also already downloaded the data and made it available. We'll be looking at Census Block Groups (BG) data for this analysis
+
+- Sacramento, CA Census Block Groups: `s3://fused-users/fused/max/demos/california_population/acs_bg_ca_2022_sacramento_geoparquet.parquet`
+
 ## Exploring Data directly in Fused
 
-## Creating catchments
+We recommend you make 1 UDF for each dataset so you can explore them individually as layers on the Map View. 
+
+### Starbucks
+
+Make a new UDF and ask the AI:
+
+```text
+can you open this starbucks location file (s3://fused-users/fused/max/demos/catchment_analysis/starbucks_sacramento.pq) and return as geodataframe 
+```
+
+### McDonalds
+
+Make another new UDF and ask the AI:
+
+```text
+can you open this macdonalds location file (s3://fused-users/fused/max/demos/catchment_analysis/mcdonalds_sacramento.pq) and return as geodataframe 
+```
+
+### Census Data
+
+Make another new UDF and ask the AI:
+
+```text
+Can you open this file using geopandas as return df s3://fused-users/fused/max/demos/california_population/acs_bg_ca_2022_sacramento_geoparquet.parquet
+```
+
+Renaming each UDF to their respective names and changing the color of each store in the Visualization Tab to something more visible we get:
+
+You can copy paste these JSONs into the Visualization Tab to have similar colored stores:
+
+**Starbucks**
+
+```
+,
+    "getFillColor": [
+      208,
+      208,
+      208,
+      40
+    ]
+  }
+}
+```
+
+**McDonalds**
+
+```
+,
+    "getFillColor": [
+      208,
+      208,
+      208,
+      40
+    ]
+  }
+}
+```
+
+</details>
+
+[Image: Stores and Census Block Groups in Sacramento]
+
+## Creating isochrones
+
+The Fused AI Assistant can take other UDFs in context to use as inpsiration to adapt existing code to a new use case.
+
+We're going to open the Get Isochrone UDF and use this one as inspiration for the AI. This UDF:
+- Uses the Valhalla API to create isochrone of drive time around a point
+- Returns a GeoDataFrame with the isochrone polygons
+
+This is exactly what we want to do for our Starbucks points! The parameters we want for this analysis are:
+- 15min 
+- drive time (`auto` costing mode)
+
+However this API can take a lot of time to run, so we're going to break our problem down:
+1. Ask the AI to use the `Get_Isochrone` UDF but only for 3 points to start
+2. Validate that isochrones look correct
+3. Manually increase the number of calls to the API we'll do.
+
+### Step 1: Ask the AI to use the `Get_Isochrone` UDF but only for 3 points to start
+
+To start:
+- Open the `Get_Isochrone` UDF in Workbench. You don't need to make a copy but you need to have it opened.
+- Go into the chat for your `starbucks_location` UDF. 
+- Make sure to write `@Get_Isochrone` in the AI request so the AI adds that UDF to its context.
+
+Ask the AI (in the chat for your `starbucks_location` UDF):
+```text
+Use @Get_Isochrone to create 15-minute driving isochrones around each starbucks location. 
+
+Test this out with just 3 points first so we make sure this is working correctly at first
+```
+
+You can then visually see on the map we get 3 isochrones:
+
+<LazyReactPlayer
+  url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/catchments_from_get_isochrone_compressed.mp4"
+  width="100%"
+  height="100%"
+  controls=
+  playing=
+/>
+
+We'll leave it up to you to manually increase the number of calls if you'd like to. But for simplicity we also provide the output directly as a file:
+
+`s3://fused-users/fused/max/demos/catchment_analysis/starbucks_isochrones_15min.pq`
 
 ## Joining catchments & census data
 
+Next we're going to:
+- Join the filtered McDonald and Starbucks points to Sacramento block groups polygon layer, counting
+- Total McDonalds and Starbucks stores per block group
+- Take each store’s **15-minute drive-time catchment polygon** and finds which **block groups** it intersects.
+
+- From those intersecting BGs, computes catchment-level metrics:
+    - **Population** inside the catchment as pop_sum , use
+    - **Median income**
+    - BG count (number of intersecting block groups by the catchment area)
+
+You can ask the AI to do this (in a new UDF):
+
+```text
+Write a UDF that intersects each store’s 15-minute catchment polygon (from catchment_udf) with Sacramento block groups.  
+For each store, use gpd.overlay to compute:  
+- Total population (sum across intersecting block groups)  
+- Median household income (median of intersecting block groups)  
+- Block group count (distinct GEOIDs touched)  
+Aggregate results per store into a clean summary table and return that.
+
+The block groups for sacramento are here: `s3://fused-users/fused/max/demos/catchment_analysis/sacramento_block_groups.pq`
+
+The starbucks catchments are here: `'s3://fused-users/fused/max/demos/catchment_analysis/starbucks_isochrones_15min.pq'`
+
+use 4326 projection for all
+Return the catchment geometries so I can still visualize the gdf on a map
+```
+
+## Competitor Analysis
+
+In the same UDF, we can ask the AI to do a competitor analysis:
+
+```text
+Enhance the catchment UDF to measure competition:  
+- Load McDonald’s store locations from  
+  `s3://fused-users/fused/max/demos/catchment_analysis/mcdonalds_sacramento.pq`.  
+- For each Starbucks 15-minute catchment polygon, count how many McDonald’s points fall inside (point-in-polygon).  
+- Add this as a new column `Competition` to the per-store summary table.  
+How many mcdonalds (competitor to starbucks in this case) are present in each catchment?
+```
+
+We also want to keep track of how many of *our own stores* are present in each catchment:
+
+```text
+Enhance the catchment UDF to measure cannibalization:  
+- Load Starbucks store locations from  
+  `s3://fused-users/fused/max/demos/catchment_analysis/starbucks_sacramento.pq`.  
+- For each Starbucks 15-minute catchment polygon, count how many *other* Starbucks points fall inside (exclude the store itself).  
+- Add this as a new column `Cannibalization` to the per-store summary table.  
+```
+
 ## Ranking stores
 
+Finally, we want to rank the stores based on:
+- Highest amount of population in the catchment
+- Highest median income in the catchment
+- Lowest competition
+- Lowest cannibalization (i.e. number of our own stores)
+
+So let's ask the AI:
+
+```text
+Based on all the info here, give me a ranking of which stores I should invest in the most. I care about starbucks stores that have:
+- The highest income 
+- Highest population
+- Least amount of competitors
+- Least amount of cannibilization
+
+Come up with a formula for ranking the starbucks stores based on this
+```
+
+You can then ask the AI to plot a chart for you. When your UDF returns a dataframe, the AI chat will suggest making a chart:
+
+[Image: AI suggesting to create a chart from the dataframe]
+
+Which helps visualize the results:
+
+[Image: Starbucks location ranking showing population, income, competition and cannibalization metrics]
+
+Our AI gave as a ranking showing where top stores tend to have:
+- Highest income
+- Lowest population
+
+The good thing about Fused is all the AI output is Python code, we could dive into exactly how the ranking is done and fine tune ourselves!
+
 ## Next Steps
+
+Here are some ideas of improvements you could make:
+- Fine tune specific analysis elements like ranking, isochrone drive times, etc. 
+- Find more data sources to refine the analysis.
+- Scale to the entire US using `fused.submit()`.
 
 ================================================================================
 
@@ -2483,13 +2708,17 @@ sample = fused.run(udf)
 
 ================================================================================
 
-## Turning Tables in PDFs into DataFrames
+## Search PDFs, Turn Tables into DataFrames
 Path: tutorials/Data Science & AI/pdf_scraping.mdx
 URL: https://docs.fused.io/tutorials/data science & ai/pdf-scraping
 
 This tutorial will show you how to:
 - Search for PDFs online directly in Fused
 - Turn tables in PDFs into DataFrames
+
+_Left: Original PDF. Right: DataFrame of PDF in Workbench_
+
+Try out a hosted app for yourself:
 
 ## Getting Started
 
@@ -2502,8 +2731,129 @@ As of writing this Search in the AI Assistant is still under experimental flag s
 Now that you have AI Search turned on, you can search for PDFs directly in Fused:
 
 ```text
-Search for PDFs on the web
+Search for any PDFs from Census data that would provide me health insurance coverage & type by age. 
+I want the data to be available in a table format.
 ```
+
+The AI Assistant will provide a list of links to PDFs that are as close to your request as possible:
+
+In its current stage we recommend you explore the PDFs for yourself to see which one matches your request best.
+
+The first link, pointing to Census `.gov` data seems to match our request. Opening it and going to the Appendix we find what we're looking for:
+
+## Turning PDF Tables in DataFrames
+
+Next:
+- Use the Datalab API to turn a PDF into a JSON
+- Write a UDF that turns the JSON into a DataFrame
+
+### Using a preexisting UDF
+
+We built a UDF on top of the Datalab API that you can directly use:
+
+```python
+# in a notebook
+
+df = fused.run(
+    "fsh_5FVJ7x6aOnF92Zd0zOI5IF",
+    pdf_url="https://www2.census.gov/library/publications/2024/demo/p60-284.pdf",
+    raw_table_idx=0
+)
+
+print(df)
+```
+
+This will _not_ return the table we're looking for. This is a simple UDF that returns each table found in the JSON from DataLab as a DataFrame
+
+The print message will however show us all the available tables found:
+
+```
+
+--- Raw Table 0 ------------------------------------------------
+Shape: (14, 5)
+          Unnamed: 0   2022     2022.1   2023     2023.1
+       Coverage type    NaN  Margin of    NaN  Margin of
+                 NaN Number error1 (±) Number error1 (±)
+               Total 330000        130 331700        145
+     Any health plan 304000        746 305200        704
+Any private plan2, 3 216500       1399 216800       1294
+------------------------------------------------------------
+
+--- Raw Table 1 ------------------------------------------------
+Shape: (35, 10)
+    Unnamed: 0  Total              Total.1              Total.2              Total.3              Total.4              Total.5              Total.6     Total.7 Unnamed: 9
+           NaN    NaN Any health insurance Any health insurance Any health insurance Any health insurance Any health insurance Any health insurance         NaN        NaN
+Characteristic    NaN                  NaN                  NaN                  NaN       Private health                  NaN        Public health  Uninsured4 Uninsured4
+           NaN    NaN                  NaN                  NaN                  NaN           insurance2                  NaN           insurance3  Uninsured4 Uninsured4
+           NaN    NaN                  NaN            Margin of                  NaN            Margin of                  NaN            Margin of         NaN  Margin of
+           NaN Number              Percent           error1 (±)              Percent               error1          (±) Percent               error1 (±) Percent error1 (±)
+------------------------------------------------------------
+
+--- Raw Table 2 ------------------------------------------------
+Shape: (35, 11)
+    Unnamed: 0  Total Total.1    Total.2 Total.3              Total.4       Total.5       Total.6     Total.7 Unnamed: 9  Unnamed: 10
+           NaN    NaN     NaN        NaN     NaN Any health insurance           NaN           NaN         NaN        NaN          NaN
+Characteristic    NaN     NaN        NaN     NaN       Private health Public health Public health  Uninsured4 Uninsured4          NaN
+           NaN    NaN     NaN        NaN     NaN           insurance2           NaN    insurance3  insurance3        NaN          NaN
+           NaN    NaN     NaN  Margin of     NaN            Margin of           NaN     Margin of         NaN  Margin of          NaN
+           NaN Number Percent error1 (±) Percent               error1   (±) Percent        error1 (±) Percent error1 (±)          NaN
+------------------------------------------------------------
+
+--- Raw Table 3 ------------------------------------------------
+Shape: (29, 11)
+    Unnamed: 0  Total              Total.1              Total.2              Total.3              Total.4              Total.5              Total.6     Total.7 Unnamed: 9  Unnamed: 10
+           NaN    NaN Any health insurance Any health insurance Any health insurance Any health insurance Any health insurance Any health insurance         NaN        NaN          NaN
+Characteristic    NaN                  NaN                  NaN                  NaN       Private health        Public health        Public health  Uninsured4 Uninsured4          NaN
+           NaN    NaN                  NaN                  NaN                  NaN           insurance2                  NaN           insurance3  insurance3        NaN          NaN
+           NaN    NaN                  NaN            Margin of                  NaN            Margin of                  NaN            Margin of         NaN  Margin of          NaN
+           NaN Number              Percent           error1 (±)              Percent               error1          (±) Percent               error1 (±) Percent error1 (±)          NaN
+------------------------------------------------------------
+
+--- Raw Table 4 ------------------------------------------------
+Shape: (30, 11)
+    Unnamed: 0                Total              Total.1              Total.2              Total.3              Total.4              Total.5       Total.6     Total.7    Total.8  Unnamed: 10
+           NaN Any health insurance Any health insurance Any health insurance Any health insurance Any health insurance Any health insurance           NaN         NaN        NaN          NaN
+           NaN                  NaN                  NaN                  NaN                  NaN       Private health                  NaN Public health  Uninsured4 Uninsured4          NaN
+Characteristic                  NaN                  NaN                  NaN                  NaN           insurance2                  NaN    insurance3  insurance3        NaN          NaN
+           NaN                  NaN                  NaN            Margin of                  NaN            Margin of                  NaN     Margin of         NaN  Margin of          NaN
+           NaN               Number              Percent           error1 (±)              Percent               error1          (±) Percent        error1 (±) Percent error1 (±)          NaN
+------------------------------------------------------------
+```
+
+It looks like the table 3 matches what we're looking for:
+
+```python
+
+df = fused.run(
+    "fsh_5FVJ7x6aOnF92Zd0zOI5IF",
+    pdf_url="https://www2.census.gov/library/publications/2024/demo/p60-284.pdf",
+    raw_table_idx=3 # Table 3, one matching our request
+)
+
+print(df)
+```
+
+Which returns the following DataFrame:
+
+You may notice the table has some formatting issues. These can be fixed relatively easily by asking the AI Assistant to fix them.
+
+### Build it yourself
+
+You can make a copy of the UDF from the UDF Catalog
+
+You will need to:
+- Setup an account on DataLab
+- Get an API Key
+- Add `datalab` as a secret in the Preferences
+
+And now you get edit this UDF for yourself:
+
+## Next Steps
+
+Now that you have a DataFrame you can explore how to build on top:
+- Ask AI to visualize the data
+- See how to turn any of your UDFs into an API endpoint
+- Let anyone talk to this data through MCP Servers
 
 ================================================================================
 
