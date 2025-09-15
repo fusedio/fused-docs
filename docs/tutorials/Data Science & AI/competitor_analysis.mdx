@@ -4,31 +4,30 @@ title: "Competitor Store Location Analysis"
 ---
 
 This tutorial will:
-- Explore the location of 2 store chains in Sacramento, CA
-{/* TODO: Better word for catchment */}
-- Create catchments of drive time around each store
-- Join catchments with census data (population, average income)
-- Determine which of our stores are most effective at reaching the target population, with the least competition. 
+- Explore 2 store chains in Sacramento, CA
+- Create drive-time catchments around each store
+- Join catchments with census data (population, income)
+- Determine which stores best reach target populations with minimal competition 
 
 :::info Using AI prompts as a starting point
 
-This tutorial will show you what prompts we're using to build this analysis. 
+This tutorial shows the prompts we use to build this analysis.
 
-Note that since AI is not deterministic, the prompts may not always work the same way. You might need to do some manual changes to the prompts or to the code to get it working. 
+Since AI is non-deterministic, prompts may not always work identically. You might need to manually adjust prompts or code.
 
-Consider the prompts as a starting point, but not the final answer.
+Consider prompts as starting points, not final answers.
 :::
 
 ## Getting Data
 
-We're going to use datasets we found online to this analysis. We'll consider:
+We'll use these online datasets for this analysis:
 - Starbucks point locations as our target stores. [Available on Kaggle](https://www.kaggle.com/datasets/starbucks/store-locations)
 - McDonald's point locations as our competitor stores. [Available on Kaggle](https://www.kaggle.com/datasets/ben1989/mcdonalds-locations)
 - Census Data to get population and average income of the area around each store.
 
-### Starbucks & McDonalds locations
+### Starbucks & McDonald's locations
 
-We can ask the AI to write a UDF to load these from the Kaggle `cURL` api:
+Ask the AI to write a UDF loading data from the Kaggle cURL API:
 
 ![Downloading Starbucks data from Kaggle](../../../static/img/tutorials/data-science-ai/starbucks_kaggle_download.png)
 
@@ -40,34 +39,34 @@ curl -L -o ~/Downloads/store-locations.zip\
   https://www.kaggle.com/api/v1/datasets/download/starbucks/store-locations
 ```
 
-In order to simplify this tutorial we've already downloaded the data and saved it to a bucket in Fused:
+To simplify this tutorial, we've pre-downloaded the data:
 
 - Starbucks: `s3://fused-sample/demo_data/catchment_analysis/starbucks_location.pq`
-- McDonalds: `s3://fused-sample/demo_data/catchment_analysis/macdonalds_location.pq`
+- McDonald's: `s3://fused-sample/demo_data/catchment_analysis/mcdonalds_location.pq`
 
 ### Census Data
 
-You can get all the relevant Census Data on the official [US Census website](https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html). 
+Get Census data from the official [US Census website](https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html).
 
-For simplicity however we've also already downloaded the data and made it available. We'll be looking at [Census Block Groups](https://en.wikipedia.org/wiki/Census_block_group) (BG) data for this analysis
+For simplicity, we've pre-downloaded [Census Block Groups](https://en.wikipedia.org/wiki/Census_block_group) (BG) data:
 
 - Sacramento, CA Census Block Groups: `s3://fused-users/fused/max/demos/california_population/acs_bg_ca_2022_sacramento_geoparquet.parquet`
 
-## Exploring Data directly in Fused
+## Exploring Data in Fused
 
-We recommend you make 1 UDF for each dataset so you can explore them individually as layers on the [Map View](/workbench/udf-builder/map/). 
+Create 1 UDF per dataset to explore them as individual layers on the [Map View](/workbench/udf-builder/map/). 
 
 ### Starbucks
 
-Make a new UDF and ask the AI:
+Create a new UDF and ask the AI:
 
 ```text
 can you open this starbucks location file (s3://fused-users/fused/max/demos/catchment_analysis/starbucks_sacramento.pq) and return as geodataframe 
 ```
 
-### McDonalds
+### McDonald's
 
-Make another new UDF and ask the AI:
+Create another UDF and ask the AI:
 
 ```text
 can you open this macdonalds location file (s3://fused-users/fused/max/demos/catchment_analysis/mcdonalds_sacramento.pq) and return as geodataframe 
@@ -75,13 +74,13 @@ can you open this macdonalds location file (s3://fused-users/fused/max/demos/cat
 
 ### Census Data
 
-Make another new UDF and ask the AI:
+Create another UDF and ask the AI:
 
 ```text
 Can you open this file using geopandas as return df s3://fused-users/fused/max/demos/california_population/acs_bg_ca_2022_sacramento_geoparquet.parquet
 ```
 
-Renaming each UDF to their respective names and changing the color of each store in the [Visualization Tab](/workbench/udf-builder/styling/) to something more visible we get:
+After renaming each UDF and changing store colors in the [Visualization Tab](/workbench/udf-builder/styling/):
 
 <details>
 <summary>Visualization JSONs</summary>
@@ -167,27 +166,24 @@ You can copy paste these JSONs into the [Visualization Tab](/workbench/udf-build
 
 ## Creating isochrones
 
-The Fused [AI Assistant](/workbench/ai-assistant/) can take other UDFs in context to use as inpsiration to adapt existing code to a new use case.
+The Fused [AI Assistant](/workbench/ai-assistant/) uses other UDFs as inspiration to adapt existing code for new use cases.
 
-We're going to open the [Get Isochrone UDF](https://www.fused.io/workbench/udf/catalog/Get_Isochrone-15dcecd8-c401-42a8-b9f0-a9dac3d7ddc3) and use this one as inspiration for the AI. This UDF:
-- Uses the [Valhalla API](https://valhalla.github.io/valhalla/api/isochrone/api-reference/) to create isochrone of drive time around a point
-- Returns a GeoDataFrame with the isochrone polygons
+We'll use the [Get Isochrone UDF](https://www.fused.io/workbench/udf/catalog/Get_Isochrone-15dcecd8-c401-42a8-b9f0-a9dac3d7ddc3) as AI inspiration. This UDF:
+- Uses the [Valhalla API](https://valhalla.github.io/valhalla/api/isochrone/api-reference/) to create drive-time isochrones around points
+- Returns a GeoDataFrame with isochrone polygons
 
-This is exactly what we want to do for our Starbucks points! The parameters we want for this analysis are:
-- 15min 
-- drive time (`auto` [costing mode](https://valhalla.github.io/valhalla/api/turn-by-turn/api-reference/#costing-models))
+Perfect for our Starbucks analysis! We need:
+- 15-minute drive time (`auto` [costing mode](https://valhalla.github.io/valhalla/api/turn-by-turn/api-reference/#costing-models))
 
-However this API can take a lot of time to run, so we're going to break our problem down:
-1. Ask the AI to use the `Get_Isochrone` UDF but only for 3 points to start
-2. Validate that isochrones look correct
-3. Manually increase the number of calls to the API we'll do.
+Since this API is slow, we'll break down the problem:
+1. Use `Get_Isochrone` UDF for 3 points first
+2. Validate isochrones look correct
+3. Manually increase API calls
 
-
-
-To start:
-- Open the [`Get_Isochrone` UDF](https://www.fused.io/workbench/udf/catalog/Get_Isochrone-15dcecd8-c401-42a8-b9f0-a9dac3d7ddc3) in Workbench. You don't need to make a copy but you need to have it opened.
-- Go into the chat for your `starbucks_location` UDF. 
-- Make sure to write `@Get_Isochrone` in the AI request so the AI adds that UDF to its context.
+Steps:
+- Open the [`Get_Isochrone` UDF](https://www.fused.io/workbench/udf/catalog/Get_Isochrone-15dcecd8-c401-42a8-b9f0-a9dac3d7ddc3) in Workbench (no copy needed)
+- Go to your `starbucks_location` UDF chat
+- Include `@Get_Isochrone` in your AI request for context
 
 Ask the AI (in the chat for your `starbucks_location` UDF):
 ```text
@@ -196,7 +192,7 @@ Use @Get_Isochrone to create 15-minute driving isochrones around each starbucks 
 Test this out with just 3 points first so we make sure this is working correctly at first
 ```
 
-You can then visually see on the map we get 3 isochrones:
+You'll see 3 isochrones on the map:
 
 import LazyReactPlayer from '@site/src/components/LazyReactPlayer'
 
@@ -209,25 +205,20 @@ import LazyReactPlayer from '@site/src/components/LazyReactPlayer'
 />
 
 
-We'll leave it up to you to manually increase the number of calls if you'd like to. But for simplicity we also provide the output directly as a file:
+You can manually increase the API calls if desired. For simplicity, we provide the output file:
 
 `s3://fused-users/fused/max/demos/catchment_analysis/starbucks_isochrones_15min.pq`
 
 ## Joining catchments & census data
 
-Next we're going to:
-- Join the filtered McDonald and Starbucks points to Sacramento block groups polygon layer, counting
-- Total McDonalds and Starbucks stores per block group
-- Take each store’s **15-minute drive-time catchment polygon** and finds which **block groups** it intersects.
-
-- From those intersecting BGs, we'll compute catchment-level metrics:
-    - **Population** inside the catchment as pop_sum , use
+Next, we'll:
+- Take each store's **15-minute catchment polygon** and find intersecting **block groups**
+- From intersecting BGs, compute catchment metrics:
+    - **Population** sum inside catchment
     - **Median income**
-    - **Block Group count** (number of intersecting block groups by the catchment area)
+    - **Block group count** (number of intersecting BGs)
 
-**Asking AI**
-
-In a new UDF:
+In a new UDF, ask the AI:
 
 ```text
 Write a UDF that intersects each store’s 15-minute catchment polygon (from catchment_udf) with Sacramento block groups.  
@@ -247,7 +238,7 @@ Return the catchment geometries so I can still visualize the gdf on a map
 
 ## Competitor Analysis
 
-In the same UDF, we can ask the AI to do a competitor analysis:
+In the same UDF, ask the AI for competitor analysis:
 
 ```text
 Enhance the catchment UDF to measure competition:  
@@ -258,7 +249,7 @@ Enhance the catchment UDF to measure competition:
 How many mcdonalds (competitor to starbucks in this case) are present in each catchment?
 ```
 
-We also want to keep track of how many of *our own stores* are present in each catchment:
+Track how many of *our own stores* are in each catchment:
 
 ```text
 Enhance the catchment UDF to measure cannibalization:  
@@ -270,9 +261,9 @@ Enhance the catchment UDF to measure cannibalization:
 
 ## Ranking stores
 
-Finally, we want to rank the stores based on:
-- Highest amount of population in the catchment
-- Highest median income in the catchment
+Rank stores based on:
+- Highest catchment population
+- Highest median income
 - Lowest competition
 - Lowest cannibalization (i.e. number of our own stores)
 
@@ -285,26 +276,26 @@ Based on all the info here, give me a ranking of which stores I should invest in
 - Least amount of competitors
 - Least amount of cannibilization
 
-Come up with a formula for ranking the starbucks stores based on this
+Create a ranking formula for Starbucks stores based on these criteria
 ```
 
-You can then ask the AI to plot a chart for you. When your UDF returns a dataframe, the AI chat will suggest making a chart:
+Ask the AI to plot a chart. When your UDF returns a dataframe, AI chat suggests chart creation:
 
 ![AI suggesting to create a chart from the dataframe](../../../static/img/tutorials/data-science-ai/create_a_chart.png)
 
-Which helps visualize the results:
+This visualizes the results:
 
 ![Starbucks location ranking showing population, income, competition and cannibalization metrics](../../../static/img/tutorials/data-science-ai/starbucks_location_ranking.png)
 
-Our AI gave as a ranking showing where top stores tend to have:
+The AI ranking shows top stores have:
 - Highest income
 - Lowest population
 
-The good thing about Fused is all the AI output is Python code, we could dive into exactly how the ranking is done and fine tune ourselves!
+Since all AI output is Python code, you can examine and fine-tune the ranking logic!
 
 ## Next Steps
 
-Here are some ideas of improvements you could make:
-- Fine tune specific analysis elements like ranking, isochrone drive times, etc. 
-- Find more data sources to refine the analysis.
-- Scale to the entire US using [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#running-jobs-in-parallel-fusedsubmit).
+Improvement ideas:
+- Fine-tune ranking, drive times, etc.
+- Add more data sources
+- Scale to entire US using [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#running-jobs-in-parallel-fusedsubmit)
