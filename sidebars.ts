@@ -35,6 +35,7 @@ const sidebars: SidebarsConfig = {
           items: [
             "tutorials/Data Science & AI/scraping",
             "tutorials/Data Science & AI/pdf_scraping",
+            "tutorials/Data Science & AI/competitor_analysis",
           ],
         },
         "tutorials/engineering-etl",
