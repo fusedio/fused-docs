@@ -9,158 +9,95 @@ toc_max_heading_level: 6
 
 # Layer Styling: Visualization 
 
-
-The UDF builder displays data from the UDF into the map view. You can change the visual representation of a UDF's output using the visualization icon located on the map.
+The UDF builder displays data from your UDF on the map. You can customize the visual representation using the visualization icon located on the map.
 
 import ReactPlayer from 'react-player';
 
 <ReactPlayer className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/visualization_open_edit4.mp4" width="100%" />
 
+## Overview
 
-## Basics of DeckGL
+Fused's visualization system is built on [DeckGL](https://deck.gl/docs), a powerful JavaScript framework for large-scale geospatial data visualizations. The system uses a three-layer architecture that automatically selects the appropriate rendering method based on your UDF output.
 
-The Visualization tab in Fused is built on top of [DeckGL](https://deck.gl/docs), a powerful JavaScript framework designed for large-scale data visualizations. DeckGL enables rendering of complex geospatial data using layers, providing flexibility to work with diverse data formats and visualization styles.
+### Layer Architecture
 
-### Key Concepts in DeckGL
+Every Visualization uses this JSON structure:
 
-- **Layer Types**: DeckGL supports various layer types, such as `GeoJsonLayer`, `TileLayer`, and `BitmapLayer`, which are used to render vector, raster, and tiled data respectively.
-- **Viewport Optimization**: Layers like `TileLayer` ensure that only the data visible in the current viewport is rendered, optimizing performance for large datasets.
-- **Custom Properties**: DeckGL layers can be styled dynamically using properties like `getFillColor`, `getLineColor`, and `getElevation`. These properties can be hardcoded or derived from data attributes.
-
-### Fused-Specific Enhancements
-
-Fused extends DeckGL with custom sub-layers tailored for specific UDF outputs:
-- **`rasterLayer`**: Used for raster-based visualizations (e.g., PNG outputs).
-- **`vectorLayer`**: Used for vector-based visualizations (e.g., GeoDataFrame outputs).
-
-```JavaScript
+```javascript
 {
-"tileLayer": {
-  "@@type": "TileLayer",
-  ...
+  "tileLayer": {
+    "@@type": "TileLayer",        // For viewport-optimized rendering
+    "minZoom": 0,
+    "maxZoom": 19,
+    "tileSize": 256,
+    "pickable": true
   },
-"rasterLayer": {
-  "@@type": "BitmapLayer",
-  ...
+  "rasterLayer": {
+    "@@type": "BitmapLayer",      // For raster data (images, arrays)
+    "pickable": true
   },
-"vectorLayer": {
-  "@@type": "GeoJsonLayer",
-  ...
+  "vectorLayer": {
+    "@@type": "GeoJsonLayer",     // For vector data (GeoDataFrames)
+    "stroked": true,
+    "filled": true,
+    "pickable": true
   }
 }
 ```
 
-### Using `hasProp`
+### How Fused Selects Visualization Layers
 
-The `hasProp` function is a utility for conditional styling based on the presence of specific properties in the data. It allows dynamic adjustments to visualization attributes like color and elevation. Here's an example:
+Fused automatically determines which layer to use based on your UDF output:
 
-```JavaScript
+| UDF Output | Layer Used | Layer Type | Use Case |
+|------------|-----------|------------|----------|
+| `GeoDataFrame` | `vectorLayer` | [`GeoJsonLayer`](#vector-geojsonlayer) | Polygons, lines, points with geometry |
+| `DataFrame` with H3 column | `vectorLayer` | [`H3HexagonLayer`](#vector-h3hexagonlayer) | Hexagonal grid data |
+| PNG/array/image | `rasterLayer` | [`BitmapLayer`](#raster-bitmaplayer) | Satellite imagery, heat maps |
+
+**Key Points:**
+- You define all three layers in your JSON, but Fused uses only the appropriate one based on your data type
+- Unused layers are ignored automatically
+- Visualizations use JSON configuration, not Python code
+
+```javascript
 {
-"getFillColor": {
-  "@@function": "hasProp",
-  "property": "metric",
-  "present": "@@=[255, (1 - properties.metric/500) * 255, 0]",
-  "absent":[^220][^255][^100]
-  },
-"getElevation": {
-  "@@function": "hasProp",
-  "property": "metric",
-  "present": "@@=properties.metric",
-  "absent": 1
-  }
+  "tileLayer": { "@@type": "TileLayer", ... },      // Always defined
+  "rasterLayer": { "@@type": "BitmapLayer", ... },  // Used for images/arrays
+  "vectorLayer": { "@@type": "GeoJsonLayer", ... }  // Used for GeoDataFrames
 }
 ```
 
-This ensures that styling adapts dynamically based on whether the specified property (`metric`) exists in the dataset.
+### Default Map View
 
-For more details on DeckGL layers and their properties, refer to [DeckGL documentation](https://deck.gl/docs/api-reference/layers/geojson-layer#properties).
-
-
-#### Default map view
-
-The Default map view option is now available through the visualization icon on the map.
-
-It can be set automatically to match the current map view.
+You can set a default map view that automatically centers on your data:
 
 import Imgdefaultviewstate from '/img/workbench/layer-styling/default_map_view.png';
 
 <div style={{textAlign: 'center'}}>
-<img src={Imgdefaultviewstate} alt="File" style={{width: 800}} />
+<img src={Imgdefaultviewstate} alt="Default map view settings" style={{width: 800}} />
 </div>
 
-You'll notice a few differences to the Editor:
-- The Visualization isn't written in Python, rather this is a JSON file
-- There are a few defaults namely `TileLayer`, `rasterLayer` and `vectorLayer`
-- "Preset" button. Try it out for yourself, see what happens! (you can always `Ctrl + Z` to go back if you don't like it)
+**Presets**
 
-![File](/img/workbench/layer-styling/surprise_me.png)
+Use the "Preset" button to quickly generate styling configurations. You can always undo changes with `Ctrl + Z`.
 
-You can explore this example right here for yourself. Click on the "UDF Builder" icon on the left to open the code editor:
+![Preset button](/img/workbench/layer-styling/surprise_me.png)
 
-<iframe
-  id="udf_overture_example"
-  src="https://www.fused.io/public/UDF_Overture_Maps_Example"
-  style={{ width: '100%', height: '500px', border: 'none' }}
-  title="Overture Maps Example"
-/>
+## Layer Types
 
-## Basics of Visualization
+### Vector: `GeoJsonLayer`
 
-{/* This might not actually be the case. It is only a `TileLayer` if UDF output is Tile. But what about file? */}
+Use for `GeoDataFrame` outputs or any `DataFrame` with a geometry column. Supports dynamic styling based on data properties.
 
-The Visualization is built on top of [DeckGL](https://deck.gl/docs), a JavaScript front-end framework build for large dataset visualizations.
+![Overture GeoJSON](/img/workbench/layer-styling/vector_geojson.png)
 
-Fused works with on a either a File or Tile basis (read more about this [here](/tutorials/Geospatial%20with%20Fused/filetile/)). The styling will differ for each:
-- `Tile` -> We're leveraging DeckGL's [`TileLayer`](https://deck.gl/docs/api-reference/geo-layers/tile-layer) in the [Map view](/workbench/udf-builder/map/) as a basis allowing us to render only data that is in the viewport at any given moment.
-- `File` -> All of the output data is in a single file, so the `TileLayer` part is ignored and the sub-layers `vectorLayer` or `rasterLayer` are used directly:
-
-We have created 2 Fused-specific sub-layers:
-- `rasterLayer` for all raster-based visualisations (if your UDF returns a PNG for example)
-- `vectorLayer` for all vector-based visualisations (if your UDF returns a `GeoDataFrame` for example)
-
-Under the hood Fused will use whichever sublayer fits your UDF output, but keep in mind that both are defined in each UDF:
-
-```JavaScript
-// psuedo-code overview of Visualization tab parameters
-{
-  "tileLayer": {
-    "@@type": "TileLayer",
-    ...
-  },
-  // This is a Fused-specific sublayer for all raster outputs
-  "rasterLayer": {
-    "@@type": "BitmapLayer"
-    ...
-  },
-  // This is a Fused-specific sublayer for all vector outputs
-  "vectorLayer": {
-    "@@type": "GeoJsonLayer",
-    ...
-  }
-}
-```
-
-Depending on what your UDF returns, you can use different layer types (this is the current supported list):
-
-- Vector [`H3HexagonLayers`](/workbench/udf-builder/styling/#vector-h3hexagonlayer) for UDFs returning a JSON with a column containing H3 indices
-- Vector [`GeoJsonLayer`](/workbench/udf-builder/styling/#vector-geojsonlayer) for UDFs returning a `GeoDataFrame` (or any `DataFrame` with a geometry column)
-- Raster [`BitmapLayer`](/workbench/udf-builder/styling/#raster-bitmaplayer) for UDFs returning an array
-
-Their visualization styles can be configured with [DeckGL properties](https://deck.gl/docs/api-reference/layers/geojson-layer#properties).
-
-:::tip
-  You can hold `Cmd` on MacOS or `Ctrl` on Windows / Linux to tilt the map view.
-
-  You can try it out in the map right below this in the "Vector `H3HexagonLayer`" section 👇
-:::
-
-## Vector `H3HexagonLayer`
-
-{/* Not yet quite clear on what H3 return is used for? *ANY* JSON return? */}
-
-At the moment, any `pd.DataFrame` will be rendered using the `vectorLayer` config. If the returned `DataFrame` does not have a `geometry` column and instead has a column with an H3 index you can use `H3HexagonLayer` to display those as hexagons.
-
-In this case, the config column `getHexagon` should be set with the name of the `DataFrame` column of H3 indices. The rendered hexagons can be styled by setting values from a different column in `getFillColor` & `getElevation`.
+**Expected DataFrame structure:**
+| geometry |
+|----------|
+| POLYGON(...) |
+| POLYGON(...) |
+| POLYGON(...) |
 
 <details>
   <summary>Expand to see Visualise code</summary>
@@ -171,6 +108,70 @@ In this case, the config column `getHexagon` should be set with the name of the 
       "minZoom": 0,
       "maxZoom": 19,
       "tileSize": 256,
+      "pickable": true
+    },
+    "rasterLayer": {
+      "@@type": "BitmapLayer",
+      "pickable": true
+    },
+    "vectorLayer": {
+      // highlight-next-line
+      "@@type": "GeoJsonLayer",
+      "stroked": true,
+      "filled": true,
+      "pickable": true,
+      "extruded": false,
+      "lineWidthMinPixels": 1,
+      // highlight-next-line
+      "getFillColor": [100, 150, 200, 180],
+      "getLineColor": [50, 50, 50, 255]
+    }
+  }
+  ```
+</details>
+
+**Key Properties:**
+- `stroked`: Show polygon/line outlines
+- `filled`: Fill polygon interiors
+- `extruded`: Enable 3D elevation effects (See [3D Visualization](#3d-visualization) for more)
+- `pickable`: Enable hover tooltips and interaction
+
+**Example UDF**
+- [Overture Maps Example](https://www.fused.io/workbench/udf/catalog/Overture_Maps_Example-64071fb8-2c96-4015-adb9-596c3bac6787)
+
+### Vector: `H3HexagonLayer`
+
+Use for `DataFrame` outputs with H3 hexagon indices (no geometry column required).
+
+<iframe
+  id="h3_demo_preview"
+  loading="lazy"
+  src="/img/deckgl_h3.html"
+  height="300px"
+  width="100%"
+  scrolling="no"
+></iframe>
+
+**Expected DataFrame structure:**
+| hex | population | metric |
+|-----|------------|--------|
+| 8a2a1072b59ffff | 1250 | 45.2 |
+| 8a2a1072b5bffff | 890 | 32.1 |
+| 8a2a1072b5dffff | 2100 | 67.8 |
+
+<details>
+  <summary>Expand to see Visualise code</summary>
+  ```json
+  {
+    "tileLayer": {
+      "@@type": "TileLayer",
+      "minZoom": 0,
+      "maxZoom": 19,
+      "tileSize": 256,
+      "pickable": true
+    },
+    "rasterLayer": {
+      "@@type": "BitmapLayer",
       "pickable": true
     },
     "vectorLayer": {
@@ -183,27 +184,403 @@ In this case, the config column `getHexagon` should be set with the name of the 
       "opacity": 1,
       "coverage": 0.9,
       "lineWidthMinPixels": 5,
-      // This assumes your UDF returns a DataFrame with a column called 'hex' containing all the H3 indices
       // highlight-next-line
       "getHexagon": "@@=properties.hex",
-      "getLineColor": {
-        "@@function": "hasProp",
-        "property": "metric",
-        "present": "@@=[(1 - properties.metric/500) * 255, 0, 255]",
-        "absent": [200, 200, 200]
-      },
+      "getFillColor": [255, 165, 0, 180],
+      "getLineColor": [200, 200, 200, 255]
+    }
+  }
+  ```
+</details>
+
+**Required Property:**
+- `getHexagon`: Specify the DataFrame column containing H3 indices (e.g., `"@@=properties.hex"`)
+
+**Example UDF**
+- [DuckDB H3 Example](https://www.fused.io/workbench/udf/catalog/DuckDB_H3_SF-1139e998-0e09-4b73-b366-e2d406728341)
+
+### Raster: `BitmapLayer`
+
+Use for raster outputs like satellite imagery, elevation models, or PNG files.
+
+![Crops](/img/workbench/layer-styling/crops.png)
+
+**Expected UDF output:**
+| Output Type | Description | Example |
+|-------------|-------------|---------|
+| numpy array | 3D array (height, width, channels) | `(256, 256, 3)` RGB image |
+| PIL Image | PNG/JPEG image object | `Image.open('satellite.png')` |
+| bytes | Encoded image data | PNG/JPEG bytes |
+
+<details>
+  <summary>Expand to see Visualise code</summary>
+  ```json
+  {
+    "tileLayer": {
+      "@@type": "TileLayer",
+      "minZoom": 0,
+      "maxZoom": 19,
+      "tileSize": 256,
+      "pickable": true
+    },
+    "rasterLayer": {
       // highlight-next-line
+      "@@type": "BitmapLayer",
+      "pickable": true
+    },
+    "vectorLayer": {
+      "@@type": "GeoJsonLayer",
+      "pickable": true
+    }
+  }
+  ```
+</details>
+
+
+**Example UDF**
+- [CDLs Tile Example](https://www.fused.io/workbench/udf/catalog/CDLs_Tile_Example-a9f78d6d-4820-44ac-9032-5d19591e1a55)
+
+## Color Styling Methods (`getFillColor`)
+
+There are four ways to style colors in Fused. Each method serves different use cases:
+
+### 1. Hardcoded Colors
+
+Use fixed RGB/RGBA values for uniform styling.
+
+import ImgSingleColor from '@site/static/img/viz_single.png';
+
+<div style={{ textAlign: 'center' }}>
+<img src={ImgSingleColor} alt="File" style={{ width: '80%'}} />
+</div>
+
+**Expected DataFrame structure:**
+| geometry | any_column |
+|----------|------------|
+| POLYGON(...) | any_value |
+| POLYGON(...) | any_value |
+
+*Note: Column values don't affect styling - all features get the same color.*
+
+<details>
+  <summary>Expand to see Visualise code</summary>
+  ```json
+  {
+    "tileLayer": {
+      "@@type": "TileLayer",
+      "minZoom": 0,
+      "maxZoom": 19,
+      "tileSize": 256,
+      "pickable": true
+    },
+    "rasterLayer": {
+      "@@type": "BitmapLayer",
+      "pickable": true
+    },
+    "vectorLayer": {
+      "@@type": "GeoJsonLayer",
+      "stroked": true,
+      "filled": true,
+      "pickable": true,
+      "lineWidthMinPixels": 1,
+      // highlight-next-line
+      "getFillColor": [20, 200, 200, 100],
+      "getLineColor": [50, 50, 50, 255]
+    }
+  }
+  ```
+</details>
+
+**When to use:** Simple visualizations, proof of concepts, or when all features should look identical.
+
+### 2. Property-Based Colors
+
+Use data column values to calculate colors dynamically.
+
+import ImgProperty from '@site/static/img/viz_property.png';
+
+<div style={{ textAlign: 'center' }}>
+<img src={ImgProperty} alt="File" style={{ width: '80%'}} />
+</div>
+
+**Expected DataFrame structure:**
+| geometry | value | height |
+|----------|-------|--------|
+| POLYGON(...) | 5 | 25 |
+| POLYGON(...) | 8 | 40 |
+| POLYGON(...) | 3 | 15 |
+
+*Note: Numerical columns are used directly in color calculations.*
+
+<details>
+  <summary>Expand to see Visualise code</summary>
+  ```json
+  {
+    "tileLayer": {
+      "@@type": "TileLayer",
+      "minZoom": 0,
+      "maxZoom": 19,
+      "tileSize": 256,
+      "pickable": true
+    },
+    "rasterLayer": {
+      "@@type": "BitmapLayer",
+      "pickable": true
+    },
+    "vectorLayer": {
+      "@@type": "GeoJsonLayer",
+      "stroked": true,
+      "filled": true,
+      "pickable": true,
+      "extruded": true,
+      // highlight-next-line
+      "getElevation": "@@=properties.value * 10",
+      "lineWidthMinPixels": 1,
+      // highlight-next-line
+      "getFillColor": "@@=[properties.value * 50, properties.value * 30, properties.value * 2]",
+      "getLineColor": [50, 50, 50, 255]
+    }
+  }
+  ```
+</details>
+
+**When to use:** When you want colors to directly reflect data values with custom calculations.
+
+**Example UDF**
+- [DuckDB NYC Example](https://www.fused.io/workbench/udf/catalog/DuckDB_NYC_Example-a19d8f4c-d839-47f7-9be3-7dc8b3d03115)
+
+### 3. Conditional Colors with `hasProp`
+
+Handle missing data gracefully with fallback colors.
+
+**Expected DataFrame structure:**
+| geometry | value | status |
+|----------|-------|--------|
+| POLYGON(...) | 25 | active |
+| POLYGON(...) | NaN | inactive |
+| POLYGON(...) | 15 | active |
+
+*Note: Can handle missing/null values with fallback styling.*
+
+<details>
+  <summary>Expand to see Visualise code</summary>
+  ```json
+  {
+    "tileLayer": {
+      "@@type": "TileLayer",
+      "minZoom": 0,
+      "maxZoom": 19,
+      "tileSize": 256,
+      "pickable": true
+    },
+    "rasterLayer": {
+      "@@type": "BitmapLayer",
+      "pickable": true
+    },
+    "vectorLayer": {
+      "@@type": "GeoJsonLayer",
+      "stroked": true,
+      "filled": true,
+      "pickable": true,
+      "extruded": true,
+      "getElevation": {
+        // highlight-next-line
+        "@@function": "hasProp",
+        // highlight-next-line
+        "property": "value",
+        // highlight-next-line
+        "present": "@@=properties.value",
+        "absent": 1
+      },
+      "lineWidthMinPixels": 1,
       "getFillColor": {
+        // highlight-next-line
         "@@function": "hasProp",
-        "property": "metric",
-        "present": "@@=[255, (1 - properties.metric/500) * 255, 0]",
-        "absent": [220, 255, 100]
-      },
+        // highlight-next-line
+        "property": "value",
+        // highlight-next-line
+        "present": "@@=[properties.value * 50, properties.value * 3, properties.value * 2]",
+        // highlight-next-line
+        "absent": [255, 0, 255]
+      }
+    }
+  }
+  ```
+</details>
+
+**When to use:** When your data might have missing values and you need reliable fallbacks.
+
+**Example UDF**
+- [Ookla Download Speed](https://www.fused.io/workbench/udf/catalog/Ookla_Download_Speeds-12a8bc7e-5baf-4eac-b695-a4434cff0554)
+
+
+### Understanding `hasProp` Function
+
+The `hasProp` function is a core Fused utility for conditional styling based on data property presence. It's the foundation for handling missing or null values gracefully in visualizations.
+
+**How it works:**
+```json
+"getFillColor": {
+  "@@function": "hasProp",
+  "property": "metric",
+  "present": "@@=[255, (1 - properties.metric/500) * 255, 0]",
+  "absent": [220, 255, 100]
+}
+```
+
+**Key Properties:**
+- `"@@function": "hasProp"`: Declares the conditional function
+- `"property": "column_name"`: Specifies which DataFrame column to check
+- `"present": expression`: Styling when the property exists and is not null
+- `"absent": value`: Fallback styling when the property is missing or null
+
+**Common Use Cases:**
+- **Missing data**: Handle null/NaN values in datasets
+- **Optional columns**: Style features that may not have certain attributes
+- **Data validation**: Provide visual feedback for incomplete records
+- **Progressive enhancement**: Add styling layers based on data availability
+
+**Example with elevation:**
+```json
+"getElevation": {
+  "@@function": "hasProp",
+  "property": "height",
+  "present": "@@=properties.height * 10",
+  "absent": 1
+}
+```
+
+This ensures buildings without height data still appear with a default elevation of 1 unit.
+
+### 4. Category Colors
+
+Use predefined color palettes for categorical data.
+
+import ImgCategory from '@site/static/img/viz_category.png';
+
+<div style={{ textAlign: 'center' }}>
+<img src={ImgCategory} alt="File" style={{ width: '80%'}} />
+</div>
+
+**Expected DataFrame structure:**
+| geometry | building_type | zone |
+|----------|---------------|------|
+| POLYGON(...) | residential | A |
+| POLYGON(...) | commercial | B |
+| POLYGON(...) | industrial | A |
+
+*Note: Categorical columns with distinct values for color mapping.*
+
+<details>
+  <summary>Expand to see Visualise code</summary>
+  ```json
+  {
+    "tileLayer": {
+      "@@type": "TileLayer",
+      "minZoom": 0,
+      "maxZoom": 19,
+      "tileSize": 256,
+      "pickable": true
+    },
+    "rasterLayer": {
+      "@@type": "BitmapLayer",
+      "pickable": true
+    },
+    "vectorLayer": {
+      "@@type": "GeoJsonLayer",
+      "stroked": true,
+      "filled": true,
+      "pickable": true,
+      "lineWidthMinPixels": 1,
+      "getFillColor": {
+        // highlight-next-line
+        "@@function": "colorCategories",
+        // highlight-next-line
+        "attr": "building_type",
+        // highlight-start
+        "domain": [
+          "residential", 
+          "commercial",
+          "industrial",
+          "public"
+        ],
+        // highlight-end
+        "colors": "Bold"
+      }
+    }
+  }
+  ```
+</details>
+
+**When to use:** Categorical data like building types, land use classifications, or administrative regions.
+
+:::warning
+Note that unexpected behaviors may arise if too many domains are used.
+:::
+
+**Example UDF**
+- [FEMA Buildings US](https://www.fused.io/workbench/udf/catalog/FEMA_Buildings_US-ae1feed0-215a-42b5-8cf4-d95f5c1216dc)
+
+### 5. Continuous Color Scales
+
+Use gradient color scales for continuous numerical data.
+
+<div style={{ textAlign: 'center' }}>
+  <img src="/img/workbench/layer-styling/color_continuous.png" alt="Color Continuous" style={{ width: '80%' }} />
+</div>
+
+**Expected DataFrame structure:**
+| hex | population | density |
+|-----|------------|---------|
+| 8a2a1072b59ffff | 1250 | 45.2 |
+| 8a2a1072b5bffff | 890 | 32.1 |
+| 8a2a1072b5dffff | 2100 | 67.8 |
+
+*Note: Numerical columns with values within the specified domain range.*
+
+<details>
+  <summary>Expand to see Visualise code</summary>
+  ```json
+  {
+    "tileLayer": {
+      "@@type": "TileLayer",
+      "minZoom": 0,
+      "maxZoom": 19,
+      "tileSize": 256,
+      "pickable": true
+    },
+    "rasterLayer": {
+      "@@type": "BitmapLayer",
+      "pickable": true
+    },
+    "vectorLayer": {
       // highlight-next-line
+      "@@type": "H3HexagonLayer",
+      "stroked": true,
+      "filled": true,
+      "pickable": true,
+      "extruded": true,
+      "opacity": 1,
+      "coverage": 0.9,
+      "lineWidthMinPixels": 5,
+      // highlight-next-line
+      "getHexagon": "@@=properties.hex",
+      "getFillColor": {
+        // highlight-next-line
+        "@@function": "colorContinuous",
+        // highlight-next-line
+        "attr": "population",
+        // highlight-next-line
+        "domain": [0, 10000],
+        "steps": 15,
+        // highlight-next-line
+        "colors": "SunsetDark",
+        "nullColor": [184, 184, 184]
+      },
       "getElevation": {
         "@@function": "hasProp",
-        "property": "metric",
-        "present": "@@=properties.metric",
+        "property": "population",
+        "present": "@@=properties.population / 100",
         "absent": 1
       },
       "elevationScale": 10
@@ -212,88 +589,56 @@ In this case, the config column `getHexagon` should be set with the name of the 
   ```
 </details>
 
-<iframe
-  id="h3_demo"
-  loading="lazy"
-  src="/img/deckgl_h3.html"
-  height="400px"
-  width="100%"
-  scrolling="no"
-></iframe>
+**When to use:** Continuous numerical data like population density, temperature, or elevation values.
 
-## Vector `GeoJsonLayer`
+**Example UDF**
+- [DuckDB H3 Example](https://www.fused.io/workbench/udf/catalog/DuckDB_H3_SF-1139e998-0e09-4b73-b366-e2d406728341)
 
-The visualization of the output of a UDF that returns a `DataFrame` or `GeoDataFrame` can be configured dynamically based on column values. Attributes of the `vectorLayer` can be set to use either hardcoded values or column values, such as:
-- Line color (`getLineColor`) and line width (`getLineWidth`)
-- Elevation (`getElevation`) with `extruded` set to true
-- `lineWidthUnits` helps maintain visual consistency across zoom levels when set to `pixels`
+### 6. Transparency & Opacity
 
-![File](/img/workbench/layer-styling/surprise_me.png)
+Control the transparency of your visualizations for layering effects and visual hierarchy.
 
-<details>
-  <summary>Expand to see Visualise code</summary>
-  ```json
-  {
-    "tileLayer": {
-      "@@type": "TileLayer",
-      "minZoom": 0,
-      "maxZoom": 15,
-      "tileSize": 256,
-      "pickable": true
-    },
-    "vectorLayer": {
-      // highlight-next-line
-      "@@type": "GeoJsonLayer",
-      "stroked": true,
-      "filled": true,
-      "pickable": true,
-      "extruded": true,
-      "getElevation": "@@=properties.stats*1",
-      "lineWidthMinPixels": 1,
-      "getLineWidth": "@@=properties.stats*10",
-      // highlight-next-line
-      "getLineColor": {
-        "@@function": "hasProp",
-        "property": "stats",
-        "present": "@@=[properties.stats*5, properties.stats*3, properties.stats*2]",
-        "absent": [255, 0, 255]
-      },
-      "getFillColor": "@@=[properties.stats*5, properties.stats*3, properties.stats*2]"
-    }
-  }
-  ```
-</details>
-
-### Color styling
-
-There are 4 ways to set the color for the stroke (`getLineColor`) and fill (`getFillColor`) of a `GeoJsonLayer`. These examples show how to set it for the fill with `getFillColor`, and the same syntax applies for the stroke with `getLineColor`. They all modify the visualization config for this UDF.
-
-```python showLineNumbers
-@fused.udf
-def udf(
-    bounds: fused.types.Bounds = None,
-    table_path: str = "s3://fused-asset/infra/building_msft_us/",
-):
-    import numpy as np
-    import random
-    common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
-    bounds = common.bounds_to_gdf(bounds)
-
-    # Load data
-    gdf=common.table_to_tile(bounds, table=table_path)
-
-    # Assign random numbers
-    gdf['value'] = np.random.randint(0,10, len(gdf))
-
-    # Assign random classes
-    categories = ['residential', 'commercial', 'health', 'public']
-    gdf['class'] = [random.choice(categories) for _ in range(len(gdf))]
-
-    print(gdf)
-    return gdf
+**Vector Color Transparency:**
+```json
+"getFillColor": [255, 100, 100, 200],  // RGBA: Red, Green, Blue, Alpha
+"getLineColor": [50, 50, 50, 255]      // Fully opaque outline
 ```
 
-#### With a single hardcoded color
+**Opacity Guidelines:**
+- **Good visibility**: Use 180-255 for clearly visible features
+- **Semi-transparent**: Use 100-179 for overlay effects
+- **Avoid very low opacity**: Values below 100 make features barely visible
+- **Solid colors**: Omit alpha channel for full opacity: `[255, 100, 100]`
+
+**Examples:**
+```json
+// Good examples
+"getFillColor": [255, 100, 100, 200],  // Clearly visible red
+"getFillColor": [100, 150, 200],       // Solid blue (alpha defaults to 255)
+
+// Poor examples  
+"getFillColor": [255, 255, 255, 25],   // Too transparent, barely visible
+"getFillColor": [100, 150, 200, 50]    // Hard to see on most backgrounds
+```
+
+**Raster Transparency:**
+- **RGB images**: Black pixels (0,0,0) are automatically transparent
+- **RGBA images**: Use the 4th channel (alpha) for transparency control
+
+## Advanced Features
+
+### 3D Visualization
+
+Enable 3D effects by setting `extruded: true` and using `getElevation`:
+
+**Expected DataFrame structure:**
+| geometry | height_value | floors |
+|----------|--------------|--------|
+| POLYGON(...) | 45 | 15 |
+| POLYGON(...) | 120 | 40 |
+| POLYGON(...) | 30 | 10 |
+
+*Note: Numerical columns used for building height/elevation in 3D view. Use `"@@=properties.column_name"` syntax to reference height data.*
 
 <details>
   <summary>Expand to see Visualise code</summary>
@@ -315,256 +660,28 @@ def udf(
       "stroked": true,
       "filled": true,
       "pickable": true,
-      "lineWidthMinPixels": 1,
-      "pointRadiusMinPixels": 1,
-      "getFillColor": [20,200,200,100]
-    }
-  }
-  ```
-</details>
-
-import ImgSingleColor from '@site/static/img/viz_single.png';
-
-<div style={{ textAlign: 'center' }}>
-<img src={ImgSingleColor} alt="File" style={{ width: '80%'}} />
-</div>
-
-#### Based on a property value
-
-
-<details>
-  <summary>Expand to see Visualise code</summary>
-  ```json
-  {
-    "tileLayer": {
-      "@@type": "TileLayer",
-      "minZoom": 0,
-      "maxZoom": 15,
-      "tileSize": 256,
-      "pickable": true
-    },
-    "rasterLayer": {
-      "@@type": "BitmapLayer",
-      "pickable": true
-    },
-    "vectorLayer": {
-      "@@type": "GeoJsonLayer",
-      "stroked": true,
-      "filled": true,
-      "pickable": true,
+      // highlight-next-line
       "extruded": true,
       // highlight-next-line
-      "getElevation": "@@=properties.stats*1",
-      "lineWidthMinPixels": 1,
-      "getFillColor": "@@=[properties.value*50, properties.value*30, properties.value*2]"
-    }
-  }
-  ```
-</details>
-
-import ImgProperty from '@site/static/img/viz_property.png';
-
-<div style={{ textAlign: 'center' }}>
-<img src={ImgProperty} alt="File" style={{ width: '80%'}} />
-</div>
-
-
-Alternatively, to support a default color when a value is absent.
-
-<details>
-  <summary>Expand to see Visualise code</summary>
-  ```json
-  {
-    "tileLayer": {
-      "@@type": "TileLayer",
-      "minZoom": 0,
-      "maxZoom": 15,
-      "tileSize": 256,
-      "pickable": true
-    },
-    "rasterLayer": {
-      "@@type": "BitmapLayer",
-      "pickable": true
-    },
-    "vectorLayer": {
-      "@@type": "GeoJsonLayer",
-      "stroked": true,
-      "filled": true,
-      "pickable": true,
-      "extruded": true,
-      "getElevation": "@@=properties.stats*1",
-      "lineWidthMinPixels": 1,
-      "getFillColor": {
-        "@@function": "hasProp",
-        "property": "value",
-        "present": "@@=[properties.value*50, properties.value*3, properties.value*2]",
-        "absent": [
-          255,
-          0,
-          255
-        ]
-      }
-    }
-  }
-  ```
-</details>
-
-#### Using `colorCategories`
-
-To set the color with [colorCategories](https://deck.gl/docs/api-reference/carto/styles#colorcategories), use the `attr` property to specify the table column for the values, and the  `colors` property to define the desired [color palette](https://carto.com/carto-colors/).
-
-<details>
-  <summary>Expand to see Visualise code</summary>
-  ```json
-  {
-    "tileLayer": {
-      "@@type": "TileLayer",
-      "minZoom": 0,
-      "maxZoom": 19,
-      "tileSize": 256,
-      "pickable": true
-    },
-    "rasterLayer": {
-      "@@type": "BitmapLayer",
-      "pickable": true
-    },
-    "vectorLayer": {
-      "@@type": "GeoJsonLayer",
-      "stroked": true,
-      "filled": true,
-      "pickable": true,
-      "lineWidthMinPixels": 1,
-      "pointRadiusMinPixels": 1,
-      "getFillColor": {
-        "@@function": "colorCategories",
-        "attr": "class",
-        "domain": [
-          "residential",
-          "commercial",
-          "health",
-          "public"
-        ],
-        "colors": "Bold"
-      }
-    }
-  }
-  ```
-</details>
-
-import ImgCategory from '@site/static/img/viz_category.png';
-
-<div style={{ textAlign: 'center' }}>
-<img src={ImgCategory} alt="File" style={{ width: '80%'}} />
-</div>
-
-:::warning
-Note that unexpected behaviors may arise if too many domains are used.
-:::
-
-#### Using `colorContinuous`
-
-To set the color with [colorContinuous](https://deck.gl/docs/api-reference/carto/styles#color-continuous), use the `attr` property to specify the table column for the values, and the `colors` property to define the desired [color palette](https://carto.com/carto-colors/).
-
-<details>
-  <summary>Expand to see Visualise code</summary>
-  ```json
-  {
-  "tileLayer": {
-    "@@type": "TileLayer",
-    "minZoom": 0,
-    "maxZoom": 19,
-    "tileSize": 256,
-    "pickable": true
-  },
-  "hexLayer": {
-    "@@type": "H3HexagonLayer",
-    "stroked": true,
-    "filled": true,
-    "pickable": true,
-    "extruded": true,
-    "opacity": 1,
-    "coverage": 0.9,
-    "lineWidthMinPixels": 5,
-    "getHexagon": "@@=properties.hex",
-    "getLineColor": {
-      "@@function": "hasProp",
-      "property": "count",
-      "present": "@@=[(1 - properties.count/500) * 255, 0, 255]",
-      "absent": [
-        200,
-        200,
-        200
-      ]
-    },
-   "getFillColor": {
-      "@@function": "colorContinuous",
-      "attr": "count",
-      "domain": [
-        0,
-        1000
-      ],
-      "steps": 15,
-      "colors": "SunsetDark",
-      "nullColor": [
-        184,
-        184,
-        184
-      ]
-    },
-    "getElevation": {
-      "@@function": "hasProp",
-      "property": "count",
-      "present": "@@=properties.count",
-      "absent": 1
-    },
-    "elevationScale": 10
-  }
-}
-  ```
-</details>
-
-<div style={{ textAlign: 'center' }}>
-  <img src="/img/workbench/layer-styling/color_continuous.png" alt="Color Continuous" style={{ width: '80%' }} />
-</div>
-
-
-## Raster `BitmapLayer`
-
-Raster layers can be set to display a tooltip on hover by setting the `pickable` property to `true`. See [DeckGL documentation](https://deck.gl/docs/api-reference/layers/bitmap-layer#pixel-picking).
-
-![Crops](/img/workbench/layer-styling/crops.png)
-
-<details>
-  <summary>Expand to see Visualise code</summary>
-  ```json
-  {
-    "tileLayer": {
-      "@@type": "TileLayer",
-      "minZoom": 0,
-      "maxZoom": 19,
-      "tileSize": 256,
-      "pickable": true
-    },
-    "rasterLayer": {
-      "@@type": "BitmapLayer",
-      "pickable": true
+      "getElevation": "@@=properties.height_value * 5",
+      // highlight-next-line
+      "elevationScale": 10,
+      "getFillColor": [100, 150, 200, 180]
     }
   }
   ```
 </details>
 
 :::tip
-The transparency of raster images can be set in two ways:
-
-1. In RGB images, the color black (0,0,0) is automatically set to full transparency.
-
-If a 4-channel array is passed, i.e. RGBA, the value of the 4th channel is the transparency.
-
+Hold `Cmd` (macOS) or `Ctrl` (Windows/Linux) while dragging to tilt the map view and see 3D effects.
 :::
 
-## Custom `loadingLayer` and `errorLayer`
+**Example UDF**
+- [DSM Zonal Stats](https://www.fused.io/workbench/udf/catalog/DSM_Zonal_Stats-0c801e56-d0c4-47e8-a5ce-90d37703bdb7)
 
-When `tileLayer` has `"@@type": "DebugTileLayer"` set, `loadingLayer` and `errorLayer` can be configured to show the user that the UDF is still processing or that an error occurred. This is helpful for debugging.
+### Debug Layers (`DebugTileLayer`)
+
+Use `DebugTileLayer` with custom loading and error states for development:
 
 <ReactPlayer playsinline={true} className="video__player" loop={true} playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/debug_layer7.mp4" width="100%" />
 
@@ -589,19 +706,7 @@ When `tileLayer` has `"@@type": "DebugTileLayer"` set, `loadingLayer` and `error
       "filled": true,
       "pickable": true,
       "extruded": true,
-      "getElevation": "@@=properties.stats*1",
-      "lineWidthMinPixels": 1,
-      "getLineColor": {
-        "@@function": "hasProp",
-        "property": "stats",
-        "present": "@@=[properties.stats*5, properties.stats*3, properties.stats*2]",
-        "absent": [
-          255,
-          0,
-          255
-        ]
-      },
-      "getFillColor": "@@=[properties.stats*5, properties.stats*3, properties.stats*2]"
+      "lineWidthMinPixels": 1
     },
     "loadingLayer": {
       "@@type": "GeoJsonLayer",
@@ -609,18 +714,7 @@ When `tileLayer` has `"@@type": "DebugTileLayer"` set, `loadingLayer` and `error
       "filled": false,
       "pickable": true,
       "lineWidthMinPixels": 10,
-      "getLineColor": [
-        25,
-        55,
-        0,
-        255
-      ],
-      "getFillColor": [
-        5,
-        20,
-        255,
-        40
-      ]
+      "getLineColor": [25, 55, 0, 255]
     },
     "errorLayer": {
       "@@type": "GeoJsonLayer",
@@ -628,22 +722,31 @@ When `tileLayer` has `"@@type": "DebugTileLayer"` set, `loadingLayer` and `error
       "filled": true,
       "pickable": true,
       "lineWidthMinPixels": 10,
-      "getLineColor": [
-        255,
-        255,
-        0,
-        255
-      ],
-      "getFillColor": [
-        255,
-        20,
-        255,
-        40
-      ]
+      "getLineColor": [255, 255, 0, 255],
+      "getFillColor": [255, 20, 255, 40]
     }
   }
   ```
 </details>
+
+### Performance Optimization
+
+- **Zoom levels**: Set appropriate `minZoom` and `maxZoom` to control data loading
+- **Line width units**: Use `lineWidthUnits: "pixels"` for consistent appearance across zoom levels  
+- **Tile size**: Adjust `tileSize` for optimal performance with your data density
+
+{/* NOTE: Commenting all of this out as the current interactive example doesn't allow to style the visualization. Need to select a UDF but not currently possible.*/}
+{/* ## Interactive Example
+
+You can explore styling in this live example:
+
+
+<iframe
+  id="udf_overture_example"
+  src="https://www.fused.io/public/UDF_Overture_Maps_Example"
+  style={{ width: '100%', height: '500px', border: 'none' }}
+  title="Overture Maps Example"
+/> */}
 
 ## FAQ: Debugging your visualizations
 
@@ -706,3 +809,56 @@ When `tileLayer` has `"@@type": "DebugTileLayer"` set, `loadingLayer` and `error
   3. Making sure your values are within the correct domain (`hexLayer > getFillColor > domain`). In our case, we're showing US States, so the domain should be `[0, 50]`.
 
 </details>
+
+<details>
+  <summary>Why are my 3D buildings not showing?</summary>
+
+  **Common 3D visualization issues:**
+
+  1. **Wrong elevation function**: Don't use distance functions like `haversine` for elevation
+     ```json
+     // ❌ Wrong - haversine is for distances
+     "getElevation": {
+       "@@function": "haversine",
+       "attr": "HEIGHT"
+     }
+     
+     // ✅ Correct - direct property reference
+     "getElevation": "@@=properties.HEIGHT"
+     ```
+
+  2. **Missing required properties**: Ensure you have both `extruded: true` and a height column
+     ```json
+     "vectorLayer": {
+       "@@type": "GeoJsonLayer",
+       "extruded": true,
+       "getElevation": "@@=properties.height_value",
+       "elevationScale": 10
+     }
+     ```
+
+  3. **Low transparency**: Avoid very low alpha values that make buildings invisible
+     ```json
+     // ❌ Too transparent (barely visible)
+     "getFillColor": [255, 255, 255, 25]
+     
+     // ✅ Good visibility
+     "getFillColor": [100, 150, 200, 180]
+     ```
+
+</details>
+
+<details>
+  <summary>Why is my layer not appearing at all?</summary>
+
+  **Common visibility issues:**
+
+  - **Pickable setting**: Check that `pickable: true` is set for interactivity
+  - **Data type mismatch**: Verify your UDF returns the expected data type (`GeoDataFrame` for vector, `array` for raster)
+  - **Zoom level issues**: Ensure zoom levels (`minZoom`, `maxZoom`) include your current map zoom level
+  - **Missing geometry**: GeoJsonLayer requires a geometry column in your GeoDataFrame
+  - **Incorrect layer type**: Make sure you're using the right `@@type` for your data (GeoJsonLayer vs H3HexagonLayer)
+
+</details>
+
+For more details on DeckGL properties, see the [DeckGL documentation](https://deck.gl/docs/api-reference/layers/geojson-layer#properties).
