@@ -634,24 +634,117 @@ You can explore styling in this live example:
   title="Overture Maps Example"
 /> */}
 
-## Troubleshooting
+## FAQ: Debugging your visualizations
 
-### Vector Layer Not Colorizing?
+<details>
+  <summary>Why is my vector layer not colorized?</summary>
 
-**Common issues:**
+  Let's take the example of a UDF that returns a `GeoDataFrame` with `hex` values:
+  
+  ```python showLineNumbers
+  @fused.udf()
+  def udf(
+      bounds: fused.types.Bounds = None,
+  ):  
+      # get_hex() is a non-important function for this demo that gives us US counties
+      df_hex = get_hex(gdf, hex_res)
+      df_hex['state_id'] = [id[:2] for id in df_hex["GEOID"]]
+      
+      return df_hex 
+  ```
 
-1. **Missing column**: Ensure the column referenced in `attr` or `property` exists in your DataFrame
-2. **Wrong data type**: Cast categorical columns to `int` or `float` for continuous coloring:
-   ```python
-   df['numeric_column'] = df['string_column'].astype(int)
-   ```
-3. **Domain mismatch**: Verify your data values fall within the specified `domain` range
-4. **Missing geometry**: GeoJsonLayer requires a geometry column in your GeoDataFrame
+  And our visualization JSON looks like this:
+  ```json
+    {
+    "hexLayer": {
+      "@@type": "H3HexagonLayer",
+      "filled": true,
+      "pickable": true,
+      "extruded": false,
+      "getHexagon": "@@=properties.hex",
+      "getFillColor": {
+        "@@function": "colorContinuous",
+        "attr": "state_id",
+        "domain": [
+          0,
+          50
+        ],
+        "steps": 2,
+        "colors": "Magenta"
+      }
+    }
+  }
+  ```
 
-### Layer Not Appearing?
+  You should make sure:
+  1. `hexLayer > getFillColor > attr` is set to a column that exists in the `GeoDataFrame` (in this case `state_id`)
+  2. Make sure your `attr` column is in either `int` or `float` type, not in `str`. In this case we should cast `state_id` to `int`:
 
-- Check that `pickable: true` is set for interactivity
-- Verify your UDF returns the expected data type (GeoDataFrame for vector, array for raster)
-- Ensure zoom levels (`minZoom`, `maxZoom`) include your current map zoom level
+  ```python {7} showLineNumbers
+  @fused.udf()
+  def udf(
+      bounds: fused.types.Bounds = None,
+  ):
+      df_hex = get_hex(gdf, hex_res)
+      df_hex['state_id'] = [id[:2] for id in df_hex["GEOID"]]
+      df_hex['state_id'] = df_hex['state_id'].astype(int)
+      
+      return df_hex 
+  ```
+
+  3. Making sure your values are within the correct domain (`hexLayer > getFillColor > domain`). In our case, we're showing US States, so the domain should be `[0, 50]`.
+
+</details>
+
+<details>
+  <summary>Why are my 3D buildings not showing?</summary>
+
+  **Common 3D visualization issues:**
+
+  1. **Wrong elevation function**: Don't use distance functions like `haversine` for elevation
+     ```json
+     // ❌ Wrong - haversine is for distances
+     "getElevation": {
+       "@@function": "haversine",
+       "attr": "HEIGHT"
+     }
+     
+     // ✅ Correct - direct property reference
+     "getElevation": "@@=properties.HEIGHT"
+     ```
+
+  2. **Missing required properties**: Ensure you have both `extruded: true` and a height column
+     ```json
+     "vectorLayer": {
+       "@@type": "GeoJsonLayer",
+       "extruded": true,
+       "getElevation": "@@=properties.height_value",
+       "elevationScale": 10
+     }
+     ```
+
+  3. **Low transparency**: Avoid very low alpha values that make buildings invisible
+     ```json
+     // ❌ Too transparent (barely visible)
+     "getFillColor": [255, 255, 255, 25]
+     
+     // ✅ Good visibility
+     "getFillColor": [100, 150, 200, 180]
+     ```
+
+</details>
+
+<details>
+  <summary>Why is my layer not appearing at all?</summary>
+
+  **Common visibility issues:**
+
+  - **Pickable setting**: Check that `pickable: true` is set for interactivity
+  - **Data type mismatch**: Verify your UDF returns the expected data type (`GeoDataFrame` for vector, `array` for raster)
+  - **Zoom level issues**: Ensure zoom levels (`minZoom`, `maxZoom`) include your current map zoom level
+  - **Missing geometry**: GeoJsonLayer requires a geometry column in your GeoDataFrame
+  - **Incorrect layer type**: Make sure you're using the right `@@type` for your data (GeoJsonLayer vs H3HexagonLayer)
+
+</details>
 
 For more details on DeckGL properties, see the [DeckGL documentation](https://deck.gl/docs/api-reference/layers/geojson-layer#properties).
