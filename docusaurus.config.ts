@@ -13,12 +13,8 @@ const config: Config = {
   },
 
   trailingSlash: true,
-  // url: "https://fusedio.github.io/",
-  // url: "https://docs.fused.io",
-  // // Set the /<baseUrl>/ pathname under which your site is served
-  // // For GitHub pages deployment, it is often '/<projectName>/'
-  // // baseUrl: '/fused-docs/', // needed for GitHub pages
-  // baseUrl: "/",
+  
+  // Production URL configuration
   url: process.env.DEPLOYMENT_URL || "https://docs.fused.io",
   baseUrl: process.env.BASE_URL || "/",
 
@@ -84,6 +80,14 @@ const config: Config = {
   ],
 
   themeConfig: {
+    // Ensure canonical URLs point to docs.fused.io to fix SEO issues with GitHub Pages
+    metadata: [
+      {
+        name: 'canonical',
+        content: process.env.DEPLOYMENT_URL || "https://docs.fused.io"
+      }
+    ],
+    
     tableOfContents: {
       minHeadingLevel: 2,
       maxHeadingLevel: 3,
@@ -272,6 +276,33 @@ const config: Config = {
         anonymizeIP: true,
       },
     ],
+    
+    // Custom plugin to inject canonical URL and prevent duplicate content issues
+    function() {
+      return {
+        name: 'canonical-url-plugin',
+        injectHtmlTags() {
+          return {
+            headTags: [
+              {
+                tagName: 'link',
+                attributes: {
+                  rel: 'canonical',
+                  href: process.env.DEPLOYMENT_URL || 'https://docs.fused.io',
+                },
+              },
+              {
+                tagName: 'meta',
+                attributes: {
+                  property: 'og:url',
+                  content: process.env.DEPLOYMENT_URL || 'https://docs.fused.io',
+                },
+              },
+            ],
+          };
+        },
+      };
+    },
 
   ],
 };
