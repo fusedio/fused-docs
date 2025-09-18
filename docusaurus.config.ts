@@ -232,8 +232,8 @@ const config: Config = {
           },
           { to: "/workbench/udf-builder/map/", from: ["/workbench/map/"] },
           {
-            to: "/workbench/udf-builder/results/",
-            from: ["/workbench/results/"],
+            to: "/workbench/udf-builder/runtime/",
+            from: ["/workbench/runtime/"],
           },
           {
             to: "/workbench/udf-builder/styling/",
