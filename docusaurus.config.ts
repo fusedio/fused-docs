@@ -8,7 +8,7 @@ const config: Config = {
   favicon: "img/favicon.png",
   
   // Global site description for SEO
-  description: "Complete documentation for Fused - the analytics platform where AI, real-time execution, and data work together. Learn to build UDFs, integrate APIs, and create interactive maps.",
+  description: "Complete documentation for Fused: the Analytics platform where AI, real-time Python execution, and data work together. Build Analytics at the speed of thought",
   
   // Custom fields for version management
   customFields: {
