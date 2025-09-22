@@ -7,6 +7,9 @@ const config: Config = {
   tagline: "Code to map. Instantly.",
   favicon: "img/favicon.png",
   
+  // Global site description for SEO
+  description: "Complete documentation for Fused - the analytics platform where AI, real-time execution, and data work together. Learn to build UDFs, integrate APIs, and create interactive maps.",
+  
   // Custom fields for version management
   customFields: {
     fusedPyVersion: '1.20.1',
