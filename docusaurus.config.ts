@@ -277,35 +277,6 @@ const config: Config = {
       },
     ],
     
-    // Custom plugin to inject canonical URL and prevent duplicate content issues
-    function() {
-      return {
-        name: 'canonical-url-plugin',
-        injectHtmlTags({ pathname }) {
-          const baseUrl = process.env.DEPLOYMENT_URL || 'https://docs.fused.io';
-          const canonicalUrl = `${baseUrl}${pathname}`;
-          
-          return {
-            headTags: [
-              {
-                tagName: 'link',
-                attributes: {
-                  rel: 'canonical',
-                  href: canonicalUrl,
-                },
-              },
-              {
-                tagName: 'meta',
-                attributes: {
-                  property: 'og:url',
-                  content: canonicalUrl,
-                },
-              },
-            ],
-          };
-        },
-      };
-    },
 
   ],
 };
