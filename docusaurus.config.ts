@@ -80,13 +80,6 @@ const config: Config = {
   ],
 
   themeConfig: {
-    // Ensure canonical URLs point to docs.fused.io to fix SEO issues with GitHub Pages
-    metadata: [
-      {
-        name: 'canonical',
-        content: process.env.DEPLOYMENT_URL || "https://docs.fused.io"
-      }
-    ],
     
     tableOfContents: {
       minHeadingLevel: 2,
@@ -281,21 +274,24 @@ const config: Config = {
     function() {
       return {
         name: 'canonical-url-plugin',
-        injectHtmlTags() {
+        injectHtmlTags({ pathname }) {
+          const baseUrl = process.env.DEPLOYMENT_URL || 'https://docs.fused.io';
+          const canonicalUrl = `${baseUrl}${pathname}`;
+          
           return {
             headTags: [
               {
                 tagName: 'link',
                 attributes: {
                   rel: 'canonical',
-                  href: process.env.DEPLOYMENT_URL || 'https://docs.fused.io',
+                  href: canonicalUrl,
                 },
               },
               {
                 tagName: 'meta',
                 attributes: {
                   property: 'og:url',
-                  content: process.env.DEPLOYMENT_URL || 'https://docs.fused.io',
+                  content: canonicalUrl,
                 },
               },
             ],
