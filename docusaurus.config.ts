@@ -7,9 +7,6 @@ const config: Config = {
   tagline: "Code to map. Instantly.",
   favicon: "img/favicon.png",
   
-  // Global site description for SEO
-  description: "Complete documentation for Fused: the Analytics platform where AI, real-time Python execution, and data work together. Build Analytics at the speed of thought",
-  
   // Custom fields for version management
   customFields: {
     fusedPyVersion: '1.20.1',
@@ -83,6 +80,13 @@ const config: Config = {
   ],
 
   themeConfig: {
+    // Global site description for SEO
+    metadata: [
+      {
+        name: 'description',
+        content: 'Complete documentation for Fused: the Analytics platform where AI, real-time Python execution, and data work together. Build Analytics at the speed of thought',
+      },
+    ],
     
     tableOfContents: {
       minHeadingLevel: 2,
