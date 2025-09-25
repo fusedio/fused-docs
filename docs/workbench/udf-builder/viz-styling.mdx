@@ -12,6 +12,8 @@ toc_max_heading_level: 6
 The UDF builder displays data from your UDF on the map. You can customize the visual representation using the visualization icon located on the map.
 
 import ReactPlayer from 'react-player';
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
 <ReactPlayer className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/visualization_open_edit4.mp4" width="100%" />
 
@@ -86,21 +88,24 @@ Use the "Preset" button to quickly generate styling configurations. You can alwa
 
 ## Layer Types
 
-### Vector: `GeoJsonLayer`
+### Vector: Custom Map (Mapbox GL)
 
-Use for `GeoDataFrame` outputs or any `DataFrame` with a geometry column. Supports dynamic styling based on data properties.
+Use when your UDF produces vector tiles (MVT) and you want full control using Mapbox GL styling and interactions.
 
-![Overture GeoJSON](/img/workbench/layer-styling/vector_geojson.png)
-
-**Expected DataFrame structure:**
-| geometry |
-|----------|
-| POLYGON(...) |
-| POLYGON(...) |
-| POLYGON(...) |
+<iframe
+  id="vector_demo_preview"
+  loading="lazy"
+  src="https://www.fused.io/server/v1/realtime-shared/UDF_Mapbox_Vector_Overture/run/file?dtype_out_raster=png&dtype_out_vector=html"
+  height="300px"
+  width="100%"
+  scrolling="no"
+></iframe>
+<p style={{marginTop: 6}}>
+  <a href="https://www.fused.io/server/v1/realtime-shared/UDF_Mapbox_Vector_Overture/run/file?dtype_out_raster=png&dtype_out_vector=html" target="_blank" rel="noreferrer">Open demo ↗</a>
+</p>
 
 <details>
-  <summary>Expand to see Visualise code</summary>
+  <summary>Expand to see Visualise JSON</summary>
   ```json
   {
     "tileLayer": {
@@ -115,52 +120,169 @@ Use for `GeoDataFrame` outputs or any `DataFrame` with a geometry column. Suppor
       "pickable": true
     },
     "vectorLayer": {
-      // highlight-next-line
       "@@type": "GeoJsonLayer",
       "stroked": true,
       "filled": true,
       "pickable": true,
-      "extruded": false,
       "lineWidthMinPixels": 1,
-      // highlight-next-line
-      "getFillColor": [100, 150, 200, 180],
+      "getFillColor": [20, 200, 200, 100],
       "getLineColor": [50, 50, 50, 255]
     }
   }
   ```
 </details>
 
-**Key Properties:**
-- `stroked`: Show polygon/line outlines
-- `filled`: Fill polygon interiors
-- `extruded`: Enable 3D elevation effects (See [3D Visualization](#3d-visualization) for more)
-- `pickable`: Enable hover tooltips and interaction
+<details>
+  <summary>Expand to see standalone UDF code</summary>
+  ```py
+  @fused.udf(cache_max_age=0)
+  def udf(
+      token: str = "UDF_Overture_Maps_Example",
+      host: str = "https://www.fused.io", 
+      mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+      style_url: str = "mapbox://styles/mapbox/dark-v10",
+      center_lng: float = -122.4194,
+      center_lat: float = 37.7749,
+      zoom: float = 16,
+      pitch: float = 30,     
+      bearing: float = 20,  
+      minzoom: int = 6,
+      maxzoom: int = 14,
+      layer_id: str = "fused-vector-layer",
+      source_layer: str = "udf"
+  ):
+      """
+      Minimal Mapbox map (no input UI) that loads Fused XYZ vector tiles (MVT) from `token`.
+      Tiles URL: {host}/server/v1/realtime-shared/{token}/run/tiles/{z}/{x}/{y}?dtype_out_vector=mvt
+      """
+      from jinja2 import Template
+      html = Template(r"""
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="utf-8"/>
+    <title>Simple XYZ (MVT) Loader</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css" rel="stylesheet"/>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.js"></script>
+    <style>
+      html, body { margin:0; height:100%; }
+      #map { position:absolute; inset:0; }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+
+    <script>
+      const MAPBOX_TOKEN = {{ mapbox_token | tojson }};
+      const STYLE_URL    = {{ style_url | tojson }};
+      const HOST         = {{ host | tojson }};
+      const TOKEN        = {{ token | tojson }};
+      const CENTER       = [{{ center_lng }}, {{ center_lat }}];
+      const ZOOM         = {{ zoom }};
+      const PITCH        = {{ pitch }};
+      const BEARING      = {{ bearing }};
+      const MINZOOM      = {{ minzoom }};
+      const MAXZOOM      = {{ maxzoom }};
+      const LAYER_ID     = {{ layer_id | tojson }};
+      const SOURCE_LAYER = {{ source_layer | tojson }};
+
+      function tilesFromToken(tok) {
+        return `${HOST}/server/v1/realtime-shared/${tok}/run/tiles/{z}/{x}/{y}?dtype_out_vector=mvt`;
+      }
+
+      mapboxgl.accessToken = MAPBOX_TOKEN;
+      const map = new mapboxgl.Map({
+        container: 'map',
+        style: STYLE_URL,
+        center: CENTER,
+        zoom: ZOOM,
+        pitch: PITCH,
+        bearing: BEARING
+      });
+
+      function addVectorTiles(tok) {
+        const tilesUrl = tilesFromToken(tok);
+        if (map.getLayer(LAYER_ID)) map.removeLayer(LAYER_ID);
+        if (map.getSource('xyz'))   map.removeSource('xyz');
+
+        map.addSource('xyz', {
+          type: 'vector',
+          tiles: [tilesUrl],
+          minzoom: MINZOOM,
+          maxzoom: MAXZOOM
+        });
+
+        map.addLayer({
+          id: LAYER_ID,
+          type: 'line',
+          source: 'xyz',
+          'source-layer': SOURCE_LAYER,
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: { 'line-color': '#00FF0A', 'line-width': 2, 'line-opacity': 0.8 }
+        });
+      }
+
+      map.on('load', () => {
+        addVectorTiles(TOKEN);
+      });
+    </script>
+  </body>
+  </html>
+  """).render(
+          token=token,
+          host=host,
+          mapbox_token=mapbox_token,
+          style_url=style_url,
+          center_lng=center_lng,
+          center_lat=center_lat,
+          zoom=zoom,
+          pitch=pitch,
+          bearing=bearing,
+          minzoom=minzoom,
+          maxzoom=maxzoom,
+          layer_id=layer_id,
+          source_layer=source_layer,
+      )
+
+      common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+      return common.html_to_obj(html)
+  ```
+</details>
+
+**Key Mapbox GL properties:**
+- `source`: `{ type: 'vector', tiles: [url], minzoom, maxzoom }`
+- `source-layer`: Name of the tile layer (e.g., `udf`)
+- `layer.type`: `'line'` (or `'fill'` for polygons, `'circle'` for points)
+- `paint`: For lines use `line-color`, `line-width`, `line-opacity` (for polygons use `fill-color` and an outline `line` layer)
 
 **Example UDF**
 - [Overture Maps Example](https://www.fused.io/workbench/udf/catalog/Overture_Maps_Example-64071fb8-2c96-4015-adb9-596c3bac6787)
 
 ### Vector: `H3HexagonLayer`
 
-Use for `DataFrame` outputs with H3 hexagon indices (no geometry column required).
+Use a custom map UDF that renders deck.gl `H3HexagonLayer` over Mapbox GL. The UDF consumes JSON with H3 indices and values and returns an HTML map.
+
+Live example rendered from a UDF (HTML output):
 
 <iframe
   id="h3_demo_preview"
   loading="lazy"
-  src="/img/deckgl_h3.html"
+  src="https://www.fused.io/server/v1/realtime-shared/UDF_H3_Deck_UDF/run/file?dtype_out_raster=png&dtype_out_vector=html"
   height="300px"
   width="100%"
   scrolling="no"
 ></iframe>
+<p style={{marginTop: 6}}>
+  <a href="https://www.fused.io/server/v1/realtime-shared/UDF_H3_Deck_UDF/run/file?dtype_out_raster=png&dtype_out_vector=html" target="_blank" rel="noreferrer">Open demo ↗</a>
+</p>
 
-**Expected DataFrame structure:**
-| hex | population | metric |
-|-----|------------|--------|
-| 8a2a1072b59ffff | 1250 | 45.2 |
-| 8a2a1072b5bffff | 890 | 32.1 |
-| 8a2a1072b5dffff | 2100 | 67.8 |
+**Expected data schema:**
+- **hex**: H3 index string (e.g., `8a2a1072b59ffff`)
+- **count**: numeric value used for color/elevation
 
 <details>
-  <summary>Expand to see Visualise code</summary>
+  <summary>Expand to see Visualise JSON</summary>
   ```json
   {
     "tileLayer": {
@@ -175,7 +297,6 @@ Use for `DataFrame` outputs with H3 hexagon indices (no geometry column required
       "pickable": true
     },
     "vectorLayer": {
-      // highlight-next-line
       "@@type": "H3HexagonLayer",
       "stroked": true,
       "filled": true,
@@ -184,7 +305,6 @@ Use for `DataFrame` outputs with H3 hexagon indices (no geometry column required
       "opacity": 1,
       "coverage": 0.9,
       "lineWidthMinPixels": 5,
-      // highlight-next-line
       "getHexagon": "@@=properties.hex",
       "getFillColor": [255, 165, 0, 180],
       "getLineColor": [200, 200, 200, 255]
@@ -192,6 +312,185 @@ Use for `DataFrame` outputs with H3 hexagon indices (no geometry column required
   }
   ```
 </details>
+
+<details>
+  <summary>Expand to see standalone UDF code</summary>
+  ```py
+  @fused.udf(cache_max_age=0)
+  def udf(
+      # H3 data (each row: {hex: '8f...', count: number})
+      data_url: str = "https://www.fused.io/server/v1/realtime-shared/UDF_DuckDB_H3_SF/run/file?format=json",
+
+      # Mapbox + camera
+      mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+      style_url: str = "mapbox://styles/mapbox/dark-v10",
+      center_lng: float = -122.417759,
+      center_lat: float = 37.776452,
+      zoom: float = 11.0,
+      pitch: float = 50.0,
+      bearing: float = -10.0,
+
+      # Layer tuning
+      elevation_scale: float = 20.0,     # count * elevation_scale
+      max_count_for_color: float = 500.0, # for [255, (1 - count/max)*255, 0]
+      wireframe: bool = False,
+  ):
+
+      from jinja2 import Template
+
+      """
+      Deck.gl 3D H3HexagonLayer over Mapbox, using your JSON (hex,count) data.
+      - Elevation: count * elevation_scale
+      - Color: [255, (1 - count/max_count_for_color)*255, 0]
+      - Popup shows hex & count
+      """
+      html = Template(r"""
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="utf-8"/>
+    <title>Deck.gl 3D H3 (Fixed)</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css" rel="stylesheet"/>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.js"></script>
+
+    <!-- Load h3-js BEFORE deck.gl -->
+    <script src="https://unpkg.com/h3-js@latest/dist/h3-js.umd.js"></script>
+    <!-- Then load deck.gl -->
+    <script src="https://unpkg.com/deck.gl@9.0.0/dist.min.js"></script>
+
+    <style>
+      html, body { margin:0; height:100%; }
+      #map { position:absolute; inset:0; }
+      .deck-tooltip {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        font-size: 12px;
+        padding: 6px 8px;
+        background: rgba(0,0,0,0.7);
+        color: #fff;
+        border-radius: 6px;
+        max-width: 260px;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script>
+      // Verify h3-js is loaded properly
+      if (typeof h3 === 'undefined') {
+        console.error('h3-js library not loaded!');
+        throw new Error('h3-js library must be loaded before deck.gl');
+      }
+
+      const MAPBOX_TOKEN = {{ mapbox_token | tojson }};
+      const STYLE_URL    = {{ style_url    | tojson }};
+      const DATA_URL     = {{ data_url     | tojson }};
+
+      const INITIAL_VIEW_STATE = {
+        longitude: {{ center_lng }},
+        latitude:  {{ center_lat }},
+        zoom:      {{ zoom }},
+        pitch:     {{ pitch }},
+        bearing:   {{ bearing }}
+      };
+
+      const ELEVATION_SCALE     = {{ elevation_scale }};
+      const MAX_COUNT_FOR_COLOR = {{ max_count_for_color }};
+      const WIREFRAME           = {{ wireframe | tojson }};
+
+      mapboxgl.accessToken = MAPBOX_TOKEN;
+      if (mapboxgl.setTelemetryEnabled) { try { mapboxgl.setTelemetryEnabled(false); } catch(e){} }
+
+      const map = new mapboxgl.Map({
+        container: 'map',
+        style: STYLE_URL,
+        center: [INITIAL_VIEW_STATE.longitude, INITIAL_VIEW_STATE.latitude],
+        zoom: INITIAL_VIEW_STATE.zoom,
+        pitch: INITIAL_VIEW_STATE.pitch,
+        bearing: INITIAL_VIEW_STATE.bearing
+      });
+
+      const overlay = new deck.MapboxOverlay({
+        interleaved: true,
+        layers: []
+      });
+
+      map.on('load', () => {
+        map.addControl(overlay);
+
+        const ambient = new deck.AmbientLight({intensity: 1.0});
+        const dir     = new deck.DirectionalLight({intensity: 0.9, direction: [-1, -2, -1]});
+        const effects = [ new deck.LightingEffect({ambientLight: ambient, dirLight: dir}) ];
+
+        const h3Layer = new deck.H3HexagonLayer({
+          id: 'h3-3d',
+          data: DATA_URL,
+          pickable: true,
+          extruded: true,
+          wireframe: WIREFRAME,
+          material: { ambient: 0.35, diffuse: 0.6, shininess: 32, specularColor: [255,255,255] },
+
+          getHexagon: d => d.hex,
+          getElevation: d => (d && Number.isFinite(d.count) ? d.count : 0) * ELEVATION_SCALE,
+          getFillColor: d => {
+            const count = (d && Number.isFinite(d.count)) ? d.count : 0;
+            const g = Math.max(0, Math.min(255, (1 - (count / MAX_COUNT_FOR_COLOR)) * 255));
+            return [255, g, 0];
+          },
+          filled: true,
+          stroked: true,
+          getLineColor: [255, 255, 255],
+          getLineWidth: 2,
+          lineWidthUnits: 'pixels',
+
+          onClick: info => {
+            if (!info || !info.coordinate || !info.object) return;
+            const props = { hex: info.object.hex, count: info.object.count };
+            new mapboxgl.Popup({closeButton:true})
+              .setLngLat(info.coordinate)
+              .setHTML('<pre style="margin:0;white-space:pre-wrap;">' +
+                        JSON.stringify(props, null, 2) + '</pre>')
+              .addTo(map);
+          }
+        });
+
+        overlay.setProps({ layers: [h3Layer], effects });
+      });
+    </script>
+  </body>
+  </html>
+  """).render(
+      data_url=data_url,
+      mapbox_token=mapbox_token,
+      style_url=style_url,
+      center_lng=center_lng,
+      center_lat=center_lat,
+      zoom=zoom,
+      pitch=pitch,
+      bearing=bearing,
+      elevation_scale=elevation_scale,
+      max_count_for_color=max_count_for_color,
+      wireframe=wireframe,
+  )
+
+      common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+      return common.html_to_obj(html)
+
+  ```
+</details>
+
+**Required accessor:**
+- `getHexagon`: `d => d.hex` (returns H3 index string)
+
+**Key layer properties:**
+- `getElevation`: `d => (d.count || 0) * elevation_scale`
+- `getFillColor`: color ramp derived from `count`
+- `extruded`: `true` for 3D columns; `wireframe` toggles outlines
+- `pickable`: enable interactivity; show `Popup` on click
+- `material`: basic lighting parameters
+
+Note: Load `h3-js` before deck.gl. Ensure H3 IDs are strings in JS (convert numeric/BigInt to hex if needed).
 
 **Required Property:**
 - `getHexagon`: Specify the DataFrame column containing H3 indices (e.g., `"@@=properties.hex"`)
@@ -203,7 +502,19 @@ Use for `DataFrame` outputs with H3 hexagon indices (no geometry column required
 
 Use for raster outputs like satellite imagery, elevation models, or PNG files.
 
-![Crops](/img/workbench/layer-styling/crops.png)
+Live example rendered from a UDF (HTML output):
+
+<iframe
+  id="raster_demo_preview"
+  loading="lazy"
+  src="https://www.fused.io/server/v1/realtime-shared/UDF_Mapbox_Raster_UDF/run/file?dtype_out_raster=png&dtype_out_vector=html"
+  height="300px"
+  width="100%"
+  scrolling="no"
+></iframe>
+<p style={{marginTop: 6}}>
+  <a href="https://www.fused.io/server/v1/realtime-shared/UDF_Mapbox_Raster_UDF/run/file?dtype_out_raster=png&dtype_out_vector=html" target="_blank" rel="noreferrer">Open demo ↗</a>
+</p>
 
 **Expected UDF output:**
 | Output Type | Description | Example |
@@ -213,7 +524,7 @@ Use for raster outputs like satellite imagery, elevation models, or PNG files.
 | bytes | Encoded image data | PNG/JPEG bytes |
 
 <details>
-  <summary>Expand to see Visualise code</summary>
+  <summary>Expand to see Visualise JSON</summary>
   ```json
   {
     "tileLayer": {
@@ -224,15 +535,131 @@ Use for raster outputs like satellite imagery, elevation models, or PNG files.
       "pickable": true
     },
     "rasterLayer": {
-      // highlight-next-line
       "@@type": "BitmapLayer",
-      "pickable": true
-    },
-    "vectorLayer": {
-      "@@type": "GeoJsonLayer",
       "pickable": true
     }
   }
+  ```
+</details>
+
+<details>
+  <summary>Expand to see standalone UDF code</summary>
+  ```py
+
+@fused.udf(cache_max_age=0)
+def udf(
+    token: str = "UDF_CDLs_Tile_Example",      
+    host: str = "https://www.fused.io", 
+    mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+    style_url: str = "mapbox://styles/mapbox/dark-v10",
+    center_lng: float = -121.16450354933122,
+    center_lat: float = 38.44272969483187,
+    zoom: float = 8.59,
+    minzoom: int = 6,
+    maxzoom: int = 14,
+    layer_id_raster: str = "fused-raster-layer",
+    raster_tile_size: int = 256,
+    raster_opacity: float = 0.95
+):
+    from jinja2 import Template
+
+    """
+    Mapbox map that loads **raster** XYZ tiles from a Fused UDF token.
+
+    Tiles URL:
+      {host}/server/v1/realtime-shared/{token}/run/tiles/{z}/{x}/{y}?dtype_out_raster=png
+    """
+    html = Template(r"""
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Raster XYZ Loader</title>
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no"/>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css" rel="stylesheet"/>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.js"></script>
+  <style>
+    html, body { margin:0; height:100%; }
+    #map { position:absolute; inset:0; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script>
+    const MAPBOX_TOKEN = {{ mapbox_token | tojson }};
+    const STYLE_URL    = {{ style_url | tojson }};
+    const HOST         = {{ host | tojson }};
+    const TOKEN        = {{ token | tojson }};
+    const CENTER       = [{{ center_lng }}, {{ center_lat }}];
+    const ZOOM         = {{ zoom }};
+    const MINZOOM      = {{ minzoom }};
+    const MAXZOOM      = {{ maxzoom }};
+    const LID_RAS      = {{ layer_id_raster | tojson }};
+    const R_TILE_SIZE  = {{ raster_tile_size }};
+    const R_OPACITY    = {{ raster_opacity }};
+
+    function buildRaster(host, tok){
+      return host.replace(/\/+$/,'') + `/server/v1/realtime-shared/${tok}/run/tiles/{z}/{x}/{y}?dtype_out_raster=png`;
+    }
+
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+    const map = new mapboxgl.Map({
+      container: 'map',
+      style: STYLE_URL,
+      center: CENTER,
+      zoom: ZOOM
+    });
+
+    function addRaster(url){
+      if (map.getLayer(LID_RAS)) map.removeLayer(LID_RAS);
+      if (map.getSource('xyz'))  map.removeSource('xyz');
+
+      map.addSource('xyz', {
+        type: 'raster',
+        tiles: [url],
+        tileSize: R_TILE_SIZE,
+        minzoom: MINZOOM,
+        maxzoom: MAXZOOM
+      });
+
+      map.addLayer({
+        id: LID_RAS,
+        type: 'raster',
+        source: 'xyz',
+        paint: {
+          'raster-opacity': R_OPACITY,
+          'raster-fade-duration': 0
+        }
+      });
+    }
+
+    map.on('load', () => {
+      const url = buildRaster(HOST, TOKEN);
+      addRaster(url);
+    });
+  </script>
+</body>
+</html>
+""").render(
+        token=token,
+        host=host,
+        mapbox_token=mapbox_token,
+        style_url=style_url,
+        center_lng=center_lng,
+        center_lat=center_lat,
+        zoom=zoom,
+        minzoom=minzoom,
+        maxzoom=maxzoom,
+        layer_id_raster=layer_id_raster,
+        raster_tile_size=raster_tile_size,
+        raster_opacity=raster_opacity,
+    )
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+    return common.html_to_obj(html)
+
+
   ```
 </details>
 
@@ -248,11 +675,19 @@ There are four ways to style colors in Fused. Each method serves different use c
 
 Use fixed RGB/RGBA values for uniform styling.
 
-import ImgSingleColor from '@site/static/img/viz_single.png';
+Live example rendered from a UDF (HTML output):
 
-<div style={{ textAlign: 'center' }}>
-<img src={ImgSingleColor} alt="File" style={{ width: '80%'}} />
-</div>
+<iframe
+  id="hardcoded_color_demo"
+  loading="lazy"
+  src="https://www.fused.io/server/v1/realtime-shared/UDF_Hardcoded_Color_Map/run/file?dtype_out_raster=png&dtype_out_vector=parquet"
+  height="300px"
+  width="100%"
+  scrolling="no"
+></iframe>
+<p style={{marginTop: 6}}>
+  <a href="https://www.fused.io/server/v1/realtime-shared/UDF_Hardcoded_Color_Map/run/file?dtype_out_raster=png&dtype_out_vector=parquet" target="_blank" rel="noreferrer">Open demo ↗</a>
+</p>
 
 **Expected DataFrame structure:**
 | geometry | any_column |
@@ -263,45 +698,150 @@ import ImgSingleColor from '@site/static/img/viz_single.png';
 *Note: Column values don't affect styling - all features get the same color.*
 
 <details>
-  <summary>Expand to see Visualise code</summary>
+  <summary>Expand to see Visualize JSON</summary>
   ```json
-  {
-    "tileLayer": {
-      "@@type": "TileLayer",
-      "minZoom": 0,
-      "maxZoom": 19,
-      "tileSize": 256,
-      "pickable": true
-    },
-    "rasterLayer": {
-      "@@type": "BitmapLayer",
-      "pickable": true
-    },
-    "vectorLayer": {
-      "@@type": "GeoJsonLayer",
-      "stroked": true,
-      "filled": true,
-      "pickable": true,
-      "lineWidthMinPixels": 1,
-      // highlight-next-line
-      "getFillColor": [20, 200, 200, 100],
-      "getLineColor": [50, 50, 50, 255]
-    }
+{
+  "tileLayer": {
+    "@@type": "TileLayer",
+    "minZoom": 0,
+    "maxZoom": 19,
+    "tileSize": 256,
+    "pickable": true
+  },
+  "rasterLayer": {
+    "@@type": "BitmapLayer",
+    "pickable": true
+  },
+  "vectorLayer": {
+    "@@type": "GeoJsonLayer",
+    "stroked": true,
+    "filled": true,
+    "pickable": true,
+    "lineWidthMinPixels": 1,
+    "getFillColor": [20, 200, 200, 100],
+    "getLineColor": [50, 50, 50, 255]
   }
+}
   ```
 </details>
 
-**When to use:** Simple visualizations, proof of concepts, or when all features should look identical.
+<details>
+  <summary>Expand to see Standalone UDF code</summary>
+  ```py
+@fused.udf(cache_max_age=0)
+def udf(
+    token: str = "UDF_Overture_Maps_Example",
+    host: str = "https://www.fused.io",
+    mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+    style_url: str = "mapbox://styles/mapbox/dark-v10",
+    center_lng: float = -122.4194,
+    center_lat: float = 37.7749,
+    zoom: float = 12,
+    minzoom: int = 0,
+    maxzoom: int = 15,
+    layer_id: str = "vector-fill",
+    source_layer: str = "udf",
+    fill_color: str = "#35AF6D",
+    fill_opacity: float = 0.55,
+    outline_color: str = "#0b0b0b",
+):
+    from jinja2 import Template
+    html = Template(r"""
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Vector Fill - Hardcoded Color</title>
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=false"/>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css" rel="stylesheet"/>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.js"></script>
+  <style>html,body{margin:0;height:100%}#map{position:absolute;inset:0}</style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    const MAPBOX_TOKEN = {{ mapbox_token | tojson }};
+    const STYLE_URL    = {{ style_url | tojson }};
+    const HOST         = {{ host | tojson }};
+    const TOKEN        = {{ token | tojson }};
+    const CENTER       = [{{ center_lng }}, {{ center_lat }}];
+    const ZOOM         = {{ zoom }};
+    const MINZOOM      = {{ minzoom }};
+    const MAXZOOM      = {{ maxzoom }};
+    const LAYER_ID     = {{ layer_id | tojson }};
+    const SOURCE_LAYER = {{ source_layer | tojson }};
+    const FILL_COLOR   = {{ fill_color | tojson }};
+    const FILL_OPAC    = {{ fill_opacity }};
+    const OUTLINE_COL  = {{ outline_color | tojson }};
+
+    function tilesFromToken(tok) {
+      return `${HOST.replace(/\/+$/,'')}/server/v1/realtime-shared/${tok}/run/tiles/{z}/{x}/{y}?dtype_out_vector=mvt`;
+    }
+
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+    const map = new mapboxgl.Map({ container:'map', style:STYLE_URL, center:CENTER, zoom:ZOOM });
+
+    map.on('load', () => {
+      map.addSource('xyz', { type:'vector', tiles:[tilesFromToken(TOKEN)], minzoom:MINZOOM, maxzoom:MAXZOOM });
+
+      map.addLayer({
+        id: LAYER_ID,
+        type: 'fill',
+        source: 'xyz',
+        'source-layer': SOURCE_LAYER,
+        filter: ['==', ['geometry-type'], 'Polygon'],
+        paint: { 'fill-color': FILL_COLOR, 'fill-opacity': FILL_OPAC }
+      });
+
+      map.addLayer({
+        id: LAYER_ID + '-outline',
+        type: 'line',
+        source: 'xyz',
+        'source-layer': SOURCE_LAYER,
+        filter: ['==', ['geometry-type'], 'Polygon'],
+        paint: { 'line-color': OUTLINE_COL, 'line-width': 0.5, 'line-opacity': 0.9 }
+      });
+    });
+  </script>
+</body>
+</html>
+""").render(
+        token=token, host=host, mapbox_token=mapbox_token, style_url=style_url,
+        center_lng=center_lng, center_lat=center_lat, zoom=zoom,
+        minzoom=minzoom, maxzoom=maxzoom, layer_id=layer_id,
+        source_layer=source_layer, fill_color=fill_color, fill_opacity=fill_opacity,
+        outline_color=outline_color,
+    )
+    common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+    return common.html_to_obj(html)
+  ```
+</details>
+
+**Expected DataFrame structure:**
+| geometry | any_column |
+|----------|------------|
+| POLYGON(...) | any_value |
+| POLYGON(...) | any_value |
+
+*Note: Column values don't affect styling - all features get the same color.*
 
 ### 2. Property-Based Colors
 
 Use data column values to calculate colors dynamically.
 
-import ImgProperty from '@site/static/img/viz_property.png';
+Live example rendered from a UDF (HTML output):
 
-<div style={{ textAlign: 'center' }}>
-<img src={ImgProperty} alt="File" style={{ width: '80%'}} />
-</div>
+<iframe
+  id="property_color_demo"
+  loading="lazy"
+  src="https://unstable.fused.io/server/v1/realtime-shared/UDF_Property_Based_Color/run/file?dtype_out_raster=png&dtype_out_vector=parquet"
+  height="300px"
+  width="100%"
+  scrolling="no"
+></iframe>
+<p style={{marginTop: 6}}>
+  <a href="https://unstable.fused.io/server/v1/realtime-shared/UDF_Property_Based_Color/run/file?dtype_out_raster=png&dtype_out_vector=parquet" target="_blank" rel="noreferrer">Open demo ↗</a>
+</p>
 
 **Expected DataFrame structure:**
 | geometry | value | height |
@@ -313,7 +853,7 @@ import ImgProperty from '@site/static/img/viz_property.png';
 *Note: Numerical columns are used directly in color calculations.*
 
 <details>
-  <summary>Expand to see Visualise code</summary>
+  <summary>Expand to see Visualise JSON</summary>
   ```json
   {
     "tileLayer": {
@@ -333,14 +873,129 @@ import ImgProperty from '@site/static/img/viz_property.png';
       "filled": true,
       "pickable": true,
       "extruded": true,
-      // highlight-next-line
       "getElevation": "@@=properties.value * 10",
       "lineWidthMinPixels": 1,
-      // highlight-next-line
       "getFillColor": "@@=[properties.value * 50, properties.value * 30, properties.value * 2]",
       "getLineColor": [50, 50, 50, 255]
     }
   }
+  ```
+</details>
+
+<details>
+  <summary>Expand to see standalone UDF code</summary>
+  ```py
+  @fused.udf(cache_max_age=0)
+  def udf(
+      token: str = "UDF_DSM_Zonal_Stats",
+      host: str = "https://www.fused.io",
+      mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+      style_url: str = "mapbox://styles/mapbox/dark-v10",
+      center_lng: float = -122.4194,
+      center_lat: float = 37.7749,
+      zoom: float = 12,
+      minzoom: int = 0,
+      maxzoom: int = 15,
+      layer_id: str = "vector-choro",
+      source_layer: str = "udf",
+      value_attr: str = "stats",
+      domain_min: float = 0.0,
+      domain_mid: float = 50.0,
+      domain_max: float = 100.0,
+      color_min: str = "#2b65a0",
+      color_mid: str = "#35af6d",
+      color_max: str = "#e8ff59",
+      fill_opacity: float = 0.65,
+      outline_color: str = "#111111",
+  ):
+      from jinja2 import Template
+      html = Template(r"""
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="utf-8"/>
+    <title>Vector Fill - Property Based</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=false"/>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css" rel="stylesheet"/>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.js"></script>
+    <style>html,body{margin:0;height:100%}#map{position:absolute;inset:0}</style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script>
+      const MAPBOX_TOKEN = {{ mapbox_token | tojson }};
+      const STYLE_URL    = {{ style_url | tojson }};
+      const HOST         = {{ host | tojson }};
+      const TOKEN        = {{ token | tojson }};
+      const CENTER       = [{{ center_lng }}, {{ center_lat }}];
+      const ZOOM         = {{ zoom }};
+      const MINZOOM      = {{ minzoom }};
+      const MAXZOOM      = {{ maxzoom }};
+      const LAYER_ID     = {{ layer_id | tojson }};
+      const SOURCE_LAYER = {{ source_layer | tojson }};
+      const ATTR         = {{ value_attr | tojson }};
+      const DMIN         = {{ domain_min }};
+      const DMID         = {{ domain_mid }};
+      const DMAX         = {{ domain_max }};
+      const CMIN         = {{ color_min | tojson }};
+      const CMID         = {{ color_mid | tojson }};
+      const CMAX         = {{ color_max | tojson }};
+      const FILL_OPAC    = {{ fill_opacity }};
+      const OUTLINE_COL  = {{ outline_color | tojson }};
+
+      function tilesFromToken(tok) {
+        return `${HOST.replace(/\/+$/,'')}/server/v1/realtime-shared/${tok}/run/tiles/{z}/{x}/{y}?dtype_out_vector=mvt`;
+      }
+
+      mapboxgl.accessToken = MAPBOX_TOKEN;
+      const map = new mapboxgl.Map({ container:'map', style:STYLE_URL, center:CENTER, zoom:ZOOM });
+
+      function valueExpr() {
+        return ['to-number', ['get', ATTR]];
+      }
+
+      map.on('load', () => {
+        map.addSource('xyz', { type:'vector', tiles:[tilesFromToken(TOKEN)], minzoom:MINZOOM, maxzoom:MAXZOOM });
+
+        map.addLayer({
+          id: LAYER_ID,
+          type: 'fill',
+          source: 'xyz',
+          'source-layer': SOURCE_LAYER,
+          filter: ['==', ['geometry-type'], 'Polygon'],
+          paint: {
+            'fill-color': [
+              'interpolate', ['linear'], ['coalesce', valueExpr(), DMIN],
+              DMIN, CMIN,
+              DMID, CMID,
+              DMAX, CMAX
+            ],
+            'fill-opacity': FILL_OPAC
+          }
+        });
+
+        map.addLayer({
+          id: LAYER_ID + '-outline',
+          type: 'line',
+          source: 'xyz',
+          'source-layer': SOURCE_LAYER,
+          filter: ['==', ['geometry-type'], 'Polygon'],
+          paint: { 'line-color': OUTLINE_COL, 'line-width': 0.5, 'line-opacity': 0.9 }
+        });
+      });
+    </script>
+  </body>
+  </html>
+  """).render(
+          token=token, host=host, mapbox_token=mapbox_token, style_url=style_url,
+          center_lng=center_lng, center_lat=center_lat, zoom=zoom,
+          minzoom=minzoom, maxzoom=maxzoom, layer_id=layer_id, source_layer=source_layer,
+          value_attr=value_attr, domain_min=domain_min, domain_mid=domain_mid, domain_max=domain_max,
+          color_min=color_min, color_mid=color_mid, color_max=color_max,
+          fill_opacity=fill_opacity, outline_color=outline_color,
+      )
+      common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+      return common.html_to_obj(html)
   ```
 </details>
 
@@ -456,11 +1111,19 @@ This ensures buildings without height data still appear with a default elevation
 
 Use predefined color palettes for categorical data.
 
-import ImgCategory from '@site/static/img/viz_category.png';
+Live example rendered from a UDF (HTML output):
 
-<div style={{ textAlign: 'center' }}>
-<img src={ImgCategory} alt="File" style={{ width: '80%'}} />
-</div>
+<iframe
+  id="category_color_demo"
+  loading="lazy"
+  src="https://www.fused.io/server/v1/realtime-shared/UDF_Category_Based_Color_Map/run/file?dtype_out_raster=png&dtype_out_vector=parquet"
+  height="300px"
+  width="100%"
+  scrolling="no"
+></iframe>
+<p style={{marginTop: 6}}>
+  <a href="https://www.fused.io/server/v1/realtime-shared/UDF_Category_Based_Color_Map/run/file?dtype_out_raster=png&dtype_out_vector=parquet" target="_blank" rel="noreferrer">Open demo ↗</a>
+</p>
 
 **Expected DataFrame structure:**
 | geometry | building_type | zone |
@@ -472,7 +1135,7 @@ import ImgCategory from '@site/static/img/viz_category.png';
 *Note: Categorical columns with distinct values for color mapping.*
 
 <details>
-  <summary>Expand to see Visualise code</summary>
+  <summary>Expand to see Visualise JSON</summary>
   ```json
   {
     "tileLayer": {
@@ -493,22 +1156,171 @@ import ImgCategory from '@site/static/img/viz_category.png';
       "pickable": true,
       "lineWidthMinPixels": 1,
       "getFillColor": {
-        // highlight-next-line
         "@@function": "colorCategories",
-        // highlight-next-line
         "attr": "building_type",
-        // highlight-start
         "domain": [
-          "residential", 
+          "residential",
           "commercial",
           "industrial",
           "public"
         ],
-        // highlight-end
         "colors": "Bold"
       }
     }
   }
+  ```
+</details>
+
+<details>
+  <summary>Expand to see the Standalone UDF</summary>
+  ```py
+@fused.udf(cache_max_age=0)
+def udf(
+    token: str = "UDF_FEMA_Buildings_US",
+    host: str = "https://www.fused.io",
+    mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+    style_url: str = "mapbox://styles/mapbox/dark-v10",
+    center_lng: float = -74.0110,   # longitude
+    center_lat: float = 40.7133,  
+    zoom: float = 14,
+    minzoom: int = 0,
+    maxzoom: int = 15,
+    source_layer: str = "udf",
+    layer_id: str = "fema-categories",
+    attr_name: str = "OCC_CLS",
+    domain: list = None,
+    # CARTOColors Bold palette (7 colors)
+    colors: list = None,
+    fill_opacity: float = 0.65,
+    outline_color: str = "#0b0b0b"
+):
+    from jinja2 import Template
+
+    if domain is None:
+        domain = [
+            "Assembly",
+            "Commercial",
+            "Utility and Misc",
+            "Residential",
+            "Industrial",
+            "Education",
+            "Government",
+        ]
+    if colors is None:
+        colors = ["#7F3C8D", "#11A579", "#3969AC", "#F2B701", "#E73F74", "#80BA5A", "#E68310"]
+
+    html = Template(r"""
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Category Colors (Mapbox GL)</title>
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no"/>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css" rel="stylesheet"/>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.js"></script>
+  <style>html,body{margin:0;height:100%}#map{position:absolute;inset:0}</style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    const MAPBOX_TOKEN = {{ mapbox_token | tojson }};
+    const STYLE_URL    = {{ style_url    | tojson }};
+    const HOST         = {{ host         | tojson }};
+    const TOKEN        = {{ token        | tojson }};
+    const CENTER       = [{{ center_lng }}, {{ center_lat }}];
+    const ZOOM         = {{ zoom }};
+    const MINZOOM      = {{ minzoom }};
+    const MAXZOOM      = {{ maxzoom }};
+    const SOURCE_LAYER = {{ source_layer | tojson }};
+    const LAYER_ID     = {{ layer_id     | tojson }};
+    const ATTR_NAME    = {{ attr_name    | tojson }};
+    const DOMAIN       = {{ domain       | tojson }};
+    const COLORS       = {{ colors       | tojson }};
+    const FILL_OPAC    = {{ fill_opacity }};
+    const OUTLINE_COL  = {{ outline_color | tojson }};
+
+    function tilesFromToken(h, tok) {
+      return h.replace(/\/+$/,'') + `/server/v1/realtime-shared/${tok}/run/tiles/{z}/{x}/{y}?dtype_out_vector=mvt`;
+    }
+
+    function matchByCategory(attr, domain, colors, fallbackColor) {
+      // ['match', ['get', attr], domain[0], colors[0], domain[1], colors[1], ..., fallback]
+      const expr = ['match', ['get', attr]];
+      for (let i = 0; i < Math.min(domain.length, colors.length); i++) {
+        expr.push(domain[i], colors[i]);
+      }
+      expr.push(fallbackColor);
+      return expr;
+    }
+
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+    const map = new mapboxgl.Map({
+      container: 'map',
+      style: STYLE_URL,
+      center: CENTER,
+      zoom: ZOOM
+    });
+
+    map.on('load', () => {
+      // Vector MVT from the FEMA UDF token
+      map.addSource('fema', {
+        type: 'vector',
+        tiles: [tilesFromToken(HOST, TOKEN)],
+        minzoom: MINZOOM,
+        maxzoom: MAXZOOM
+      });
+
+      // Polygons fill by category
+      map.addLayer({
+        id: LAYER_ID,
+        type: 'fill',
+        source: 'fema',
+        'source-layer': SOURCE_LAYER,
+        filter: ['==', ['geometry-type'], 'Polygon'],
+        paint: {
+          'fill-color': matchByCategory(ATTR_NAME, DOMAIN, COLORS, '#BBBBBB'),
+          'fill-opacity': FILL_OPAC
+        }
+      });
+
+      // Thin polygon outline
+      map.addLayer({
+        id: LAYER_ID + '-outline',
+        type: 'line',
+        source: 'fema',
+        'source-layer': SOURCE_LAYER,
+        filter: ['==', ['geometry-type'], 'Polygon'],
+        paint: { 'line-color': OUTLINE_COL, 'line-width': 0.5, 'line-opacity': 0.9 }
+      });
+
+      // Optional: hover cursor over polygons
+      map.on('mouseenter', LAYER_ID, () => map.getCanvas().style.cursor = 'pointer');
+      map.on('mouseleave', LAYER_ID, () => map.getCanvas().style.cursor = '');
+    });
+  </script>
+</body>
+</html>
+""").render(
+        token=token,
+        host=host,
+        mapbox_token=mapbox_token,
+        style_url=style_url,
+        center_lng=center_lng,
+        center_lat=center_lat,
+        zoom=zoom,
+        minzoom=minzoom,
+        maxzoom=maxzoom,
+        source_layer=source_layer,
+        layer_id=layer_id,
+        attr_name=attr_name,
+        domain=domain,
+        colors=colors,
+        fill_opacity=fill_opacity,
+        outline_color=outline_color,
+    )
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+    return common.html_to_obj(html)
   ```
 </details>
 
@@ -525,9 +1337,19 @@ Note that unexpected behaviors may arise if too many domains are used.
 
 Use gradient color scales for continuous numerical data.
 
-<div style={{ textAlign: 'center' }}>
-  <img src="/img/workbench/layer-styling/color_continuous.png" alt="Color Continuous" style={{ width: '80%' }} />
-</div>
+Live example rendered from a UDF (HTML output):
+
+<iframe
+  id="continuous_color_demo"
+  loading="lazy"
+  src="https://www.fused.io/server/v1/realtime-shared/UDF_Continuous_Color_Scale/run/file?dtype_out_raster=png&dtype_out_vector=parquet"
+  height="300px"
+  width="100%"
+  scrolling="no"
+></iframe>
+<p style={{marginTop: 6}}>
+  <a href="https://www.fused.io/server/v1/realtime-shared/UDF_Continuous_Color_Scale/run/file?dtype_out_raster=png&dtype_out_vector=parquet" target="_blank" rel="noreferrer">Open demo ↗</a>
+</p>
 
 **Expected DataFrame structure:**
 | hex | population | density |
@@ -539,7 +1361,7 @@ Use gradient color scales for continuous numerical data.
 *Note: Numerical columns with values within the specified domain range.*
 
 <details>
-  <summary>Expand to see Visualise code</summary>
+  <summary>Expand to see Visualise JSON</summary>
   ```json
   {
     "tileLayer": {
@@ -554,7 +1376,6 @@ Use gradient color scales for continuous numerical data.
       "pickable": true
     },
     "vectorLayer": {
-      // highlight-next-line
       "@@type": "H3HexagonLayer",
       "stroked": true,
       "filled": true,
@@ -563,17 +1384,12 @@ Use gradient color scales for continuous numerical data.
       "opacity": 1,
       "coverage": 0.9,
       "lineWidthMinPixels": 5,
-      // highlight-next-line
       "getHexagon": "@@=properties.hex",
       "getFillColor": {
-        // highlight-next-line
         "@@function": "colorContinuous",
-        // highlight-next-line
         "attr": "population",
-        // highlight-next-line
         "domain": [0, 10000],
         "steps": 15,
-        // highlight-next-line
         "colors": "SunsetDark",
         "nullColor": [184, 184, 184]
       },
@@ -586,6 +1402,93 @@ Use gradient color scales for continuous numerical data.
       "elevationScale": 10
     }
   }
+  ```
+</details>
+
+<details>
+  <summary>Expand to see the Standalone UDF</summary>
+  ```py
+  @fused.udf(cache_max_age=0)
+  def udf(
+      data_url: str = "https://www.fused.io/server/v1/realtime-shared/UDF_DuckDB_H3_SF/run/file?format=json",
+      mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+      style_url: str = "mapbox://styles/mapbox/dark-v10",
+      center_lng: float = -122.417759,
+      center_lat: float = 37.776452,
+      zoom: float = 11.0,
+      pitch: float = 45.0,
+      bearing: float = 0.0,
+      elevation_scale: float = 10.0,
+      wireframe: bool = False,
+      domain_min: float = 0.0,
+      domain_max: float = 1000.0,
+      null_color: tuple = (184, 184, 184),
+  ):
+      from jinja2 import Template
+      html = Template(r"""
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="utf-8"/>
+    <title>H3 Continuous Color Scale</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css" rel="stylesheet"/>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.js"></script>
+    <script src="https://unpkg.com/h3-js@latest/dist/h3-js.umd.js"></script>
+    <script src="https://unpkg.com/deck.gl@9.0.0/dist.min.js"></script>
+    <style>html, body { margin:0; height:100%; } #map { position:absolute; inset:0; }</style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script>
+      if (typeof h3 === 'undefined') throw new Error('h3-js must load before deck.gl');
+
+      const MAPBOX_TOKEN = {{ mapbox_token | tojson }};
+      const STYLE_URL    = {{ style_url    | tojson }};
+      const DATA_URL     = {{ data_url     | tojson }};
+
+      const INITIAL_VIEW_STATE = {
+        longitude: {{ center_lng }}, latitude: {{ center_lat }}, zoom: {{ zoom }}, pitch: {{ pitch }}, bearing: {{ bearing }}
+      };
+
+      const ELEVATION_SCALE = {{ elevation_scale }};
+      const WIREFRAME       = {{ wireframe | tojson }};
+      const DOMAIN_MIN      = {{ domain_min }};
+      const DOMAIN_MAX      = {{ domain_max }};
+      const NULL_COLOR      = {{ null_color | tojson }};
+
+      function ramp(t){ t=Math.max(0,Math.min(1,t)); const s=[[52,18,88],[226,83,18],[248,213,72]]; const n=s.length-1; const p=t*n; const i=Math.floor(p); const f=p-i; const a=s[i],b=s[Math.min(i+1,n)]; return [Math.round(a[0]+(b[0]-a[0])*f),Math.round(a[1]+(b[1]-a[1])*f),Math.round(a[2]+(b[2]-a[2])*f)]; }
+      function colorForCount(c){ if(!Number.isFinite(c)) return [NULL_COLOR[0],NULL_COLOR[1],NULL_COLOR[2]]; if(DOMAIN_MAX===DOMAIN_MIN) return ramp(1); const t=(c-DOMAIN_MIN)/(DOMAIN_MAX-DOMAIN_MIN); return ramp(t); }
+
+      mapboxgl.accessToken = MAPBOX_TOKEN;
+      if (mapboxgl.setTelemetryEnabled) { try { mapboxgl.setTelemetryEnabled(false); } catch(e){} }
+      const map = new mapboxgl.Map({ container:'map', style:STYLE_URL, center:[INITIAL_VIEW_STATE.longitude, INITIAL_VIEW_STATE.latitude], zoom:INITIAL_VIEW_STATE.zoom, pitch:INITIAL_VIEW_STATE.pitch, bearing:INITIAL_VIEW_STATE.bearing });
+      const overlay = new deck.MapboxOverlay({ interleaved:true, layers:[] });
+
+      map.on('load', () => {
+        map.addControl(overlay);
+        const layer = new deck.H3HexagonLayer({
+          id:'h3-continuous', data:DATA_URL, pickable:true, extruded:true, wireframe:WIREFRAME,
+          material:{ ambient:0.35, diffuse:0.6, shininess:32, specularColor:[255,255,255] },
+          getHexagon:d=>d.hex,
+          getElevation:d=>{ const c=(d&&Number.isFinite(d.count))?d.count:0; return c*ELEVATION_SCALE; },
+          getFillColor:d=>{ const c=(d&&Number.isFinite(d.count))?d.count:NaN; const rgb=colorForCount(c); return [rgb[0],rgb[1],rgb[2],210]; },
+          stroked:true, getLineColor:[30,30,30], getLineWidth:1, lineWidthUnits:'pixels',
+        });
+        overlay.setProps({ layers:[layer] });
+      });
+    </script>
+  </body>
+  </html>
+  """).render(
+          data_url=data_url, mapbox_token=mapbox_token, style_url=style_url,
+          center_lng=center_lng, center_lat=center_lat, zoom=zoom,
+          pitch=pitch, bearing=bearing, elevation_scale=elevation_scale,
+          wireframe=wireframe, domain_min=domain_min, domain_max=domain_max,
+          null_color=list(null_color),
+      )
+      common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+      return common.html_to_obj(html)
   ```
 </details>
 
@@ -641,7 +1544,7 @@ Enable 3D effects by setting `extruded: true` and using `getElevation`:
 *Note: Numerical columns used for building height/elevation in 3D view. Use `"@@=properties.column_name"` syntax to reference height data.*
 
 <details>
-  <summary>Expand to see Visualise code</summary>
+  <summary>Expand to see Visualise JSON</summary>
   ```json
   {
     "tileLayer": {
@@ -669,6 +1572,153 @@ Enable 3D effects by setting `extruded: true` and using `getElevation`:
       "getFillColor": [100, 150, 200, 180]
     }
   }
+  ```
+</details>
+
+Live example rendered from a UDF (HTML output):
+
+<iframe
+  id="deckgl_3d_demo"
+  loading="lazy"
+  src="https://www.fused.io/server/v1/realtime-shared/UDF_Deck_GL_3d/run/file?dtype_out_raster=png&dtype_out_vector=parquet"
+  height="300px"
+  width="100%"
+  scrolling="no"
+></iframe>
+<p style={{marginTop: 6}}>
+  <a href="https://www.fused.io/server/v1/realtime-shared/UDF_Deck_GL_3d/run/file?dtype_out_raster=png&dtype_out_vector=parquet" target="_blank" rel="noreferrer">Open demo ↗</a>
+</p>
+
+<details>
+  <summary>Expand to see the Standalone UDF</summary>
+  ```py
+  @fused.udf(cache_max_age=0)
+  def udf(
+      token: str = "UDF_DSM_Zonal_Stats",
+      host: str = "https://www.fused.io",  # or https://staging.fused.io
+      mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+      style_url: str = "mapbox://styles/mapbox/dark-v10",
+      center_lng: float = -122.4194,  # SF
+      center_lat: float = 37.7749,
+      zoom: float = 16.0,
+      pitch: float = 60.0,
+      bearing: float = -20.0,
+      minzoom: int = 0,
+      maxzoom: int = 15,
+      elevation_scale: float = 1.0,   # stats -> height multiplier
+  ):
+      from jinja2 import Template
+
+      """
+      Minimal Deck.gl 3D vector map (no raster). Requires server to serve MVT:
+        {host}/.../{token}/run/tiles/{z}/{x}/{y}?dtype_out_vector=mvt
+      """
+      html = Template(r"""
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="utf-8"/>
+    <title>Deck.gl 3D Vector (Minimal)</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no"/>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css" rel="stylesheet"/>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.js"></script>
+    <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
+    <style>
+      html,body{margin:0;height:100%} #map{position:absolute;inset:0}
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script>
+      const MAPBOX_TOKEN = {{ mapbox_token | tojson }};
+      const STYLE_URL    = {{ style_url | tojson }};
+      const HOST         = {{ host | tojson }};
+      const TOKEN        = {{ token | tojson }};
+      const CENTER       = [{{ center_lng }}, {{ center_lat }}];
+      const ZOOM         = {{ zoom }};
+      const PITCH        = {{ pitch }};
+      const BEARING      = {{ bearing }};
+      const MIN_ZOOM     = {{ minzoom }};
+      const MAX_ZOOM     = {{ maxzoom }};
+      const ELEV_SCALE   = {{ elevation_scale }};
+
+      const mvtURL = (h,t) => h.replace(/\/+$/,'') +
+        `/server/v1/realtime-shared/${t}/run/tiles/{z}/{x}/{y}?dtype_out_vector=mvt`;
+
+      mapboxgl.accessToken = MAPBOX_TOKEN;
+      if (mapboxgl.setTelemetryEnabled) { try { mapboxgl.setTelemetryEnabled(false); } catch(e){} }
+
+      const map = new mapboxgl.Map({
+        container: 'map',
+        style: STYLE_URL,
+        center: CENTER,
+        zoom: ZOOM,
+        pitch: PITCH,
+        bearing: BEARING
+      });
+
+      const overlay = new deck.MapboxOverlay({
+        layers: []
+      });
+
+      map.on('load', () => {
+        map.addControl(overlay);
+
+        const vector3d = new deck.MVTLayer({
+          id: 'vector-3d',
+          data: mvtURL(HOST, TOKEN),
+          minZoom: MIN_ZOOM,
+          maxZoom: MAX_ZOOM,
+          pickable: true,
+          extruded: true,
+          wireframe: false,
+          getElevation: f => {
+            const s = f.properties && f.properties.stats;
+            return (Number.isFinite(s) ? Number(s) : 0) * ELEV_SCALE;
+          },
+          getFillColor: f => {
+            const s = f.properties && f.properties.stats;
+            if (!Number.isFinite(s)) return [160,160,160,60];
+            const t = Math.max(0, Math.min(1, s/100));
+            return [Math.floor(30+200*t), Math.floor(120+60*(1-t)), Math.floor(90+30*(1-t)), 200];
+          },
+          getLineColor: [0,0,0,120],
+          lineWidthMinPixels: 1,
+          onClick: info => {
+            if (!info || !info.coordinate || !info.object) return;
+            new mapboxgl.Popup({closeButton:true})
+              .setLngLat(info.coordinate)
+              .setHTML('<pre style="margin:0;white-space:pre-wrap;">' +
+                       JSON.stringify(info.object.properties||{}, null, 2) + '</pre>')
+              .addTo(map);
+          }
+        });
+
+        // Simple lighting so the extrusion looks 3D
+        const ambient = new deck.AmbientLight({intensity: 1.0});
+        const dir     = new deck.DirectionalLight({intensity: 1.0, direction: [-1,-2,-1]});
+        overlay.setProps({ layers: [vector3d], effects: [new deck.LightingEffect({ambientLight: ambient, dirLight: dir})]});
+      });
+    </script>
+  </body>
+  </html>
+  """).render(
+          token=token,
+          host=host,
+          mapbox_token=mapbox_token,
+          style_url=style_url,
+          center_lng=center_lng,
+          center_lat=center_lat,
+          zoom=zoom,
+          pitch=pitch,
+          bearing=bearing,
+          minzoom=minzoom,
+          maxzoom=maxzoom,
+          elevation_scale=elevation_scale,
+      )
+
+      common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+      return common.html_to_obj(html)
   ```
 </details>
 
