@@ -12,7 +12,7 @@ const config: Config = {
     fusedPyVersion: '1.20.1',
   },
 
-  trailingSlash: true,
+  trailingSlash: undefined,
   
   // Production URL configuration
   url: process.env.DEPLOYMENT_URL || "https://docs.fused.io",
@@ -71,6 +71,8 @@ const config: Config = {
           readingTime: ({ content, frontMatter, defaultReadingTime }) =>
             defaultReadingTime({ content, options: { wordsPerMinute: 300 } }),
           truncateMarker: /(<!--\s*truncate\s*-->)|({\/\*\s*truncate\s*\*\/})/,
+          // Ensure consistent canonical URLs
+          routeBasePath: "blog",
         },
         theme: {
           customCss: "./src/css/custom.css",
