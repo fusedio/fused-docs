@@ -71,6 +71,8 @@ const config: Config = {
           readingTime: ({ content, frontMatter, defaultReadingTime }) =>
             defaultReadingTime({ content, options: { wordsPerMinute: 300 } }),
           truncateMarker: /(<!--\s*truncate\s*-->)|({\/\*\s*truncate\s*\*\/})/,
+          // Ensure consistent canonical URLs
+          routeBasePath: "blog",
         },
         theme: {
           customCss: "./src/css/custom.css",
