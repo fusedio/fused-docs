@@ -11494,18 +11494,9 @@ Use the "Preset" button to quickly generate styling configurations. You can alwa
 
 ## Layer Types
 
-### Vector: `GeoJsonLayer`
+### Vector: Custom Map (Mapbox GL)
 
-Use for `GeoDataFrame` outputs or any `DataFrame` with a geometry column. Supports dynamic styling based on data properties.
-
-[Image: Overture GeoJSON]
-
-**Expected DataFrame structure:**
-| geometry |
-|----------|
-| POLYGON(...) |
-| POLYGON(...) |
-| POLYGON(...) |
+Use when your UDF produces vector tiles (MVT) and you want full control using Mapbox GL styling and interactions.
 
   ```json
   ,
@@ -11514,18 +11505,48 @@ Use for `GeoDataFrame` outputs or any `DataFrame` with a geometry column. Suppor
   }
   ```
 
-**Expected DataFrame structure:**
-| hex | population | metric |
-|-----|------------|--------|
-| 8a2a1072b59ffff | 1250 | 45.2 |
-| 8a2a1072b5bffff | 890 | 32.1 |
-| 8a2a1072b5dffff | 2100 | 67.8 |
+  ```py
+  @fused.udf(cache_max_age=0)
+  def udf(
+      token: str = "UDF_Overture_Maps_Example",
+      host: str = "https://www.fused.io", 
+      mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+      style_url: str = "mapbox://styles/mapbox/dark-v10",
+      center_lng: float = -122.4194,
+      center_lat: float = 37.7749,
+      zoom: float = 16,
+      pitch: float = 30,     
+      bearing: float = 20,  
+      minzoom: int = 6,
+      maxzoom: int = 14,
+      layer_id: str = "fused-vector-layer",
+      source_layer: str = "udf"
+  ):
+      """
+      Minimal Mapbox map (no input UI) that loads Fused XYZ vector tiles (MVT) from `token`.
+      Tiles URL: /server/v1/realtime-shared//run/tiles///?dtype_out_vector=mvt
+      """
+      from jinja2 import Template
+      html = Template(r"""
 
-  ```json
-  ,
-    "rasterLayer": ,
-    "vectorLayer": 
-  }
+  """).render(
+          token=token,
+          host=host,
+          mapbox_token=mapbox_token,
+          style_url=style_url,
+          center_lng=center_lng,
+          center_lat=center_lat,
+          zoom=zoom,
+          pitch=pitch,
+          bearing=bearing,
+          minzoom=minzoom,
+          maxzoom=maxzoom,
+          layer_id=layer_id,
+          source_layer=source_layer,
+      )
+
+      common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+      return common.html_to_obj(html)
   ```
 
   ```json
@@ -11535,13 +11556,147 @@ Use for `GeoDataFrame` outputs or any `DataFrame` with a geometry column. Suppor
   }
   ```
 
-**Expected DataFrame structure:**
-| geometry | any_column |
-|----------|------------|
-| POLYGON(...) | any_value |
-| POLYGON(...) | any_value |
+  ```py
+  @fused.udf(cache_max_age=0)
+  def udf(
+      # H3 data (each row: )
+      data_url: str = "https://www.fused.io/server/v1/realtime-shared/UDF_DuckDB_H3_SF/run/file?format=json",
 
-*Note: Column values don't affect styling - all features get the same color.*
+      # Mapbox + camera
+      mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+      style_url: str = "mapbox://styles/mapbox/dark-v10",
+      center_lng: float = -122.417759,
+      center_lat: float = 37.776452,
+      zoom: float = 11.0,
+      pitch: float = 50.0,
+      bearing: float = -10.0,
+
+      # Layer tuning
+      elevation_scale: float = 20.0,     # count * elevation_scale
+      max_count_for_color: float = 500.0, # for [255, (1 - count/max)*255, 0]
+      wireframe: bool = False,
+  ):
+
+      from jinja2 import Template
+
+      """
+      Deck.gl 3D H3HexagonLayer over Mapbox, using your JSON (hex,count) data.
+      - Elevation: count * elevation_scale
+      - Color: [255, (1 - count/max_count_for_color)*255, 0]
+      - Popup shows hex & count
+      """
+      html = Template(r"""
+
+  """).render(
+      data_url=data_url,
+      mapbox_token=mapbox_token,
+      style_url=style_url,
+      center_lng=center_lng,
+      center_lat=center_lat,
+      zoom=zoom,
+      pitch=pitch,
+      bearing=bearing,
+      elevation_scale=elevation_scale,
+      max_count_for_color=max_count_for_color,
+      wireframe=wireframe,
+  )
+
+      common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+      return common.html_to_obj(html)
+
+  ```
+
+  ```json
+  ,
+    "rasterLayer": 
+  }
+  ```
+
+  ```py
+
+@fused.udf(cache_max_age=0)
+def udf(
+    token: str = "UDF_CDLs_Tile_Example",      
+    host: str = "https://www.fused.io", 
+    mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+    style_url: str = "mapbox://styles/mapbox/dark-v10",
+    center_lng: float = -121.16450354933122,
+    center_lat: float = 38.44272969483187,
+    zoom: float = 8.59,
+    minzoom: int = 6,
+    maxzoom: int = 14,
+    layer_id_raster: str = "fused-raster-layer",
+    raster_tile_size: int = 256,
+    raster_opacity: float = 0.95
+):
+    from jinja2 import Template
+
+    """
+    Mapbox map that loads **raster** XYZ tiles from a Fused UDF token.
+
+    Tiles URL:
+      /server/v1/realtime-shared//run/tiles///?dtype_out_raster=png
+    """
+    html = Template(r"""
+
+""").render(
+        token=token,
+        host=host,
+        mapbox_token=mapbox_token,
+        style_url=style_url,
+        center_lng=center_lng,
+        center_lat=center_lat,
+        zoom=zoom,
+        minzoom=minzoom,
+        maxzoom=maxzoom,
+        layer_id_raster=layer_id_raster,
+        raster_tile_size=raster_tile_size,
+        raster_opacity=raster_opacity,
+    )
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+    return common.html_to_obj(html)
+
+  ```
+
+  ```json
+,
+  "rasterLayer": ,
+  "vectorLayer": 
+}
+  ```
+
+  ```py
+@fused.udf(cache_max_age=0)
+def udf(
+    token: str = "UDF_Overture_Maps_Example",
+    host: str = "https://www.fused.io",
+    mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+    style_url: str = "mapbox://styles/mapbox/dark-v10",
+    center_lng: float = -122.4194,
+    center_lat: float = 37.7749,
+    zoom: float = 12,
+    minzoom: int = 0,
+    maxzoom: int = 15,
+    layer_id: str = "vector-fill",
+    source_layer: str = "udf",
+    fill_color: str = "#35AF6D",
+    fill_opacity: float = 0.55,
+    outline_color: str = "#0b0b0b",
+):
+    from jinja2 import Template
+    html = Template(r"""
+
+""").render(
+        token=token, host=host, mapbox_token=mapbox_token, style_url=style_url,
+        center_lng=center_lng, center_lat=center_lat, zoom=zoom,
+        minzoom=minzoom, maxzoom=maxzoom, layer_id=layer_id,
+        source_layer=source_layer, fill_color=fill_color, fill_opacity=fill_opacity,
+        outline_color=outline_color,
+    )
+    common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+    return common.html_to_obj(html)
+  ```
 
   ```json
   ,
@@ -11550,20 +11705,43 @@ Use for `GeoDataFrame` outputs or any `DataFrame` with a geometry column. Suppor
   }
   ```
 
-**Expected DataFrame structure:**
-| geometry | value | height |
-|----------|-------|--------|
-| POLYGON(...) | 5 | 25 |
-| POLYGON(...) | 8 | 40 |
-| POLYGON(...) | 3 | 15 |
+  ```py
+  @fused.udf(cache_max_age=0)
+  def udf(
+      token: str = "UDF_DSM_Zonal_Stats",
+      host: str = "https://www.fused.io",
+      mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+      style_url: str = "mapbox://styles/mapbox/dark-v10",
+      center_lng: float = -122.4194,
+      center_lat: float = 37.7749,
+      zoom: float = 12,
+      minzoom: int = 0,
+      maxzoom: int = 15,
+      layer_id: str = "vector-choro",
+      source_layer: str = "udf",
+      value_attr: str = "stats",
+      domain_min: float = 0.0,
+      domain_mid: float = 50.0,
+      domain_max: float = 100.0,
+      color_min: str = "#2b65a0",
+      color_mid: str = "#35af6d",
+      color_max: str = "#e8ff59",
+      fill_opacity: float = 0.65,
+      outline_color: str = "#111111",
+  ):
+      from jinja2 import Template
+      html = Template(r"""
 
-*Note: Numerical columns are used directly in color calculations.*
-
-  ```json
-  ,
-    "rasterLayer": ,
-    "vectorLayer": 
-  }
+  """).render(
+          token=token, host=host, mapbox_token=mapbox_token, style_url=style_url,
+          center_lng=center_lng, center_lat=center_lat, zoom=zoom,
+          minzoom=minzoom, maxzoom=maxzoom, layer_id=layer_id, source_layer=source_layer,
+          value_attr=value_attr, domain_min=domain_min, domain_mid=domain_mid, domain_max=domain_max,
+          color_min=color_min, color_mid=color_mid, color_max=color_max,
+          fill_opacity=fill_opacity, outline_color=outline_color,
+      )
+      common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+      return common.html_to_obj(html)
   ```
 
   ```json
@@ -11576,15 +11754,6 @@ Use for `GeoDataFrame` outputs or any `DataFrame` with a geometry column. Suppor
   }
   ```
 
-**Expected DataFrame structure:**
-| geometry | building_type | zone |
-|----------|---------------|------|
-| POLYGON(...) | residential | A |
-| POLYGON(...) | commercial | B |
-| POLYGON(...) | industrial | A |
-
-*Note: Categorical columns with distinct values for color mapping.*
-
   ```json
   ,
     "rasterLayer": ,
@@ -11593,14 +11762,66 @@ Use for `GeoDataFrame` outputs or any `DataFrame` with a geometry column. Suppor
   }
   ```
 
-**Expected DataFrame structure:**
-| hex | population | density |
-|-----|------------|---------|
-| 8a2a1072b59ffff | 1250 | 45.2 |
-| 8a2a1072b5bffff | 890 | 32.1 |
-| 8a2a1072b5dffff | 2100 | 67.8 |
+  ```py
+@fused.udf(cache_max_age=0)
+def udf(
+    token: str = "UDF_FEMA_Buildings_US",
+    host: str = "https://www.fused.io",
+    mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+    style_url: str = "mapbox://styles/mapbox/dark-v10",
+    center_lng: float = -74.0110,   # longitude
+    center_lat: float = 40.7133,  
+    zoom: float = 14,
+    minzoom: int = 0,
+    maxzoom: int = 15,
+    source_layer: str = "udf",
+    layer_id: str = "fema-categories",
+    attr_name: str = "OCC_CLS",
+    domain: list = None,
+    # CARTOColors Bold palette (7 colors)
+    colors: list = None,
+    fill_opacity: float = 0.65,
+    outline_color: str = "#0b0b0b"
+):
+    from jinja2 import Template
 
-*Note: Numerical columns with values within the specified domain range.*
+    if domain is None:
+        domain = [
+            "Assembly",
+            "Commercial",
+            "Utility and Misc",
+            "Residential",
+            "Industrial",
+            "Education",
+            "Government",
+        ]
+    if colors is None:
+        colors = ["#7F3C8D", "#11A579", "#3969AC", "#F2B701", "#E73F74", "#80BA5A", "#E68310"]
+
+    html = Template(r"""
+
+""").render(
+        token=token,
+        host=host,
+        mapbox_token=mapbox_token,
+        style_url=style_url,
+        center_lng=center_lng,
+        center_lat=center_lat,
+        zoom=zoom,
+        minzoom=minzoom,
+        maxzoom=maxzoom,
+        source_layer=source_layer,
+        layer_id=layer_id,
+        attr_name=attr_name,
+        domain=domain,
+        colors=colors,
+        fill_opacity=fill_opacity,
+        outline_color=outline_color,
+    )
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+    return common.html_to_obj(html)
+  ```
 
   ```json
   ,
@@ -11612,11 +11833,85 @@ Use for `GeoDataFrame` outputs or any `DataFrame` with a geometry column. Suppor
   }
   ```
 
+  ```py
+  @fused.udf(cache_max_age=0)
+  def udf(
+      data_url: str = "https://www.fused.io/server/v1/realtime-shared/UDF_DuckDB_H3_SF/run/file?format=json",
+      mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+      style_url: str = "mapbox://styles/mapbox/dark-v10",
+      center_lng: float = -122.417759,
+      center_lat: float = 37.776452,
+      zoom: float = 11.0,
+      pitch: float = 45.0,
+      bearing: float = 0.0,
+      elevation_scale: float = 10.0,
+      wireframe: bool = False,
+      domain_min: float = 0.0,
+      domain_max: float = 1000.0,
+      null_color: tuple = (184, 184, 184),
+  ):
+      from jinja2 import Template
+      html = Template(r"""
+
+  """).render(
+          data_url=data_url, mapbox_token=mapbox_token, style_url=style_url,
+          center_lng=center_lng, center_lat=center_lat, zoom=zoom,
+          pitch=pitch, bearing=bearing, elevation_scale=elevation_scale,
+          wireframe=wireframe, domain_min=domain_min, domain_max=domain_max,
+          null_color=list(null_color),
+      )
+      common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+      return common.html_to_obj(html)
+  ```
+
   ```json
   ,
     "rasterLayer": ,
     "vectorLayer": 
   }
+  ```
+
+  ```py
+  @fused.udf(cache_max_age=0)
+  def udf(
+      token: str = "UDF_DSM_Zonal_Stats",
+      host: str = "https://www.fused.io",  # or https://staging.fused.io
+      mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+      style_url: str = "mapbox://styles/mapbox/dark-v10",
+      center_lng: float = -122.4194,  # SF
+      center_lat: float = 37.7749,
+      zoom: float = 16.0,
+      pitch: float = 60.0,
+      bearing: float = -20.0,
+      minzoom: int = 0,
+      maxzoom: int = 15,
+      elevation_scale: float = 1.0,   # stats -> height multiplier
+  ):
+      from jinja2 import Template
+
+      """
+      Minimal Deck.gl 3D vector map (no raster). Requires server to serve MVT:
+        /...//run/tiles///?dtype_out_vector=mvt
+      """
+      html = Template(r"""
+
+  """).render(
+          token=token,
+          host=host,
+          mapbox_token=mapbox_token,
+          style_url=style_url,
+          center_lng=center_lng,
+          center_lat=center_lat,
+          zoom=zoom,
+          pitch=pitch,
+          bearing=bearing,
+          minzoom=minzoom,
+          maxzoom=maxzoom,
+          elevation_scale=elevation_scale,
+      )
+
+      common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+      return common.html_to_obj(html)
   ```
 
   ```json
@@ -14329,5 +14624,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2025-09-25
+Generated automatically from Fused documentation. Last updated: 2025-09-26
 Total sections: 5
