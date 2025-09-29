@@ -29,6 +29,8 @@ This tutorial will show you how to build this dashboard processing all of the US
     allow="fullscreen">
 </iframe>
 
+[Open in a new tab](https://unstable.fused.io/canvas/fc_2Q5aNgJzLTagImf6MOdWTG)
+
 ### Getting Data
 
 Data comes from [Source Cooperative](https://source.coop/fused/hex), based on the 2024 USDA Crop Data Layer. Fused [repartitioned this into H3 hexagons](https://docs.fused.io/blog/cdl-census-hex) and made it available on [Source Cooperative](https://source.coop/fused/hex) for anyone to access.
@@ -127,14 +129,59 @@ Explain in code:
 
 This returns directly a dataframe. We can then pass this data directly to another UDF to render this data on a map
 
-### Live filtering on Map
+## Live filtering on Map
 
-We wrote a custom UDF that takes this data and allows to filter it based on crop type ID:
+Here is how the Map is built:
 
-{/* TODO: Add code here + explain a bit what this does */}
+1. Data Source: Fetches Parquet from previous UDF
+2. Browser Database: Loads into DuckDB WASM with H3/spatial extensions
+3. Real-time Filtering: Applies SQL WHERE conditions on user input
+4. Geometry Generation: Converts H3 cells to hexagon boundaries
+5. Map Visualization: Renders colored hexagons with tooltips
+6. Live Statistics: Shows count, area, and averages for filtered data
 
-This map is custom to the data we're visualizing but thanks to the [AI Assistant](/workbench/udf-builder/ai-assistant) you can easily adapt this to any data of your choice!
+The most interesting parts are:
 
-### Building this yourself
+### Reading from Data UDF
 
+No need to save to files, we've [deployed the previous UDF as an endpoint](/tutorials/engineering-etl/#turn-your-data-into-an-api):
+
+```javascript
+async function loadParquet(bytes) {{
+    await duckdb.registerFileBuffer('data.parquet', bytes);
+    await conn.query('DROP TABLE IF EXISTS spatial_data_full;');
+    await conn.query(`
+    CREATE TABLE spatial_data_full AS
+    SELECT row_number() OVER() AS id,
+            CAST(hex AS BIGINT) AS h3_cell,
+            CAST(data AS INTEGER) AS data,
+            CAST(area AS DOUBLE) AS area,
+            CAST(pct  AS DOUBLE) AS pct
+    FROM read_parquet('data.parquet')
+    WHERE hex IS NOT NULL
+    `);
+}}
+```
+
+### Real time filtering using DuckDB
+
+The user passes the crop type ID, and the map is updated in real time:
+
+```javascript
+async function applyFilter(expr) {{
+    await conn.query('DROP TABLE IF EXISTS spatial_data;');
+    await conn.query('CREATE TABLE spatial_data AS SELECT * FROM spatial_data_full WHERE (' + expr + ')');
+}}
+```
+
+{/* TODO: Add link to catalog once its up */}
+{/* You can see the full code here for yourself */}
+
+## Want to try it yourself?
+
+You can directly book a demo with Max, our Developer Advocate right [here](https://calendly.com/max-fused/30min)!
+
+We'd love to show you how to build this for yourself!
+
+Sign up for a free account [here](https://www.fused.io/workbench) and try it out for yourself!
 
