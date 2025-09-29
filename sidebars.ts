@@ -26,6 +26,7 @@ const sidebars: SidebarsConfig = {
             "tutorials/Analytics & Dashboard/let-anyone-talk-to-your-data",
             "tutorials/Analytics & Dashboard/stack-overflow-surveys",
             "tutorials/Analytics & Dashboard/currency-trading-prediction",
+            "tutorials/Analytics & Dashboard/realtime-data-processing",
           ],
         },
         {
