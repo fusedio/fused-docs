@@ -2406,6 +2406,209 @@ Since UDF endpoints are accessible by anyone with the link by default, anyone ca
 
 ================================================================================
 
+## Realtime data processing with DuckDB WASM
+Path: tutorials/Analytics & Dashboard/realtime-data-processing.mdx
+URL: https://docs.fused.io/tutorials/analytics & dashboard/realtime-data-processing
+
+# Realtime data filtering with DuckDB WASM
+
+This tutorial will show you how to build a real time filtering visualization using DuckDB WASM:
+
+Open map in a new tab
+
+This map:
+- Fetches data from a Fused UDF (which aggregates & cleans data into hex5), uses DuckDB WASM to filter it and renders the output on a map
+- Data comes from Source Cooperative based on 2024 USDA Crop Data Layer
+
+This is how to build this step by step:
+
+## 1. Querying data with DuckDB WASM
+
+The simplest way to use DuckDB in the browser is to use DuckDB WASM to query a hosted file. 
+
+You can directly edit the SQL query directly here:
+
+This UDF:
+- Signs S3 once so browser can fetch it
+- Loads parquet as view `df`
+- Auto-runs query as you type (small debounce)
+- 'Run' button stays disabled until data is ready and becomes optional
+
+1. Imports, signing the S3 URL and HTML template start
+
+```python
+common = fused.load("https://github.com/fusedio/udfs/tree/6b98ee5/public/common/")
+@fused.udf(cache_max_age = 0)
+def udf(
+    data_url: str = "s3://fused-sample/demo_data/airbnb_listings_nyc.parquet",
+    initial_sql: str = """ SELECT * from df """
+):
+    """
+    DuckDB-WASM SQL viewer with VIRTUALIZED table:
+    - Loads parquet as view `df`
+    - Auto-runs query as you type
+    - Table renders only visible rows for performance
+    """
+    signed_url = fused.api.sign_url(data_url)
+
+    html = f"""<!DOCTYPE html>
+
+```
+
+Key points:
+
+– `fused.api.sign_url` gives a temporary public link; the HTML string is built with an f-string so the signed URL can be interpolated.
+
+2. UI elements (textarea, button, status, result container)
+
+```python
+
+```
+
+Key points 
+
+– The query is auto-executed after a short pause (250 ms) once the user stops typing, but a manual “Run” button and a keyboard shortcut are also provided.
+
+Link to code
+
+Then call this UDF directly in DuckDB WASM:
+
+Link to code
+
+**1️⃣ Load the shared helper library**
+
+```python
+common = fused.load("https://github.com/fusedio/udfs/tree/6b98ee5/public/common/")
+```
+
+**2️⃣ UDF definition & parameters**
+
+```python
+@fused.udf
+def udf(
+    data_url: str = "https://www.fused.io/server/v1/realtime-shared/UDF_Airbnb_listings_nyc_parquet/run/file?dtype_out_raster=png&dtype_out_vector=parquet",
+    initial_sql: str = """\
+    SELECT 
+      room_type,
+      ROUND(AVG(price_in_dollar), 2) AS avg_price,
+      COUNT(*) AS listings
+    FROM df
+    WHERE price_in_dollar IS NOT NULL AND room_type IS NOT NULL
+    GROUP BY room_type
+    ORDER BY avg_price DESC;"""
+):
+```
+- `data_url` – where DuckDB will read the Parquet file from.
+- `initial_sql` – the starter query placed in the textarea.
+
+**3️⃣ Docstring (high-level description)**
+
+```python
+    """
+    DuckDB-WASM SQL viewer :
+    - Loads parquet from a public/accessible URL as view `df`
+    - Auto-runs query as you type (small debounce)
+    - Run button disabled until data is ready
+    """
+```
+
+**4️⃣ HTML skeleton (head, style & body)**
+
+```python
+    html = f"""<!DOCTYPE html>
+
+```
+The HTML places the UI elements on the page and injects the `data_url` and `initial_sql` values.
+
+**5️⃣ JavaScript – DuckDB-WASM loading & data registration**
+
+```javascript
+
+```
+
+Key points 
+
+– The query is auto-executed after a short pause (250 ms) once the user stops typing, but a manual “Run” button and a keyboard shortcut are also provided.
+
+Link to code
+
+1️⃣ Imports & UDF signature
+
+```python
+common = fused.load(
+    "https://github.com/fusedio/udfs/tree/abf9c87/public/common/"
+)
+
+@fused.udf
+def udf(
+    data_url: str = "https://www.fused.io/server/v1/realtime-shared/…/run/file?dtype_out_raster=png&dtype_out_vector=parquet",
+    mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMi…",
+    center_lng: float = -73.9857,
+    center_lat: float = 40.7484,
+    zoom: int = 9,
+    initial_sql: str = "SELECT * FROM df LIMIT 100;",
+):
+
+```
+
+common = fused.load(...) – loads a small helper library that provides html_to_obj, which later converts the raw HTML string into an object that the Workbench can render.
+The UDF parameters let the user change the data source, Mapbox token, map centre, zoom level and the default SQL query without editing the code.
+
+2️⃣ The HTML template (client-side UI)
+
+```python
+html = f"""<!DOCTYPE html>
+
+  …
+
+## Real world example: Visualizing Crops in the USA
+
+Data: USDA Crop Data Layer (2024)
+From: Source Cooperative
+Format: Fused repartitioned this into H3 hexagons as hex7
+
+```bash
+https://source.coop/fused/hex/release_2025_04_beta/cdl/hex7_2024.parquet
+```
+
+### Processing Data with DuckDB
+
+Before we display the data we want to:
+- Remove any nodata (`0`) in CDL
+- Calculate the percentage that each crop type makes up of the total area of each hex8 cell 
+- Return `lat / lon` coordinates for each hex8 cell to be able to display the data on a map
+
+We can write a simple UDF to do this for us:
+
+Link to code
+
+This returns a dataframe directly. We can then pass this data to another UDF to render it on a map.
+
+## Live filtering on Map
+
+Link to code
+
+Here's how the map is built:
+
+1. Data Source: Fetches Parquet from previous UDF
+2. Browser Database: Loads into DuckDB WASM with H3/spatial extensions
+3. Real-time Filtering: Applies SQL WHERE conditions on user input
+4. Geometry Generation: Converts H3 cells to hexagon boundaries
+5. Map Visualization: Renders colored hexagons with tooltips
+6. Live Statistics: Shows count, area, and averages for filtered data
+
+### Explore on canvas
+
+You can see this tutorial as a Fused Canvas:
+
+Open in a new tab
+
+## Want to try it yourself?
+
+Sign up for a free Fused account and build on top of any of the User Defined Functions directly in Fused!
+
+================================================================================
+
 ## Vibe Chart Building - Exploring the Stack Overflow User Surveys
 Path: tutorials/Analytics & Dashboard/stack-overflow-surveys.mdx
 URL: https://docs.fused.io/tutorials/analytics & dashboard/stack-overflow-surveys
@@ -14657,5 +14860,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2025-09-29
+Generated automatically from Fused documentation. Last updated: 2025-09-30
 Total sections: 5

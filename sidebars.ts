@@ -23,7 +23,7 @@ const sidebars: SidebarsConfig = {
           link: { type: "doc", id: "tutorials/Analytics & Dashboard/analytics-dashboard" },
           items: [
             "tutorials/Analytics & Dashboard/interactive-graphs-for-your-data",
-            "tutorials/Analytics & Dashboard/realtime-data-processing-with-duckdb-wasm",
+            "tutorials/Analytics & Dashboard/realtime-data-processing",
             "tutorials/Analytics & Dashboard/let-anyone-talk-to-your-data",
             "tutorials/Analytics & Dashboard/stack-overflow-surveys",
             "tutorials/Analytics & Dashboard/currency-trading-prediction",
