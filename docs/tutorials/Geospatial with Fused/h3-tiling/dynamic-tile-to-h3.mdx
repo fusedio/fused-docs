@@ -6,4 +6,178 @@ tags: [h3, geospatial]
 sidebar_position: 2
 ---
 
-# Dynamic Tile to H3
+# Dynamic Tile to 
+
+This section shows how to dynamically tile data into H3 hexagons in a given vieport. Hex resolution is calculated based on the bounds of the viewport.
+
+The following examples are available in a dedicated Fused Canvas:
+
+{/* TODO Uncomment canvas before page goes live */}
+{/* <iframe 
+  src="https://www.fused.io/canvas/fc_6axFAIdiqYrWuLNkDXi06c"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe> */}
+
+[Link to Canvas](https://www.fused.io/canvas/fc_6axFAIdiqYrWuLNkDXi06c)
+
+## Polygon to Hex
+
+The following example uses a [simplified Census Block Group dataset of the state of California](https://www.fused.io/workbench/files?path=s3%3A%2F%2Ffused-asset%2Fdemos%2Fcatchment_analysis%2Fsimplified_acs_bg_ca_2022.parquet), showing a heatmap of the population density per hex 9 cell:
+
+<iframe 
+  src="https://www.fused.io/server/v1/realtime-shared/fc_6axFAIdiqYrWuLNkDXi06c-hex_tile_map_template_with_tooltip_v2/run/file"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+<details>
+<summary>Code</summary>
+```python showLineNumbers
+@fused.udf
+def udf(
+        bounds: fused.types.Bounds = [-125.0, 24.0, -66.9, 49.0],
+    path: str = "s3://fused-asset/demos/catchment_analysis/simplified_acs_bg_ca_2022.parquet",
+    hex_res: int = 9,
+    min_hex_cell_res: int= 11, # Increase this if working with high res local data
+    max_hex_cell_res: int= 4,
+    lock_hex_res: bool = False,
+):
+    import pandas as pd
+    import geopandas as gpd
+    
+    common = fused.load("https://github.com/fusedio/udfs/tree/f430c25/public/common/")
+    
+    # Dynamic H3 resolution
+    def dynamic_h3_res(b):
+        z = common.estimate_zoom(b)
+        return max(min(int(2 + z / 1.5),min_hex_cell_res), max_hex_cell_res)
+    
+    res = hex_res if lock_hex_res else dynamic_h3_res(bounds)
+    parent_res = max(res - 1, 0)
+    
+    # Load and clip data
+    gdf = gpd.read_parquet(path)
+    tile = common.get_tiles(bounds, clip=True)
+    gdf = gdf.to_crs(4326).clip(tile)
+    
+    # Early exit if empty
+    if len(gdf) == 0:
+        return pd.DataFrame(columns=["hex", "POP", "pct"])
+    
+    # Hexify
+    con = common.duckdb_connect()
+    df_hex = common.gdf_to_hex(gdf, res=res, add_latlng_cols=None)
+    con.register("df_hex", df_hex)
+    
+    # Aggregate to parent hexagons and calculate percentages
+    # In this case we're aggregating by sum
+    query = f"""
+    WITH agg AS (
+        SELECT 
+            h3_cell_to_parent(hex, {parent_res}) AS hex, 
+            SUM(POP) AS POP
+        FROM df_hex
+        GROUP BY hex
+    )
+    SELECT
+        hex,
+        POP,
+        POP * 100.0 / SUM(POP) OVER () AS pct
+    FROM agg
+    ORDER BY POP DESC
+    """
+    
+    return con.sql(query).df()
+```
+</details>
+
+## Raster to Hex
+
+This example uses [AWS's Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) tiled GeoTiff data. Hexagons show elevation data:
+
+<iframe 
+  src="https://www.fused.io/server/v1/realtime-shared/fsh_5o5UNLYxDNTN5ldzVFkeuR/run/file"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+<details>
+<summary>Code</summary>
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds = [-90.691,-21.719,-21.300,75.897], stats_type="mean", type='hex', color_scale:float=1):
+    import pandas as pd
+    import rioxarray
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/b7637ee/public/common/")
+    # convert bounds to tile
+    tile = common.get_tiles(bounds, clip=True)
+
+    # 1. Initial parameters
+    x, y, z = tile.iloc[0][["x", "y", "z"]]
+    url = f"https://s3.amazonaws.com/elevation-tiles-prod/geotiff/{z}/{x}/{y}.tif"
+    if type=='png':
+        return url_to_plasma(url, min_max=(-1000,2000/color_scale**0.5), colormap='plasma')
+    else:
+        
+        res_offset = 1  # lower makes the hex finer
+        h3_size = max(min(int(3 + z / 2), 12) - res_offset, 2)
+        print(h3_size)
+    
+        # 2. Read tiff
+        da_tiff = rioxarray.open_rasterio(url).squeeze(drop=True).rio.reproject("EPSG:4326")
+        df_tiff = da_tiff.to_dataframe("data").reset_index()[["y", "x", "data"]]
+    
+        # 3. Hexagonify & aggregate
+        df = aggregate_df_hex(
+            df_tiff, h3_size, latlng_cols=["y", "x"], stats_type=stats_type
+        )
+        df["elev_scale"] = int((15 - z) * 1)
+        df["metric"]=df["metric"]*color_scale
+        df = df[df["metric"] > 0]
+        return df
+
+
+
+def url_to_plasma(url, min_max=None, colormap='plasma'):
+    common = fused.load("https://github.com/fusedio/udfs/tree/b7637ee/public/common/")
+
+    return common.arr_to_plasma(common.url_to_arr(url).squeeze(), min_max=min_max, colormap=colormap, reverse=False)
+
+
+@fused.cache
+def df_to_hex(df, res, latlng_cols=("lat", "lng")):  
+    common = fused.load("https://github.com/fusedio/udfs/tree/b7637ee/public/common/")
+    qr = f"""
+            SELECT h3_latlng_to_cell({latlng_cols[0]}, {latlng_cols[1]}, {res}) AS hex, ARRAY_AGG(data) as agg_data
+            FROM df
+            group by 1
+          --  order by 1
+        """
+    con = common.duckdb_connect()
+    return con.query(qr).df()
+
+
+@fused.cache
+def aggregate_df_hex(df, res, latlng_cols=("lat", "lng"), stats_type="mean"):
+    import pandas as pd
+
+    df = df_to_hex(df, res=res, latlng_cols=latlng_cols)
+    if stats_type == "sum":
+        fn = lambda x: pd.Series(x).sum()
+    elif stats_type == "mean":
+        fn = lambda x: pd.Series(x).mean()
+    else:
+        fn = lambda x: pd.Series(x).mean()
+    df["metric"] = df.agg_data.map(fn)
+    return df
+
+```
+</details>
