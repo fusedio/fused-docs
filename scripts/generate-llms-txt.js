@@ -115,19 +115,11 @@ function ultraCompactFormat(content) {
     .replace(/:::warning\n[\s\S]*?:::/g, '')
     .replace(/^## [a-zA-Z_][a-zA-Z0-9_.]*\n\n/gm, '');
   
-  // Remove Examples sections FIRST (before other processing)
-  content = content.replace(/Examples:\n\n```\n[^`]*\n```\n\n/g, '');
-  content = content.replace(/Examples:\n\n[^\n]*\n\n/g, '');
-  content = content.replace(/Examples:\n\n/g, '');
-  
-  // Remove any remaining code blocks (usually examples)
-  content = content.replace(/```\nfused\.[a-zA-Z_][a-zA-Z0-9_.()]*\n```\n\n/g, '');
-  
-  // Simplify Returns sections - extract just the type
+  // Simplify Returns sections - extract just the type (do this early)
   content = content.replace(/Returns:\n\n- ([^–\n]+) –[^\n]*/g, 'Returns: $1');
   content = content.replace(/Returns:\n\n- ([^\n]+)/g, 'Returns: $1');
   
-  // Convert code block function signatures to inline format
+  // Convert code block function signatures to inline format FIRST (before removing code blocks)
   content = content.replace(
     /```\n([a-zA-Z_][a-zA-Z0-9_.()]*(?:\s*->\s*[^\n]+)?)\n```\n\n([^\n]+(?:\n[^\n]+)?)\n\nParameters:\n/g,
     '`$1` - $2\nParams:\n'
@@ -139,17 +131,40 @@ function ultraCompactFormat(content) {
     '`$1` - $2'
   );
   
+  // NOW remove Examples sections (after preserving function signatures)
+  content = content.replace(/Examples:\n\n```\n[^`]*\n```\n\n/g, '');
+  content = content.replace(/Examples:\n\n[^\n]*\n\n/g, '');
+  content = content.replace(/Examples:\n\n/g, '');
+  
+  // Remove ALL remaining multi-line code blocks (examples, verbose signatures, etc.)
+  // This catches ```python showLineNumbers and other variants
+  content = content.replace(/```[\s\S]*?```\n*/g, '');
+  
+  // Remove standalone code block markers that might remain
+  content = content.replace(/```[a-z ]*\n/g, '');
+  content = content.replace(/```\n*/g, '');
+  
   // Simplify parameter format: remove ALL descriptions, keep just name and type
   content = content.replace(/- ([a-zA-Z_][a-zA-Z0-9_]*) \(([^)]+)\)[\s\S]*?(?=\n-|\nReturns:|\n`|\n\n|$)/g, (match, name, type) => {
     // If there's a newline after, it's a multi-line description - remove it all
     return `- ${name} (${type})\n`;
   });
   
-  // Change "Parameters:" to "Params:"
+  // Change "Parameters:" and "Arguments:" to "Params:"
   content = content.replace(/Parameters:/g, 'Params:');
+  content = content.replace(/Arguments:/g, 'Params:');
   
   // Remove "Other Parameters:" header
   content = content.replace(/Other Parameters:\n/g, '');
+  
+  // Remove ## function headers (with backticks like ## `run_file`)
+  content = content.replace(/^## `[a-zA-Z_][a-zA-Z0-9_]*`\n\n/gm, '');
+  
+  // Remove verbose parameter format: - `param` _type_ - description
+  content = content.replace(/- `([a-zA-Z_][a-zA-Z0-9_]*)` _([^_]+)_ -[^\n]*/g, '- $1 ($2)');
+  
+  // Remove standalone Returns: sections with verbose descriptions
+  content = content.replace(/Returns:\n\n  [^\n]+\n\n/g, '');
   
   // Remove Raises sections
   content = content.replace(/Raises:\n[\s\S]*?(?=\n\n`|\n\n###|$)/g, '');
@@ -430,10 +445,13 @@ function generatePythonSdkTxt() {
   // Walk the python-sdk directory and include everything
   const items = walkDirectory(sdkDir, 'python-sdk', true, []); // Use full version mode
   
-  // Sort items by path
-  items.sort((a, b) => a.path.localeCompare(b.path));
+  // Filter out changelog.mdx
+  const filteredItems = items.filter(item => !item.path.includes('changelog.mdx'));
   
-  items.forEach(item => {
+  // Sort items by path
+  filteredItems.sort((a, b) => a.path.localeCompare(b.path));
+  
+  filteredItems.forEach(item => {
     content += `### ${item.title}\n\n`;
     
     if (item.fullContent) {
@@ -450,15 +468,15 @@ function generatePythonSdkTxt() {
     content += `---\n\n`;
   });
   
-  content += `\n---\n\nGenerated automatically from Fused Python SDK documentation. Last updated: ${new Date().toISOString().split('T')[0]}\nTotal pages: ${items.length}\n`;
+  content += `\n---\n\nGenerated automatically from Fused Python SDK documentation. Last updated: ${new Date().toISOString().split('T')[0]}\nTotal pages: ${filteredItems.length}\n`;
   
   // Write the file
   fs.writeFileSync(outputFile, content, 'utf8');
-  console.log(`✅ Generated Python SDK llms.txt with ${items.length} pages`);
+  console.log(`✅ Generated Python SDK llms.txt with ${filteredItems.length} pages`);
   console.log(`📝 File saved to: ${outputFile}`);
   console.log(`📊 File size: ${Math.round(content.length / 1024)} KB`);
   
-  return items.length;
+  return filteredItems.length;
 }
 
 // Handle command line arguments
