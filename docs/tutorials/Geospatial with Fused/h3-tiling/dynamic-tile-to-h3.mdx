@@ -6,7 +6,7 @@ tags: [h3, geospatial]
 sidebar_position: 2
 ---
 
-# Dynamic Tile to 
+# Dynamic Tile to H3
 
 Dynamically tile data into H3 hexagons in a given viewport. Hex resolution is calculated based on the bounds of the viewport.
 
@@ -14,7 +14,9 @@ The following examples are available in a [dedicated Fused Canvas](https://www.f
 
 :::note Set your UDF to [Tile UDF Mode](/tutorials/Geospatial%20with%20Fused/filetile/#tile-udf)
 
-These UDFs 
+The examples in this page all use the [Tile UDF Mode](/tutorials/Geospatial%20with%20Fused/filetile/#tile-udf) to dynamically compute H3 based on the viewport bounds.
+
+Read more about the differences between [Tile UDF Mode](/tutorials/Geospatial%20with%20Fused/filetile/#tile-udf) and [Single UDF Mode](/tutorials/Geospatial%20with%20Fused/filetile/#single-udf).
 
 :::
 
@@ -29,6 +31,8 @@ The following example uses a [simplified Census Block Group dataset of the state
   frameBorder="0"
   style={{borderRadius: '8px'}}
 ></iframe>
+
+Link to UDF in [Fused Catalog](https://www.fused.io/workbench/catalog/census_to_hex_template_v2-53ff4b2f-fb6e-4284-9c0d-4b5f04b4f3d1)
 
 <details>
 <summary>Code</summary>
@@ -104,10 +108,40 @@ def udf(
 bounds: fused.types.Bounds = [-118.32649, 33.87249, -118.32206, 33.88282]
 ```
 
-- Field to hexagonify & Aggregation function. In this example we're summing the population:
+- Field to hexagonify & Aggregation function. In this example we're summing the population: `POP`
+
+### Logic
+
+1. Get tile & hex resolution
+
 ```python showLineNumbers
-# Aggregate to parent hexagons and calculate percentages
-# In this case we're aggregating by sum
+common = fused.load("https://github.com/fusedio/udfs/tree/f430c25/public/common/")
+
+def dynamic_h3_res(b):
+    z = common.estimate_zoom(b)
+    return max(min(int(2 + z / 1.5),min_hex_cell_res), max_hex_cell_res)
+
+parent_res = max(dynamic_h3_res(bounds) - 1, 0)
+```
+
+2. Load data & clip to tile
+
+```python showLineNumbers
+gdf = gpd.read_parquet(path)
+tile = common.get_tiles(bounds, clip=True)
+gdf = gdf.to_crs(4326).clip(tile)
+```
+
+3. Hexify
+
+```python showLineNumbers
+# We'll use functions from the common UDFs
+df_hex = common.gdf_to_hex(gdf, res=parent_res, add_latlng_cols=None)
+```
+
+4. Aggregate
+
+```python showLineNumbers
 query = f"""
 WITH agg AS (
     SELECT 
@@ -123,6 +157,8 @@ SELECT
 FROM agg
 ORDER BY POP DESC
 """
+
+hex_df = con.sql(query).df()
 ```
 
 ## Raster to Hex
@@ -137,8 +173,10 @@ This example uses [AWS's Terrain Tiles](https://registry.opendata.aws/terrain-ti
   style={{borderRadius: '8px'}}
 ></iframe>
 
+Link to UDF in [Fused Catalog](https://github.com/fusedio/udfs/tree/966a45f/community/sina/DEM_Tile_Example/)
+
 <details>
-<summary>Code</summary>
+<summary>Code Details</summary>
 ```python showLineNumbers
 @fused.udf
 def udf(bounds: fused.types.Bounds = [-90.691,-21.719,-21.300,75.897], stats_type="mean", type='hex', color_scale:float=1):
@@ -210,3 +248,72 @@ def aggregate_df_hex(df, res, latlng_cols=("lat", "lng"), stats_type="mean"):
 
 ```
 </details>
+
+### Requirements
+
+- Raster Dataset (in this case [AWS's Terrain Tiles](https://registry.opendata.aws/terrain-tiles/)):
+
+```bash
+                y           x  data
+0       84.776183 -179.725474 -2191
+1       84.776183 -179.176421 -2176
+2       84.776183 -178.627369 -2176
+```
+
+- Passing the [viewport `bounds`](/tutorials/Geospatial%20with%20Fused/filetile/#bounds)
+
+```python showLineNumbers
+bounds: fused.types.Bounds = [-90.691,-21.719,-21.300,75.897]
+```
+
+### Logic
+
+1. Get tile & hex resolution
+
+```python showLineNumbers
+x, y, z = tile.iloc[0][["x", "y", "z"]]
+url = f"https://s3.amazonaws.com/elevation-tiles-prod/geotiff/{z}/{x}/{y}.tif"
+
+res_offset = 1  # lower makes the hex finer
+h3_size = max(min(int(3 + z / 2), 12) - res_offset, 2)
+```
+
+2. Read array & return as dataframe
+
+```python showLineNumbers
+da_tiff = rioxarray.open_rasterio(url).squeeze(drop=True).rio.reproject("EPSG:4326")
+df_tiff = da_tiff.to_dataframe("data").reset_index()[["y", "x", "data"]]
+```
+
+3. Hexagonify & aggregate
+
+```python showLineNumbers
+df = df_tiff
+res = h3_size
+latlng_cols=("lat", "lng")
+
+# duckdb query 
+qr = f"""
+        SELECT h3_latlng_to_cell({latlng_cols[0]}, {latlng_cols[1]}, {res}) AS hex, ARRAY_AGG(data) as agg_data
+        FROM df
+        group by 1
+    """
+```
+
+4. Aggregate 
+
+```python showLineNumbers
+@fused.cache
+def aggregate_df_hex(df, res, latlng_cols=("lat", "lng"), stats_type="mean"):
+    import pandas as pd
+
+    df = df_to_hex(df, res=res, latlng_cols=latlng_cols)
+    if stats_type == "sum":
+        fn = lambda x: pd.Series(x).sum()
+    elif stats_type == "mean":
+        fn = lambda x: pd.Series(x).mean()
+    else:
+        fn = lambda x: pd.Series(x).mean()
+    df["metric"] = df.agg_data.map(fn)
+    return df
+```

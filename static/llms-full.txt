@@ -4410,6 +4410,10 @@ URL: https://docs.fused.io/tutorials/geospatial with fused/h3-tiling
 
 # H3 Tiling
 
+> H3 is a discrete global grid system for indexing geographies into a hexagonal grid
+
+Taken from the H3 website
+
 <DocCardList className="DocCardList--no-description"/>
 
 ================================================================================
@@ -4418,17 +4422,270 @@ URL: https://docs.fused.io/tutorials/geospatial with fused/h3-tiling
 Path: tutorials/Geospatial with Fused/h3-tiling/dynamic-tile-to-h3.mdx
 URL: https://docs.fused.io/tutorials/geospatial with fused/h3-tiling/dynamic-tile-to-h3
 
+# Dynamic Tile to 
+
+Dynamically tile data into H3 hexagons in a given viewport. Hex resolution is calculated based on the bounds of the viewport.
+
+The following examples are available in a dedicated Fused Canvas
+
+These UDFs 
+
+## Polygon to Hex
+
+The following example uses a simplified Census Block Group dataset of the state of California, showing a heatmap of the population density per hex 9 cell:
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-125.0, 24.0, -66.9, 49.0],
+    path: str = "s3://fused-asset/demos/catchment_analysis/simplified_acs_bg_ca_2022.parquet",
+    min_hex_cell_res: int= 11, # Increase this if working with high res local data
+    max_hex_cell_res: int= 4,
+):
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/f430c25/public/common/")
+    
+    # Dynamic H3 resolution
+    def dynamic_h3_res(b):
+        z = common.estimate_zoom(b)
+        return max(min(int(2 + z / 1.5),min_hex_cell_res), max_hex_cell_res)
+    
+    parent_res = max(dynamic_h3_res(bounds) - 1, 0)
+    
+    # Load and clip data
+    gdf = gpd.read_parquet(path)
+    tile = common.get_tiles(bounds, clip=True)
+    gdf = gdf.to_crs(4326).clip(tile)
+    
+    # Early exit if empty
+    if len(gdf) == 0:
+        return pd.DataFrame(columns=["hex", "POP", "pct"])
+    
+    # Hexify
+    con = common.duckdb_connect()
+    df_hex = common.gdf_to_hex(gdf, res=parent_res, add_latlng_cols=None)
+    con.register("df_hex", df_hex)
+    
+    # Aggregate to parent hexagons and calculate percentages
+    # In this case we're aggregating by sum
+    query = f"""
+    WITH agg AS (
+        SELECT 
+            h3_cell_to_parent(hex, ) AS hex, 
+            SUM(POP) AS POP
+        FROM df_hex
+        GROUP BY hex
+    )
+    SELECT
+        hex,
+        POP,
+        POP * 100.0 / SUM(POP) OVER () AS pct
+    FROM agg
+    ORDER BY POP DESC
+    """
+    
+    return con.sql(query).df()
+```
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds = [-90.691,-21.719,-21.300,75.897], stats_type="mean", type='hex', color_scale:float=1):
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/b7637ee/public/common/")
+    # convert bounds to tile
+    tile = common.get_tiles(bounds, clip=True)
+
+    # 1. Initial parameters
+    x, y, z = tile.iloc[0][["x", "y", "z"]]
+    url = f"https://s3.amazonaws.com/elevation-tiles-prod/geotiff///.tif"
+    if type=='png':
+        return url_to_plasma(url, min_max=(-1000,2000/color_scale**0.5), colormap='plasma')
+    else:
+        
+        res_offset = 1  # lower makes the hex finer
+        h3_size = max(min(int(3 + z / 2), 12) - res_offset, 2)
+        print(h3_size)
+    
+        # 2. Read tiff
+        da_tiff = rioxarray.open_rasterio(url).squeeze(drop=True).rio.reproject("EPSG:4326")
+        df_tiff = da_tiff.to_dataframe("data").reset_index()[["y", "x", "data"]]
+    
+        # 3. Hexagonify & aggregate
+        df = aggregate_df_hex(
+            df_tiff, h3_size, latlng_cols=["y", "x"], stats_type=stats_type
+        )
+        df["elev_scale"] = int((15 - z) * 1)
+        df["metric"]=df["metric"]*color_scale
+        df = df[df["metric"] > 0]
+        return df
+
+def url_to_plasma(url, min_max=None, colormap='plasma'):
+    common = fused.load("https://github.com/fusedio/udfs/tree/b7637ee/public/common/")
+
+    return common.arr_to_plasma(common.url_to_arr(url).squeeze(), min_max=min_max, colormap=colormap, reverse=False)
+
+@fused.cache
+def df_to_hex(df, res, latlng_cols=("lat", "lng")):  
+    common = fused.load("https://github.com/fusedio/udfs/tree/b7637ee/public/common/")
+    qr = f"""
+            SELECT h3_latlng_to_cell(, , ) AS hex, ARRAY_AGG(data) as agg_data
+            FROM df
+            group by 1
+          --  order by 1
+        """
+    con = common.duckdb_connect()
+    return con.query(qr).df()
+
+@fused.cache
+def aggregate_df_hex(df, res, latlng_cols=("lat", "lng"), stats_type="mean"):
+
+    df = df_to_hex(df, res=res, latlng_cols=latlng_cols)
+    if stats_type == "sum":
+        fn = lambda x: pd.Series(x).sum()
+    elif stats_type == "mean":
+        fn = lambda x: pd.Series(x).mean()
+    else:
+        fn = lambda x: pd.Series(x).mean()
+    df["metric"] = df.agg_data.map(fn)
+    return df
+
+```
+</details>
+
 ================================================================================
 
 ## File to H3
 Path: tutorials/Geospatial with Fused/h3-tiling/file-to-h3.mdx
 URL: https://docs.fused.io/tutorials/geospatial with fused/h3-tiling/file-to-h3
 
+# File to H3
+
+Turning a single small dataset into a grid of H3 hexagons.
+
+## Point Count to Hex 
+
+The following example uses a simple CSV of 311 calls in the New York City area, showing a heatmap of calls per hex 9 cell
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    noise_311_link: str = "https://gist.githubusercontent.com/kashuk/670a350ea1f9fc543c3f6916ab392f62/raw/4c5ced45cc94d5b00e3699dd211ad7125ee6c4d3/NYC311_noise.csv",
+    res: int = 9
+):
+    # Load common utilities (includes duckdb helper)
+    common = fused.load("https://github.com/fusedio/udfs/tree/b7637ee/public/common/")
+    con = common.duckdb_connect()
+
+    # Keep latitude and longitude (averaged per hex) alongside the hex count
+    qr = f"""
+    SELECT
+      h3_latlng_to_cell(lat, lng, ) AS hex,
+      COUNT(*) AS cnt,
+      AVG(lat) AS lat,
+      AVG(lng) AS lng
+    FROM read_csv_auto('')
+    WHERE lat IS NOT NULL AND lng IS NOT NULL
+    GROUP BY 1
+    """
+
+    df = con.sql(qr).df()
+
+    # Debugging: print the resulting DataFrame schema
+    print(df.T)
+
+    return df
+```
+</details>
+
+### Requirements
+
+- Small single (< 100MB) file (GeoJSON, CSV, Parquet, etc.). In example:
+```csv
+lat,lng
+40.7128,-74.0060
+40.7128,-74.0060
+```
+
+- Hexagon resolution (10, 11, 12, etc.). In this example:
+```python showLineNumbers
+res: int = 9
+```
+
+- Field to hexagonify  & Aggregation function (max 'population', avg 'income', mean 'elevation', etc.). In this example simply counting the number of calls per hex:
+```python showLineNumbers
+# Keep latitude and longitude (averaged per hex) alongside the hex count
+qr = f"""
+SELECT
+    h3_latlng_to_cell(lat, lng, ) AS hex,
+    COUNT(*) AS cnt,
+    AVG(lat) AS lat,
+    AVG(lng) AS lng
+FROM read_csv_auto('')
+WHERE lat IS NOT NULL AND lng IS NOT NULL
+GROUP BY 1
+"""
+```
+
 ================================================================================
 
 ## Ingesting Dataset to H3
 Path: tutorials/Geospatial with Fused/h3-tiling/ingesting-dataset-to-h3.mdx
+Status: UNLISTED
 URL: https://docs.fused.io/tutorials/geospatial with fused/h3-tiling/ingesting-dataset-to-h3
+
+# Ingesting Dataset to H3
+
+## Vector to Hex
+
+Example of ingesting a release of the Overture Building dataset to H3 hexagons:
+
+The following is similar to a vector dataset ingestion, running on batch jobs. 
+
+Therefor we recommend running this in a notebook or a Python shell, not in Workbench.
+
+```python showLineNumbers
+# Run this in a notebook or a Python shell, not in Workbench
+username = fused.api.whoami() # Getting username to save data in your own S3 bucket
+release = '2025-01-22-0'
+```
+
+```python showLineNumbers
+# Run this in a notebook or a Python shell, not in Workbench
+args = [/theme=buildings/type=building/',
+         'output_path': f's3://fused-users/fused//overture_overview//',
+         'hex_res': 11}]
+```
+
+In this example we'll be simply counting the number of buildings per hexagon.
+
+```python showLineNumbers
+# Run this in a notebook or a Python shell, not in Workbench
+Overture_Hexify = fused.load("https://github.com/fusedlabs/fusedudfs/tree/main/Overture_Hexify/")
+j = Overture_Hexify(arg_list=args)
+
+j.run_remote(instance_type='r5.16xlarge', disk_size_gb=999)
+```
+
+Reading the ingested data becomes a lot simpler & faster:
+
+```python showLineNumbers
+common = fused.load("https://github.com/fusedio/udfs/blob/main/public/common/")
+@fused.udf
+def udf(bounds: fused.types.Bounds = [-122.71963771127753,36.53196328805067,-120.70395948802646,38.082911654639275]):
+    res = bounds_to_res(bounds)
+    print(res)
+    releases = ['2024-02-15-alpha-0', '2024-03-12-alpha-0', '2024-08-20-0', '2024-09-18-0', '2024-10-23-0', '2024-11-13-0', '2024-12-18-0', '2025-01-22-0', '2025-03-19-1', '2025-04-23-0', '2025-05-21-0']
+    release1 = releases[-1]
+    df1 = common.read_hexfile(bounds, f"s3://fused-users/fused/sina/overture_overview//hex.parquet", clip=True)
+
+    return df1
+
+@fused.cache
+def bounds_to_res(bounds, res_offset=0, max_res=14, min_res=3):
+    z = common.estimate_zoom(bounds)
+    return max(min(int(3 + max(0, z - 3) / 1.7 + res_offset), max_res), min_res)
+```
+</details>
 
 ================================================================================
 
@@ -4438,18 +4695,49 @@ URL: https://docs.fused.io/tutorials/geospatial with fused/h3-tiling/when-to-use
 
 # When to use H3
 
-H3 is a hexagon tiling grid system based on Hexagons.
-
-You can read more about H3 on the H3 website.
-
-H3 is particularly useful when:
+Consider using H3 tiling when:
 - Creating heatmaps of events (populations, counts, etc.)
 - Wanting to compare datasets across resolutions & scale
 - Working with sparse datasets
 
-Example of census population density heatmap for California:
+Example of buildings heatmap based on the Overture Buildings dataset:
 
-### Hexagon UDFs
+```python showLineNumbers
+common = fused.load("https://github.com/fusedio/udfs/blob/main/public/common/")
+@fused.udf
+def udf(bounds: fused.types.Bounds = [-122.71963771127753,36.53196328805067,-120.70395948802646,38.082911654639275]):
+    res = bounds_to_res(bounds)
+    print(res)
+    releases = ['2024-02-15-alpha-0', '2024-03-12-alpha-0', '2024-08-20-0', '2024-09-18-0', '2024-10-23-0', '2024-11-13-0', '2024-12-18-0', '2025-01-22-0', '2025-03-19-1', '2025-04-23-0', '2025-05-21-0']
+    release1 = releases[-1]
+    df1 = common.read_hexfile(bounds, f"s3://fused-users/fused/sina/overture_overview//hex.parquet", clip=True)
+
+    return df1
+
+@fused.cache
+def bounds_to_res(bounds, res_offset=0, max_res=14, min_res=3):
+    z = common.estimate_zoom(bounds)
+    return max(min(int(3 + max(0, z - 3) / 1.7 + res_offset), max_res), min_res)
+```
+</details>
+
+This example is based on ingested buildings datasets in H3
+
+### Converting Datasets to H3 tiles
+
+We've provided a few options for converting datasets to H3 tiles:
+
+| Type | Data Size | Hexagonification Type | H3 Output | Consideration |
+|------|-----------|----------------------|-----------|---------------|
+| File to H3 | Small (< 100MB) | On the fly | Static Resolution | Easy to adjust. Can easily change field to hexagonify |
+| Dynamic Tile to H3 | Small (< 100MB) or Large (> 100MB) | On the fly | Dynamic Resolution | Easy to adjust. Can easily change field to hexagonify |
+| Ingesting Dataset to H3 | Large (> 100MB) | Pre-computed | Dynamic Resolution | Requires deciding on which variable to hexagonify ahead of time |
+
+### Example UDFs
+
+- Ookla Download Speed Heatmap: Visualize download speeds across the world.
+- US Crop Viewer: Explore crops around the US
+- Overture Release Difference Heatmap: Visually identify differences between 2 Overture Building dataset releases.
 
 ================================================================================
 
