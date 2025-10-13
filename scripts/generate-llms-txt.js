@@ -11,10 +11,9 @@ const BASE_URL = 'https://docs.fused.io';
 // Main sections to include
 const SECTIONS = {
   'Core Concepts': 'core-concepts',
-  'Tutorials': 'tutorials', 
-  'Python SDK': 'python-sdk',
-  'Workbench': 'workbench',
-  'Use Cases': 'tutorials/Geospatial with Fused/geospatial-use-cases'
+  'Tutorials': 'tutorials',
+  'Geospatial with Fused': 'tutorials/Geospatial with Fused',
+  'Python SDK': 'python-sdk'
 };
 
 function extractFrontmatter(filePath, isFullVersion = false) {
@@ -30,11 +29,13 @@ function extractFrontmatter(filePath, isFullVersion = false) {
       title: data.title || path.basename(filePath, '.mdx'),
       description,
       unlisted: data.unlisted || false,
+      draft: data.draft || false, // Check if page is draft
       fullContent: body,
-      frontmatter: data
+      frontmatter: data,
+      id: data.id || data.slug || null // Extract id or slug from frontmatter
     };
   } catch (error) {
-    return { title: path.basename(filePath, '.mdx'), description: '', unlisted: false, fullContent: '', frontmatter: {} };
+    return { title: path.basename(filePath, '.mdx'), description: '', unlisted: false, draft: false, fullContent: '', frontmatter: {}, id: null };
   }
 }
 
@@ -87,7 +88,7 @@ function cleanMarkdownForFullText(content) {
     .trim();
 }
 
-function walkDirectory(dir, basePath = '', isFullVersion = false) {
+function walkDirectory(dir, basePath = '', isFullVersion = false, excludeDirs = []) {
   const items = [];
   
   try {
@@ -101,23 +102,54 @@ function walkDirectory(dir, basePath = '', isFullVersion = false) {
         // For full version, include hidden directories (but mark them)
         if (!isFullVersion && entry.name.startsWith('_')) continue;
         
+        // Skip excluded directories (to avoid duplication)
+        if (excludeDirs.includes(entry.name)) continue;
+        
         // Recursively process subdirectories
-        items.push(...walkDirectory(fullPath, relativePath, isFullVersion));
+        items.push(...walkDirectory(fullPath, relativePath, isFullVersion, excludeDirs));
       } else if (entry.name.endsWith('.mdx') || entry.name.endsWith('.md')) {
         // For full version, include hidden files
         if (!isFullVersion && entry.name.startsWith('_')) continue;
         
         const frontmatter = extractFrontmatter(fullPath, isFullVersion);
         
-        // For regular version, skip unlisted content
-        if (!isFullVersion && frontmatter.unlisted) continue;
+        // Skip unlisted and draft content
+        if (!isFullVersion && (frontmatter.unlisted || frontmatter.draft)) continue;
         
-        const urlPath = relativePath
-          .replace(/\\/g, '/') // Convert Windows paths
-          .replace(/\.mdx?$/, '') // Remove file extension
-          .replace(/\/index$/, '') // Remove /index
-          .replace(/_/g, '-') // Convert underscores to hyphens (Docusaurus convention)
-          .toLowerCase(); // Convert to lowercase (Docusaurus convention)
+        // Docusaurus URL generation rules:
+        // 1. For index.mdx files with an ID, the URL is just the parent directory
+        // 2. For index.mdx files without an ID, the URL is also just the parent directory
+        // 3. For regular files with an ID, use the ID
+        // 4. For regular files without an ID, use the filename (lowercase, _ to -)
+        // 5. Directory names preserve case and spaces are URL encoded
+        
+        const parts = relativePath.replace(/\\/g, '/').split('/');
+        const filename = parts[parts.length - 1];
+        const isIndexFile = filename.replace(/\.mdx?$/, '').toLowerCase() === 'index';
+        
+        let urlParts;
+        if (isIndexFile) {
+          // For index files, just use the directory path (frontmatter ID doesn't add to path)
+          urlParts = parts.slice(0, -1).map(part => encodeURIComponent(part).replace(/%20/g, '%20'));
+        } else {
+          // For regular files
+          urlParts = parts.map((part, index) => {
+            const isLastPart = index === parts.length - 1;
+            if (isLastPart) {
+              // Use frontmatter ID if available, otherwise use filename
+              if (frontmatter.id) {
+                return frontmatter.id;
+              }
+              return part
+                .replace(/\.mdx?$/, ''); // Remove extension only, keep underscores and case
+            } else {
+              // Directory names preserve case, URL encode spaces
+              return encodeURIComponent(part).replace(/%20/g, '%20');
+            }
+          });
+        }
+        
+        const urlPath = urlParts.join('/');
         
         items.push({
           title: frontmatter.title,
@@ -164,7 +196,9 @@ This comprehensive reference contains the complete text of all Fused documentati
         continue;
       }
       
-      const items = walkDirectory(sectionDir, sectionPath, isFullVersion);
+      // Exclude "Geospatial with Fused" from Tutorials since it's its own section
+      const excludeDirs = sectionPath === 'tutorials' ? ['Geospatial with Fused'] : [];
+      const items = walkDirectory(sectionDir, sectionPath, isFullVersion, excludeDirs);
       
       if (items.length === 0) continue;
       
@@ -231,10 +265,6 @@ This comprehensive reference contains the complete text of all Fused documentati
 
 > Fused is an end-to-end cloud platform for data analytics, built around User Defined Functions (UDFs): Python functions that can be run via HTTPS requests from anywhere, without any install required.
 
-## Core Concepts
-
-Learn the fundamental concepts behind Fused's serverless geospatial platform.
-
 `;
 
     // Process each main section
@@ -246,7 +276,9 @@ Learn the fundamental concepts behind Fused's serverless geospatial platform.
         continue;
       }
       
-      const items = walkDirectory(sectionDir, sectionPath, isFullVersion);
+      // Exclude "Geospatial with Fused" from Tutorials since it's its own section
+      const excludeDirs = sectionPath === 'tutorials' ? ['Geospatial with Fused'] : [];
+      const items = walkDirectory(sectionDir, sectionPath, isFullVersion, excludeDirs);
       
       if (items.length === 0) continue;
       
@@ -270,17 +302,10 @@ Learn the fundamental concepts behind Fused's serverless geospatial platform.
       content += '\n';
     }
     
-    // Add quick start and essential links
+    // Add quick start links
     content += `## Quick Start
 
-- [Installation & Setup](${BASE_URL}/quickstart/) - Get started with Fused in minutes
-- [Python SDK](${BASE_URL}/python-sdk/) - Install and use the Fused Python SDK
-- [Workbench](${BASE_URL}/workbench/overview/) - Browser-based IDE for developing UDFs
-
-## Examples & Use Cases
-
-- [Load & Export Data](${BASE_URL}/tutorials/load-export-data/) - Learn to work with various data formats
-- [Use Cases](${BASE_URL}/tutorials/Geospatial%20with%20Fused/geospatial-use-cases/) - Real-world applications and case studies
+- [Installation & Setup](${BASE_URL}/quickstart) - Get started with Fused in minutes
 
 ---
 
