@@ -94,14 +94,75 @@ function simplifyPythonSignatures(content) {
   return content.replace(
     /```python\n([a-zA-Z_][a-zA-Z0-9_.]*)\([^)]*(?:\n[^`]*)*?\) -> ([^\n]+)\n```/g,
     (match, funcName, returnType) => {
-      return `\`\`\`python\n${funcName}() -> ${returnType}\n\`\`\``;
+      return `\`\`\`\n${funcName}() -> ${returnType}\n\`\`\``;
     }
   ).replace(
     /```python\n([a-zA-Z_][a-zA-Z0-9_.]*)\([^)]*(?:\n[^`]*)*?\)\n```/g,
     (match, funcName) => {
-      return `\`\`\`python\n${funcName}()\n\`\`\``;
+      return `\`\`\`\n${funcName}()\n\`\`\``;
     }
   );
+}
+
+function ultraCompactFormat(content) {
+  // Ultra-compact format: `func()` -> Description\nParams:\n- param (type)\nReturns: type
+  
+  // First remove all the verbose markup
+  content = content
+    .replace(/<code>([^<]+)<\/code>/g, '$1')
+    .replace(/\*\*/g, '')
+    .replace(/:::note\n[\s\S]*?:::/g, '')
+    .replace(/:::warning\n[\s\S]*?:::/g, '')
+    .replace(/^## [a-zA-Z_][a-zA-Z0-9_.]*\n\n/gm, '');
+  
+  // Remove Examples sections FIRST (before other processing)
+  content = content.replace(/Examples:\n\n```\n[^`]*\n```\n\n/g, '');
+  content = content.replace(/Examples:\n\n[^\n]*\n\n/g, '');
+  content = content.replace(/Examples:\n\n/g, '');
+  
+  // Remove any remaining code blocks (usually examples)
+  content = content.replace(/```\nfused\.[a-zA-Z_][a-zA-Z0-9_.()]*\n```\n\n/g, '');
+  
+  // Simplify Returns sections - extract just the type
+  content = content.replace(/Returns:\n\n- ([^–\n]+) –[^\n]*/g, 'Returns: $1');
+  content = content.replace(/Returns:\n\n- ([^\n]+)/g, 'Returns: $1');
+  
+  // Convert code block function signatures to inline format
+  content = content.replace(
+    /```\n([a-zA-Z_][a-zA-Z0-9_.()]*(?:\s*->\s*[^\n]+)?)\n```\n\n([^\n]+(?:\n[^\n]+)?)\n\nParameters:\n/g,
+    '`$1` - $2\nParams:\n'
+  );
+  
+  // Handle functions without parameters
+  content = content.replace(
+    /```\n([a-zA-Z_][a-zA-Z0-9_.()]*(?:\s*->\s*[^\n]+)?)\n```\n\n([^\n]+)/g,
+    '`$1` - $2'
+  );
+  
+  // Simplify parameter format: remove ALL descriptions, keep just name and type
+  content = content.replace(/- ([a-zA-Z_][a-zA-Z0-9_]*) \(([^)]+)\)[\s\S]*?(?=\n-|\nReturns:|\n`|\n\n|$)/g, (match, name, type) => {
+    // If there's a newline after, it's a multi-line description - remove it all
+    return `- ${name} (${type})\n`;
+  });
+  
+  // Change "Parameters:" to "Params:"
+  content = content.replace(/Parameters:/g, 'Params:');
+  
+  // Remove "Other Parameters:" header
+  content = content.replace(/Other Parameters:\n/g, '');
+  
+  // Remove Raises sections
+  content = content.replace(/Raises:\n[\s\S]*?(?=\n\n`|\n\n###|$)/g, '');
+  
+  // Remove any leftover --- lines
+  content = content.replace(/\n---\n\n/g, '\n\n');
+  content = content.replace(/`[^`]+` - ---/g, '');
+  
+  // Compress whitespace
+  content = content.replace(/\n\n\n+/g, '\n\n');
+  content = content.replace(/\n\nParams:\n\n/g, '\nParams:\n');
+  
+  return content.trim();
 }
 
 function walkDirectory(dir, basePath = '', isFullVersion = false, excludeDirs = []) {
@@ -374,18 +435,19 @@ function generatePythonSdkTxt() {
   
   items.forEach(item => {
     content += `### ${item.title}\n\n`;
-    content += `**URL:** ${item.url}\n\n`;
     
     if (item.fullContent) {
       let cleanedContent = cleanMarkdownForFullText(item.fullContent);
       // Simplify Python function signatures to reduce verbosity
       cleanedContent = simplifyPythonSignatures(cleanedContent);
+      // Apply ultra-compact formatting to minimize tokens
+      cleanedContent = ultraCompactFormat(cleanedContent);
       if (cleanedContent.length > 50) {
         content += `${cleanedContent}\n\n`;
       }
     }
     
-    content += `${'='.repeat(80)}\n\n`;
+    content += `---\n\n`;
   });
   
   content += `\n---\n\nGenerated automatically from Fused Python SDK documentation. Last updated: ${new Date().toISOString().split('T')[0]}\nTotal pages: ${items.length}\n`;
