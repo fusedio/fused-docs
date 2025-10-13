@@ -377,7 +377,9 @@ function generatePythonSdkTxt() {
     content += `**URL:** ${item.url}\n\n`;
     
     if (item.fullContent) {
-      const cleanedContent = cleanMarkdownForFullText(item.fullContent);
+      let cleanedContent = cleanMarkdownForFullText(item.fullContent);
+      // Simplify Python function signatures to reduce verbosity
+      cleanedContent = simplifyPythonSignatures(cleanedContent);
       if (cleanedContent.length > 50) {
         content += `${cleanedContent}\n\n`;
       }
