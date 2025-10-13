@@ -67,7 +67,7 @@ const sidebars: SidebarsConfig = {
                 "tutorials/Geospatial with Fused/h3-tiling/when-to-use-h3",
                 "tutorials/Geospatial with Fused/h3-tiling/file-to-h3",
                 "tutorials/Geospatial with Fused/h3-tiling/dynamic-tile-to-h3",
-                // "tutorials/Geospatial with Fused/h3-tiling/ingesting-dataset-to-h3", // Hidden for now
+                "tutorials/Geospatial with Fused/h3-tiling/ingesting-dataset-to-h3", // Hidden for now
               ],
             },
             "tutorials/Geospatial with Fused/processing-statistics",
