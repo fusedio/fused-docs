@@ -88,6 +88,22 @@ function cleanMarkdownForFullText(content) {
     .trim();
 }
 
+function simplifyPythonSignatures(content) {
+  // Simplify Python function signatures to just name() -> ReturnType
+  // This removes all the parameter details since they're documented separately
+  return content.replace(
+    /```python\n([a-zA-Z_][a-zA-Z0-9_.]*)\([^)]*(?:\n[^`]*)*?\) -> ([^\n]+)\n```/g,
+    (match, funcName, returnType) => {
+      return `\`\`\`python\n${funcName}() -> ${returnType}\n\`\`\``;
+    }
+  ).replace(
+    /```python\n([a-zA-Z_][a-zA-Z0-9_.]*)\([^)]*(?:\n[^`]*)*?\)\n```/g,
+    (match, funcName) => {
+      return `\`\`\`python\n${funcName}()\n\`\`\``;
+    }
+  );
+}
+
 function walkDirectory(dir, basePath = '', isFullVersion = false, excludeDirs = []) {
   const items = [];
   
@@ -331,10 +347,61 @@ try {
   process.exit(1);
 }
 
+function generatePythonSdkTxt() {
+  console.log('🐍 Generating Python SDK llms.txt...');
+  
+  const outputFile = 'static/llms-python-sdk.txt';
+  const sdkDir = path.join(DOCS_DIR, 'python-sdk');
+  
+  if (!fs.existsSync(sdkDir)) {
+    console.error(`❌ Error: Python SDK directory not found at ${sdkDir}`);
+    return 0;
+  }
+  
+  let content = `# Fused Python SDK Documentation
+
+> Complete reference for the Fused Python SDK - a Python library for creating and running User Defined Functions (UDFs) that can be executed via HTTPS requests.
+
+## Python SDK Reference
+
+`;
+
+  // Walk the python-sdk directory and include everything
+  const items = walkDirectory(sdkDir, 'python-sdk', true, []); // Use full version mode
+  
+  // Sort items by path
+  items.sort((a, b) => a.path.localeCompare(b.path));
+  
+  items.forEach(item => {
+    content += `### ${item.title}\n\n`;
+    content += `**URL:** ${item.url}\n\n`;
+    
+    if (item.fullContent) {
+      const cleanedContent = cleanMarkdownForFullText(item.fullContent);
+      if (cleanedContent.length > 50) {
+        content += `${cleanedContent}\n\n`;
+      }
+    }
+    
+    content += `${'='.repeat(80)}\n\n`;
+  });
+  
+  content += `\n---\n\nGenerated automatically from Fused Python SDK documentation. Last updated: ${new Date().toISOString().split('T')[0]}\nTotal pages: ${items.length}\n`;
+  
+  // Write the file
+  fs.writeFileSync(outputFile, content, 'utf8');
+  console.log(`✅ Generated Python SDK llms.txt with ${items.length} pages`);
+  console.log(`📝 File saved to: ${outputFile}`);
+  console.log(`📊 File size: ${Math.round(content.length / 1024)} KB`);
+  
+  return items.length;
+}
+
 // Handle command line arguments
 const args = process.argv.slice(2);
 const curatedOnly = args.includes('--curated');
 const fullOnly = args.includes('--full');
+const pythonSdkOnly = args.includes('--python-sdk');
 
 if (curatedOnly) {
   const curatedLinks = generateLlmsTxt(false);
@@ -342,12 +409,17 @@ if (curatedOnly) {
 } else if (fullOnly) {
   const fullLinks = generateLlmsTxt(true);
   console.log(`📊 Generated full version with ${fullLinks} complete sections`);
+} else if (pythonSdkOnly) {
+  const sdkPages = generatePythonSdkTxt();
+  console.log(`📊 Generated Python SDK version with ${sdkPages} pages`);
 } else {
-  // Generate both versions by default
+  // Generate all versions by default
   const curatedLinks = generateLlmsTxt(false);
   const fullLinks = generateLlmsTxt(true);
+  const sdkPages = generatePythonSdkTxt();
   
   console.log(`\n📊 Summary:`);
   console.log(`   Curated version: ${curatedLinks} links`);
   console.log(`   Full version: ${fullLinks} complete sections`);
+  console.log(`   Python SDK version: ${sdkPages} pages`);
 } 
