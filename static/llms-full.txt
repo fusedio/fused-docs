@@ -7978,7 +7978,8 @@ start_job(
     disk_size_gb: int | None = None,
     additional_env: Sequence[str] | None = ("FUSED_CREDENTIAL_PROVIDER=ec2",),
     image_name: str | None = None,
-    send_status_email: bool | None = None
+    send_status_email: bool | None = None,
+    cache_max_age: int | None = None
 ) -> RunResponse
 ```
 
@@ -8696,7 +8697,7 @@ If only partial results are available, returns based on the last task to have be
 ### times
 
 ```python
-times() -> list[Optional[timedelta]]
+times() -> list[timedelta | None]
 ```
 
 Time taken for each task.
@@ -8795,7 +8796,7 @@ Use pool.\_wait_sleep to set if sleep should occur while waiting.
 ### results
 
 ```python
-results(return_exceptions = False) -> List[Any]
+results(return_exceptions = False) -> list[Any]
 ```
 
 Retrieve all results of the job.
@@ -8807,7 +8808,7 @@ Results are ordered by the order of the args list.
 ### results_now
 
 ```python
-results_now(return_exceptions = False) -> Dict[int, Any]
+results_now(return_exceptions = False) -> dict[int, Any]
 ```
 
 Retrieve the results that are currently done.
@@ -8820,11 +8821,11 @@ Results are indexed by position in the args list.
 
 ```python
 df(
-    status_column: Optional[str] = "status",
-    result_column: Optional[str] = "result",
-    time_column: Optional[str] = "time",
-    logs_column: Optional[str] = "logs",
-    exception_column: Optional[str] = None,
+    status_column: str | None = "status",
+    result_column: str | None = "result",
+    time_column: str | None = "time",
+    logs_column: str | None = "logs",
+    exception_column: str | None = None,
     include_exceptions: bool = True,
 )
 ```
@@ -8854,7 +8855,7 @@ get_results_df(ignore_exceptions = False)
 ### errors
 
 ```python
-errors() -> Dict[int, Exception]
+errors() -> dict[int, Exception]
 ```
 
 Retrieve the results that are currently done and are errors.
@@ -8866,7 +8867,7 @@ Results are indexed by position in the args list.
 ### first_error
 
 ```python
-first_error() -> Optional[Exception]
+first_error() -> Exception | None
 ```
 
 Retrieve the first (by order of arguments) error result, or None.
@@ -8876,7 +8877,7 @@ Retrieve the first (by order of arguments) error result, or None.
 ### logs
 
 ```python
-logs() -> list[Optional[str]]
+logs() -> list[str | None]
 ```
 
 Logs for each task.
@@ -8888,7 +8889,7 @@ Incomplete tasks will be reported as None.
 ### first_log
 
 ```python
-first_log() -> Optional[str]
+first_log() -> str | None
 ```
 
 Retrieve the first (by order of arguments) logs, or None.
@@ -8898,7 +8899,7 @@ Retrieve the first (by order of arguments) logs, or None.
 ### success
 
 ```python
-success() -> Dict[int, Any]
+success() -> dict[int, Any]
 ```
 
 Retrieve the results that are currently done and are successful.
@@ -8910,7 +8911,7 @@ Results are indexed by position in the args list.
 ### pending
 
 ```python
-pending() -> Dict[int, Any]
+pending() -> dict[int, Any]
 ```
 
 Retrieve the arguments that are currently pending and not yet submitted.
@@ -8920,7 +8921,7 @@ Retrieve the arguments that are currently pending and not yet submitted.
 ### running
 
 ```python
-running() -> Dict[int, Any]
+running() -> dict[int, Any]
 ```
 
 Retrieve the results that are currently running.
@@ -8930,7 +8931,7 @@ Retrieve the results that are currently running.
 ### cancelled
 
 ```python
-cancelled() -> Dict[int, Any]
+cancelled() -> dict[int, Any]
 ```
 
 Retrieve the arguments that were cancelled and not run.
@@ -9201,7 +9202,7 @@ Default transfer type for vector (tabular) data
 ### default_dtype_out_raster
 
 ```python
-default_dtype_out_raster: StrictStr = 'tiff'
+default_dtype_out_raster: StrictStr = 'npy,tiff'
 ```
 
 Default transfer type for raster data
@@ -10931,19 +10932,21 @@ submit(
     arg_list: AnyBaseUdf | FunctionType | str,
     /,
     *,
-    engine: Optional[Literal["remote", "local"]] = "remote",
-    max_workers: Optional[int] = None,
+    engine: Literal["remote", "local"] | None = "remote",
+    instance_type: InstanceType | None = None,
+    max_workers: int | None = None,
+    n_processes_per_worker: int | None = None,
     max_retry: int = 2,
     debug_mode: bool = False,
     collect: bool = True,
     execution_type: ExecutionType = "thread_pool",
-    cache_max_age: Optional[str] = None,
+    cache_max_age: str | None = None,
     cache: bool = True,
     ignore_exceptions: bool = False,
     flatten: bool = True,
-    _before_run: Optional[float] = None,
-    _before_submit: Optional[float] = 0.01,
-    **kwargs: Optional[float],
+    _before_run: float | None = None,
+    _before_submit: float | None = 0.01,
+    **kwargs: float | None,
 ) -> Union[BaseJobPool, ResultType, pd.DataFrame]
 ```
 
@@ -10967,8 +10970,18 @@ See `fused.run` for more details on the UDF execution.
   - a list of dictionaries for parametrizing over multiple parameters
   - A DataFrame for parametrizing over multiple parameters where each
     row is a set of parameters
-- **engine** (<code>Optional\[Literal['remote', 'local']\]</code>) – The execution engine to use. Defaults to 'remote'.
-- **max_workers** (<code>Optional[int]</code>) – The maximum number of workers to use. Defaults to 32.
+- **engine** (<code>Literal['remote', 'local'] | None</code>) – The execution engine to use. Defaults to 'remote'.
+- **instance_type** (<code>InstanceType | None</code>) – The type of instance to use for remote execution ('realtime',
+  or 'small', 'medium', 'large' or one of the whitelisted instance types).
+  If not specified, gets the default from the UDF (if specified in the
+  `@fused.udf()` decorator, and the UDF is not run as a shared token),
+  or otherwise defaults to 'realtime'.
+- **max_workers** (<code>int | None</code>) – The maximum number of workers to use. Defaults to 32 for
+  the realtime engine (with a maximum of 1024), and 1 for other batch
+  instances (with a maximum of 5).
+- **n_processes_per_worker** (<code>int | None</code>) – The number of processes to use per worker.
+  Always 1 for the realtime engine, but defaults to the number of cores
+  for batch engines. Specify this keyword to reduce the number of processes.
 - **max_retry** (<code>int</code>) – The maximum number of retries for failed jobs. Defaults to 2.
 - **debug_mode** (<code>bool</code>) – If True, executes only the first item in arg_list directly using
   `fused.run()`, useful for debugging UDF execution. Default is False.
@@ -10978,7 +10991,7 @@ See `fused.run` for more details on the UDF execution.
   Default is True.
 - **execution_type** (<code>ExecutionType</code>) – The type of batching to use. Either "thread_pool" (default) for
   ThreadPoolExecutor-based concurrency or "async_loop" for asyncio-based concurrency.
-- **cache_max_age** (<code>Optional[str]</code>) – The maximum age when returning a result from the cache.
+- **cache_max_age** (<code>str | None</code>) – The maximum age when returning a result from the cache.
   Supported units are seconds (s), minutes (m), hours (h), and days (d)
   (e.g. "48h", "10s", etc.).
   Default is `None` so a UDF run with `fused.run()` will follow
@@ -11418,10 +11431,7 @@ This can be called with file_id and chunk_id from `get_chunks_metadata`.
 - **url** (<code>str</code>) – URL of the table.
 - **file_id** (<code>Union[str, int, None]</code>) – File ID to read.
 - **chunk_id** (<code>Optional[int]</code>) – Chunk ID to read.
-
-**Other Parameters:**
-
-- **columns** (<code>Optional\[Iterable\[str\]\]</code>) – Read only the specified columns.
+- **columns** (<code>Optional\[Iterable[str]\]</code>) – Read only the specified columns.
 
 ---
 
