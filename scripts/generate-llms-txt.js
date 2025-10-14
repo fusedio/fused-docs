@@ -11,7 +11,6 @@ const BASE_URL = 'https://docs.fused.io';
 // Main sections to include
 const SECTIONS = {
   'Core Concepts': 'core-concepts',
-  'Tutorials': 'tutorials',
   'Geospatial with Fused': 'tutorials/Geospatial with Fused',
   'Python SDK': 'python-sdk'
 };
