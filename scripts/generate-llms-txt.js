@@ -44,6 +44,8 @@ function extractFirstParagraph(content) {
   const cleaned = content
     .replace(/```[\s\S]*?```/g, '') // Remove code blocks
     .replace(/<!--[\s\S]*?-->/g, '') // Remove comments
+    .replace(/import\s+.*?from\s+['"].*?['"];?\s*/g, '') // Remove import statements
+    .replace(/export\s+.*?;?\s*/g, '') // Remove export statements
     .replace(/^#{1,6}\s+.*/gm, '') // Remove headers
     .replace(/^\s*[-*+]\s+.*/gm, '') // Remove list items
     .replace(/!\[.*?\]\(.*?\)/g, '') // Remove images
@@ -60,6 +62,8 @@ function extractLongDescription(content) {
   const cleaned = content
     .replace(/```[\s\S]*?```/g, '') // Remove code blocks
     .replace(/<!--[\s\S]*?-->/g, '') // Remove comments
+    .replace(/import\s+.*?from\s+['"].*?['"];?\s*/g, '') // Remove import statements
+    .replace(/export\s+.*?;?\s*/g, '') // Remove export statements
     .replace(/^#{1,6}\s+.*/gm, '') // Remove headers
     .replace(/!\[.*?\]\(.*?\)/g, '') // Remove images
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Replace links with text
@@ -383,7 +387,8 @@ This comprehensive reference contains the complete text of all Fused documentati
       const topLevel = items.filter(item => !item.path.includes('/') || item.path.split('/').length === 2);
       const nested = items.filter(item => item.path.split('/').length > 2);
       
-      [...topLevel, ...nested].forEach(item => {
+      // Filter out index pages
+      [...topLevel, ...nested].filter(item => item.title.toLowerCase() !== 'index').forEach(item => {
         content += `- [${item.title}](${item.url})`;
         if (item.description) {
           content += ` - ${item.description}`;
