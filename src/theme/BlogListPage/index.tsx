@@ -19,11 +19,15 @@ const CATEGORIES = {
 } as const;
 
 function formatDate(dateString: string): string {
-  const date = new Date(dateString);
+  // Parse date components to avoid timezone conversion issues
+  // This ensures the date displays exactly as specified in the frontmatter
+  const [year, month, day] = dateString.split('T')[0].split('-');
+  const date = new Date(`${year}-${month}-${day}T12:00:00Z`);
   return new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
     month: 'long',
-    day: 'numeric'
+    day: 'numeric',
+    timeZone: 'UTC'
   }).format(date);
 }
 
