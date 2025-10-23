@@ -271,13 +271,16 @@ const config: Config = {
         // },
       },
     ],
-    [
-      "@docusaurus/plugin-google-gtag",
-      {
-        trackingID: "G-CRPW2C404Y",
-        anonymizeIP: true,
-      },
-    ],
+    // Only load Google Analytics in production
+    ...(process.env.NODE_ENV === 'production' ? [
+      [
+        "@docusaurus/plugin-google-gtag",
+        {
+          trackingID: "G-CRPW2C404Y",
+          anonymizeIP: true,
+        },
+      ],
+    ] : []),
     
 
   ],
