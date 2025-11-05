@@ -9,17 +9,29 @@ sidebar_position: 1
 
 ## Study Area & H3 Resolution
 
+We will use the entire United States as our study area.
+
+This analysis will be done using H3 hexagons to join these datasets together. Each of these datasets originally come as rasters. We've ingested them to H3 hexagons, though we need to decide on a H3 resolution to perform our analysis on.
+
 Here is a comparison of different H3 resolutions over the same study area:
 
-| Bounds                | H3 Hex Resolution | Approx. H3 Cell Size | # H3 Cells in Area |
-|-----------------------|-------------------|----------------------|--------------------|
-| `[-130, 25, -60, 50]` | 4                 | ~970 km²             | ~9,700             |
-| `[-130, 25, -60, 50]` | 5                 | ~242 km²             | ~67,000            |
-| `[-130, 25, -60, 50]` | 6                 | ~61 km²              | ~473,000           |
+| Area of Interest      | H3 Hex Resolution | Aver. H3 Cell Size | # H3 Cells in Area      |
+|---------------------- |-------------------|----------------------|-------------------------|
+| Continental United States* | 4                 | ~1,770 km²             | ~10,000                 |
+| Continental United States* | 5                 | ~252 km²             | ~70,000                 |
+| Continental United States* | 6                 | ~36 km²              | ~49,000                 |
+
+* United States being defined by the bounds: `[-130, 25, -60, 50]`, i.e. approximately 17.6M km² (US is about 9.8M km²)
 
 See the [H3 Cell Counts Stats for more details](https://h3geo.org/docs/core-library/restable#cell-counts)
 
 We'll decide to use a **H3 resolution of 5** for this analysis.
+
+:::info H3 rule of thumb
+Going up a resolution by 1 level reduces the area of each hexagon by a factor of 7. This means that at resolution 5, each hexagon is 7x7 = 49x smaller than at resolution 4. 
+
+Keep this in mind as more hexagons also require longer compute time.
+:::
 
 <details>
 <summary>Getting number of H3 cells for bounds and resolution</summary>
@@ -27,10 +39,17 @@ We'll decide to use a **H3 resolution of 5** for this analysis.
 We can write a simple UDF to estimate the number of H3 cells for a given bounds and resolution.
 
 ```python
+@fused.udf
 def udf(bounds: list = [-130, 25, -60, 50], res: int = 5):
     
     # Load common library for H3 utilities
     common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    
+    # Convert bounds to GeoDataFrame and calculate UTM area
+    gdf_bounds = common.bounds_to_gdf(bounds)
+    gdf_bounds = common.add_utm_area(gdf_bounds)
+    area_millions = round(gdf_bounds['utm_area_sqm'].iloc[0] / 1e12, 1)
+    print(f"Bounds area: {area_millions}M square km")
     
     # Get H3 hexagons within bounds at specified resolution
     df_hex = common.bounds_to_hex(bounds=bounds, res=res, hex_col="hex")
@@ -41,17 +60,24 @@ def udf(bounds: list = [-130, 25, -60, 50], res: int = 5):
 
 Returns:
 ```bash
+>>> Bounds area: 17.6M square km
 >>>               0      ...               67634
 hex  599309241731252223  ...  600345878259040255
 
 [1 rows x 67635 columns]
 ```
 
+This result is 17.6M km², i.e. about 1.8 times more than the actual area of the United States (9.8M km²). 
+
+This is because the bounds is a rectangle _around_ the United States, not the exact boundary of the United States:
+
+
+
 
 </details>
 
 
-## Crops
+## Dataset 1: Crops
 
 **Data**
 - Original Raster Dataset from [CroplandCROS](https://pdi.scinet.usda.gov/portal/apps/sites/#/cropcros)
@@ -181,7 +207,7 @@ Explore this Fused Canvas for yourself:
 - Click the "Download Canvas" button to download the canvas `.zip` file and upload it directly in your Workbench
 
 
-## Elevation
+## Dataset 2: Elevation
 
 **Data**
 - Original Raster tiles from [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/)
@@ -276,10 +302,6 @@ def udf():
 
 </details>
 
-
-
-
-
 Joining the two together on a Fused Canvas:
 
 <iframe
@@ -295,10 +317,145 @@ Explore the Fused Canvas:
 - [Link to live canvas](https://staging.fused.io/canvas/fc_4qZYB74lMQJLm79LjRzLiW)
 - Click the "Download Canvas" button to download the canvas `.zip` file and upload it directly in your Workbench
 
-## Temperature 
+## Dataset 3: Temperature 
+
+**Data**
+- Original Raster tiles from [ERA5 Climate Reanalysis](https://registry.opendata.aws/era5-reanalysis-single-levels/)
+- Hex partitioned dataset by Fused: `s3://fused-asset/data/era5/t2m_daily_mean_v2_1000/` (See on [File Explorer](https://www.fused.io/workbench/files?path=s3%3A%2F%2Ffused-asset%2Fdata%2Fera5%2Ft2m_daily_mean_v2_1000%2Fmonth%3D))
+
+We'll explore how we partitioned this raster datasets into H3 hexagons in a following section in [Step 4: Ingest Rasters](/tutorials/Geospatial%20with%20Fused/use-cases/Crop%20Exploration%20with%20H3/ingesting_rasters)
 
 ### Reading Data
 
+We'll create a UDF that takes:
+- A given year & month as `YYYY-MM`
+- Bounds list 
+
+And returns:
+- Average temperature for any given hexagon over that month
+
+We can load the data using DuckDB and visualize it using the `deckgl_hex` function:
+
+```
+@fused.udf
+def udf(month='2024-05',
+    bounds:list=[-130, 25, -60, 50]
+):
+    path = f's3://fused-asset/data/era5/t2m_daily_mean_v2_1000/month={month}/0.parquet'
+    
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    con = common.duckdb_connect() 
+
+    query = f"""
+        SELECT  
+            hex, 
+            avg(daily_mean) - 273.15 as daily_mean 
+        FROM read_parquet('{path}')
+        WHERE 1=1
+        AND h3_cell_to_lng(hex) between {bounds[0]} and {bounds[2]} 
+        AND h3_cell_to_lat(hex) between {bounds[1]} and {bounds[3]} 
+        GROUP BY 1
+    """ 
+
+    data = con.execute(query).df()
+
+    print(f"{data.T=}")
+
+    return data
+```
+
+<iframe
+  src="https://staging.udf.ai/fsh_7Q6UyVNnM9x18ThmxWuB1b/run?dtype_out_raster=png&dtype_out_vector=html"
+  style={{ width: "100%", height: "500px", border: "1px solid #ccc", borderRadius: "6px" }}
+  loading="lazy"
+  allowFullScreen
+  title="Temperature Data UDF Output Visualization"
+/>
+
+Note a few things here:
+1. The dataset is not in hex 5, this is a different resolution than the other datasets we've been working with.
+2. The data has a lot of "empty" areas. 
+
+This is because the underlying data, the ERA5 dataset is a much coarser spatial resolution than the other 2 datasets (around ~31km at the equator, compared to 30m for the Crop Data Layer and 5m for the Elevation data) 
+
+We can smooth the data to the hex 5 resolution using a k-ring neighborhood aggregation:
+
+```python
+@fused.udf
+def udf(month='2024-05',
+    bounds:list=[-130, 25, -60, 50]
+):
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    import pandas as pd  
+    path = f's3://fused-asset/data/era5/t2m_daily_mean_v2_1000/month={month}/0.parquet'
+ 
+    con = common.duckdb_connect() 
+
+    query = f"""
+        WITH base_data AS (
+            SELECT  
+                h3_cell_to_parent(hex, 5) as hex, 
+                avg(daily_mean) - 273.15 as daily_mean 
+            FROM read_parquet('{path}')
+            WHERE 1=1
+            AND h3_cell_to_lng(hex) between {bounds[0]} and {bounds[2]} 
+            AND h3_cell_to_lat(hex) between {bounds[1]} and {bounds[3]} 
+            GROUP BY 1
+        ),
+        all_hexes AS (
+            -- Get all hexes including neighbors by expanding k-ring
+            SELECT DISTINCT unnest(h3_grid_disk(hex, 1)) as hex
+            FROM base_data
+        ),
+        smoothed AS (
+            -- For each hex (original + neighbors), get its k-ring neighbors
+            SELECT 
+                ah.hex as hex,
+                unnest(h3_grid_disk(ah.hex, 1)) as neighbor_hex
+            FROM all_hexes ah
+        )
+        SELECT 
+            s.hex,
+            round(avg(b.daily_mean), 2) as daily_mean
+        FROM smoothed s
+        JOIN base_data b ON b.hex = s.neighbor_hex
+        GROUP BY s.hex
+    """ 
+
+    data = con.execute(query).df()
+
+    print(f"{data.T=}")
+
+    return data
+```
+
 ### Visualizing a single month
 
+As above we can visualize the temperature data across a single month:
+
+<iframe
+  src="https://staging.udf.ai/fsh_P0hfxVa5wkT5szOsHYvMn/run?dtype_out_raster=png&dtype_out_vector=html"
+  style={{ width: "100%", height: "600px", border: "1px solid #ccc", borderRadius: "6px" }}
+  loading="lazy"
+  allowFullScreen
+  title="Temperature Visualization for Single Month"
+/>
+
+
 ### Visualizing multiple months 
+
+We can create a Fused Canvas to visualize data of different months at once
+
+<iframe
+  src="https://staging.fused.io/canvas/fc_3XQLMjkeQjDryti56Q9ZDE"
+  style={{ width: "100%", height: "600px", border: "1px solid #ccc", borderRadius: "6px" }}
+  loading="lazy"
+  allowFullScreen
+  title="Temperature Canvas Visualization"
+/>
+
+Explore the Fused Canvas:
+- [Link to live canvas](https://staging.fused.io/canvas/fc_3XQLMjkeQjDryti56Q9ZDE)
+- Click the "Download Canvas" button to download the canvas `.zip` file and upload it directly in your Workbench
+
+## Summary & Next Steps
