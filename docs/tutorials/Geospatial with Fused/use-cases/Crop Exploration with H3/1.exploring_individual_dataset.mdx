@@ -1,0 +1,194 @@
+---
+title: Exploring an Individual Crop Dataset
+sidebar_label: Step 1 - Explore Individual Datasets
+description: Learn how to explore an individual crop dataset using Fused, including basic geospatial analysis and visualization.
+sidebar_position: 1
+---
+
+# Step 1: Exploring Individual Datasets
+
+## Study Area & H3 Resolution
+
+Here is a comparison of different H3 resolutions over the same study area:
+
+| Bounds                | H3 Hex Resolution | Approx. H3 Cell Size | # H3 Cells in Area |
+|-----------------------|-------------------|----------------------|--------------------|
+| `[-130, 25, -60, 50]` | 4                 | ~970 km²             | ~9,700             |
+| `[-130, 25, -60, 50]` | 5                 | ~242 km²             | ~67,000            |
+| `[-130, 25, -60, 50]` | 6                 | ~61 km²              | ~473,000           |
+
+See the [H3 Cell Counts Stats for more details](https://h3geo.org/docs/core-library/restable#cell-counts)
+
+We'll decide to use a **H3 resolution of 5** for this analysis.
+
+<details>
+<summary>Getting number of H3 cells for bounds and resolution</summary>
+
+We can write a simple UDF to estimate the number of H3 cells for a given bounds and resolution.
+
+```python
+def udf(bounds: list = [-130, 25, -60, 50], res: int = 5):
+    
+    # Load common library for H3 utilities
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    
+    # Get H3 hexagons within bounds at specified resolution
+    df_hex = common.bounds_to_hex(bounds=bounds, res=res, hex_col="hex")
+    print(f"{df_hex.T}")
+    
+    return df_hex
+```
+
+Returns:
+```bash
+>>>               0      ...               67634
+hex  599309241731252223  ...  600345878259040255
+
+[1 rows x 67635 columns]
+```
+
+
+</details>
+
+
+## Crops
+
+**Data**
+- Original Raster Dataset from [CroplandCROS](https://pdi.scinet.usda.gov/portal/apps/sites/#/cropcros)
+- Hex partitioned dataset [by Fused](https://docs.fused.io/blog/cdl-census-hex) available on [Source Cooperative](https://source.coop/repositories/fused/hex/description)
+
+For simplicity we already created a hex dataset in H3 cell size 5 for 2024: `s3://fused-asset/misc/hex/CDL_h12k1p1/year=2024/overview/hex5.parquet`
+
+**Reading data in UDF**
+
+```python
+# cdl_data_all_crops
+@fused.udf
+def udf():
+    import duckdb
+    
+    # Load the common utilities module from Fused's UDF repository
+    common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
+    df = duckdb.query(f"""
+        SELECT * 
+        FROM 's3://fused-asset/misc/hex/CDL_h12k1p1/year=2024/overview/hex5.parquet'
+        and area>1000
+    """).to_df()
+
+    df = df.rename(columns={'data': 'crop_type'})
+
+    return df
+```
+
+Returns:
+
+```bash
+>>>      0             1       ...        706262        706263
+crop_type   0.000000e+00  0.000000e+00  ...  0.000000e+00  0.000000e+00
+hex         5.992301e+17  5.992302e+17  ...  6.003962e+17  6.003962e+17
+area        6.128944e+07  2.849653e+08  ...  2.162687e+07  2.917735e+08
+chunk_id    5.767422e+17  5.767422e+17  ...  5.779033e+17  5.779033e+17
+year        2.024000e+03  2.024000e+03  ...  2.024000e+03  2.024000e+03
+```
+
+This UDF:
+- Loads all the data as hex cells
+- Only keeps cells with an area greater than 1000 square kilometers
+- Each hex value appears multiple times, for each of the crops covering the cell
+
+### Visualizing a single crop type
+
+
+Fused UDFs are serverless Python functions, so we cna also create visualizations with them. We've build a simple UDF library to render data on maps.
+
+We can create a new UDF that loads the data and filters for a specific crop type (you can see the crop codes [here](https://developers.google.com/earth-engine/datasets/catalog/USDA_NASS_CDL#bands))
+
+<details>
+<summary>Code: Map UDF for a single crop</summary>
+
+```python
+@fused.udf
+def udf(
+    crop_type=1 # Crop 1 = Corn
+):
+    utils = fused.load('team/map_utils')
+
+    data = fused.run("cdl_data_all_crops")
+    # Keeping only the specific crop_type selected
+    data = data[data['crop_type'] == crop_type]
+
+    # keeping subset of cols so tooltip only shows these
+    data = data[['crop_type', 'hex', 'area']]
+    
+    print(data)
+    config = {
+        "initialViewState": {
+            "longitude": -95.7129,
+            "latitude": 37.0902,
+            "zoom": 3
+        },
+        "hexLayer": {
+            "@@type": "H3HexagonLayer",
+            "filled": True,
+            "pickable": True,
+            "extruded": False,
+            "getHexagon": "@@=properties.hex",
+            "getFillColor": {
+                "@@function": "colorContinuous",
+                "attr": "area",
+                "domain": [0, 30_000_000],
+                "steps": 20,
+                "colors": "Peach"
+            }
+        }
+    }
+    return utils.deckgl_hex(
+        data, 
+        config=config
+    )
+```
+
+</details>
+
+This returns a standalone UDF:
+
+<iframe
+  src="https://staging.udf.ai/fsh_h6aHGvOun7wR3hyNELA0j/run?dtype_out_raster=png&dtype_out_vector=html"
+  style={{ width: "100%", height: "600px", border: "none" }}
+  title="Crop Exploration UDF Map Example"
+  allowFullScreen
+/>
+
+### Visualizing multiple crop types
+
+In Fused Canvas we can create different visualization of the _same UDF_ simply by filtering for a specific crop type. We'll create:
+
+1. Our original `cdl_data_all_crops` UDF loading all crops types
+2. A UDF returning a map of `crop_type = 1` (Corn)
+2. A UDF returning a map of `crop_type = 3` (Rice)
+2. A UDF returning a map of `crop_type = 111` (Open Water)
+
+<iframe
+  src="https://staging.fused.io/canvas/fc_58ODijIVSE1RfX7OHhmCix"
+  style={{ width: "100%", height: "600px", border: "1px solid #ccc", borderRadius: "6px" }}
+  loading="lazy"
+  allowFullScreen
+  title="Crop Canvas Visualization"
+/>
+
+Explore this Fused Canvas for yourself:
+- [Link to live canvas](https://staging.fused.io/canvas/fc_58ODijIVSE1RfX7OHhmCix)
+- Click the "Download Canvas" button to download the canvas `.zip` file and upload it directly in your Workbench
+
+
+## Elevation
+
+**Data**
+- Original Raster tiles from [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/)
+- Hex partitioned dataset by Fused: `s3://fused-asset/data/dem/r6_z4_100k.parquet` (See on [File Explorer](https://www.fused.io/workbench/files?path=s3%3A%2F%2Ffused-asset%2Fdata%2Fdem%2Fr6_z4_100k.parquet))
+
+**Reading data in UDF**
+
+```python
+
+## Temperature 
