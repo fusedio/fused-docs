@@ -59,16 +59,16 @@ hex  599309241731252223  ...  600345878259040255
 
 For simplicity we already created a hex dataset in H3 cell size 5 for 2024: `s3://fused-asset/misc/hex/CDL_h12k1p1/year=2024/overview/hex5.parquet`
 
-**Reading data in UDF**
+### Reading data in UDF
+
+- Load the hex dataset using DuckDB from a `.parquet` on S3
 
 ```python
 # cdl_data_all_crops
 @fused.udf
 def udf():
     import duckdb
-    
-    # Load the common utilities module from Fused's UDF repository
-    common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
+
     df = duckdb.query(f"""
         SELECT * 
         FROM 's3://fused-asset/misc/hex/CDL_h12k1p1/year=2024/overview/hex5.parquet'
@@ -93,7 +93,7 @@ year        2.024000e+03  2.024000e+03  ...  2.024000e+03  2.024000e+03
 
 This UDF:
 - Loads all the data as hex cells
-- Only keeps cells with an area greater than 1000 square kilometers
+- Only keeps cells with an area greater than 1000 square kilometers (filters out smallest crops types)
 - Each hex value appears multiple times, for each of the crops covering the cell
 
 ### Visualizing a single crop type
@@ -187,8 +187,118 @@ Explore this Fused Canvas for yourself:
 - Original Raster tiles from [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/)
 - Hex partitioned dataset by Fused: `s3://fused-asset/data/dem/r6_z4_100k.parquet` (See on [File Explorer](https://www.fused.io/workbench/files?path=s3%3A%2F%2Ffused-asset%2Fdata%2Fdem%2Fr6_z4_100k.parquet))
 
-**Reading data in UDF**
+### Reading Data
+
+The `.parquet` file we'll use isn't at hex 5 resolution, so we will dynamically:
+- Use `h3_cell_to_parent(hex, 5) as hex,` to convert the hex to the parent hex at resolution 5
+- Use `avg(mean_value) as mean_value` to aggregate the elevation data to the parent hex 
+- Keep only values within the bounds viewport with `h3_cell_to_lng(hex)`
 
 ```python
+@fused.udf
+def udf(
+    bounds:list=[-130, 25, -60, 50]
+):
+    # Loading the common Fused hex library to access pre-installed H3 library in DuckDB
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    con = common.duckdb_connect() 
+
+    query = f"""
+        SELECT  
+            h3_cell_to_parent(hex, 5) as hex, 
+            avg(mean_value) as mean_value 
+        FROM read_parquet('s3://fused-asset/data/dem/r6_z4_100k.parquet')
+        where 1=1
+        and h3_cell_to_lng(hex) between {bounds[0]} and {bounds[2]} 
+        and h3_cell_to_lat(hex) between {bounds[1]} and {bounds[3]} 
+        group by 1
+    """ 
+    data = con.execute(query).df()
+
+    return data
+```
+
+Returns:
+```bash
+                   0             1      ...         68042         68043
+hex         5.992300e+17  5.992301e+17  ...  5.996693e+17  5.996693e+17
+mean_value  3.876500e+02  2.390833e+02  ...  1.530952e+02  1.819881e+02
+```
+
+### Visualizing Elevation
+
+We can visualize the elevation data similarly to [the crop data](/tutorials/Geospatial%20with%20Fused/use-cases/Crop%20Exploration%20with%20H3/exploring_individual_dataset#visualizing-a-single-crop-type):
+
+<iframe
+  src="https://staging.udf.ai/fsh_4jXe0wHl91xnG2q1pW1Wx/run?dtype_out_raster=png&dtype_out_vector=html"
+  style={{ width: "100%", height: "600px", border: "1px solid #ccc", borderRadius: "6px" }}
+  loading="lazy"
+  allowFullScreen
+  title="Elevation Hex Visualization"
+/>
+
+<details>
+  <summary>Show code details</summary>
+
+    ```python
+    @fused.udf
+def udf():
+    utils = fused.load('team/map_utils')
+    data = fused.run("elevation_hex_mean_height")
+    print(data.T)
+    
+    config = {
+        "initialViewState": {
+            "longitude": -95.7129,
+            "latitude": 37.0902,
+            "zoom": 3
+        },
+        "hexLayer": {
+            "@@type": "H3HexagonLayer",
+            "filled": True,
+            "pickable": True,
+            "extruded": False,
+            "getHexagon": "@@=properties.hex",
+            "getFillColor": {
+                "@@function": "colorContinuous",
+                "attr": "mean_value",
+                "domain": [0, 3000], # Rough elevation range in meters in the US
+                "steps": 20,
+                "colors": "Earth"
+            }
+        }
+    }
+    return utils.deckgl_hex(
+        data, 
+        config=config
+    )
+    ```
+
+</details>
+
+
+
+
+
+Joining the two together on a Fused Canvas:
+
+<iframe
+  src="https://staging.fused.io/canvas/fc_4qZYB74lMQJLm79LjRzLiW"
+  style={{ width: "100%", height: "600px", border: "1px solid #ccc", borderRadius: "6px" }}
+  loading="lazy"
+  allowFullScreen
+  title="Elevation Canvas Visualization"
+/>
+
+Explore the Fused Canvas:
+
+- [Link to live canvas](https://staging.fused.io/canvas/fc_4qZYB74lMQJLm79LjRzLiW)
+- Click the "Download Canvas" button to download the canvas `.zip` file and upload it directly in your Workbench
 
 ## Temperature 
+
+### Reading Data
+
+### Visualizing a single month
+
+### Visualizing multiple months 
