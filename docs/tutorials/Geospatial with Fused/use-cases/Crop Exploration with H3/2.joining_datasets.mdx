@@ -7,9 +7,375 @@ sidebar_position: 2
 
 # Step 2: Joining Multiple Geospatial Datasets
 
-In this step, we'll learn how to join different types of geospatial datasets together—such as satellite crop classification data and climate data—to enable more contextual and powerful crop exploration.
+After creating all 3 of our datasets at a H3 cell grid size of 3, we can now join them together. 
 
-You will see how to join datasets in Fused, so you can analyze agricultural trends with richer features.
+## Joining logic
 
-> _Coming soon: Example code and interactive queries!_
+Here's a quick summary of what each of our datasets contains:
 
+**Crop**
+
+- Dataset size: ~700k rows
+
+| hex                | crop_type | area      |
+|--------------------|-----------|-----------|
+| 599658332378103807 | 4         |     1713  |
+| 599669866512777215 | 50        |    20854  |
+| 599657528145477631 | 122       |    17505  |
+| 599699078732840959 | 121       | 10368586  |
+| 599697034328408063 | 122       |    17754  |
+
+**Elevation**
+
+Dataset size: ~68k rows
+
+| hex              | mean_value  |
+|------------------|-------------|
+| 599647257804931071 | 453.75     |
+| 599647264247382015 | 375.32     |
+| 599647267468607487 | 392.52     |
+| 599647276058542079 | 401.93     |
+| 599647280353509375 | 410.52     |
+
+
+**Temperature**
+
+Dataset size: ~68k rows
+
+| hex              | daily_mean |
+|------------------|------------|
+| 599740827962441727 | 16.46      |
+| 599740794676445183 | 16.51      |
+| 599740824741216255 | 16.40      |
+| 599740837626118143 | 14.99      |
+| 599740839773601791 | 14.93      |
+
+
+Notice a few things:
+- We have ~10x more rows in the Crop dataset than the Elevation and Temperature datasets, which both have the same number of H3 cells.
+- The Elevation & Temperature datasets each have 1 H3 cell < - > 1 value. The Crop dataset has multiple rows per each H3 cell.
+
+We can write a simple UDF to return all the different dataset at once for a single H3 cell to see this:
+
+```python
+@fused.udf
+def udf():
+    # Assuming you have named your UDFs as follows:
+    elevation_data = fused.run('elevation_hex_mean_height')
+    cdl_data = fused.run("cdl_data_all_crops_staging")
+    temp_data = fused.run("era5_hex_mean_temp_foss4g")
+
+    # Random h3 cell within the US
+    random_hex = 599691796615790591
+    
+    # Filter all 3 dataframes by the same hex value
+    filtered_elevation = elevation_data[elevation_data['hex'] == random_hex]
+    filtered_cdl = cdl_data[cdl_data['hex'] == random_hex]
+    filtered_temp = temp_data[temp_data['hex'] == random_hex]
+    
+    # Print the contents of all 3 filtered dataframes
+    print("Elevation Data:")
+    print(filtered_elevation)
+    print("\nCDL Data:")
+    print(filtered_cdl)
+    print("\nTemperature Data:")
+    print(filtered_temp)
+    
+    return filtered_elevation
+```
+
+This returns:
+```bash
+Elevation Data:
+                      hex  mean_value
+46561  599691796615790591  307.809524
+
+CDL Data:
+        crop_type                 hex      area            chunk_id  year
+355599        122  599691796615790591   7631733  577199624117288959  2024
+355600        123  599691796615790591   2211934  577199624117288959  2024
+355601         68  599691796615790591  18305536  577199624117288959  2024
+355602         37  599691796615790591   5207407  577199624117288959  2024
+355603        131  599691796615790591     60333  577199624117288959  2024
+...           ...                 ...       ...                 ...   ...
+365701          6  599691796615790591     10317  577199624117288959  2024
+365702        143  599691796615790591     12347  577199624117288959  2024
+365703         29  599691796615790591     14997  577199624117288959  2024
+365704        221  599691796615790591     15215  577199624117288959  2024
+365705         38  599691796615790591     16505  577199624117288959  2024
+
+[68 rows x 5 columns]
+
+Temperature Data:
+                      hex  daily_mean
+41582  599691796615790591       15.31
+```
+
+- 1 H3 cell < - > 1 value for Elevation and Temperature
+- 1 H3 cell < - > 68 values for Crop!
+
+This is because the Crop dataset creates a new row for each crop type. Recall that a resolution 5 H3 cell is 252 km², so a single cell can contain multiple crop types.
+
+To join our datasets we need to decide on a logic. We'll decide to:
+
+> **Aggregate the Crop dataset by most dominant crop type for each H3 cell.**
+
+### Aggregating crop by most common
+
+{/*
+TODO 
+- Filter out any crops we're not interested in like shrubs, grass, forest, etc. 
+- Aggregate by most common crop
+- k-ring 1 to get most more accurate statistics
+*/}
+
+**Aggregating crop dataset by most common crop**
+
+```python
+@fused.udf
+def udf():
+    cdl_data = fused.run("cdl_data_all_crops_staging")
+
+    # Aggregate CDL by most common crop by area. 1 h3 cell <-> 1 row: crop_rank_1 and crop_area
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    con = common.duckdb_connect()
+    
+    # Group by hex cell, rank crops by area, keep top crop per cell
+    crop_agg = con.execute("""
+        SELECT 
+            hex,
+            crop_type as crop_rank_1,
+            SUM(area) as crop_area,
+            year
+        FROM cdl_data
+        GROUP BY hex, crop_type, year
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY hex, year ORDER BY SUM(area) DESC) = 1
+    """).df()
+
+    print(f"{crop_agg.T=}")
+    
+
+    return crop_agg
+```
+
+We can refine this further by:
+- Filtering out any crops we're not interested in like shrubs, grass, forest, etc. 
+- Taking neighboring cells into account to get more accurate statistics using [k-ring](https://h3geo.org/docs/3.x/api/traversal/#kring)
+
+```python
+@fused.udf
+def udf(k_ring_size: int = 1):
+    cdl_data = fused.run("cdl_data_all_crops_staging")
+
+    # Aggregate CDL by most common crop by area. 1 h3 cell <-> 1 row: crop_rank_1 and crop_area
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    con = common.duckdb_connect()
+
+    # Removing 'crop types' from CDL dataset we're not interested in
+    crops_to_remove = [
+        64,  # Shrubland
+        152, # Shrubland
+        176, # Pasture/Hay
+        63,  # Forest
+        142, # Forest
+        141, # Forest
+        190, # Woody Wetlands
+        111, # Perennial Ice/Snow
+        195, # Water
+        131, # Barren
+        121, # Developed/Open Space
+        143, # Mixed Forest
+    ]
+    cdl_data = cdl_data[~cdl_data['crop_type'].isin(crops_to_remove)]
+
+    crop_agg = con.execute(f"""
+        WITH k_ring_expanded AS (
+            SELECT 
+                hex as center_hex,
+                unnest(h3_grid_disk(hex, {k_ring_size})) as ring_hex
+            FROM cdl_data
+        ),
+        k_ring_data AS (
+            SELECT 
+                k.center_hex,
+                c.crop_type as crop_type,
+                c.area as crop_area
+            FROM k_ring_expanded k
+            JOIN cdl_data c ON CAST(c.hex AS BIGINT) = CAST(k.ring_hex AS BIGINT)
+        ),
+        aggregated_crops AS (
+            SELECT 
+                center_hex,
+                crop_type,
+                SUM(crop_area) as total_area
+            FROM k_ring_data
+            GROUP BY center_hex, crop_type
+        ),
+        ranked_crops AS (
+            SELECT 
+                center_hex,
+                crop_type,
+                total_area,
+                ROW_NUMBER() OVER (PARTITION BY center_hex ORDER BY total_area DESC) as rank
+            FROM aggregated_crops
+        )
+        SELECT 
+            center_hex as hex,
+            crop_type as crop_rank_1,
+            total_area as area_rank_1
+        FROM ranked_crops
+        WHERE rank = 1
+    """).df()
+
+    print(f"{crop_agg.T=}")
+    
+
+    return crop_agg
+```
+
+This returns:
+
+|       hex        | crop_rank_1 |   area_rank_1   |
+|------------------|-------------|-----------------|
+| 599230208964296703 |      0      | 8.98e+08        |
+| 599238790308954111 |      0      | 2.03e+09        |
+| ...                |   ...       |      ...        |
+| 599238794603921407 |      0      | 2.02e+09        |
+| 599238816078757887 |      0      | 2.02e+09        |
+
+Shape: (51299, 3)
+
+### Joining datasets
+
+We now have 3 datasets, with unique hex values each, so we can join them together:
+
+```python
+@fused.udf
+def udf(k_ring_size: int = 1):
+    elevation_data = fused.run('elevation_hex_mean_height')
+    cdl_data = fused.run("cdl_data_all_crops_staging")
+    temp_data = fused.run("era5_hex_mean_temp_foss4g")
+
+    # Aggregate CDL by most common crop by area. 1 h3 cell <-> 1 row: crop_rank_1 and crop_area
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    con = common.duckdb_connect()
+
+    # Removing 'crop types' from CDL dataset we're not interested in
+    crops_to_remove = [
+        64,  # Shrubland
+        152, # Shrubland
+        176, # Pasture/Hay
+        63,  # Forest
+        142, # Forest
+        141, # Forest
+        190, # Woody Wetlands
+        111, # Perennial Ice/Snow
+        195, # Water
+        131, # Barren
+        121, # Developed/Open Space
+        143, # Mixed Forest
+    ]
+    cdl_data = cdl_data[~cdl_data['crop_type'].isin(crops_to_remove)]
+
+    crop_agg = con.execute(f"""
+        WITH k_ring_expanded AS (
+            SELECT 
+                hex as center_hex,
+                unnest(h3_grid_disk(hex, {k_ring_size})) as ring_hex
+            FROM cdl_data
+        ),
+        k_ring_data AS (
+            SELECT 
+                k.center_hex,
+                c.crop_type as crop_type,
+                c.area as crop_area
+            FROM k_ring_expanded k
+            JOIN cdl_data c ON CAST(c.hex AS BIGINT) = CAST(k.ring_hex AS BIGINT)
+        ),
+        aggregated_crops AS (
+            SELECT 
+                center_hex,
+                crop_type,
+                SUM(crop_area) as total_area
+            FROM k_ring_data
+            GROUP BY center_hex, crop_type
+        ),
+        ranked_crops AS (
+            SELECT 
+                center_hex,
+                crop_type,
+                total_area,
+                ROW_NUMBER() OVER (PARTITION BY center_hex ORDER BY total_area DESC) as rank
+            FROM aggregated_crops
+        )
+        SELECT 
+            center_hex as hex,
+            crop_type as crop_rank_1,
+            total_area as area_rank_1
+        FROM ranked_crops
+        WHERE rank = 1
+    """).df()
+
+    # Join elevation with aggregated CDL crop data
+    merged = elevation_data.merge(
+        crop_agg,
+        on='hex',
+        how='left'
+    ).rename(columns={'mean_value': 'elevation'})
+    
+    # Join with ERA5 temperature data
+    merged = merged.merge(
+        temp_data,
+        on='hex',
+        how='left'
+    )
+
+    # Round elevation to 1 decimal place
+    merged['elevation'] = merged['elevation'].round(1)
+    
+    return merged
+```
+
+Returns:
+
+| hex                | elevation | crop_rank_1 | area_rank_1     | daily_mean |
+|--------------------|-----------|-------------|-----------------|------------|
+| 599650153686630399 | 357.4     | 1.0         | 9.152000e+09    | 13.90      |
+| 599650161202823167 | 413.5     | 1.0         | 1.124163e+10    | 13.45      |
+| ...                | ...       | ...         | ...             | ...        |
+| 599747753597206527 | 255.9     | 0.0         | 2.030604e+09    | 8.93       |
+| 599747766482108415 | 283.6     | 0.0         | 2.031832e+09    | 8.15       |
+
+Shape: (68044, 5)
+
+
+
+
+:::info Using fused common functions for simpler H3 operations
+
+Note that we're using the [Fused common functions](https://github.com/fusedio/udfs/tree/56ec615b98fa828909924b9416adc1ee17ea9578/public/common) to simplify DuckDB queries using H3 functions:
+
+```python
+# inside our udf
+common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+con = common.duckdb_connect()
+crop_agg = con.execute("""SELECT ...""").df()
+# rest of logic
+```
+
+[This function](https://github.com/fusedio/udfs/blob/56ec615b98fa828909924b9416adc1ee17ea9578/public/common/common.py#L2666) provides some benefits:
+- Pre-installed dependencies for H3 operations
+- No need to register data as tables in DuckDB as a preliminary step
+
+:::
+
+## Summary & Next Steps
+
+We now have a joined dataset that contains, for each H3 res 5 cell:
+
+- Elevation data
+- Crop data by most common crop + area of said crop
+- Temperature data
+
+Next:
+- [Step 3: Interactive Visualization](/tutorials/Geospatial%20with%20Fused/use-cases/Crop%20Exploration%20with%20H3/interactive_visualization)
