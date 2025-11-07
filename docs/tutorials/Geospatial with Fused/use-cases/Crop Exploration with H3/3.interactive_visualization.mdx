@@ -13,3 +13,2717 @@ We can create a more advanced version of these visualizations using by creating 
 
 ### Connecting Histogram & Map
 
+
+<iframe
+  src="https://staging.fused.io/canvas/fc_1Haysv86livzZol0Yoixpd"
+  style={{ width: "100%", height: "600px", border: "1px solid #ccc", borderRadius: "6px" }}
+  loading="lazy"
+  allowFullScreen
+  title="Crop Exploration Dashboard Canvas"
+/>
+
+We provide these UDFs for now as-is. You can duplicate them and modify them to work with your own data:
+
+<details>
+  <summary>Range Histogram UDF</summary>
+
+  The Range Histogram UDF allows you to visualize the distribution of a continuous variable (like elevation or temperature) as an interactive histogram. You can select a range to filter the data on the map.
+
+  ```python
+
+@fused.udf
+def udf(
+    # Replace with your own data URL 
+    data_url: str = "https://staging.udf.ai/fsh_5Z7Qgucu8mNPsv924v1CKX/run?dtype_out_raster=png&dtype_out_vector=parquet",
+    theme: str = "workbench",
+    auto_fetch: bool = True,
+    dataset: str = "all",              # IMPORTANT: match the map’s DATASET or use "all"
+    num_bins: int = 50,
+    value_field: str = "elevation",
+    title: str = "Elevation",
+    channel: str = "fused-elevation-temp"         # IMPORTANT: match the map’s CHANNEL
+):
+    common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+    _ = fused.load("join_era5_cdl_elevation")
+    themes = {
+        'workbench': {
+            'background': '#1a1a1a',
+            'text': '#ffffff',
+            'accent': '#E8FF59',
+            'chart_bg': '#2a2a2a'
+        }
+    }
+    selected = themes.get(theme, themes['workbench'])
+ 
+    safe_title = (
+        title.replace("&", "&amp;")
+             .replace("<", "&lt;")
+             .replace(">", "&gt;")
+             .replace('"', "&quot;")
+             .replace("'", "&#39;")
+    )
+
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8" />
+        <title>""" + safe_title + """</title>
+        <script src="https://d3js.org/d3.v7.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.1-dev132.0/dist/duckdb-wasm.js"></script>
+        <script type="module">
+            import * as duckdb_wasm from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.1-dev132.0/+esm";
+            window.__DUCKDB_WASM = duckdb_wasm;
+        </script>
+        <style>
+            * { margin: 0; padding: 0; border: none; outline: none; box-sizing: border-box; }
+            body {
+                padding: 15px;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                background: """ + selected['background'] + """;
+                color: """ + selected['text'] + """;
+                height: 100vh; display: flex; flex-direction: column;
+            }
+            .header { text-align: center; margin-bottom: 10px; flex-shrink: 0; }
+            .title { font-size: 16px; color: """ + selected['accent'] + """; margin-bottom: 6px; font-weight: 600; }
+            .chart-container { flex: 1; position: relative; background: """ + selected['chart_bg'] + """; border-radius: 6px; padding: 10px; margin-bottom: 10px; min-height: 200px; }
+            .selection-info { text-align: center; font-size: 11px; color: """ + selected['accent'] + """; margin-bottom: 8px; min-height: 14px; flex-shrink: 0; }
+            .controls { text-align: center; flex-shrink: 0; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
+            .controls-row { display: flex; justify-content: center; align-items: center; gap: 10px; }
+            .btn { background: """ + selected['accent'] + """; color: """ + selected['background'] + """; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; margin: 0 4px; transition: opacity 0.2s; }
+            .btn:hover { opacity: 0.8; }
+            .status { text-align: center; font-size: 10px; opacity: 0.7; flex-shrink: 0; }
+            .loading-state { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; opacity: 0.6; }
+            .bar { fill: """ + selected['accent'] + """; transition: fill 0.2s, opacity 0.2s; cursor: pointer; }
+            .bar.selected { fill: """ + selected['accent'] + """; opacity: 1; }
+            .bar.unselected { fill: rgba(232, 255, 89, 0.2); stroke: none; opacity: 1; }
+            .bar:hover { opacity: 0.8; }
+            .tooltip { position: absolute; background: rgba(0, 0, 0, 0.9); color: white; padding: 8px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 1000; display: none; border: 1px solid #444; }
+        </style>
+    </head>
+    <body>
+        <div class="tooltip" id="tooltip"></div>
+        <div class="header">
+            <div class="title">""" + safe_title + """</div>
+        </div>
+        <div class="chart-container" id="chartContainer">
+            <div id="loadingState" class="loading-state">
+                <div style="font-size: 24px;">📊</div>
+                <div style="margin-top: 8px; font-weight: 500;">Loading full dataset</div>
+            </div>
+            <svg id="histogram" style="display: none; width: 100%; height: 100%;"></svg>
+        </div>
+        <div class="histogram-minmax" id="histogramMinMax" style="display: flex; justify-content: space-between; font-size: 11px; color: """ + selected['accent'] + """; margin-bottom: 8px; min-height: 14px;">
+            <span id="histMin"></span><span id="histMax"></span>
+        </div>
+        <div class="selection-info" id="selectionInfo"></div>
+        <div class="controls">
+            <div class="controls-row">
+                <button class="btn" onclick="clearSelection()">Clear Selection</button>
+                <button class="btn" onclick="reloadData()">Reload Data</button>
+            </div>
+        </div>
+        <div class="status" id="status">Loading data from URL...</div>
+
+        <script>
+            // --- config ---
+            const componentId = 'histogram-v3-' + Math.random().toString(36).substr(2, 9);
+            const DATA_URL  = """ + repr(data_url) + """;
+            const AUTO_FETCH = """ + str(auto_fetch).lower() + """;
+            const DATASET   = """ + repr(dataset) + """;
+            const NUM_BINS  = """ + str(num_bins) + """;
+            const VALUE_FIELD = """ + repr(value_field) + """;
+            const CHANNEL   = """ + repr(channel) + """;   // must match map
+            const DEFAULT_SQL = "SELECT * FROM data";
+
+            // --- tiny bus: BroadcastChannel + postMessage fanout ---
+            let bc = null;
+            try { if ('BroadcastChannel' in window) bc = new BroadcastChannel(CHANNEL); } catch (e) {}
+            function busSend(obj) {
+                const s = JSON.stringify(obj);
+                try { if (bc) bc.postMessage(obj); } catch(e) {}
+                try { window.parent.postMessage(s, '*'); } catch(e) {}
+                try { if (window.top && window.top !== window.parent) window.top.postMessage(s, '*'); } catch(e) {}
+                try {
+                    if (window.top && window.top.frames) {
+                        for (let i=0; i<window.top.frames.length; i++) {
+                            const f = window.top.frames[i];
+                            if (f !== window) try { f.postMessage(s, '*'); } catch(e) {}
+                        }
+                    }
+                } catch(e) {}
+            }
+
+            function sanitizeSQL(sql) {
+                if (sql == null) return "";
+                return String(sql).trim().replace(/;+\s*$/g, '');
+            }
+
+            function broadcastDuckDBQuery(sqlText, baseSql) {
+                const cleanSql = sanitizeSQL(sqlText);
+                if (!cleanSql) return;
+                busSend({
+                    type: 'duckdb_query',
+                    sql: cleanSql,
+                    base: sanitizeSQL(baseSql) || cleanSql,
+                    dataset: DATASET,
+                    fromComponent: componentId,
+                    timestamp: Date.now()
+                });
+            }
+
+            function getFeatureValue(feature, fieldName = VALUE_FIELD) {
+                if (!feature) return 0;
+                if (feature[fieldName] !== undefined) {
+                    const direct = Number(feature[fieldName]);
+                    if (Number.isFinite(direct)) return direct;
+                }
+                if (feature.properties && feature.properties[fieldName] !== undefined) {
+                    const propVal = Number(feature.properties[fieldName]);
+                    if (Number.isFinite(propVal)) return propVal;
+                }
+                return 0;
+            }
+
+            // --- state ---
+            let duckConn = null;
+            let duckDBReady = false;
+            let currentSQL = DEFAULT_SQL;
+            let remoteBaseSQL = DEFAULT_SQL;
+            let pendingDuckQuery = null;
+            let currentRangeClause = null;
+            let hasExecutedDuckQuery = false;
+            let fullDataset = [];
+            let filteredDataset = [];
+            let activeFilters = new Map();
+            let dynamicBins = [];
+            let svg = null, chartGroup = null, barsGroup = null, xScale = null, yScale = null, brush = null;
+            let selectedBins = [];
+            let chartWidth = 0, chartHeight = 0;
+            const RANGE_DEBOUNCE_MS = 50;
+            let rangeDebounceTimer = null;
+            let pendingRangeSelection = null;
+            let currentMinValue = null;
+            let currentMaxValue = null;
+
+            // UI handles
+            const loadingState = document.getElementById('loadingState');
+            const histogramSvg = document.getElementById('histogram');
+            const statusElement = document.getElementById('status');
+
+            // --- utils ---
+            function formatValue(val) { return (val >= 1000) ? `${(val/1000).toFixed(1)}k  ` : `${val.toFixed(1)}  `; }
+
+            // --- bins ---
+            function calculateDynamicBins(data) {
+                if (!data || data.length === 0) return [];
+                const areas = data.map(f => getFeatureValue(f)).filter(a => a > 0).sort((a,b)=>a-b);
+                if (!areas.length) return [];
+                const min = areas[0], max = areas[areas.length - 1];
+                const logMin = Math.log10(min), logMax = Math.log10(max), logStep = (logMax - logMin) / NUM_BINS;
+                const bins = [];
+                for (let i=0;i<NUM_BINS;i++){
+                    const binMin = Math.pow(10, logMin + i*logStep);
+                    const binMax = Math.pow(10, logMin + (i+1)*logStep);
+                    const label = binMax >= 1000 ? `${(binMin/1000).toFixed(1)}-${(binMax/1000).toFixed(1)}  `
+                                                 : `${binMin.toFixed(1)}-${binMax.toFixed(1)}  `;
+                    bins.push({ label, min:binMin, max:binMax, count:0 });
+                }
+                return bins;
+            }
+
+            // --- duckdb init + querying ---
+            async function initDuckDB() {
+                if (duckDBReady && duckConn) return;
+                setUIState('loading');
+                statusElement.textContent = 'Initializing DuckDB…';
+                try {
+                    const duckmod = window.__DUCKDB_WASM;
+                    if (!duckmod) throw new Error('DuckDB WASM runtime not available');
+
+                    const bundle = await duckmod.selectBundle(duckmod.getJsDelivrBundles());
+                    const worker = new Worker(
+                        URL.createObjectURL(
+                            new Blob([await (await fetch(bundle.mainWorker)).text()], { type: 'application/javascript' })
+                        )
+                    );
+                    const db = new duckmod.AsyncDuckDB(new duckmod.ConsoleLogger(), worker);
+                    await db.instantiate(bundle.mainModule);
+                    duckConn = await db.connect();
+
+                    statusElement.textContent = 'Downloading dataset…';
+                    const res = await fetch(DATA_URL);
+                    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                    const bytes = new Uint8Array(await res.arrayBuffer());
+                    await db.registerFileBuffer('histogram.parquet', bytes);
+                    await duckConn.query("CREATE OR REPLACE VIEW data AS SELECT * FROM read_parquet('histogram.parquet')");
+
+                    duckDBReady = true;
+                    statusElement.textContent = 'DuckDB ready';
+                } catch (e) {
+                    duckDBReady = false;
+                    console.error(e);
+                    setUIState('loading');
+                    statusElement.textContent = `DuckDB init failed: ${e.message}`;
+                    throw e;
+                }
+            }
+
+            async function runHistogramQuery(options = {}) {
+                if (!duckConn) {
+                    throw new Error('DuckDB connection not ready');
+                }
+
+                const targetSql = sanitizeSQL(options.sql ?? currentSQL ?? DEFAULT_SQL) || sanitizeSQL(DEFAULT_SQL);
+                const baseSql = sanitizeSQL(options.baseSQL ?? remoteBaseSQL ?? targetSql) || targetSql;
+                const showLoading = options.showLoading !== false;
+
+                if (options.updateBase !== false) {
+                    remoteBaseSQL = baseSql;
+                }
+                currentSQL = targetSql;
+
+                try {
+                    if (showLoading) {
+                        setUIState('loading');
+                        statusElement.textContent = 'Running DuckDB query…';
+                    } else {
+                        statusElement.textContent = 'Updating selection…';
+                    }
+                    const res = await duckConn.query(targetSql);
+                    const rows = res.toArray();
+
+                    fullDataset = processRawData(rows);
+                    dynamicBins = calculateDynamicBins(fullDataset);
+                    applyAllFilters(true);
+                    hasExecutedDuckQuery = true;
+
+                    if (!options.suppressBroadcast) {
+                        broadcastDuckDBQuery(targetSql, baseSql);
+                    }
+                } catch (e) {
+                    console.error(e);
+                    if (showLoading) setUIState('loading');
+                    statusElement.textContent = `SQL error: ${e.message}`;
+                }
+            }
+
+            function processRawData(raw) {
+                if (raw?.features && Array.isArray(raw.features)) {
+                    return raw.features.map(f => {
+                        const areaMeters = f.properties?.area_meters || 0;
+                        const areaKm = areaMeters / 1_000_000;
+                        let valueCandidate;
+                        if (f.properties && Object.prototype.hasOwnProperty.call(f.properties, VALUE_FIELD)) {
+                            valueCandidate = f.properties[VALUE_FIELD];
+                        } else if (VALUE_FIELD === 'count_mmsi') {
+                            valueCandidate = areaKm;
+                        } else {
+                            valueCandidate = f.properties?.value ?? f.properties?.cnt ?? areaKm;
+                        }
+                        const numericValue = Number(valueCandidate);
+                        const resolvedValue = Number.isFinite(numericValue) ? numericValue : 0;
+                        const props = Object.assign({}, f.properties, { count_mmsi: areaKm, [VALUE_FIELD]: resolvedValue });
+                        return {
+                            id: f.properties?.id || Math.random().toString(36),
+                            geometry: f.geometry,
+                            lng: f.geometry?.coordinates?.[0],
+                            lat: f.geometry?.coordinates?.[1],
+                            properties: props,
+                            count_mmsi: areaKm,
+                            area_meters: areaMeters,
+                            cnt: f.properties?.cnt || 0,
+                            [VALUE_FIELD]: resolvedValue
+                        };
+                    });
+                } else if (Array.isArray(raw)) {
+                    return raw.map(item => {
+                        const valueCandidate = item[VALUE_FIELD] ?? item.value ?? item.count ?? item.count_mmsi ?? 0;
+                        const numericValue = Number(valueCandidate);
+                        const resolvedValue = Number.isFinite(numericValue) ? numericValue : 0;
+                        const copy = Object.assign({}, item);
+                        copy[VALUE_FIELD] = resolvedValue;
+                        return copy;
+                    });
+                }
+                return [];
+            }
+
+            function reloadData() {
+                clearAllFilters();
+                if (duckDBReady && duckConn) {
+                    runHistogramQuery({ sql: remoteBaseSQL, baseSQL: remoteBaseSQL, updateBase: true });
+                }
+            }
+
+            // --- external filters application (so histogram reflects spatial from map) ---
+            function applyAllFilters(fromQuery = false) {
+                let filtered = [...fullDataset];
+                for (let [,f] of activeFilters.entries()) filtered = applyFilter(filtered, f);
+                filteredDataset = filtered;
+                updateHistogram(false);
+                const summary = `${filtered.length}/${fullDataset.length} features (${activeFilters.size} filters)`;
+                statusElement.textContent = summary;
+            }
+
+            function applyFilter(data, filter) {
+                switch (filter.type) {
+                    case 'spatial': return applySpatialFilter(data, filter);
+                    case 'range':
+                    case 'multi-range': return applyRangeFilter(data, filter);
+                    case 'categorical': return applyCategoricalFilter(data, filter);
+                    default: return data;
+                }
+            }
+
+            function applySpatialFilter(data, filter) {
+                const b = filter.bounds; if (!b) return data;
+                return data.filter(f => f.lng>=b.sw.lng && f.lng<=b.ne.lng && f.lat>=b.sw.lat && f.lat<=b.ne.lat);
+            }
+
+            function applyRangeFilter(data, filter) {
+                const field = filter.field || VALUE_FIELD;
+                const [min,max] = filter.values || [0, Number.POSITIVE_INFINITY];
+                return data.filter(f => {
+                    const val = getFeatureValue(f, field);
+                    return val >= min && val <= max;
+                });
+            }
+
+            function applyCategoricalFilter(data, filter) {
+                const field = filter.field || 'category';
+                const values = filter.values || [];
+                return data.filter(f => values.includes(f[field]));
+            }
+
+            function clearAllFilters() {
+                activeFilters.clear();
+                clearRangeFilter();
+                filteredDataset = [...fullDataset];
+                updateHistogram();
+                statusElement.textContent = `${fullDataset.length} features (no filters)`;
+                // unified clear + legacy clear
+                busSend({ type:'filter', fromComponent:componentId, timestamp:Date.now(), dataset:DATASET, filter:{ type:'clear', clearAll:true } });
+                busSend({ type:'filter_cleared', source:componentId, timestamp:Date.now() });
+            }
+
+            // --- UI state ---
+            function setUIState(state) {
+                loadingState.style.display = state === 'loading' ? 'flex' : 'none';
+                histogramSvg.style.display = state === 'chart' ? 'block' : 'none';
+            }
+
+            // --- chart ---
+            function initializeChart() {
+                d3.select('#histogram').selectAll('*').remove();
+                const container = document.getElementById('chartContainer');
+                chartWidth = container.clientWidth - 20;
+                chartHeight = container.clientHeight - 20;
+
+                svg = d3.select('#histogram').attr('width', chartWidth).attr('height', chartHeight);
+                chartGroup = svg.append('g').attr('class', 'chart-group');
+                barsGroup = svg.append('g').attr('class', 'bars-group');
+
+                xScale = d3.scaleBand().domain(dynamicBins.map((_,i)=>i)).range([0, chartWidth]).padding(0.1);
+                yScale = d3.scaleLinear().domain([0, d3.max(dynamicBins, d => d.count)]).range([chartHeight, 0]).nice();
+
+                setupBrush();
+                createBars();
+            }
+
+            function createBars() {
+                barsGroup.selectAll('.bar')
+                    .data(dynamicBins).enter().append('rect').attr('class','bar')
+                    .attr('x', (d,i)=>xScale(i))
+                    .attr('y', d=>yScale(d.count))
+                    .attr('width', xScale.bandwidth())
+                    .attr('height', d=>chartHeight - yScale(d.count))
+                    .on('mouseover', function(evt,d){
+                        d3.select(this).style('opacity',0.8);
+                        const t = document.getElementById('tooltip');
+                        t.innerHTML = `<div><strong>Range:</strong> ${formatValue(d.min)} - ${formatValue(d.max)}</div><div><strong>Count:</strong> ${d.count} areas</div>`;
+                        t.style.display = 'block'; t.style.left = (evt.pageX+15)+'px'; t.style.top = (evt.pageY-10)+'px';
+                    })
+                    .on('mousemove', function(evt){ const t=document.getElementById('tooltip'); t.style.left=(evt.pageX+15)+'px'; t.style.top=(evt.pageY-10)+'px'; })
+                    .on('mouseout', function(){ d3.select(this).style('opacity',1); document.getElementById('tooltip').style.display='none'; });
+            }
+
+            function setupBrush() {
+                brush = d3.brushX().extent([[0,0],[chartWidth,chartHeight]]).on('start brush end', brushed);
+                const brushGroup = chartGroup.append('g').attr('class','brush').call(brush);
+                brushGroup.select('.selection').style('fill','rgba(128,128,128,0.25)').style('stroke','#999').style('stroke-width','0.5px').style('rx','3px');
+                brushGroup.select('.overlay').style('cursor','crosshair').style('fill','none');
+            }
+
+            function brushed(event) {
+                const sel = event.selection;
+                if (!sel) {
+                    selectedBins = [];
+                    updateBarSelection(); updateSelectionInfo();
+                    pendingRangeSelection = null;
+                    if (rangeDebounceTimer) {
+                        clearTimeout(rangeDebounceTimer);
+                        rangeDebounceTimer = null;
+                    }
+                    if (event.type === 'end') clearRangeFilter();
+                    return;
+                }
+                const [x0,x1] = sel;
+                selectedBins = [];
+                dynamicBins.forEach((bin, idx) => {
+                    const left = xScale(idx), right = left + xScale.bandwidth();
+                    if (right > x0 && left < x1) selectedBins.push(idx);
+                });
+                updateBarSelection();
+                updateSelectionInfo();
+                if ((event.type === 'brush' || event.type === 'end') && selectedBins.length > 0) {
+                    const minArea = Math.min(...selectedBins.map(i => dynamicBins[i]?.min ?? Infinity));
+                    const maxArea = Math.max(...selectedBins.map(i => dynamicBins[i]?.max ?? -Infinity));
+                    if (Number.isFinite(minArea) && Number.isFinite(maxArea)) {
+                        scheduleRangeFilter(minArea, maxArea);
+                    }
+                }
+            }
+
+            function updateBarSelection() {
+                if (!barsGroup) return;
+                barsGroup.selectAll('.bar')
+                    .attr('class', (d,i) => selectedBins.length===0 ? 'bar' : (selectedBins.includes(i) ? 'bar selected' : 'bar unselected'));
+            }
+
+            function updateHistogram(animate=false) {
+                const data = filteredDataset;
+                if (!data.length) {
+                    currentMinValue = null;
+                    currentMaxValue = null;
+                    updateMinMaxLabels();
+                    setUIState('loading');
+                    statusElement.textContent = 'No data matches current filters';
+                    return;
+                }
+
+                let minVal = Infinity;
+                let maxVal = -Infinity;
+                dynamicBins.forEach(b => b.count = 0);
+                data.forEach(f => {
+                    const value = getFeatureValue(f);
+                    if (Number.isFinite(value)) {
+                        if (value < minVal) minVal = value;
+                        if (value > maxVal) maxVal = value;
+                    }
+                    for (let b of dynamicBins) {
+                        if (value >= b.min && value < b.max) { b.count++; break; }
+                    }
+                });
+
+                currentMinValue = Number.isFinite(minVal) ? minVal : null;
+                currentMaxValue = Number.isFinite(maxVal) ? maxVal : null;
+                updateMinMaxLabels();
+
+                if (!svg) {
+                    initializeChart();
+                    setUIState('chart');
+                    return;
+                }
+
+                yScale.domain([0, d3.max(dynamicBins, d => d.count)]).nice();
+                const bars = barsGroup.selectAll('.bar').data(dynamicBins);
+                if (animate) {
+                    bars.transition().duration(200).attr('y', d=>yScale(d.count)).attr('height', d=>chartHeight - yScale(d.count));
+                } else {
+                    bars.attr('y', d=>yScale(d.count)).attr('height', d=>chartHeight - yScale(d.count));
+                }
+                updateBarSelection();
+                setUIState('chart');
+            }
+
+            function updateSelectionInfo() {
+                const el = document.getElementById('selectionInfo');
+                if (!selectedBins.length) { el.textContent=''; return; }
+                const total = selectedBins.reduce((s,i)=>s+dynamicBins[i].count,0);
+                const minArea = Math.min(...selectedBins.map(i=>dynamicBins[i].min));
+                const maxArea = Math.max(...selectedBins.map(i=>dynamicBins[i].max));
+                const rangeLabel = maxArea >= 1000 ? `${(minArea/1000).toFixed(1)}-${(maxArea/1000).toFixed(1)}  ` : `${minArea.toFixed(1)}-${maxArea.toFixed(1)}  `;
+                el.textContent = selectedBins.length===1
+                  ? `Selected: ${dynamicBins[selectedBins[0]].label} (${total} areas)`
+                  : `Selected: ${selectedBins.length} ranges (${rangeLabel}, ${total} areas)`;
+            }
+
+            // --- selection actions -> send filters to others ---
+            function scheduleRangeFilter(minArea, maxArea) {
+                pendingRangeSelection = { min: minArea, max: maxArea };
+                if (rangeDebounceTimer) clearTimeout(rangeDebounceTimer);
+                rangeDebounceTimer = setTimeout(() => {
+                    rangeDebounceTimer = null;
+                    const payload = pendingRangeSelection;
+                    pendingRangeSelection = null;
+                    if (!payload) return;
+                    sendRangeFilter(payload.min, payload.max);
+                }, RANGE_DEBOUNCE_MS);
+            }
+
+            function sendRangeFilter(minArea, maxArea) {
+                if (!Number.isFinite(minArea) || !Number.isFinite(maxArea)) return;
+                const lower = Math.min(minArea, maxArea);
+                const upper = Math.max(minArea, maxArea);
+                const base = sanitizeSQL(remoteBaseSQL || DEFAULT_SQL) || DEFAULT_SQL;
+
+                currentRangeClause = `${VALUE_FIELD} BETWEEN ${lower} AND ${upper}`;
+                currentSQL = base;
+
+                statusElement.textContent = `Selected ${formatValue(lower)} – ${formatValue(upper)}`;
+
+                // unified
+                busSend({
+                    type:'filter',
+                    fromComponent:componentId,
+                    timestamp:Date.now(),
+                    dataset:DATASET,
+                    filter:{ type:'range', field:VALUE_FIELD, values:[lower, upper] }
+                });
+
+                // legacy
+                busSend({
+                    type:'range_filter',
+                    field:VALUE_FIELD,
+                    min:lower,
+                    max:upper,
+                    source:componentId,
+                    timestamp:Date.now()
+                });
+            }
+
+            function clearSelection() {
+                selectedBins = [];
+                if (chartGroup && brush) chartGroup.select('.brush').call(brush.clear);
+                updateBarSelection(); updateSelectionInfo(); clearRangeFilter();
+            }
+
+            function clearRangeFilter() {
+                if (rangeDebounceTimer) {
+                    clearTimeout(rangeDebounceTimer);
+                    rangeDebounceTimer = null;
+                }
+                pendingRangeSelection = null;
+                const base = sanitizeSQL(remoteBaseSQL || DEFAULT_SQL) || DEFAULT_SQL;
+                const hadRange = !!currentRangeClause;
+                currentRangeClause = null;
+                currentSQL = base;
+                if (hadRange) statusElement.textContent = 'Range cleared';
+
+                // unified
+                busSend({
+                    type:'filter',
+                    fromComponent:componentId,
+                    timestamp:Date.now(),
+                    dataset:DATASET,
+                    filter:{ type:'clear', field:VALUE_FIELD }
+                });
+
+                // legacy
+                busSend({ type:'filter_cleared', source:componentId, field:VALUE_FIELD, timestamp:Date.now() });
+            }
+
+            // --- incoming messages (so histogram reacts to map spatial) ---
+            function onMessage(message) {
+                try {
+                    if (typeof message === 'string') { try { message = JSON.parse(message); } catch (_) {} }
+                    if (!message) return;
+
+                    // ignore our own
+                    if (message.fromComponent && message.fromComponent === componentId) return;
+                    if (message.source && message.source === componentId) return;
+
+                    if (message.type === 'duckdb_query' && typeof message.sql === 'string') {
+                        if (message.dataset && DATASET !== 'all' && message.dataset !== DATASET) return;
+                        const incomingSql = sanitizeSQL(message.sql);
+                        if (!incomingSql) return;
+                        const baseSql = sanitizeSQL(message.base || message.sql) || incomingSql;
+                        remoteBaseSQL = baseSql;
+                        currentSQL = incomingSql;
+                        currentRangeClause = null;
+
+                        selectedBins = [];
+                        updateBarSelection();
+                        updateSelectionInfo();
+                        if (chartGroup && brush) {
+                            chartGroup.select('.brush').call(brush.clear);
+                        }
+
+                        const execute = () => runHistogramQuery({ sql: incomingSql, baseSQL: baseSql, suppressBroadcast: true, updateBase: true }).catch(() => {});
+                        if (!duckDBReady || !duckConn) {
+                            pendingDuckQuery = { sql: incomingSql, base: baseSql };
+                            initDuckDB().then(() => {
+                                if (pendingDuckQuery) {
+                                    const queued = pendingDuckQuery;
+                                    pendingDuckQuery = null;
+                                    runHistogramQuery({ sql: queued.sql, baseSQL: queued.base, suppressBroadcast: true, updateBase: true }).catch(() => {});
+                                }
+                            }).catch(() => {});
+                        } else {
+                            execute();
+                        }
+                        return;
+                    }
+
+                    // unified
+                    if (message.type === 'filter' && message.filter) {
+                        // dataset scoping
+                        if (message.dataset && DATASET !== 'all' && message.dataset !== DATASET) return;
+                        const f = message.filter;
+
+                        if (f.type === 'clear') {
+                            if (f.clearAll) activeFilters.clear();
+                            else if (f.field) {
+                                for (const k of Array.from(activeFilters.keys())) if (k.includes(`_${f.field}`)) activeFilters.delete(k);
+                            } else if (f.filterId) activeFilters.delete(f.filterId);
+                            applyAllFilters(); return;
+                        }
+
+                        if (f.type === 'spatial' && Array.isArray(f.values)) {
+                            const [w,s,e,n] = f.values;
+                            activeFilters.set(`spatial_${message.fromComponent||'unknown'}`, { type:'spatial', bounds:{ sw:{lng:w,lat:s}, ne:{lng:e,lat:n} } });
+                            applyAllFilters(); return;
+                        }
+
+                        if (f.type === 'range' && Array.isArray(f.values)) {
+                            const field = f.field || VALUE_FIELD;
+                            activeFilters.set(`range_${message.fromComponent||'unknown'}_${field}`, { type:'range', field, values:f.values });
+                            applyAllFilters(); return;
+                        }
+                    }
+
+                    // legacy
+                    if (message.type === 'spatial_filter' && message.bounds) {
+                        activeFilters.set(`spatial_legacy_${message.source||'unknown'}`, { type:'spatial', bounds: message.bounds });
+                        applyAllFilters(); return;
+                    }
+                    if (message.type === 'range_filter' && typeof message.min !== 'undefined' && typeof message.max !== 'undefined') {
+                        const field = message.field || VALUE_FIELD;
+                        activeFilters.set(`range_legacy_${message.source||'unknown'}_${field}`, { type:'range', field, values:[+message.min, +message.max] });
+                        applyAllFilters(); return;
+                    }
+                    if (message.type === 'filter_cleared') {
+                        if (message.field) {
+                            for (const k of Array.from(activeFilters.keys())) if (k.includes(`_${message.field}`)) activeFilters.delete(k);
+                        } else if (message.source) {
+                            for (const k of Array.from(activeFilters.keys())) if (k.includes(`_${message.source}`)) activeFilters.delete(k);
+                        } else activeFilters.clear();
+                        applyAllFilters(); return;
+                    }
+                } catch (e) { /* swallow */ }
+            }
+
+            if (bc) bc.onmessage = (ev) => onMessage(ev.data);
+            window.addEventListener('message', (ev) => onMessage(ev.data));
+
+            // --- init ---
+            document.addEventListener('DOMContentLoaded', async function() {
+                if (!AUTO_FETCH || !DATA_URL) {
+                    setUIState('loading');
+                    statusElement.textContent = 'Manual data loading required';
+                }
+
+                if (AUTO_FETCH && DATA_URL) {
+                    try {
+                        await initDuckDB();
+                        if (pendingDuckQuery) {
+                            const queued = pendingDuckQuery;
+                            pendingDuckQuery = null;
+                            await runHistogramQuery({ sql: queued.sql, baseSQL: queued.base, suppressBroadcast: true, updateBase: true });
+                        } else if (!hasExecutedDuckQuery) {
+                            await runHistogramQuery({ sql: remoteBaseSQL, baseSQL: remoteBaseSQL, suppressBroadcast: true, updateBase: true });
+                        }
+                    } catch (e) {
+                        console.error(e);
+                    }
+                }
+
+                setTimeout(() => {
+                    busSend({
+                        type: 'component_ready',
+                        componentType: 'histogram',
+                        componentId: componentId,
+                        capabilities: ['filter'],
+                        dataSource: 'independent',
+                        protocol: 'unified'
+                    });
+                }, 300);
+            });
+
+            function updateMinMaxLabels() {
+                const minEl = document.getElementById('histMin');
+                const maxEl = document.getElementById('histMax');
+                if (!minEl || !maxEl) return;
+                if (!Number.isFinite(currentMinValue) || !Number.isFinite(currentMaxValue)) {
+                    minEl.textContent = '';
+                    maxEl.textContent = '';
+                    return;
+                }
+                minEl.textContent = formatValue(currentMinValue);
+                maxEl.textContent = formatValue(currentMaxValue);
+            }
+        </script>
+    </body>
+    </html>
+    """
+
+    return common.html_to_obj(html_content)
+    ```
+
+</details>
+
+<details>
+  <summary>Categorical Bar Chart UDF</summary>
+
+  The Categorical Bar Chart UDF is used to visualize counts of each category (such as crop types). Clicking a bar will filter the map to display only the selected category.
+
+  ```python
+  @fused.udf
+def udf(
+    # Replace with your own data URL
+    data_url: str = "https://staging.udf.ai/fsh_5Z7Qgucu8mNPsv924v1CKX/run?dtype_out_raster=png&dtype_out_vector=parquet",
+    theme: str = "workbench",
+    auto_fetch: bool = True,
+    dataset: str = "all",
+    value_field: str = "crop_rank_1",
+    title: str = "Top 10 Crop Types",
+    channel: str = "fused-elevation-temp"
+):
+    common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+    _ = fused.load("join_era5_cdl_elevation")
+    
+    # Load crop name mapping
+    crop_df = fused.run("cdl_crop_types_indexing") 
+    crop_mapping = dict(zip(crop_df['ID'], crop_df['Name']))
+     
+    # Convert to JavaScript object string
+    crop_mapping_js = "{\n"
+    for crop_id, crop_name in crop_mapping.items():
+        # Escape single quotes in crop names
+        safe_name = str(crop_name).replace("'", "\\'")
+        crop_mapping_js += f"                {crop_id}: '{safe_name}',\n"
+    crop_mapping_js += "            }"
+    
+    themes = {
+        'workbench': {
+            'background': '#1a1a1a',
+            'text': '#ffffff',
+            'accent': '#E8FF59',
+            'chart_bg': '#2a2a2a'
+        }
+    }
+    selected = themes.get(theme, themes['workbench'])
+
+    safe_title = (
+        title.replace("&", "&amp;")
+             .replace("<", "&lt;")
+             .replace(">", "&gt;")
+             .replace('"', "&quot;")
+             .replace("'", "&#39;")
+    )
+
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8" />
+        <title>""" + safe_title + """</title>
+        <script src="https://d3js.org/d3.v7.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.1-dev132.0/dist/duckdb-wasm.js"></script>
+        <script type="module">
+            import * as duckdb_wasm from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.1-dev132.0/+esm";
+            window.__DUCKDB_WASM = duckdb_wasm;
+        </script>
+        <style>
+            * { margin: 0; padding: 0; border: none; outline: none; box-sizing: border-box; }
+            body {
+                padding: 15px;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                background: """ + selected['background'] + """;
+                color: """ + selected['text'] + """;
+                height: 100vh; display: flex; flex-direction: column;
+            }
+            .header { text-align: center; margin-bottom: 10px; flex-shrink: 0; }
+            .title { font-size: 16px; color: """ + selected['accent'] + """; margin-bottom: 6px; font-weight: 600; }
+            .most-common-crop { 
+                text-align: center; 
+                font-size: 18px; 
+                color: """ + selected['accent'] + """; 
+                margin-bottom: 10px; 
+                padding: 10px;
+                background: """ + selected['chart_bg'] + """;
+                border-radius: 6px;
+                font-weight: 700;
+                min-height: 45px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .chart-container { flex: 1; position: relative; background: """ + selected['chart_bg'] + """; border-radius: 6px; padding: 20px 10px 40px 10px; margin-bottom: 10px; min-height: 200px; overflow: hidden; }
+            .selection-info { text-align: center; font-size: 11px; color: """ + selected['accent'] + """; margin-bottom: 8px; min-height: 14px; flex-shrink: 0; }
+            .controls { text-align: center; flex-shrink: 0; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
+            .controls-row { display: flex; justify-content: center; align-items: center; gap: 10px; }
+            .btn { background: """ + selected['accent'] + """; color: """ + selected['background'] + """; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; margin: 0 4px; transition: opacity 0.2s; }
+            .btn:hover { opacity: 0.8; }
+            .status { text-align: center; font-size: 10px; opacity: 0.7; flex-shrink: 0; }
+            .loading-state { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; opacity: 0.6; }
+            .bar { fill: """ + selected['accent'] + """; transition: fill 0.2s, opacity 0.2s; cursor: pointer; }
+            .bar.selected { fill: """ + selected['accent'] + """; opacity: 1; stroke: #fff; stroke-width: 2px; }
+            .bar.unselected { fill: rgba(232, 255, 89, 0.3); stroke: none; opacity: 1; }
+            .bar:hover { opacity: 0.8; }
+            .axis text { fill: """ + selected['text'] + """; font-size: 12px; font-weight: 500; }
+            .axis line, .axis path { stroke: """ + selected['text'] + """; opacity: 0.3; }
+            .tooltip { position: absolute; background: rgba(0, 0, 0, 0.9); color: white; padding: 8px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 1000; display: none; border: 1px solid #444; }
+        </style>
+    </head>
+    <body>
+        <div class="tooltip" id="tooltip"></div>
+        <div class="header">
+            <div class="title">""" + safe_title + """</div>
+        </div>
+        <div class="most-common-crop" id="mostCommonCrop">Loading...</div>
+        <div class="chart-container" id="chartContainer">
+            <div id="loadingState" class="loading-state">
+                <div style="font-size: 24px;">📊</div>
+                <div style="margin-top: 8px; font-weight: 500;">Loading full dataset</div>
+            </div>
+            <svg id="histogram" style="display: none; width: 100%; height: 100%;"></svg>
+        </div>
+        <div class="selection-info" id="selectionInfo"></div>
+        <div class="controls">
+            <div class="controls-row">
+                <button class="btn" onclick="clearSelection()">Clear Selection</button>
+                <button class="btn" onclick="reloadData()">Reload Data</button>
+            </div>
+        </div>
+        <div class="status" id="status">Loading data from URL...</div>
+
+        <script>
+            // --- config ---
+            const componentId = 'histogram-v3-' + Math.random().toString(36).substr(2, 9);
+            const DATA_URL  = """ + repr(data_url) + """;
+            const AUTO_FETCH = """ + str(auto_fetch).lower() + """;
+            const DATASET   = """ + repr(dataset) + """;
+            const VALUE_FIELD = """ + repr(value_field) + """;
+            const CHANNEL   = """ + repr(channel) + """;
+            const DEFAULT_SQL = "SELECT * FROM data";
+            
+            // Crop ID to Name mapping
+            const CROP_NAMES = """ + crop_mapping_js + """;
+
+            // --- tiny bus: BroadcastChannel + postMessage fanout ---
+            let bc = null;
+            try { if ('BroadcastChannel' in window) bc = new BroadcastChannel(CHANNEL); } catch (e) {}
+            function busSend(obj) {
+                const s = JSON.stringify(obj);
+                try { if (bc) bc.postMessage(obj); } catch(e) {}
+                try { window.parent.postMessage(s, '*'); } catch(e) {}
+                try { if (window.top && window.top !== window.parent) window.top.postMessage(s, '*'); } catch(e) {}
+                try {
+                    if (window.top && window.top.frames) {
+                        for (let i=0; i<window.top.frames.length; i++) {
+                            const f = window.top.frames[i];
+                            if (f !== window) try { f.postMessage(s, '*'); } catch(e) {}
+                        }
+                    }
+                } catch(e) {}
+            }
+
+            function sanitizeSQL(sql) {
+                if (sql == null) return "";
+                return String(sql).trim().replace(/;+\\s*$/g, '');
+            }
+
+            function broadcastDuckDBQuery(sqlText, baseSql) {
+                const cleanSql = sanitizeSQL(sqlText);
+                if (!cleanSql) return;
+                busSend({
+                    type: 'duckdb_query',
+                    sql: cleanSql,
+                    base: sanitizeSQL(baseSql) || cleanSql,
+                    dataset: DATASET,
+                    fromComponent: componentId,
+                    timestamp: Date.now()
+                });
+            }
+
+            function getFeatureValue(feature, fieldName = VALUE_FIELD) {
+                if (!feature) return 0;
+                if (feature[fieldName] !== undefined) {
+                    const direct = Number(feature[fieldName]);
+                    if (Number.isFinite(direct)) return direct;
+                }
+                if (feature.properties && feature.properties[fieldName] !== undefined) {
+                    const propVal = Number(feature.properties[fieldName]);
+                    if (Number.isFinite(propVal)) return propVal;
+                }
+                return 0;
+            }
+
+            // --- state ---
+            let duckConn = null;
+            let duckDBReady = false;
+            let currentSQL = DEFAULT_SQL;
+            let remoteBaseSQL = DEFAULT_SQL;
+            let pendingDuckQuery = null;
+            let hasExecutedDuckQuery = false;
+            let fullDataset = [];
+            let filteredDataset = [];
+            let activeFilters = new Map();
+            let topCategories = [];
+            let svg = null, chartGroup = null, barsGroup = null, xScale = null, yScale = null;
+            let selectedCategories = new Set();
+            let chartWidth = 0, chartHeight = 0;
+            const margin = { top: 10, right: 10, bottom: 120, left: 50 };
+
+            // UI handles
+            const loadingState = document.getElementById('loadingState');
+            const histogramSvg = document.getElementById('histogram');
+            const statusElement = document.getElementById('status');
+
+            // --- utils ---
+            function formatValue(val) { return (val >= 1000) ? `${(val/1000).toFixed(1)}k` : `${val.toFixed(0)}`; }
+
+            // --- Calculate top 10 categories ---
+            function getTop10Categories(data) {
+                if (!data || data.length === 0) return [];
+                
+                const counts = {};
+                data.forEach(f => {
+                    const value = getFeatureValue(f);
+                    if (Number.isFinite(value) && value > 0) {
+                        counts[value] = (counts[value] || 0) + 1;
+                    }
+                });
+                
+                const entries = Object.entries(counts).map(([id, count]) => ({
+                    id: parseInt(id),
+                    name: CROP_NAMES[parseInt(id)] || `Crop ${id}`,
+                    count: count
+                }));
+                
+                entries.sort((a, b) => b.count - a.count);
+                return entries.slice(0, 10);
+            }
+
+            // --- Calculate most common crop value and map to name ---
+            function updateMostCommonCrop() {
+                const el = document.getElementById('mostCommonCrop');
+                if (!filteredDataset || filteredDataset.length === 0) {
+                    el.textContent = 'No data available';
+                    return;
+                }
+
+                const valueCounts = {};
+                filteredDataset.forEach(f => {
+                    const value = getFeatureValue(f);
+                    if (Number.isFinite(value) && value > 0) {
+                        valueCounts[value] = (valueCounts[value] || 0) + 1;
+                    }
+                });
+
+                const entries = Object.entries(valueCounts);
+                if (entries.length === 0) {
+                    el.textContent = 'No valid crop values';
+                    return;
+                }
+
+                entries.sort((a, b) => b[1] - a[1]);
+                const [mostCommonValue, count] = entries[0];
+                
+                const cropId = parseInt(mostCommonValue);
+                const cropName = CROP_NAMES[cropId] || `Unknown Crop (ID: ${cropId})`;
+                
+                el.textContent = `Most Common: ${cropName} (${formatValue(count)})`;
+            }
+
+            // --- duckdb init + querying ---
+            async function initDuckDB() {
+                if (duckDBReady && duckConn) return;
+                setUIState('loading');
+                statusElement.textContent = 'Initializing DuckDB…';
+                try {
+                    const duckmod = window.__DUCKDB_WASM;
+                    if (!duckmod) throw new Error('DuckDB WASM runtime not available');
+
+                    const bundle = await duckmod.selectBundle(duckmod.getJsDelivrBundles());
+                    const worker = new Worker(
+                        URL.createObjectURL(
+                            new Blob([await (await fetch(bundle.mainWorker)).text()], { type: 'application/javascript' })
+                        )
+                    );
+                    const db = new duckmod.AsyncDuckDB(new duckmod.ConsoleLogger(), worker);
+                    await db.instantiate(bundle.mainModule);
+                    duckConn = await db.connect();
+
+                    statusElement.textContent = 'Downloading dataset…';
+                    const res = await fetch(DATA_URL);
+                    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                    const bytes = new Uint8Array(await res.arrayBuffer());
+                    await db.registerFileBuffer('histogram.parquet', bytes);
+                    await duckConn.query("CREATE OR REPLACE VIEW data AS SELECT * FROM read_parquet('histogram.parquet')");
+
+                    duckDBReady = true;
+                    statusElement.textContent = 'DuckDB ready';
+                } catch (e) {
+                    duckDBReady = false;
+                    console.error(e);
+                    setUIState('loading');
+                    statusElement.textContent = `DuckDB init failed: ${e.message}`;
+                    throw e;
+                }
+            }
+
+            async function runHistogramQuery(options = {}) {
+                if (!duckConn) {
+                    throw new Error('DuckDB connection not ready');
+                }
+
+                const targetSql = sanitizeSQL(options.sql ?? currentSQL ?? DEFAULT_SQL) || sanitizeSQL(DEFAULT_SQL);
+                const baseSql = sanitizeSQL(options.baseSQL ?? remoteBaseSQL ?? targetSql) || targetSql;
+                const showLoading = options.showLoading !== false;
+
+                if (options.updateBase !== false) {
+                    remoteBaseSQL = baseSql;
+                }
+                currentSQL = targetSql;
+
+                try {
+                    if (showLoading) {
+                        setUIState('loading');
+                        statusElement.textContent = 'Running DuckDB query…';
+                    } else {
+                        statusElement.textContent = 'Updating selection…';
+                    }
+                    const res = await duckConn.query(targetSql);
+                    const rows = res.toArray();
+
+                    fullDataset = processRawData(rows);
+                    topCategories = getTop10Categories(fullDataset);
+                    applyAllFilters(true);
+                    hasExecutedDuckQuery = true;
+
+                    if (!options.suppressBroadcast) {
+                        broadcastDuckDBQuery(targetSql, baseSql);
+                    }
+                } catch (e) {
+                    console.error(e);
+                    if (showLoading) setUIState('loading');
+                    statusElement.textContent = `SQL error: ${e.message}`;
+                }
+            }
+
+            function processRawData(raw) {
+                if (raw?.features && Array.isArray(raw.features)) {
+                    return raw.features.map(f => {
+                        const areaMeters = f.properties?.area_meters || 0;
+                        const areaKm = areaMeters / 1_000_000;
+                        let valueCandidate;
+                        if (f.properties && Object.prototype.hasOwnProperty.call(f.properties, VALUE_FIELD)) {
+                            valueCandidate = f.properties[VALUE_FIELD];
+                        } else if (VALUE_FIELD === 'count_mmsi') {
+                            valueCandidate = areaKm;
+                        } else {
+                            valueCandidate = f.properties?.value ?? f.properties?.cnt ?? areaKm;
+                        }
+                        const numericValue = Number(valueCandidate);
+                        const resolvedValue = Number.isFinite(numericValue) ? numericValue : 0;
+                        const props = Object.assign({}, f.properties, { count_mmsi: areaKm, [VALUE_FIELD]: resolvedValue });
+                        return {
+                            id: f.properties?.id || Math.random().toString(36),
+                            geometry: f.geometry,
+                            lng: f.geometry?.coordinates?.[0],
+                            lat: f.geometry?.coordinates?.[1],
+                            properties: props,
+                            count_mmsi: areaKm,
+                            area_meters: areaMeters,
+                            cnt: f.properties?.cnt || 0,
+                            [VALUE_FIELD]: resolvedValue
+                        };
+                    });
+                } else if (Array.isArray(raw)) {
+                    return raw.map(item => {
+                        const valueCandidate = item[VALUE_FIELD] ?? item.value ?? item.count ?? item.count_mmsi ?? 0;
+                        const numericValue = Number(valueCandidate);
+                        const resolvedValue = Number.isFinite(numericValue) ? numericValue : 0;
+                        const copy = Object.assign({}, item);
+                        copy[VALUE_FIELD] = resolvedValue;
+                        return copy;
+                    });
+                }
+                return [];
+            }
+
+            function reloadData() {
+                clearAllFilters();
+                if (duckDBReady && duckConn) {
+                    runHistogramQuery({ sql: remoteBaseSQL, baseSQL: remoteBaseSQL, updateBase: true });
+                }
+            }
+
+            // --- external filters application ---
+            function applyAllFilters(fromQuery = false) {
+                let filtered = [...fullDataset];
+                for (let [,f] of activeFilters.entries()) filtered = applyFilter(filtered, f);
+                filteredDataset = filtered;
+                topCategories = getTop10Categories(filteredDataset);
+                updateHistogram(false);
+                updateMostCommonCrop();
+                const summary = `${filtered.length}/${fullDataset.length} features (${activeFilters.size} filters)`;
+                statusElement.textContent = summary;
+            }
+
+            function applyFilter(data, filter) {
+                switch (filter.type) {
+                    case 'spatial': return applySpatialFilter(data, filter);
+                    case 'range':
+                    case 'multi-range': return applyRangeFilter(data, filter);
+                    case 'categorical': return applyCategoricalFilter(data, filter);
+                    default: return data;
+                }
+            }
+
+            function applySpatialFilter(data, filter) {
+                const b = filter.bounds; if (!b) return data;
+                return data.filter(f => f.lng>=b.sw.lng && f.lng<=b.ne.lng && f.lat>=b.sw.lat && f.lat<=b.ne.lat);
+            }
+
+            function applyRangeFilter(data, filter) {
+                const field = filter.field || VALUE_FIELD;
+                const [min,max] = filter.values || [0, Number.POSITIVE_INFINITY];
+                return data.filter(f => {
+                    const val = getFeatureValue(f, field);
+                    return val >= min && val <= max;
+                });
+            }
+
+            function applyCategoricalFilter(data, filter) {
+                const field = filter.field || VALUE_FIELD;
+                const values = filter.values || [];
+                return data.filter(f => {
+                    const val = getFeatureValue(f, field);
+                    return values.includes(val);
+                });
+            }
+
+            function clearAllFilters() {
+                activeFilters.clear();
+                selectedCategories.clear();
+                filteredDataset = [...fullDataset];
+                topCategories = getTop10Categories(fullDataset);
+                updateHistogram();
+                updateMostCommonCrop();
+                statusElement.textContent = `${fullDataset.length} features (no filters)`;
+                busSend({ type:'filter', fromComponent:componentId, timestamp:Date.now(), dataset:DATASET, filter:{ type:'clear', clearAll:true } });
+                busSend({ type:'filter_cleared', source:componentId, timestamp:Date.now() });
+            }
+
+            // --- UI state ---
+            function setUIState(state) {
+                loadingState.style.display = state === 'loading' ? 'flex' : 'none';
+                histogramSvg.style.display = state === 'chart' ? 'block' : 'none';
+            }
+
+            // --- chart ---
+            function initializeChart() {
+                d3.select('#histogram').selectAll('*').remove();
+                const container = document.getElementById('chartContainer');
+                const fullWidth = container.clientWidth;
+                const fullHeight = container.clientHeight;
+                
+                chartWidth = fullWidth - margin.left - margin.right;
+                chartHeight = fullHeight - margin.top - margin.bottom;
+
+                svg = d3.select('#histogram')
+                    .attr('width', fullWidth)
+                    .attr('height', fullHeight);
+                
+                chartGroup = svg.append('g')
+                    .attr('transform', `translate(${margin.left},${margin.top})`);
+
+                xScale = d3.scaleBand()
+                    .domain(topCategories.map(d => d.name))
+                    .range([0, chartWidth])
+                    .padding(0.2);
+
+                yScale = d3.scaleLinear()
+                    .domain([0, d3.max(topCategories, d => d.count) || 1])
+                    .range([chartHeight, 0])
+                    .nice();
+
+                // Add axes
+                chartGroup.append('g')
+                    .attr('class', 'x-axis')
+                    .attr('transform', `translate(0,${chartHeight})`)
+                    .call(d3.axisBottom(xScale))
+                    .selectAll("text")
+                    .style("text-anchor", "end")
+                    .style("fill", """ + repr(selected['accent']) + """)
+                    .style("font-weight", "600")
+                    .style("font-size", "10px")
+                    .attr("dx", "-.8em")
+                    .attr("dy", ".15em")
+                    .attr("transform", "rotate(-45)");
+
+                chartGroup.append('g')
+                    .attr('class', 'y-axis')
+                    .call(d3.axisLeft(yScale).ticks(5).tickFormat(d => formatValue(d)));
+
+                barsGroup = chartGroup.append('g').attr('class', 'bars-group');
+                createBars();
+            }
+
+            function createBars() {
+                const bars = barsGroup.selectAll('.bar')
+                    .data(topCategories)
+                    .enter()
+                    .append('rect')
+                    .attr('class', 'bar')
+                    .attr('x', d => xScale(d.name))
+                    .attr('y', d => yScale(d.count))
+                    .attr('width', xScale.bandwidth())
+                    .attr('height', d => chartHeight - yScale(d.count))
+                    .on('click', function(evt, d) {
+                        evt.stopPropagation();
+                        toggleCategorySelection(d.id);
+                    })
+                    .on('mouseover', function(evt, d) {
+                        if (!selectedCategories.has(d.id)) {
+                            d3.select(this).style('opacity', 0.8);
+                        }
+                        const t = document.getElementById('tooltip');
+                        t.innerHTML = `<div><strong>${d.name}</strong></div><div>Count: ${formatValue(d.count)}</div><div>ID: ${d.id}</div>`;
+                        t.style.display = 'block';
+                        t.style.left = (evt.pageX + 15) + 'px';
+                        t.style.top = (evt.pageY - 10) + 'px';
+                    })
+                    .on('mousemove', function(evt) {
+                        const t = document.getElementById('tooltip');
+                        t.style.left = (evt.pageX + 15) + 'px';
+                        t.style.top = (evt.pageY - 10) + 'px';
+                    })
+                    .on('mouseout', function(evt, d) {
+                        if (!selectedCategories.has(d.id)) {
+                            d3.select(this).style('opacity', 1);
+                        }
+                        document.getElementById('tooltip').style.display = 'none';
+                    });
+            }
+
+            function toggleCategorySelection(cropId) {
+                if (selectedCategories.has(cropId)) {
+                    selectedCategories.delete(cropId);
+                } else {
+                    selectedCategories.add(cropId);
+                }
+                
+                updateBarSelection();
+                updateSelectionInfo();
+                
+                if (selectedCategories.size > 0) {
+                    sendCategoricalFilter(Array.from(selectedCategories));
+                } else {
+                    clearCategoricalFilter();
+                }
+            }
+
+            function updateBarSelection() {
+                if (!barsGroup) return;
+                barsGroup.selectAll('.bar')
+                    .attr('class', d => {
+                        if (selectedCategories.size === 0) return 'bar';
+                        return selectedCategories.has(d.id) ? 'bar selected' : 'bar unselected';
+                    });
+            }
+
+            function updateHistogram(animate = false) {
+                const data = filteredDataset;
+                if (!data.length) {
+                    setUIState('loading');
+                    statusElement.textContent = 'No data matches current filters';
+                    return;
+                }
+
+                topCategories = getTop10Categories(data);
+
+                if (!svg) {
+                    initializeChart();
+                    setUIState('chart');
+                    return;
+                }
+
+                // Update scales
+                xScale.domain(topCategories.map(d => d.name));
+                yScale.domain([0, d3.max(topCategories, d => d.count) || 1]).nice();
+
+                // Update axes
+                chartGroup.select('.x-axis')
+                    .transition()
+                    .duration(animate ? 300 : 0)
+                    .call(d3.axisBottom(xScale))
+                    .selectAll("text")
+                    .style("text-anchor", "end")
+                    .style("fill", """ + repr(selected['accent']) + """)
+                    .style("font-weight", "600")
+                    .style("font-size", "10px")
+                    .attr("dx", "-.8em")
+                    .attr("dy", ".15em")
+                    .attr("transform", "rotate(-45)");
+
+                chartGroup.select('.y-axis')
+                    .transition()
+                    .duration(animate ? 300 : 0)
+                    .call(d3.axisLeft(yScale).ticks(5).tickFormat(d => formatValue(d)));
+
+                // Update bars
+                const bars = barsGroup.selectAll('.bar').data(topCategories, d => d.id);
+
+                // Remove old bars
+                bars.exit().remove();
+
+                // Add new bars
+                const newBars = bars.enter()
+                    .append('rect')
+                    .attr('class', 'bar')
+                    .attr('x', d => xScale(d.name))
+                    .attr('y', chartHeight)
+                    .attr('width', xScale.bandwidth())
+                    .attr('height', 0)
+                    .on('click', function(evt, d) {
+                        evt.stopPropagation();
+                        toggleCategorySelection(d.id);
+                    })
+                    .on('mouseover', function(evt, d) {
+                        if (!selectedCategories.has(d.id)) {
+                            d3.select(this).style('opacity', 0.8);
+                        }
+                        const t = document.getElementById('tooltip');
+                        t.innerHTML = `<div><strong>${d.name}</strong></div><div>Count: ${formatValue(d.count)}</div><div>ID: ${d.id}</div>`;
+                        t.style.display = 'block';
+                        t.style.left = (evt.pageX + 15) + 'px';
+                        t.style.top = (evt.pageY - 10) + 'px';
+                    })
+                    .on('mousemove', function(evt) {
+                        const t = document.getElementById('tooltip');
+                        t.style.left = (evt.pageX + 15) + 'px';
+                        t.style.top = (evt.pageY - 10) + 'px';
+                    })
+                    .on('mouseout', function(evt, d) {
+                        if (!selectedCategories.has(d.id)) {
+                            d3.select(this).style('opacity', 1);
+                        }
+                        document.getElementById('tooltip').style.display = 'none';
+                    });
+
+                // Update all bars
+                const allBars = bars.merge(newBars);
+                
+                if (animate) {
+                    allBars.transition()
+                        .duration(300)
+                        .attr('x', d => xScale(d.name))
+                        .attr('y', d => yScale(d.count))
+                        .attr('width', xScale.bandwidth())
+                        .attr('height', d => chartHeight - yScale(d.count));
+                } else {
+                    allBars
+                        .attr('x', d => xScale(d.name))
+                        .attr('y', d => yScale(d.count))
+                        .attr('width', xScale.bandwidth())
+                        .attr('height', d => chartHeight - yScale(d.count));
+                }
+
+                updateBarSelection();
+                setUIState('chart');
+            }
+
+            function updateSelectionInfo() {
+                const el = document.getElementById('selectionInfo');
+                if (selectedCategories.size === 0) {
+                    el.textContent = '';
+                    return;
+                }
+                
+                const selectedNames = topCategories
+                    .filter(d => selectedCategories.has(d.id))
+                    .map(d => d.name);
+                
+                const total = topCategories
+                    .filter(d => selectedCategories.has(d.id))
+                    .reduce((sum, d) => sum + d.count, 0);
+                
+                if (selectedNames.length === 1) {
+                    el.textContent = `Selected: ${selectedNames[0]} (${formatValue(total)} areas)`;
+                } else {
+                    el.textContent = `Selected: ${selectedNames.length} crops (${formatValue(total)} areas)`;
+                }
+            }
+
+            // --- selection actions -> send filters to others ---
+            function sendCategoricalFilter(cropIds) {
+                if (!cropIds || cropIds.length === 0) return;
+                
+                const base = sanitizeSQL(remoteBaseSQL || DEFAULT_SQL) || DEFAULT_SQL;
+                
+                // Create SQL query with filter
+                const valuesList = cropIds.join(', ');
+                const filteredSQL = `SELECT * FROM (${base}) WHERE ${VALUE_FIELD} IN (${valuesList})`;
+                
+                currentSQL = filteredSQL;
+                
+                const cropNames = cropIds.map(id => {
+                    const cat = topCategories.find(c => c.id === id);
+                    return cat ? cat.name : `Crop ${id}`;
+                }).join(', ');
+                
+                statusElement.textContent = `Selected: ${cropNames}`;
+                
+                // Send unified filter message
+                busSend({
+                    type: 'filter',
+                    fromComponent: componentId,
+                    timestamp: Date.now(),
+                    dataset: DATASET,
+                    filter: {
+                        type: 'categorical',
+                        field: VALUE_FIELD,
+                        values: cropIds
+                    }
+                });
+                
+                // Also broadcast the SQL query
+                broadcastDuckDBQuery(filteredSQL, base);
+            }
+
+            function clearCategoricalFilter() {
+                selectedCategories.clear();
+                updateBarSelection();
+                updateSelectionInfo();
+                
+                const base = sanitizeSQL(remoteBaseSQL || DEFAULT_SQL) || DEFAULT_SQL;
+                currentSQL = base;
+                statusElement.textContent = 'Selection cleared';
+                
+                // Send unified filter clear
+                busSend({
+                    type: 'filter',
+                    fromComponent: componentId,
+                    timestamp: Date.now(),
+                    dataset: DATASET,
+                    filter: {
+                        type: 'clear',
+                        field: VALUE_FIELD
+                    }
+                });
+                
+                // Also broadcast the base SQL query
+                broadcastDuckDBQuery(base, base);
+            }
+
+            function clearSelection() {
+                clearCategoricalFilter();
+            }
+
+            // --- incoming messages ---
+            function onMessage(message) {
+                try {
+                    if (typeof message === 'string') {
+                        try { message = JSON.parse(message); } catch (_) {}
+                    }
+                    if (!message) return;
+
+                    // Ignore our own messages
+                    if (message.fromComponent && message.fromComponent === componentId) return;
+                    if (message.source && message.source === componentId) return;
+
+                    if (message.type === 'duckdb_query' && typeof message.sql === 'string') {
+                        if (message.dataset && DATASET !== 'all' && message.dataset !== DATASET) return;
+                        const incomingSql = sanitizeSQL(message.sql);
+                        if (!incomingSql) return;
+                        const baseSql = sanitizeSQL(message.base || message.sql) || incomingSql;
+                        remoteBaseSQL = baseSql;
+                        currentSQL = incomingSql;
+
+                        selectedCategories.clear();
+                        updateBarSelection();
+                        updateSelectionInfo();
+
+                        const execute = () => runHistogramQuery({
+                            sql: incomingSql,
+                            baseSQL: baseSql,
+                            suppressBroadcast: true,
+                            updateBase: true
+                        }).catch(() => {});
+                        
+                        if (!duckDBReady || !duckConn) {
+                            pendingDuckQuery = { sql: incomingSql, base: baseSql };
+                            initDuckDB().then(() => {
+                                if (pendingDuckQuery) {
+                                    const queued = pendingDuckQuery;
+                                    pendingDuckQuery = null;
+                                    runHistogramQuery({
+                                        sql: queued.sql,
+                                        baseSQL: queued.base,
+                                        suppressBroadcast: true,
+                                        updateBase: true
+                                    }).catch(() => {});
+                                }
+                            }).catch(() => {});
+                        } else {
+                            execute();
+                        }
+                        return;
+                    }
+
+                    // Unified filter handling
+                    if (message.type === 'filter' && message.filter) {
+                        if (message.dataset && DATASET !== 'all' && message.dataset !== DATASET) return;
+                        const f = message.filter;
+
+                        if (f.type === 'clear') {
+                            if (f.clearAll) activeFilters.clear();
+                            else if (f.field) {
+                                for (const k of Array.from(activeFilters.keys())) {
+                                    if (k.includes(`_${f.field}`)) activeFilters.delete(k);
+                                }
+                            } else if (f.filterId) activeFilters.delete(f.filterId);
+                            applyAllFilters();
+                            return;
+                        }
+
+                        if (f.type === 'spatial' && Array.isArray(f.values)) {
+                            const [w, s, e, n] = f.values;
+                            activeFilters.set(`spatial_${message.fromComponent || 'unknown'}`, {
+                                type: 'spatial',
+                                bounds: { sw: { lng: w, lat: s }, ne: { lng: e, lat: n } }
+                            });
+                            applyAllFilters();
+                            return;
+                        }
+
+                        if (f.type === 'range' && Array.isArray(f.values)) {
+                            const field = f.field || VALUE_FIELD;
+                            activeFilters.set(`range_${message.fromComponent || 'unknown'}_${field}`, {
+                                type: 'range',
+                                field,
+                                values: f.values
+                            });
+                            applyAllFilters();
+                            return;
+                        }
+
+                        if (f.type === 'categorical' && Array.isArray(f.values)) {
+                            const field = f.field || VALUE_FIELD;
+                            activeFilters.set(`categorical_${message.fromComponent || 'unknown'}_${field}`, {
+                                type: 'categorical',
+                                field,
+                                values: f.values
+                            });
+                            applyAllFilters();
+                            return;
+                        }
+                    }
+
+                    // Legacy filter handling
+                    if (message.type === 'spatial_filter' && message.bounds) {
+                        activeFilters.set(`spatial_legacy_${message.source || 'unknown'}`, {
+                            type: 'spatial',
+                            bounds: message.bounds
+                        });
+                        applyAllFilters();
+                        return;
+                    }
+
+                    if (message.type === 'range_filter' && typeof message.min !== 'undefined' && typeof message.max !== 'undefined') {
+                        const field = message.field || VALUE_FIELD;
+                        activeFilters.set(`range_legacy_${message.source || 'unknown'}_${field}`, {
+                            type: 'range',
+                            field,
+                            values: [+message.min, +message.max]
+                        });
+                        applyAllFilters();
+                        return;
+                    }
+
+                    if (message.type === 'filter_cleared') {
+                        if (message.field) {
+                            for (const k of Array.from(activeFilters.keys())) {
+                                if (k.includes(`_${message.field}`)) activeFilters.delete(k);
+                            }
+                        } else if (message.source) {
+                            for (const k of Array.from(activeFilters.keys())) {
+                                if (k.includes(`_${message.source}`)) activeFilters.delete(k);
+                            }
+                        } else {
+                            activeFilters.clear();
+                        }
+                        applyAllFilters();
+                        return;
+                    }
+                } catch (e) {
+                    console.error('Error handling message:', e);
+                }
+            }
+
+            if (bc) bc.onmessage = (ev) => onMessage(ev.data);
+            window.addEventListener('message', (ev) => onMessage(ev.data));
+
+            // --- init ---
+            document.addEventListener('DOMContentLoaded', async function() {
+                if (!AUTO_FETCH || !DATA_URL) {
+                    setUIState('loading');
+                    statusElement.textContent = 'Manual data loading required';
+                }
+
+                if (AUTO_FETCH && DATA_URL) {
+                    try {
+                        await initDuckDB();
+                        if (pendingDuckQuery) {
+                            const queued = pendingDuckQuery;
+                            pendingDuckQuery = null;
+                            await runHistogramQuery({
+                                sql: queued.sql,
+                                baseSQL: queued.base,
+                                suppressBroadcast: true,
+                                updateBase: true
+                            });
+                        } else if (!hasExecutedDuckQuery) {
+                            await runHistogramQuery({
+                                sql: remoteBaseSQL,
+                                baseSQL: remoteBaseSQL,
+                                suppressBroadcast: true,
+                                updateBase: true
+                            });
+                        }
+                    } catch (e) {
+                        console.error(e);
+                    }
+                }
+
+                setTimeout(() => {
+                    busSend({
+                        type: 'component_ready',
+                        componentType: 'categorical_chart',
+                        componentId: componentId,
+                        capabilities: ['filter'],
+                        dataSource: 'independent',
+                        protocol: 'unified'
+                    });
+                }, 300);
+            });
+        </script>
+    </body>
+    </html>
+    """
+
+    return common.html_to_obj(html_content)
+  ```
+
+</details>
+
+<details>
+  <summary>Map UDF</summary>
+
+  The Map UDF renders the geospatial hexagons and supports interactions with the histogram or bar chart to update map highlights in real time.
+
+  ```python
+  common = fused.load("https://github.com/fusedio/udfs/tree/f430c25/public/common/")
+
+    DEFAULT_CONFIG = r"""{
+    "tileLayer": {
+        "@@type": "TileLayer",
+        "maxZoom": 12
+    },
+    "hexLayer": {
+        "@@type": "H3HexagonLayer",
+        "filled": true,
+        "pickable": true,
+        "extruded": false,
+        "getHexagon": "@@=properties.hex",
+        "getFillColor": {
+        "@@function": "colorContinuous",
+        "attr": "elevation",
+        "domain": [0, 3000],
+        "steps": 20,
+        "colors": "OrYel"
+        }
+    } 
+    }"""
+    
+    DEFAULT_STYLE_URL = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+
+    @fused.udf
+    def udf( 
+        # replace with your own data URL
+        data_url: str = "https://staging.udf.ai/fsh_5Z7Qgucu8mNPsv924v1CKX/run?dtype_out_raster=png&dtype_out_vector=parquet",
+        config_json: str = DEFAULT_CONFIG,
+        mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+        center_lng: float = -119.4179,
+        center_lat: float = 36.7783,
+        zoom: float = 4,
+        tooltip_columns: list = ["crop_rank_1", "elevation", "daily_mean"],
+        default_query: str = "SELECT * FROM data",
+        map_style_url: str = DEFAULT_STYLE_URL,
+        channel: str = "fused-elevation-temp",
+        dataset: str = "all",
+    ):
+        from jinja2 import Template
+    
+        style_url = map_style_url or DEFAULT_STYLE_URL
+        _ = fused.load("join_era5_cdl_elevation")
+
+        html = Template(r"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta charset="utf-8" />
+    <title>H3 Parquet Viewer (browser-driven config + live SQL)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <link href="https://unpkg.com/maplibre-gl@3.3.1/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/maplibre-gl@3.3.1/dist/maplibre-gl.js"></script>
+
+    <script src="https://unpkg.com/h3-js@4.1.0/dist/h3-js.umd.js"></script>
+    <script src="https://unpkg.com/deck.gl@9.1.3/dist.min.js"></script>
+    <script src="https://unpkg.com/@deck.gl/geo-layers@9.1.3/dist.min.js"></script>
+    <script src="https://unpkg.com/@deck.gl/carto@9.1.3/dist.min.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.1-dev132.0/dist/duckdb-wasm.js"></script>
+    <script type="module">
+        import * as duckdb_wasm from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.1-dev132.0/+esm";
+        window.__DUCKDB_WASM = duckdb_wasm;
+    </script>
+
+    <style>
+        :root {
+        --bg-panel: rgba(15,15,15,0.9);
+        --bg-panel-solid: #0f0f0f;
+        --bg-input: #1a1a1a;
+        --border-color: #3a3a3a;
+        --border-color-soft: #2a2a2a;
+        --text-primary: #ffffff;
+        --text-dim: #9e9e9e;
+        --text-muted: #6b6b6b;
+        --radius-md: 6px;
+        --radius-lg: 8px;
+        --shadow-strong: 0 12px 24px rgba(0,0,0,.7);
+        --shadow-soft: 0 -4px 12px rgba(0,0,0,.7);
+        }
+
+        html, body {
+        margin:0; padding:0; height:100%;
+        background:#000;
+        color:var(--text-primary);
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        #map { position:fixed; inset:0; }
+
+        #tooltip {
+        position: absolute;
+        pointer-events: none;
+        background: rgba(0,0,0,0.8);
+        color: var(--text-primary);
+        padding: 4px 8px;
+        border-radius: var(--radius-md);
+        font-size: 12px;
+        display: none;
+        z-index: 6;
+        white-space: nowrap;
+        border:1px solid var(--border-color);
+        }
+
+        .status-pill {
+        position:absolute;
+        top:12px;
+        left:12px;
+        background:var(--bg-panel);
+        color:var(--text-primary);
+        padding:6px 10px;
+        border-radius:var(--radius-md);
+        border:1px solid var(--border-color);
+        font-size:11px;
+        z-index:7;
+        pointer-events:none;
+        box-shadow:var(--shadow-soft);
+        min-width:120px;
+        text-align:center;
+        }
+
+        /* bottom query bar */
+        .bottombar {
+        position:fixed;
+        left:0; right:0; bottom:0;
+        z-index:6;
+        background: var(--bg-panel);
+        color:var(--text-primary);
+        border-top:1px solid var(--border-color);
+        padding:8px;
+        box-shadow: var(--shadow-soft);
+        font-family: monospace;
+        font-size:12px;
+        line-height:1.4;
+        }
+        .bottombar .labelrow {
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        font-size:11px;
+        color:var(--text-dim);
+        margin-bottom:4px;
+        }
+        .bottombar .labelrow .left {
+        font-weight:500;
+        color:var(--text-primary);
+        }
+        .bottombar textarea {
+        width:100%;
+        height:80px;
+        resize:vertical;
+        padding:6px;
+        border:1px solid var(--border-color);
+        border-radius:var(--radius-md);
+        background:var(--bg-input);
+        color:var(--text-primary);
+        font-family: inherit;
+        font-size:12px;
+        line-height:1.4;
+        outline:none;
+        }
+        .bottombar textarea:focus {
+        border:1px solid var(--text-muted);
+        box-shadow:0 0 0 2px rgba(255,255,255,0.07);
+        }
+
+    </style>
+    </head>
+    <body>
+    <div id="map"></div>
+
+    <div id="tooltip"></div>
+
+    <div class="status-pill" id="statusPill">initializing…</div>
+
+    <div class="bottombar">
+        <div class="labelrow">
+        <div class="left">SQL query</div>
+
+        </div>
+        <textarea id="queryInput"></textarea>
+    </div>
+
+    <script type="module">
+        // --- UDF PARAMS ---------------------------------------------------------
+        const DATA_URL        = {{ data_url | tojson }};
+        const MAPBOX_TOKEN    = {{ mapbox_token | tojson }};
+        const MAP_STYLE_URL   = {{ map_style_url | tojson }};
+        const DEFAULT_STYLE_URL = {{ default_style_url | tojson }};
+        const START_CENTER    = [{{ center_lng }}, {{ center_lat }}];
+        const START_ZOOM      = {{ zoom }};
+        const TOOLTIP_COLUMNS = {{ tooltip_columns | tojson }};
+        const DEFAULT_QUERY   = {{ default_query | tojson }};
+        const CHANNEL         = {{ channel | tojson }};
+        const DATASET         = {{ dataset | tojson }};
+        const componentId     = 'duckmap-' + Math.random().toString(36).slice(2);
+        const INITIAL_CONFIG  = {{ config_json | tojson }};
+
+        // deck.gl bits
+        const { MapboxOverlay, PolygonLayer } = deck;
+        const H3HexagonLayer = deck.H3HexagonLayer || (deck.GeoLayers && deck.GeoLayers.H3HexagonLayer);
+        const { colorContinuous } = deck.carto;
+
+        // state
+        let duckConn;
+        let overlay;
+        let map;
+        let didInitialFit = false;
+
+        let sqlTypingTimer = 0;
+        const DEBOUNCE_MS = 500;
+
+        let currentConfObj = {};
+        let currentSQLText = DEFAULT_QUERY;
+        let suppressQueryBroadcast = false;
+        let pendingDuckQuery = null;
+        let baseSQLText = sanitizeSQL(DEFAULT_QUERY);
+        let activeRangeClause = null;
+        let activeRangeField = null;
+
+        function $(id){ return document.getElementById(id); }
+
+        const statusPill = $("statusPill");
+        if (statusPill) {
+        statusPill.textContent = "initializing…";
+        }
+
+        let bc = null;
+        try {
+        if ('BroadcastChannel' in window) bc = new BroadcastChannel(CHANNEL);
+        } catch (_) { /* ignore */ }
+
+        function updateStatus(text) {
+        if (statusPill) statusPill.textContent = text;
+        }
+
+        function busSend(obj) {
+        const payload = JSON.stringify(obj);
+        try { if (bc) bc.postMessage(obj); } catch (e) {}
+        try { window.parent.postMessage(payload, '*'); } catch (e) {}
+        try { if (window.top && window.top !== window.parent) window.top.postMessage(payload, '*'); } catch (e) {}
+        try {
+            if (window.top && window.top.frames) {
+            for (let i = 0; i < window.top.frames.length; i++) {
+                const frame = window.top.frames[i];
+                if (frame !== window) {
+                try { frame.postMessage(payload, '*'); } catch (e) {}
+                }
+            }
+            }
+        } catch (e) {}
+        }
+
+        function sanitizeSQL(sql) {
+        if (sql == null) return "";
+        return String(sql).trim().replace(/;+\s*$/g, '');
+        }
+
+        function sanitizeFieldName(field) {
+        if (typeof field !== 'string') return null;
+        const trimmed = field.trim();
+        if (!trimmed) return null;
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) return null;
+        return trimmed;
+        }
+
+        function cloneConfig(conf) {
+        if (!conf || typeof conf !== 'object') return {};
+        if (typeof structuredClone === 'function') {
+            try { return structuredClone(conf); } catch (_) {}
+        }
+        try {
+            return JSON.parse(JSON.stringify(conf));
+        } catch (err) {
+            console.error('config clone error', err);
+            return {};
+        }
+        }
+
+        function applyIncomingStyle(style) {
+        if (!style) return;
+        const attr = sanitizeFieldName(style.attr || 'metric');
+        if (!attr) return;
+
+        const domain = Array.isArray(style.domain) ? style.domain.map(Number) : [];
+        if (domain.length !== 2 || !domain.every(Number.isFinite)) return;
+
+        const steps = Number(style.steps);
+        const validSteps = Number.isInteger(steps) && steps > 0 ? steps : 20;
+        const colors = typeof style.colors === 'string' && style.colors.trim() ? style.colors.trim() : 'OrYel';
+
+        const rawConf = cloneConfig(currentConfObj);
+        rawConf.hexLayer = rawConf.hexLayer || {};
+        rawConf.hexLayer.getFillColor = {
+            "@@function": "colorContinuous",
+            "attr": attr,
+            "domain": [domain[0], domain[1]],
+            "steps": validSteps,
+            "colors": colors,
+            "nullColor": rawConf.hexLayer?.getFillColor?.nullColor || [184, 184, 184]
+        };
+
+        currentConfObj = rawConf;
+        updateStatus(`style ${attr} (${validSteps} steps)`);
+        if (duckConn) {
+            const sqlToUse = sanitizeSQL(currentSQLText) || sanitizeSQL(defaultSQL());
+            runQuery({ overrideSQL: sqlToUse, suppressBroadcast: true, baseSQL: baseSQLText }).catch(err => console.error('style requery error', err));
+        }
+        }
+
+        function resolveSQLText(pref) {
+        const candidate = pref != null ? pref : $("queryInput")?.value;
+        const sanitized = sanitizeSQL(candidate);
+        if (sanitized) return sanitized;
+        return sanitizeSQL(defaultSQL());
+        }
+
+        function broadcastDuckDBQuery(sqlText, baseSql) {
+        const cleanSql = sanitizeSQL(sqlText);
+        if (!cleanSql) return;
+        const message = {
+            type: 'duckdb_query',
+            sql: cleanSql,
+            base: sanitizeSQL(baseSql) || cleanSql,
+            dataset: DATASET,
+            fromComponent: componentId,
+            timestamp: Date.now()
+        };
+        busSend(message);
+        }
+
+        function rafThrottle(fn) {
+        let ticking = false;
+        let lastArgs = null;
+        return (...args) => {
+            lastArgs = args;
+            if (ticking) return;
+            ticking = true;
+            requestAnimationFrame(() => {
+            ticking = false;
+            fn(...(lastArgs || []));
+            });
+        };
+        }
+
+        let suppressSpatialEmits = 0;
+
+        // --- tiny helpers -------------------------------------------------------
+
+        function evalExpression(expr, object) {
+        if (typeof expr === 'string' && expr.startsWith('@@=')) {
+            const code = expr.slice(3);
+            try {
+            const fn = new Function('object', `
+                const properties = object?.properties || object || {};
+                return (${code});
+            `);
+            return fn(object);
+            } catch (e) { console.error('@@= eval error:', expr, e); return null; }
+        }
+        return expr;
+        }
+
+        function hasProp({ property, present, absent }) {
+        return (object) => {
+            const props = object?.properties || object || {};
+            if (property in props && props[property] !== null && props[property] !== undefined) {
+            if (typeof present === 'function') return present(object);
+            if (typeof present === 'string' && present.startsWith('@@=')) return evalExpression(present, object);
+            return present;
+            }
+            return typeof absent === 'function' ? absent(object) : absent;
+        };
+        }
+
+        function processColorContinuous(cfg) {
+        let domain = cfg.domain;
+        if (domain && domain.length === 2) {
+            const start = Number(domain[0]);
+            const end = Number(domain[1]);
+            const steps = cfg.steps ?? 20;
+
+            if (Number.isFinite(start) && Number.isFinite(end)) {
+            if (steps > 1) {
+                const stepSize = (end - start) / (steps - 1);
+                domain = Array.from({ length: steps }, (_, i) => start + stepSize * i);
+            } else {
+                domain = [start];
+            }
+            } else {
+            domain = [domain[0], domain[1]];
+            }
+        }
+        return {
+            attr: cfg.attr,
+            domain: domain,
+            colors: cfg.colors || 'TealGrn',
+            nullColor: cfg.nullColor || [184,184,184]
+        };
+        }
+
+        function parseHexLayerConfig(config) {
+        const out = {};
+        for (const [k, v] of Object.entries(config || {})) {
+            if (k === '@@type') continue;
+            if (v && typeof v === 'object' && !Array.isArray(v)) {
+            if (v['@@function'] === 'colorContinuous') {
+                out[k] = colorContinuous(processColorContinuous(v));
+            } else if (v['@@function'] === 'hasProp') {
+                out[k] = hasProp(v);
+            } else {
+                out[k] = v;
+            }
+            } else if (typeof v === 'string' && v.startsWith('@@=')) {
+            out[k] = (obj) => evalExpression(v, obj);
+            } else {
+            out[k] = v;
+            }
+        }
+        return out;
+        }
+
+        function resolveStyleUrl(styleUrl, token) {
+        const trimmed = (styleUrl || '').trim();
+        if (!trimmed) return DEFAULT_STYLE_URL;
+        if (trimmed.startsWith('mapbox://')) {
+            if (!token) {
+            console.warn('Mapbox style requested but mapbox_token parameter is missing. Falling back to default style.');
+            return DEFAULT_STYLE_URL;
+            }
+            const stylePath = trimmed.replace('mapbox://styles/', '');
+            return `https://api.mapbox.com/styles/v1/${stylePath}?access_token=${token}`;
+        }
+        if (token && trimmed.includes('{token}')) {
+            return trimmed.replace('{token}', token);
+        }
+        return trimmed;
+        }
+
+        function toH3String(hex) {
+        try {
+            if (hex == null) return null;
+            if (typeof hex === 'string') {
+            const s = hex.startsWith('0x') ? hex.slice(2) : hex;
+            return (/^\d+$/.test(s) ? BigInt(s).toString(16) : s.toLowerCase());
+            }
+            if (typeof hex === 'number') return BigInt(Math.trunc(hex)).toString(16);
+            if (typeof hex === 'bigint') return hex.toString(16);
+            if (Array.isArray(hex) && hex.length === 2) {
+            const a = (BigInt(hex[0]) << 32n) | BigInt(hex[1]);
+            const b = (BigInt(hex[1]) << 32n) | BigInt(hex[0]);
+            const sa = a.toString(16), sb = b.toString(16);
+            if (h3.isValidCell?.(sa)) return sa;
+            if (h3.isValidCell?.(sb)) return sb;
+            return sa;
+            }
+        } catch(_) {}
+        return null;
+        }
+
+        function rowsToFeatures(rows, confObj){
+        const colorAttr = confObj?.hexLayer?.getFillColor?.attr || "metric";
+
+        return rows.map(p => {
+            const rawHex = p.hex ?? p.h3 ?? p.index ?? p.id;
+            const hex = toH3String(rawHex);
+            if (!hex) return null;
+
+            const obj = { ...p };
+
+            // normalize color column case
+            if (obj[colorAttr] === undefined) {
+            const lower = colorAttr.toLowerCase();
+            if (obj[lower] !== undefined) {
+                obj[colorAttr] = obj[lower];
+            }
+            }
+
+            // ensure numeric for ramp
+            if (obj[colorAttr] !== undefined) {
+            const n = Number(obj[colorAttr]);
+            obj[colorAttr] = Number.isFinite(n) ? n : null;
+            }
+
+            // normalize + numeric-ify tooltip cols
+            (TOOLTIP_COLUMNS || []).forEach(col => {
+            if (obj[col] === undefined) {
+                const lowerCol = col.toLowerCase();
+                if (obj[lowerCol] !== undefined) {
+                obj[col] = obj[lowerCol];
+                }
+            }
+            if (obj[col] !== undefined && typeof obj[col] !== "number") {
+                const nn = Number(obj[col]);
+                if (Number.isFinite(nn)) obj[col] = nn;
+            }
+            });
+
+            obj.hex = hex;
+
+            return {
+            ...obj,
+            properties: { ...obj }
+            };
+        }).filter(Boolean);
+        }
+
+        function fitToDataOnce(data){
+        if (didInitialFit || !data.length) return;
+        let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+        for (const d of data){
+            const [lat,lng] = h3.cellToLatLng(d.hex);
+            if (lng<minX)minX=lng;
+            if (lat<minY)minY=lat;
+            if (lng>maxX)maxX=lng;
+            if (lat>maxY)maxY=lat;
+        }
+        if (minX<Infinity) {
+            map.fitBounds([[minX,minY],[maxX,maxY]], {padding:20,duration:0});
+            didInitialFit = true;
+        }
+        }
+
+        function applyIncomingSpatial(bounds, options = {}) {
+        if (!map || !bounds) return;
+        const sw = bounds.sw || bounds.southWest;
+        const ne = bounds.ne || bounds.northEast;
+        if (!sw || !ne) return;
+        const west = Number(sw.lng ?? sw.lon ?? sw.longitude);
+        const south = Number(sw.lat ?? sw.latitude);
+        const east = Number(ne.lng ?? ne.lon ?? ne.longitude);
+        const north = Number(ne.lat ?? ne.latitude);
+        if (![west, south, east, north].every(Number.isFinite)) return;
+        suppressSpatialEmits = Math.max(suppressSpatialEmits, options.suppressEmits ?? 2);
+        try {
+            map.fitBounds([[west, south], [east, north]], {
+            padding: options.padding ?? 32,
+            duration: options.duration ?? 0
+            });
+            updateStatus('applied incoming spatial');
+        } catch (err) {
+            console.warn('applyIncomingSpatial error', err);
+        }
+        }
+
+        function postSpatial(){
+        if (!map) return;
+        if (suppressSpatialEmits > 0) {
+            suppressSpatialEmits -= 1;
+            return;
+        }
+        try {
+            const b = map.getBounds?.();
+            if (!b) return;
+            const west = b.getWest();
+            const south = b.getSouth();
+            const east = b.getEast();
+            const north = b.getNorth();
+            if (![west, south, east, north].every(Number.isFinite)) return;
+
+            const legacy = {
+            type: 'spatial_filter',
+            bounds: {
+                sw: { lng: west, lat: south },
+                ne: { lng: east, lat: north }
+            },
+            timestamp: Date.now(),
+            source: componentId
+            };
+
+            const unified = {
+            type: 'filter',
+            fromComponent: componentId,
+            timestamp: Date.now(),
+            dataset: DATASET,
+            filter: {
+                type: 'spatial',
+                fields: ['lng','lat'],
+                values: [west, south, east, north]
+            }
+            };
+
+            busSend(legacy);
+            busSend(unified);
+            updateStatus(`sent spatial (z=${map.getZoom().toFixed(1)})`);
+        } catch (err) {
+            console.error('postSpatial error', err);
+        }
+        }
+
+        function onMessage(msg) {
+        if (typeof msg === 'string') {
+            try {
+            msg = JSON.parse(msg);
+            } catch (_) {
+            // keep original string if not JSON
+            }
+        }
+        if (!msg || typeof msg !== 'object') return;
+
+        if ((msg.fromComponent && msg.fromComponent === componentId) || (msg.source && msg.source === componentId)) {
+            return;
+        }
+
+        const datasetOk = (!msg.dataset) || DATASET === 'all' || msg.dataset === DATASET;
+
+        if (msg.type === 'duckmap_style' && datasetOk && msg.style && msg.fromComponent !== componentId) {
+            applyIncomingStyle(msg.style);
+            return;
+        }
+
+        if (msg.type === 'duckdb_query' && typeof msg.sql === 'string' && datasetOk) {
+            const incomingSql = sanitizeSQL(msg.sql);
+            if (!incomingSql) return;
+            if (msg.fromComponent === componentId) return;
+            const baseSql = sanitizeSQL(msg.base || msg.sql) || incomingSql;
+            baseSQLText = baseSql;
+            activeRangeClause = null;
+            activeRangeField = null;
+
+            const applyQuery = () => {
+            const inputEl = $("queryInput");
+            if (inputEl) inputEl.value = incomingSql;
+            currentSQLText = incomingSql;
+            suppressQueryBroadcast = true;
+            runQuery({ overrideSQL: incomingSql, suppressBroadcast: true, baseSQL: baseSql })
+                .catch(err => console.error('duckdb_query apply error', err))
+                .finally(() => { suppressQueryBroadcast = false; });
+            };
+
+            if (!duckConn) {
+            pendingDuckQuery = { sql: incomingSql, base: baseSql };
+            } else {
+            applyQuery();
+            }
+            return;
+        }
+
+        if (msg.type === 'filter' && msg.filter && datasetOk) {
+            const f = msg.filter;
+            if (f.type === 'clear') {
+            const shouldResetRange = f.clearAll || !f.field || (activeRangeField && f.field === activeRangeField);
+            if (shouldResetRange && activeRangeClause) {
+                const base = sanitizeSQL(baseSQLText) || sanitizeSQL(defaultSQL());
+                if (base && duckConn) {
+                activeRangeClause = null;
+                activeRangeField = null;
+                runQuery({ overrideSQL: base, suppressBroadcast: true, baseSQL: base }).catch(err => console.error('range clear error', err));
+                }
+            }
+            updateStatus('incoming filter cleared');
+            return;
+            }
+            if (f.type === 'spatial' && Array.isArray(f.values)) {
+            const [w, s, e, n] = f.values.map(Number);
+            if ([w, s, e, n].every(Number.isFinite)) {
+                applyIncomingSpatial({
+                sw: { lng: w, lat: s },
+                ne: { lng: e, lat: n }
+                }, { padding: 40, duration: 0, suppressEmits: 4 });
+            }
+            return;
+            }
+            if (f.type === 'range' && Array.isArray(f.values)) {
+            const field = sanitizeFieldName(f.field || 'value');
+            const [minVal, maxVal] = f.values.map(Number);
+            if (!field || !Number.isFinite(minVal) || !Number.isFinite(maxVal)) return;
+            const base = sanitizeSQL(baseSQLText) || sanitizeSQL(defaultSQL());
+            if (!base) return;
+            const lower = Math.min(minVal, maxVal);
+            const upper = Math.max(minVal, maxVal);
+            const clause = `${field} BETWEEN ${lower} AND ${upper}`;
+            const newSQL = `SELECT * FROM (${base}) AS base WHERE ${clause}`;
+            activeRangeField = field;
+            activeRangeClause = clause;
+            runQuery({ overrideSQL: newSQL, suppressBroadcast: true, baseSQL: base }).catch(err => console.error('range apply error', err));
+            updateStatus(`incoming range ${field}`);
+            return;
+            }
+            return;
+        }
+
+        if (msg.type === 'spatial_filter' && msg.bounds) {
+            applyIncomingSpatial(msg.bounds, { padding: 40, duration: 0, suppressEmits: 4 });
+            return;
+        }
+
+        if (msg.type === 'filter_cleared' && datasetOk) {
+            updateStatus('incoming filter cleared');
+        }
+        }
+
+        if (bc) bc.onmessage = (ev) => onMessage(ev.data);
+        window.addEventListener('message', (ev) => onMessage(ev.data));
+
+        function buildDeckLayer(data, confObj) {
+        const hexCfg = parseHexLayerConfig(confObj.hexLayer || {});
+        return H3HexagonLayer ? new H3HexagonLayer({
+            id: 'hex-layer',
+            data,
+            pickable: true,
+            stroked: false,
+            filled: true,
+            extruded: !!confObj.hexLayer?.extruded,
+            coverage: 0.9,
+            lineWidthMinPixels: 1,
+            getHexagon: d => d.hex,
+            ...hexCfg
+        }) : new PolygonLayer({
+            id: 'hex-layer-fallback',
+            data: data.map(d => {
+            const ring = h3.cellToBoundary(d.hex, true).map(([lat,lng]) => [lng, lat]);
+            return { ...d, polygon: ring };
+            }),
+            pickable: true,
+            stroked: true,
+            filled: true,
+            extruded: false,
+            getPolygon: d => d.polygon,
+            getFillColor: [184,184,184,220],
+            getLineColor: [200,200,200,255],
+            lineWidthMinPixels: 1
+        });
+        }
+
+        function handleHoverFactory(confObj){
+        const colorAttr = confObj?.hexLayer?.getFillColor?.attr || "metric";
+        return function handleHover(info){
+            const tooltipEl = $("tooltip");
+            if(info?.object){
+            map.getCanvas().style.cursor='pointer';
+            const p = info.object;
+
+            const vals = [];
+            if (TOOLTIP_COLUMNS && TOOLTIP_COLUMNS.length){
+                TOOLTIP_COLUMNS.forEach(col=>{
+                if (p[col] !== undefined){
+                    const v = p[col];
+                    if (typeof v === "number" && Number.isFinite(v)) {
+                    vals.push(col+": "+v.toFixed(2));
+                    } else {
+                    vals.push(col+": "+v);
+                    }
+                }
+                });
+            } else {
+                const v = p[colorAttr];
+                if (v != null) {
+                if (typeof v === "number" && Number.isFinite(v)) {
+                    vals.push(colorAttr+": "+v.toFixed(2));
+                } else {
+                    vals.push(colorAttr+": "+v);
+                }
+                }
+            }
+            vals.unshift("hex "+p.hex);
+
+            const text = vals.join(" • ");
+            tooltipEl.innerHTML = text;
+            tooltipEl.style.left = (info.x+10)+"px";
+            tooltipEl.style.top  = (info.y+10)+"px";
+            tooltipEl.style.display='block';
+            } else {
+            map.getCanvas().style.cursor='';
+            tooltipEl.style.display='none';
+            }
+        };
+        }
+
+        function updateOverlayLayers(data, confObj){
+        const layer = buildDeckLayer(data, confObj);
+        const onHover = handleHoverFactory(confObj);
+
+        if (!overlay) {
+            overlay = new MapboxOverlay({
+            interleaved: false,
+            layers: [layer],
+            onHover
+            });
+            map.addControl(overlay);
+        } else {
+            overlay.setProps({
+            layers: [layer],
+            onHover
+            });
+        }
+        }
+
+        // --- duckdb / map init --------------------------------------------------
+
+        async function initMapAndDuckDB(){
+        updateStatus('initializing map…');
+        const style = resolveStyleUrl(MAP_STYLE_URL, MAPBOX_TOKEN);
+        map = new maplibregl.Map({
+            container:'map',
+            style,
+            center: START_CENTER,
+            zoom: START_ZOOM,
+            dragRotate:false,
+            pitchWithRotate:false
+        });
+
+        await new Promise(resolve => {
+            map.once('load', () => {
+            updateStatus('map ready');
+            postSpatial();
+            resolve();
+            });
+        });
+
+        const sendSpatial = rafThrottle(postSpatial);
+        const spatialEvents = ['move','drag','zoom','moveend','zoomend','pitch','rotate'];
+        spatialEvents.forEach(ev => map.on(ev, sendSpatial));
+
+        const duckmod = window.__DUCKDB_WASM;
+        const bundle = await duckmod.selectBundle(duckmod.getJsDelivrBundles());
+        const worker = new Worker(
+            URL.createObjectURL(
+            new Blob([await (await fetch(bundle.mainWorker)).text()], {type:'application/javascript'})
+            )
+        );
+        const db = new duckmod.AsyncDuckDB(new duckmod.ConsoleLogger(), worker);
+        await db.instantiate(bundle.mainModule);
+        duckConn = await db.connect();
+
+        try {
+            await duckConn.query("INSTALL h3 FROM community");
+        } catch (installErr) {
+            console.warn("INSTALL h3 failed (continuing):", installErr?.message || installErr);
+        }
+
+        try {
+            await duckConn.query("LOAD h3");
+        } catch (loadErr) {
+            console.warn("LOAD h3 failed (continuing):", loadErr?.message || loadErr);
+        }
+
+        updateStatus('downloading data…');
+        const r = await fetch(DATA_URL);
+        if(!r.ok){ console.error("http", r.status); throw new Error(r.status); }
+        const bytes = new Uint8Array(await r.arrayBuffer());
+
+        await db.registerFileBuffer('data.parquet', bytes);
+        await duckConn.query("CREATE OR REPLACE VIEW data AS SELECT * FROM read_parquet('data.parquet')");
+        }
+
+        // --- querying + live updates -------------------------------------------
+
+        // default query is always SELECT * FROM data
+        function defaultSQL() {
+        return DEFAULT_QUERY;
+        }
+
+        async function runQuery(options = {}) {
+        if (!duckConn || !currentConfObj) return;
+
+        const inputEl = $("queryInput");
+        const raw = options.overrideSQL != null ? options.overrideSQL : (inputEl ? inputEl.value : "");
+        let sqlText = resolveSQLText(raw);
+
+        if (!raw || !raw.trim()) {
+            const def = sanitizeSQL(defaultSQL());
+            sqlText = def;
+            if (inputEl) inputEl.value = def;
+        } else if (options.overrideSQL != null && inputEl) {
+            inputEl.value = sqlText;
+        }
+
+        if (!sqlText) return;
+
+        const baseCandidate = options.baseSQL != null ? sanitizeSQL(options.baseSQL) : null;
+        if (baseCandidate) {
+            baseSQLText = baseCandidate;
+            if (sanitizeSQL(options.overrideSQL) === baseCandidate) {
+            activeRangeClause = null;
+            activeRangeField = null;
+            }
+        } else if (options.overrideSQL == null) {
+            baseSQLText = sqlText;
+            activeRangeClause = null;
+            activeRangeField = null;
+        }
+
+        try {
+            updateStatus('running query…');
+            const res = await duckConn.query(sqlText);
+            const rows = res.toArray();
+
+            const data = rowsToFeatures(rows, currentConfObj);
+            currentSQLText = sqlText;
+            fitToDataOnce(data);
+            updateOverlayLayers(data, currentConfObj);
+            updateStatus(`rendered ${data.length.toLocaleString()} features`);
+            postSpatial();
+
+            if (!options.suppressBroadcast) {
+            broadcastDuckDBQuery(sqlText, options.baseSQL || sqlText);
+            }
+        } catch(e) {
+            console.error("SQL error:", e);
+            updateStatus('sql error');
+        }
+        }
+
+        // debounced handlers
+        function onSQLChanged(){
+        clearTimeout(sqlTypingTimer);
+        sqlTypingTimer = setTimeout(runQuery, DEBOUNCE_MS);
+        }
+
+        // --- main boot ----------------------------------------------------------
+
+        async function main(){
+        await initMapAndDuckDB();
+
+        try {
+            currentConfObj = JSON.parse(INITIAL_CONFIG || "{}");
+        } catch (_) {
+            currentConfObj = {};
+        }
+        if (!currentConfObj || typeof currentConfObj !== 'object') {
+            currentConfObj = {};
+        }
+
+        // init SQL box with SELECT * FROM data
+        $("queryInput").value = defaultSQL();
+        currentSQLText = sanitizeSQL($("queryInput").value);
+
+        // set up listeners
+        $("queryInput").oninput = onSQLChanged;
+
+        const performInitialQuery = async () => {
+            if (pendingDuckQuery) {
+            const { sql, base } = pendingDuckQuery;
+            pendingDuckQuery = null;
+            await runQuery({ overrideSQL: sql, suppressBroadcast: true, baseSQL: base });
+            } else {
+            await runQuery();
+            }
+        };
+
+        const startInitialQuery = () => {
+            performInitialQuery().catch(err => console.error('initial query error', err));
+        };
+
+        if (typeof map?.isMoving === 'function' ? !map.isMoving() : false) {
+            startInitialQuery();
+        } else {
+            map.once('idle', startInitialQuery);
+        }
+        }
+
+        main().catch(e=>{
+        console.error("init error", e);
+        });
+
+        // block pinch-zoom/ctrl+wheel zoom
+        document.addEventListener('wheel', function(e){
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        }, { passive: false });
+        document.addEventListener('touchstart', function(e){
+        if (e.touches && e.touches.length > 1) {
+            e.preventDefault();
+        }
+        }, { passive: false });
+        document.addEventListener('touchmove', function(e){
+        if (e.touches && e.touches.length > 1) {
+            e.preventDefault();
+        }
+        }, { passive: false });
+    </script>
+    </body>
+    </html>
+    """).render(
+            data_url=data_url,
+            config_json=config_json,
+            mapbox_token=mapbox_token,
+            map_style_url=style_url,
+            default_style_url=DEFAULT_STYLE_URL,
+            center_lng=center_lng,
+            center_lat=center_lat,
+            zoom=zoom,
+            tooltip_columns=tooltip_columns,
+            default_query=default_query,
+            channel=channel,
+            dataset=dataset,
+        )
+
+        return common.html_to_obj(html)
+  ```
+
+</details>
+
+Feel free to directly reach out to us on [Discord](https://discord.com/invite/BxS5wMzdRk) or [Linkedin](https://www.linkedin.com/company/fusedio/) if you have any questions on implementing this yourself
