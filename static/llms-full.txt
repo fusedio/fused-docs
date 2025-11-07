@@ -537,7 +537,7 @@ If things feel a bit off, for example your UDF output looks suspicious here are 
 - Manually rerun the UDF with `Shift + Enter`
 - Check how much RAM your tab is using (in Chrome can easily do so by hovering the tab). Sometimes too much data is brought in to your browser and while we do our best to manage it properly it can get out of hand. A good old tab refresh goes a long way
 
-<ReactPlayer className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/refresh_edit3.mp4" width="100%" />
+<ReactPlayer className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench/walkthrough-videos/docs_rewrite/refresh_edit4.mp4" width="100%" />
 
 ================================================================================
 
@@ -4382,6 +4382,827 @@ Any time you make an update, your graph will automatically update!
   url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/climate_dashboard/sharing_grpah.mp4" 
   width="100%" 
 />
+
+================================================================================
+
+## Loading & Exploring Datasets
+Path: tutorials/Geospatial with Fused/use-cases/Crop Exploration with H3/1.exploring_individual_dataset.mdx
+URL: https://docs.fused.io/tutorials/Geospatial%20with%20Fused/use-cases/Crop%20Exploration%20with%20H3/1.exploring_individual_dataset
+
+# Step 1: Loading & Exploring Datasets
+
+## Study Area & H3 Resolution
+
+We will use the entire United States as our study area.
+
+This analysis will be done using H3 hexagons to join these datasets together. Each of these datasets originally come as rasters. We've ingested them to H3 hexagons, though we need to decide on a H3 resolution to perform our analysis on.
+
+Here is a comparison of different H3 resolutions over the same study area:
+
+| Area of Interest      | H3 Hex Resolution | Aver. H3 Cell Size | # H3 Cells in Area      |
+|---------------------- |-------------------|----------------------|-------------------------|
+| Continental United States* | 4                 | ~1,770 km²             | ~10,000                 |
+| Continental United States* | 5                 | ~252 km²             | ~70,000                 |
+| Continental United States* | 6                 | ~36 km²              | ~49,000                 |
+
+* United States being defined by the bounds: `[-130, 25, -60, 50]`, i.e. approximately 17.6M km² (US is about 9.8M km²)
+
+See the H3 Cell Counts Stats for more details
+
+We'll decide to use a **H3 resolution of 5** for this analysis.
+
+Going up a resolution by 1 level reduces the area of each hexagon by a factor of 7. This means that at resolution 5, each hexagon is 7x7 = 49x smaller than at resolution 4. 
+
+Keep this in mind as more hexagons also require longer compute time.
+
+We can write a simple UDF to estimate the number of H3 cells for a given bounds and resolution.
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = [-130, 25, -60, 50], res: int = 5):
+    
+    # Load common library for H3 utilities
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    
+    # Convert bounds to GeoDataFrame and calculate UTM area
+    gdf_bounds = common.bounds_to_gdf(bounds)
+    gdf_bounds = common.add_utm_area(gdf_bounds)
+    area_millions = round(gdf_bounds['utm_area_sqm'].iloc[0] / 1e12, 1)
+    print(f"Bounds area: M square km")
+    
+    # Get H3 hexagons within bounds at specified resolution
+    df_hex = common.bounds_to_hex(bounds=bounds, res=res, hex_col="hex")
+    print(f"")
+    
+    return df_hex
+```
+
+Returns:
+```bash
+>>> Bounds area: 17.6M square km
+>>>               0      ...               67634
+hex  599309241731252223  ...  600345878259040255
+
+[1 rows x 67635 columns]
+```
+
+This result is 17.6M km², i.e. about 1.8 times more than the actual area of the United States (9.8M km²). 
+
+This is because the bounds is a rectangle _around_ the United States, not the exact boundary of the United States:
+
+```python
+@fused.udf
+def udf(
+    crop_type=1 # Crop 1 = Corn
+):
+    utils = fused.load('team/map_utils')
+
+    data = fused.run("cdl_data_all_crops")
+    # Keeping only the specific crop_type selected
+    data = data[data['crop_type'] == crop_type]
+
+    # keeping subset of cols so tooltip only shows these
+    data = data[['crop_type', 'hex', 'area']]
+    
+    print(data)
+    config = ,
+        "hexLayer": 
+        }
+    }
+    return utils.deckgl_hex(
+        data, 
+        config=config
+    )
+```
+
+    ```python
+    @fused.udf
+def udf():
+    utils = fused.load('team/map_utils')
+    data = fused.run("elevation_hex_mean_height")
+    print(data.T)
+    
+    config = ,
+        "hexLayer": 
+        }
+    }
+    return utils.deckgl_hex(
+        data, 
+        config=config
+    )
+    ```
+
+</details>
+
+Joining the two together on a Fused Canvas:
+
+<iframe
+  src="https://staging.fused.io/canvas/fc_4qZYB74lMQJLm79LjRzLiW"
+  style=}
+  loading="lazy"
+  allowFullScreen
+  title="Elevation Canvas Visualization"
+/>
+
+Explore the Fused Canvas:
+
+- Link to live canvas
+- Click the "Download Canvas" button to download the canvas `.zip` file and upload it directly in your Workbench
+
+## Dataset 3: Temperature 
+
+**Data**
+- Original Raster tiles from ERA5 Climate Reanalysis
+- Hex partitioned dataset by Fused: `s3://fused-asset/data/era5/t2m_daily_mean_v2_1000/` (See on File Explorer)
+
+### Reading Data
+
+We'll create a UDF that takes:
+- A given year & month as `YYYY-MM`
+- Bounds list 
+
+And returns:
+- Average temperature for any given hexagon over that month
+
+We can load the data using DuckDB and visualize it using the `deckgl_hex` function:
+
+```python
+@fused.udf
+def udf(month='2024-05',
+    bounds:fused.types.Bounds=[-130, 25, -60, 50]
+):
+    path = f's3://fused-asset/data/era5/t2m_daily_mean_v2_1000/month=/0.parquet'
+    
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    con = common.duckdb_connect() 
+
+    query = """
+        SELECT  
+            hex, 
+            avg(daily_mean) - 273.15 as daily_mean 
+        FROM read_parquet(?)
+        WHERE 1=1
+        AND h3_cell_to_lng(hex) between ? and ? 
+        AND h3_cell_to_lat(hex) between ? and ? 
+        GROUP BY 1
+    """
+
+    data = con.execute(
+        query,
+        [path, bounds[0], bounds[2], bounds[1], bounds[3]]
+    ).df()
+
+    print(f"")
+
+    return data
+```
+
+<iframe
+  src="https://staging.udf.ai/fsh_7Q6UyVNnM9x18ThmxWuB1b/run?dtype_out_raster=png&dtype_out_vector=html"
+  style=}
+  loading="lazy"
+  allowFullScreen
+  title="Temperature Data UDF Output Visualization"
+/>
+
+Note a few things here:
+1. The dataset is not in hex 5, this is a different resolution than the other datasets we've been working with.
+2. The data has a lot of "empty" areas. 
+
+This is because the underlying data, the ERA5 dataset is a much coarser spatial resolution than the other 2 datasets (around ~31km at the equator, compared to 30m for the Crop Data Layer and 5m for the Elevation data) 
+
+We can smooth the data to the hex 5 resolution using a k-ring neighborhood aggregation:
+
+```python
+@fused.udf
+def udf(month='2024-05',
+    bounds:fused.types.Bounds=[-130, 25, -60, 50]
+):
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+
+    path = f's3://fused-asset/data/era5/t2m_daily_mean_v2_1000/month=/0.parquet'
+ 
+    con = common.duckdb_connect() 
+
+    query = """
+        WITH base_data AS (
+            SELECT  
+                h3_cell_to_parent(hex, 5) as hex, 
+                avg(daily_mean) - 273.15 as daily_mean 
+            FROM read_parquet(?)
+            WHERE 1=1
+            AND h3_cell_to_lng(hex) between ? and ? 
+            AND h3_cell_to_lat(hex) between ? and ? 
+            GROUP BY 1
+        ),
+        all_hexes AS (
+            -- Get all hexes including neighbors by expanding k-ring
+            SELECT DISTINCT unnest(h3_grid_disk(hex, 1)) as hex
+            FROM base_data
+        ),
+        smoothed AS (
+            -- For each hex (original + neighbors), get its k-ring neighbors
+            SELECT 
+                ah.hex as hex,
+                unnest(h3_grid_disk(ah.hex, 1)) as neighbor_hex
+            FROM all_hexes ah
+        )
+        SELECT 
+            s.hex,
+            round(avg(b.daily_mean), 2) as daily_mean
+        FROM smoothed s
+        JOIN base_data b ON b.hex = s.neighbor_hex
+        GROUP BY s.hex
+    """ 
+
+    data = con.execute(
+        query,
+        [path, bounds[0], bounds[2], bounds[1], bounds[3]]
+    ).df()
+
+    print(f"")
+
+    return data
+```
+
+### Visualizing a single month
+
+As above we can visualize the temperature data across a single month:
+
+<iframe
+  src="https://staging.udf.ai/fsh_P0hfxVa5wkT5szOsHYvMn/run?dtype_out_raster=png&dtype_out_vector=html"
+  style=}
+  loading="lazy"
+  allowFullScreen
+  title="Temperature Visualization for Single Month"
+/>
+
+### Visualizing multiple months 
+
+We can create a Fused Canvas to visualize data of different months at once. We create a 'recap' Canvas to show, from left to right:
+1. Original dataset at original hex resolution
+2. Convert to parent hex at resolution 5
+3. Smooth the data to the hex 5 resolution -> Visualize 3 different months at once
+
+<iframe
+  src="https://staging.fused.io/canvas/fc_3XQLMjkeQjDryti56Q9ZDE"
+  style=}
+  loading="lazy"
+  allowFullScreen
+  title="Temperature Canvas Visualization"
+/>
+
+Explore the Fused Canvas:
+- Link to live canvas
+- Click the "Download Canvas" button to download the canvas `.zip` file and upload it directly in your Workbench
+
+## Summary & Next Steps
+
+We now have each dataset at the same hex5 resolution over the same `bounds` of the United States. Next:
+- Step 2: Join Datasets
+- Step 3: Interactive Visualization
+
+================================================================================
+
+## Joining Multiple Geospatial Datasets
+Path: tutorials/Geospatial with Fused/use-cases/Crop Exploration with H3/2.joining_datasets.mdx
+URL: https://docs.fused.io/tutorials/Geospatial%20with%20Fused/use-cases/Crop%20Exploration%20with%20H3/2.joining_datasets
+
+# Step 2: Joining Multiple Geospatial Datasets
+
+After creating all 3 of our datasets at a H3 cell grid size of 3, we can now join them together. 
+
+## Joining logic
+
+Here's a quick summary of what each of our datasets contains:
+
+**Crop**
+
+- Dataset size: ~700k rows
+
+| hex                | crop_type | area      |
+|--------------------|-----------|-----------|
+| 599658332378103807 | 4         |     1713  |
+| 599669866512777215 | 50        |    20854  |
+| 599657528145477631 | 122       |    17505  |
+| 599699078732840959 | 121       | 10368586  |
+| 599697034328408063 | 122       |    17754  |
+
+**Elevation**
+
+Dataset size: ~68k rows
+
+| hex              | mean_value  |
+|------------------|-------------|
+| 599647257804931071 | 453.75     |
+| 599647264247382015 | 375.32     |
+| 599647267468607487 | 392.52     |
+| 599647276058542079 | 401.93     |
+| 599647280353509375 | 410.52     |
+
+**Temperature**
+
+Dataset size: ~68k rows
+
+| hex              | daily_mean |
+|------------------|------------|
+| 599740827962441727 | 16.46      |
+| 599740794676445183 | 16.51      |
+| 599740824741216255 | 16.40      |
+| 599740837626118143 | 14.99      |
+| 599740839773601791 | 14.93      |
+
+Notice a few things:
+- We have ~10x more rows in the Crop dataset than the Elevation and Temperature datasets, which both have the same number of H3 cells.
+- The Elevation & Temperature datasets each have 1 H3 cell < - > 1 value. The Crop dataset has multiple rows per each H3 cell.
+
+We can write a simple UDF to return all the different dataset at once for a single H3 cell to see this:
+
+```python
+@fused.udf
+def udf():
+    # Assuming you have named your UDFs as follows:
+    elevation_data = fused.run('elevation_hex_mean_height')
+    cdl_data = fused.run("cdl_data_all_crops_staging")
+    temp_data = fused.run("era5_hex_mean_temp_foss4g")
+
+    # Random h3 cell within the US
+    random_hex = 599691796615790591
+    
+    # Filter all 3 dataframes by the same hex value
+    filtered_elevation = elevation_data[elevation_data['hex'] == random_hex]
+    filtered_cdl = cdl_data[cdl_data['hex'] == random_hex]
+    filtered_temp = temp_data[temp_data['hex'] == random_hex]
+    
+    # Print the contents of all 3 filtered dataframes
+    print("Elevation Data:")
+    print(filtered_elevation)
+    print("\nCDL Data:")
+    print(filtered_cdl)
+    print("\nTemperature Data:")
+    print(filtered_temp)
+    
+    return filtered_elevation
+```
+
+This returns:
+```bash
+Elevation Data:
+                      hex  mean_value
+46561  599691796615790591  307.809524
+
+CDL Data:
+        crop_type                 hex      area            chunk_id  year
+355599        122  599691796615790591   7631733  577199624117288959  2024
+355600        123  599691796615790591   2211934  577199624117288959  2024
+355601         68  599691796615790591  18305536  577199624117288959  2024
+355602         37  599691796615790591   5207407  577199624117288959  2024
+355603        131  599691796615790591     60333  577199624117288959  2024
+...           ...                 ...       ...                 ...   ...
+365701          6  599691796615790591     10317  577199624117288959  2024
+365702        143  599691796615790591     12347  577199624117288959  2024
+365703         29  599691796615790591     14997  577199624117288959  2024
+365704        221  599691796615790591     15215  577199624117288959  2024
+365705         38  599691796615790591     16505  577199624117288959  2024
+
+[68 rows x 5 columns]
+
+Temperature Data:
+                      hex  daily_mean
+41582  599691796615790591       15.31
+```
+
+- 1 H3 cell < - > 1 value for Elevation and Temperature
+- 1 H3 cell < - > 68 values for Crop!
+
+This is because the Crop dataset creates a new row for each crop type. Recall that a resolution 5 H3 cell is 252 km², so a single cell can contain multiple crop types.
+
+To join our datasets we need to decide on a logic. We'll decide to:
+
+> **Aggregate the Crop dataset by most dominant crop type for each H3 cell.**
+
+### Aggregating crop by most common
+
+**Aggregating crop dataset by most common crop**
+
+```python
+@fused.udf
+def udf():
+    cdl_data = fused.run("cdl_data_all_crops_staging")
+
+    # Aggregate CDL by most common crop by area. 1 h3 cell <-> 1 row: crop_rank_1 and crop_area
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    con = common.duckdb_connect()
+    
+    # Group by hex cell, rank crops by area, keep top crop per cell
+    crop_agg = con.execute("""
+        SELECT 
+            hex,
+            crop_type as crop_rank_1,
+            SUM(area) as crop_area,
+            year
+        FROM cdl_data
+        GROUP BY hex, crop_type, year
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY hex, year ORDER BY SUM(area) DESC) = 1
+    """).df()
+
+    print(f"")
+
+    return crop_agg
+```
+
+We can refine this further by:
+- Filtering out any crops we're not interested in like shrubs, grass, forest, etc. 
+- Taking neighboring cells into account to get more accurate statistics using k-ring
+
+```python
+@fused.udf
+def udf(k_ring_size: int = 1):
+    cdl_data = fused.run("cdl_data_all_crops_staging")
+
+    # Aggregate CDL by most common crop by area. 1 h3 cell <-> 1 row: crop_rank_1 and crop_area
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    con = common.duckdb_connect()
+
+    # Removing 'crop types' from CDL dataset we're not interested in
+    crops_to_remove = [
+        64,  # Shrubland
+        152, # Shrubland
+        176, # Pasture/Hay
+        63,  # Forest
+        142, # Forest
+        141, # Forest
+        190, # Woody Wetlands
+        111, # Perennial Ice/Snow
+        195, # Water
+        131, # Barren
+        121, # Developed/Open Space
+        143, # Mixed Forest
+    ]
+    cdl_data = cdl_data[~cdl_data['crop_type'].isin(crops_to_remove)]
+
+    crop_agg = con.execute("""
+        WITH k_ring_expanded AS (
+            SELECT 
+                hex as center_hex,
+                unnest(h3_grid_disk(hex, ?)) as ring_hex
+            FROM cdl_data
+        ),
+        k_ring_data AS (
+            SELECT 
+                k.center_hex,
+                c.crop_type as crop_type,
+                c.area as crop_area
+            FROM k_ring_expanded k
+            JOIN cdl_data c ON CAST(c.hex AS BIGINT) = CAST(k.ring_hex AS BIGINT)
+        ),
+        aggregated_crops AS (
+            SELECT 
+                center_hex,
+                crop_type,
+                SUM(crop_area) as total_area
+            FROM k_ring_data
+            GROUP BY center_hex, crop_type
+        ),
+        ranked_crops AS (
+            SELECT 
+                center_hex,
+                crop_type,
+                total_area,
+                ROW_NUMBER() OVER (PARTITION BY center_hex ORDER BY total_area DESC) as rank
+            FROM aggregated_crops
+        )
+        SELECT 
+            center_hex as hex,
+            crop_type as crop_rank_1,
+            total_area as area_rank_1
+        FROM ranked_crops
+        WHERE rank = 1
+    """, [k_ring_size]).df()
+
+    print(f"")
+
+    return crop_agg
+```
+
+This returns:
+
+|       hex        | crop_rank_1 |   area_rank_1   |
+|------------------|-------------|-----------------|
+| 599230208964296703 |      0      | 8.98e+08        |
+| 599238790308954111 |      0      | 2.03e+09        |
+| ...                |   ...       |      ...        |
+| 599238794603921407 |      0      | 2.02e+09        |
+| 599238816078757887 |      0      | 2.02e+09        |
+
+Shape: (51299, 3)
+
+### Joining datasets
+
+We now have 3 datasets, with unique hex values each, so we can join them together:
+
+```python
+@fused.udf
+def udf(k_ring_size: int = 1):
+    elevation_data = fused.run('elevation_hex_mean_height')
+    cdl_data = fused.run("cdl_data_all_crops_staging")
+    temp_data = fused.run("era5_hex_mean_temp_foss4g")
+
+    # Aggregate CDL by most common crop by area. 1 h3 cell <-> 1 row: crop_rank_1 and crop_area
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    con = common.duckdb_connect()
+
+    # Removing 'crop types' from CDL dataset we're not interested in
+    crops_to_remove = [
+        64,  # Shrubland
+        152, # Shrubland
+        176, # Pasture/Hay
+        63,  # Forest
+        142, # Forest
+        141, # Forest
+        190, # Woody Wetlands
+        111, # Perennial Ice/Snow
+        195, # Water
+        131, # Barren
+        121, # Developed/Open Space
+        143, # Mixed Forest
+    ]
+    cdl_data = cdl_data[~cdl_data['crop_type'].isin(crops_to_remove)]
+
+    crop_agg = con.execute("""
+        WITH k_ring_expanded AS (
+            SELECT 
+                hex as center_hex,
+                unnest(h3_grid_disk(hex, ?)) as ring_hex
+            FROM cdl_data
+        ),
+        k_ring_data AS (
+            SELECT 
+                k.center_hex,
+                c.crop_type as crop_type,
+                c.area as crop_area
+            FROM k_ring_expanded k
+            JOIN cdl_data c ON CAST(c.hex AS BIGINT) = CAST(k.ring_hex AS BIGINT)
+        ),
+        aggregated_crops AS (
+            SELECT 
+                center_hex,
+                crop_type,
+                SUM(crop_area) as total_area
+            FROM k_ring_data
+            GROUP BY center_hex, crop_type
+        ),
+        ranked_crops AS (
+            SELECT 
+                center_hex,
+                crop_type,
+                total_area,
+                ROW_NUMBER() OVER (PARTITION BY center_hex ORDER BY total_area DESC) as rank
+            FROM aggregated_crops
+        )
+        SELECT 
+            center_hex as hex,
+            crop_type as crop_rank_1,
+            total_area as area_rank_1
+        FROM ranked_crops
+        WHERE rank = 1
+    """, [k_ring_size]).df()
+
+    # Join elevation with aggregated CDL crop data
+    merged = elevation_data.merge(
+        crop_agg,
+        on='hex',
+        how='left'
+    ).rename(columns=)
+    
+    # Join with ERA5 temperature data
+    merged = merged.merge(
+        temp_data,
+        on='hex',
+        how='left'
+    )
+
+    # Round elevation to 1 decimal place
+    merged['elevation'] = merged['elevation'].round(1)
+    
+    return merged
+```
+
+Returns:
+
+| hex                | elevation | crop_rank_1 | area_rank_1     | daily_mean |
+|--------------------|-----------|-------------|-----------------|------------|
+| 599650153686630399 | 357.4     | 1.0         | 9.152000e+09    | 13.90      |
+| 599650161202823167 | 413.5     | 1.0         | 1.124163e+10    | 13.45      |
+| ...                | ...       | ...         | ...             | ...        |
+| 599747753597206527 | 255.9     | 0.0         | 2.030604e+09    | 8.93       |
+| 599747766482108415 | 283.6     | 0.0         | 2.031832e+09    | 8.15       |
+
+Shape: (68044, 5)
+
+Note that we're using the Fused common functions to simplify DuckDB queries using H3 functions:
+
+```python
+# inside our udf
+common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+con = common.duckdb_connect()
+crop_agg = con.execute("""SELECT ...""").df()
+# rest of logic
+```
+
+This function provides some benefits:
+- Pre-installed dependencies for H3 operations
+- No need to register data as tables in DuckDB as a preliminary step
+
+## Summary & Next Steps
+
+We now have a joined dataset that contains, for each H3 res 5 cell:
+
+- Elevation data
+- Crop data by most common crop + area of said crop
+- Temperature data
+
+Next:
+- Step 3: Interactive Visualization
+
+================================================================================
+
+## Interactive Visualization
+Path: tutorials/Geospatial with Fused/use-cases/Crop Exploration with H3/3.interactive_visualization.mdx
+URL: https://docs.fused.io/tutorials/Geospatial%20with%20Fused/use-cases/Crop%20Exploration%20with%20H3/3.interactive_visualization
+
+# Step 3: Interactive Visualization
+
+In Fused Canvas you can create interactive visualizations by combining UDFs together. 
+
+We can create a more advanced version of these visualizations using by creating UDFs that leverage postMessages to talk to each other. 
+
+### Connecting Histogram & Map
+
+  The Range Histogram UDF allows you to visualize the distribution of a continuous variable (like elevation or temperature) as an interactive histogram. You can select a range to filter the data on the map.
+
+  ```python
+
+@fused.udf
+def udf(
+    # Replace with your own data URL 
+    data_url: str = "https://staging.udf.ai/fsh_5Z7Qgucu8mNPsv924v1CKX/run?dtype_out_raster=png&dtype_out_vector=parquet",
+    theme: str = "workbench",
+    auto_fetch: bool = True,
+    dataset: str = "all",              # IMPORTANT: match the map’s DATASET or use "all"
+    num_bins: int = 50,
+    value_field: str = "elevation",
+    title: str = "Elevation",
+    channel: str = "fused-elevation-temp"         # IMPORTANT: match the map’s CHANNEL
+):
+    common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+    _ = fused.load("join_era5_cdl_elevation")
+    themes = 
+    }
+    selected = themes.get(theme, themes['workbench'])
+ 
+    safe_title = (
+        title.replace("&", "&amp;")
+             .replace("<", "&lt;")
+             .replace(">", "&gt;")
+             .replace('"', "&quot;")
+             .replace("'", "&#39;")
+    )
+
+    html_content = """
+
+    """
+
+    return common.html_to_obj(html_content)
+    ```
+
+  The Categorical Bar Chart UDF is used to visualize counts of each category (such as crop types). Clicking a bar will filter the map to display only the selected category.
+
+  ```python
+  @fused.udf
+def udf(
+    # Replace with your own data URL
+    data_url: str = "https://staging.udf.ai/fsh_5Z7Qgucu8mNPsv924v1CKX/run?dtype_out_raster=png&dtype_out_vector=parquet",
+    theme: str = "workbench",
+    auto_fetch: bool = True,
+    dataset: str = "all",
+    value_field: str = "crop_rank_1",
+    title: str = "Top 10 Crop Types",
+    channel: str = "fused-elevation-temp"
+):
+    common = fused.load("https://github.com/fusedio/udfs/tree/351515e/public/common/")
+    _ = fused.load("join_era5_cdl_elevation")
+    
+    # Load crop name mapping
+    crop_df = fused.run("cdl_crop_types_indexing") 
+    crop_mapping = dict(zip(crop_df['ID'], crop_df['Name']))
+     
+    # Convert to JavaScript object string
+    crop_mapping_js = ": '',\n"
+    crop_mapping_js += "            }"
+    
+    themes = 
+    }
+    selected = themes.get(theme, themes['workbench'])
+
+    safe_title = (
+        title.replace("&", "&amp;")
+             .replace("<", "&lt;")
+             .replace(">", "&gt;")
+             .replace('"', "&quot;")
+             .replace("'", "&#39;")
+    )
+
+    html_content = """
+
+    """
+
+    return common.html_to_obj(html_content)
+  ```
+
+  The Map UDF renders the geospatial hexagons and supports interactions with the histogram or bar chart to update map highlights in real time.
+
+  ```python
+  common = fused.load("https://github.com/fusedio/udfs/tree/f430c25/public/common/")
+
+    DEFAULT_CONFIG = r""",
+    "hexLayer": 
+    } 
+    }"""
+    
+    DEFAULT_STYLE_URL = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+
+    @fused.udf
+    def udf( 
+        # replace with your own data URL
+        data_url: str = "https://staging.udf.ai/fsh_5Z7Qgucu8mNPsv924v1CKX/run?dtype_out_raster=png&dtype_out_vector=parquet",
+        config_json: str = DEFAULT_CONFIG,
+        mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+        center_lng: float = -119.4179,
+        center_lat: float = 36.7783,
+        zoom: float = 4,
+        tooltip_columns: list = ["crop_rank_1", "elevation", "daily_mean"],
+        default_query: str = "SELECT * FROM data",
+        map_style_url: str = DEFAULT_STYLE_URL,
+        channel: str = "fused-elevation-temp",
+        dataset: str = "all",
+    ):
+        from jinja2 import Template
+    
+        style_url = map_style_url or DEFAULT_STYLE_URL
+        _ = fused.load("join_era5_cdl_elevation")
+
+        html = Template(r"""
+
+    """).render(
+            data_url=data_url,
+            config_json=config_json,
+            mapbox_token=mapbox_token,
+            map_style_url=style_url,
+            default_style_url=DEFAULT_STYLE_URL,
+            center_lng=center_lng,
+            center_lat=center_lat,
+            zoom=zoom,
+            tooltip_columns=tooltip_columns,
+            default_query=default_query,
+            channel=channel,
+            dataset=dataset,
+        )
+
+        return common.html_to_obj(html)
+  ```
+
+</details>
+
+Feel free to directly reach out to us on Discord or Linkedin if you have any questions on implementing this yourself
+
+================================================================================
+
+## Crop Exploration with H3
+Path: tutorials/Geospatial with Fused/use-cases/Crop Exploration with H3/index.mdx
+URL: https://docs.fused.io/tutorials/Geospatial%20with%20Fused/use-cases/Crop%20Exploration%20with%20H3
+
+# Crop Exploration with H3
+
+This use case shows how to build an interactive dashboard joining together disparate datasets to explore the spatial patterns of crops in the United States. We'll bring together:
+
+- Every Crop in the United States
+- Elevation data for the entire country
+- Temperature data
+
+All on an interactive visualization:
+
+<iframe
+  src="https://staging.fused.io/canvas/fc_1Haysv86livzZol0Yoixpd"
+  style=}
+  loading="lazy"
+  allowFullScreen
+  title="Crop Exploration Dashboard Canvas"
+/>
+
+## Steps:
+
+<DocCardList className="DocCardList--no-description"/>
 
 ================================================================================
 
@@ -10110,68 +10931,41 @@ URL: https://docs.fused.io/blog/2025-10-30-intro-canvas
 
 # Introducing Fused AI Canvas
 
-## 🐍 Write Python in the browser
+Today we're introducing Fused AI Canvas, a new way to organize your UDFs on a free form canvas
 
-Fused Apps are one of the the fastest way to write Python, directly in the browser. 
-- No environment setup, just start writing Python
-- Create interactive apps using Streamlit 
-- Save & rename your Apps
+## A Free Form Canvas
 
-## 🔗 Share your apps with anyone
+Organize & move your UDFs as you build your workflow on a free form canvas, allowing you to build analysis & workflows without being limited to a linear flow!
 
-As soon as you save your Fused App, you can create a shareable link for anyone to open
-
-<LazyReactPlayer
-    playsinline=
-    className="video__player"
-    muted=
-    controls
+<img 
     style=}
-    width="100%"
-    url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/blogs/2025-05-13-inside-fused-apps/sharing_fused_apps_links_higher_res.mp4"
+    src="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/blogs/2025-10-30-intro-canvas/moving_elements_on_canvas.gif" 
+    alt="Moving elements on canvas"
 />
 
-## 🔒 Standalone & Private, running in your browser 
+## Create workflows
 
-Fused Apps are built on top of Pyodide, Streamlit & Stlite but offer many features:
-- Github Integration for team collaboration
-- Run light-weight LLMs locally in your browser with libraries like `transformers.js.py`
+Fused Canvas still runs individual serverless UDFs but you can now more easily connect them together
 
-[Image: CDL Bunnies]
-
-## 📚 Access a Catalog of existing Fused Apps to get started
-
-We've curated a catalog of existing Fused Apps to get you started, including:
-- 🌽 Explore different crops around the US
-- 🛰️ Visualize the trend of objects sent to Space
-- 🌲 Pan a map of Forest statistics per global municipality
-
-<LazyReactPlayer
-    playsinline=
-    className="video__player"
-    muted=
-    controls
+<img 
     style=}
-    width="100%"
-    url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/blogs/2025-05-13-inside-fused-apps/App_catalog_browsing.mp4"
+    src="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/blogs/2025-10-30-intro-canvas/connecting_udfs.gif" 
+    alt="Connecting UDFs"
 />
 
-You can try out Fused Apps for yourself directly in Fused Workbench and read our dedicated Docs page
+## Share in 1 click
 
-## ⚙️ How we built Fused Apps: Technical Details
+Share your work to anyone with a single click
 
-We wrote a dedicated technical blog post going into details of how Fused Apps are built:
-- How we originally built Fused Apps
-- The challenges of Python in the browser
-- Our approach to building a product
+<img 
+    style=}
+    src="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/blogs/2025-10-30-intro-canvas/share_in_one_link.gif" 
+    alt="Share canvas"
+/>
 
-## Join our webinar on May 22nd!
+## Try it out
 
-On Thursday May 22nd we'll be hosting a webinar showcasing how our customers use Fused
-
-- Join on LinkedIn
-
-[Image: Webinar thumbnail]
+Try out Fused Canvas right away for free
 
 ================================================================================
 
@@ -12798,5 +13592,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2025-10-31
+Generated automatically from Fused documentation. Last updated: 2025-11-07
 Total sections: 3
