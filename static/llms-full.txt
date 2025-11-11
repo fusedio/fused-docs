@@ -2341,6 +2341,49 @@ You can reset the view by running the "Reset 3D view to top-down" shortcut from 
 
 ================================================================================
 
+## Example Canvas Catalog
+Path: tutorials/Geospatial with Fused/canvas_catalog.mdx
+URL: https://docs.fused.io/tutorials/Geospatial%20with%20Fused/canvas-catalog
+
+# Fused Canvas Catalog
+
+Find below a list of example Canvases you can explore in Fused to kickstart your geospatial workflows.
+
+## Overture Difference Heatmap
+
+**See Live Canvas →**
+
+## Elevation & Temperature impact on crop types with H3
+
+This canvas showcases:
+- Joining different datasets at different resolutions & projections using H3
+- Creating a dynamic interactive dashboard
+
+- **See Live Canvas →**
+- Read dedicated Docs page on how we built this canvas →
+
+## Environmental Variables link exploration
+
+This canvas is based on the Environmental Variables blog post created to explore the correlation between:
+- Soil moisture
+- Precipitation
+- Temperature
+- Crop type
+
+- **See Live Canvas →**
+- Read the Environmental Variables blog post
+
+## AIS Boat Exploration
+
+This is the Canvas we used when announcing Fused Canvas to showcase:
+- The flexibility that ingested AIS data gives to create complex visualizations
+- Creating multiple visualizations on the same dataset
+
+- **See Live Canvas →**
+- Read the Fused Canvas announcement blog post
+
+================================================================================
+
 ## Single / Tile Map UDFs
 Path: tutorials/Geospatial with Fused/filetile.mdx
 URL: https://docs.fused.io/tutorials/Geospatial%20with%20Fused/filetile
@@ -4475,6 +4518,58 @@ def udf(
     )
 ```
 
+Explore this Fused Canvas for yourself:
+- Link to live canvas
+- Click the "Download Canvas" button to download the canvas `.zip` file and upload it directly in your Workbench
+
+## Dataset 2: Elevation
+
+**Data**
+- Original Raster tiles from Terrain Tiles
+- Hex partitioned dataset by Fused: `s3://fused-asset/data/dem/r6_z4_100k.parquet` (See on File Explorer)
+
+### Reading Data
+
+The `.parquet` file we'll use isn't at hex 5 resolution, so we will dynamically:
+- Use `h3_cell_to_parent(hex, 5) as hex,` to convert the hex to the parent hex at resolution 5
+- Use `avg(mean_value) as mean_value` to aggregate by average elevation of all the elevation values covering the parent hex
+- Keep only values within the bounds viewport with `h3_cell_to_lng(hex)`
+
+```python
+@fused.udf
+def udf(
+    bounds:fused.types.Bounds=[-130, 25, -60, 50]
+):
+    # Loading the common Fused hex library to access pre-installed H3 library in DuckDB
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    con = common.duckdb_connect() 
+
+    query = """
+        SELECT  
+            h3_cell_to_parent(hex, 5) as hex, 
+            avg(mean_value) as mean_value 
+        FROM read_parquet('s3://fused-asset/data/dem/r6_z4_100k.parquet')
+        where 1=1
+        and h3_cell_to_lng(hex) between ? and ? 
+        and h3_cell_to_lat(hex) between ? and ? 
+        group by 1
+    """
+    data = con.execute(query, [bounds[0], bounds[2], bounds[1], bounds[3]]).df()
+
+    return data
+```
+
+Returns:
+```bash
+                   0             1      ...         68042         68043
+hex         5.992300e+17  5.992301e+17  ...  5.996693e+17  5.996693e+17
+mean_value  3.876500e+02  2.390833e+02  ...  1.530952e+02  1.819881e+02
+```
+
+### Visualizing Elevation
+
+We can visualize the elevation data similarly to the crop data:
+
     ```python
     @fused.udf
 def udf():
@@ -4491,18 +4586,6 @@ def udf():
         config=config
     )
     ```
-
-</details>
-
-Joining the two together on a Fused Canvas:
-
-<iframe
-  src="https://staging.fused.io/canvas/fc_4qZYB74lMQJLm79LjRzLiW"
-  style=}
-  loading="lazy"
-  allowFullScreen
-  title="Elevation Canvas Visualization"
-/>
 
 Explore the Fused Canvas:
 
@@ -4556,101 +4639,6 @@ def udf(month='2024-05',
 
     return data
 ```
-
-<iframe
-  src="https://staging.udf.ai/fsh_7Q6UyVNnM9x18ThmxWuB1b/run?dtype_out_raster=png&dtype_out_vector=html"
-  style=}
-  loading="lazy"
-  allowFullScreen
-  title="Temperature Data UDF Output Visualization"
-/>
-
-Note a few things here:
-1. The dataset is not in hex 5, this is a different resolution than the other datasets we've been working with.
-2. The data has a lot of "empty" areas. 
-
-This is because the underlying data, the ERA5 dataset is a much coarser spatial resolution than the other 2 datasets (around ~31km at the equator, compared to 30m for the Crop Data Layer and 5m for the Elevation data) 
-
-We can smooth the data to the hex 5 resolution using a k-ring neighborhood aggregation:
-
-```python
-@fused.udf
-def udf(month='2024-05',
-    bounds:fused.types.Bounds=[-130, 25, -60, 50]
-):
-    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
-
-    path = f's3://fused-asset/data/era5/t2m_daily_mean_v2_1000/month=/0.parquet'
- 
-    con = common.duckdb_connect() 
-
-    query = """
-        WITH base_data AS (
-            SELECT  
-                h3_cell_to_parent(hex, 5) as hex, 
-                avg(daily_mean) - 273.15 as daily_mean 
-            FROM read_parquet(?)
-            WHERE 1=1
-            AND h3_cell_to_lng(hex) between ? and ? 
-            AND h3_cell_to_lat(hex) between ? and ? 
-            GROUP BY 1
-        ),
-        all_hexes AS (
-            -- Get all hexes including neighbors by expanding k-ring
-            SELECT DISTINCT unnest(h3_grid_disk(hex, 1)) as hex
-            FROM base_data
-        ),
-        smoothed AS (
-            -- For each hex (original + neighbors), get its k-ring neighbors
-            SELECT 
-                ah.hex as hex,
-                unnest(h3_grid_disk(ah.hex, 1)) as neighbor_hex
-            FROM all_hexes ah
-        )
-        SELECT 
-            s.hex,
-            round(avg(b.daily_mean), 2) as daily_mean
-        FROM smoothed s
-        JOIN base_data b ON b.hex = s.neighbor_hex
-        GROUP BY s.hex
-    """ 
-
-    data = con.execute(
-        query,
-        [path, bounds[0], bounds[2], bounds[1], bounds[3]]
-    ).df()
-
-    print(f"")
-
-    return data
-```
-
-### Visualizing a single month
-
-As above we can visualize the temperature data across a single month:
-
-<iframe
-  src="https://staging.udf.ai/fsh_P0hfxVa5wkT5szOsHYvMn/run?dtype_out_raster=png&dtype_out_vector=html"
-  style=}
-  loading="lazy"
-  allowFullScreen
-  title="Temperature Visualization for Single Month"
-/>
-
-### Visualizing multiple months 
-
-We can create a Fused Canvas to visualize data of different months at once. We create a 'recap' Canvas to show, from left to right:
-1. Original dataset at original hex resolution
-2. Convert to parent hex at resolution 5
-3. Smooth the data to the hex 5 resolution -> Visualize 3 different months at once
-
-<iframe
-  src="https://staging.fused.io/canvas/fc_3XQLMjkeQjDryti56Q9ZDE"
-  style=}
-  loading="lazy"
-  allowFullScreen
-  title="Temperature Canvas Visualization"
-/>
 
 Explore the Fused Canvas:
 - Link to live canvas
@@ -5039,6 +5027,10 @@ We can create a more advanced version of these visualizations using by creating 
 
 ### Connecting Histogram & Map
 
+**Launch the interactive Crop Exploration Dashboard →**
+
+We provide these UDFs for now as-is. You can duplicate them and modify them to work with your own data:
+
   The Range Histogram UDF allows you to visualize the distribution of a continuous variable (like elevation or temperature) as an interactive histogram. You can select a range to filter the data on the map.
 
   ```python
@@ -5194,13 +5186,9 @@ We'll bring together:
 
 All on an interactive visualization:
 
-<iframe
-  src="https://staging.fused.io/canvas/fc_1Haysv86livzZol0Yoixpd"
-  style=}
-  loading="lazy"
-  allowFullScreen
-  title="Crop Exploration Dashboard Canvas"
-/>
+**See Live Canvas →**
+
+Explore crops, elevation, and temperature data across the United States in this interactive canvas.
 
 ## Steps:
 
@@ -13594,5 +13582,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2025-11-09
+Generated automatically from Fused documentation. Last updated: 2025-11-11
 Total sections: 3
