@@ -1,0 +1,407 @@
+---
+id: udf-best-practices
+title: Maximiser l'utilisation des UDF
+sidebar_label: Création et exécution des UDF
+sidebar_position: 0
+---
+
+# Création et exécution des UDF
+
+_Un guide d'opinion pour maximiser l'utilisation des Fused UDF_
+
+[Les Fused UDF](/core-concepts/write/) sont des fonctions Python qui s'exécutent sur un calcul sans serveur et peuvent être appelées de n'importe où avec [`fused.run(udf)`](/core-concepts/run-udfs/run-small-udfs/#fusedrun). Ce guide est une ressource destinée à vous aider à tirer le meilleur parti des UDF.
+
+## Un bref rappel : L'anatomie d'un UDF
+
+```python showLineNumbers
+@fused.udf
+def udf(my_awesome_input: int = 1):
+    import pandas as pd
+
+    return pd.DataFrame({"Look at my output: ": [my_awesome_input]})
+```
+
+Chaque UDF a quelques éléments spécifiques :
+- Le [`décorateur @fused.udf`](/core-concepts/write/#fusedudf-decorator)
+- Arguments -idéalement typés-
+- Imports _à l'intérieur_ de la fonction
+- Une certaine logique
+- Un [objet `return` supporté](/core-concepts/write/#return-object)
+
+:::note
+Tout cela est expliqué dans la section ["Écrire des UDF"](/core-concepts/write/) en bien plus de détails.
+:::
+
+Vous pouvez ensuite exécuter des UDF _de n'importe où_ avec [`fused.run(udf)`](/core-concepts/run-udfs/run-small-udfs/#fusedrun). Ce sont toujours des fonctions Python, vous offrant beaucoup de flexibilité sur ce que vous pouvez faire, mais nous avons quelques recommandations pour les garder rapides et efficaces.
+
+## Écriture d'UDF efficaces
+
+### Gardez les choses petites
+
+Le principal avantage des Fused UDF est leur réactivité. Ils y parviennent en s'exécutant sur un calcul Python sans serveur. Ils peuvent [expirer](/core-concepts/run-udfs/run-small-udfs/#defining-small-job), donc la meilleure façon de garder les flux de travail rapides est de les garder petits :
+
+- Divisez les pipelines en UDF à tâche unique
+- Profitez de [`fused.run()`](/core-concepts/run-udfs/run-small-udfs/#fusedrun) pour enchaîner les UDF
+- Ou [exécutez de petites tâches en parallèle](/core-concepts/best-practices/udf-best-practices/#run-tasks-in-parallel)
+
+<details>
+    <summary>Exemple : Décomposer un pipeline complexe en UDF plus petits</summary>
+
+    ❌ Pas recommandé :
+
+    ```python showLineNumbers
+    @fused.udf
+    def inefficient_pipeline_udf(data_path):
+        import pandas as pd
+
+        df = pd.read_csv(data_path)
+        # Une logique de traitement compliquée pour créer df_processed
+        processed_df = ...
+
+        return processed_df
+    ```
+
+    ✅ Au lieu de cela, décomposez-le :
+
+    ```python showLineNumbers
+    @fused.udf
+    def load_data_udf(data_path):
+        import pandas as pd
+        return pd.read_csv(data_path)
+    ```
+
+    ```python showLineNumbers
+    @fused.udf
+    def process_data_udf(df):
+        import pandas as pd
+
+        # Une logique de traitement compliquée pour créer df_processed
+        processed_df = ...
+
+        return processed_df
+    ```
+
+    ```python showLineNumbers
+    @fused.udf
+    def pipeline_udf(data_path):
+        import pandas as pd
+
+        df = fused.run(load_data_udf, data_path=data_path)
+        processed_df = fused.run(process_data_udf, df=df)
+
+        return processed_df
+    ```
+</details>
+
+### Exécutez souvent, itérez rapidement
+
+Tout comme écrire des cellules courtes lors du développement dans un Jupyter Notebook, nous vous recommandons de garder vos UDF courtes et rapides à exécuter.
+
+⚡️ Visez des **UDF qui prennent jusqu'à 30-45s à s'exécuter**
+
+Les UDF exécutées avec [`fused.run()`](/core-concepts/run-udfs/run-small-udfs/#fusedrun) [expirent après 120s](/core-concepts/run-udfs/run-small-udfs/#defining-small-job), donc nous vous recommandons de garder une marge de sécurité au cas où votre UDF prendrait un peu plus de temps à s'exécuter.
+
+<details>
+    <summary>Visuel : Directive de timing des UDF</summary>
+
+    Voici une répartition de ce qui se passe lorsque vous exécutez un UDF avec `fused.run()` et pourquoi nous vous recommandons de garder vos UDF autour de 30s-45min :
+
+    ![Directives de conception des UDF](/img/user-guide/best-practices/udf_design_timing.png)
+
+</details>
+
+### Exécutez des tâches en parallèle : [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit)
+
+[`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit) vous permet d'exécuter un UDF sur un ensemble d'entrées en parallèle. Cela est utile lorsque vous souhaitez mettre à l'échelle une petite opération sur un grand nombre d'entrées par exemple :
+- convertir une liste de fichiers d'un format à un autre
+- calculer une opération simple sur une grande série temporelle
+
+Meilleures pratiques pour utiliser [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit) :
+- Exécutez des UDF qui prennent entre 30-45s à s'exécuter (laissant une marge pour que tout UDF dans la chaîne prenne un peu plus de temps)
+- Retournez de petits dataframes (quelques lignes / colonnes) OU enregistrez dans un fichier et retournez un chemin de fichier. Cela facilite l'agrégation de toutes les données ensemble dans un petit dataframe.
+
+<details>
+    <summary>Exemple : Paralléliser un UDF avec [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit)</summary>
+
+    Imaginons que nous avons un `fetch_single_data` qui charge des données à partir d'une API pour un grand nombre d'entrées `input_data=[0,1,2,3,4,5,7,8,9]` :
+
+    ```python showLineNumbers
+    @fused.udf
+    def fetch_single_data(single_input: int):
+        import pandas as pd
+        import time
+
+        # Considérant cela comme notre appel API, dormant pour simuler le temps qu'il faut pour obtenir les données
+        time.sleep(3)
+
+        # C'est un petit dataframe, mais nous pourrions aussi enregistrer dans un fichier et retourner le chemin du fichier
+        return pd.DataFrame({"data": [f"processed_{str(single_input)}"]})
+    ```
+    Si nous devions exécuter ce UDF dans [Workbench](/workbench/overview/), nous ne pourrions l'exécuter que pour 1 entrée à la fois, donc nous pourrions modifier notre UDF pour boucler sur les entrées :
+    ```python showLineNumbers
+    @fused.udf
+    def fetch_data(inputs: list):
+        import pandas as pd
+        import time
+
+        fetched_data = []
+        for i in inputs:
+            # Considérant cela comme notre appel API
+            time.sleep(3)
+            fetched_data.append(f"processed_{str(i)}")
+
+        return pd.DataFrame({"data": fetched_data})
+    ```
+    Cependant, exécuter ce UDF avec `fused.run(fetch_data, inputs=input_data)` prendra plus de temps à mesure que nous ajoutons des entrées, nous pourrions même rapidement dépasser [la limite de 120s](/core-concepts/run-udfs/run-small-udfs/#defining-small-job). Nous voulons toujours récupérer des données sur toutes nos entrées, c'est là que [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit) entre en jeu :
+
+    En revenant à notre UDF d'origine, nous pouvons maintenant l'exécuter avec `fused.submit()` pour l'exécuter en parallèle :
+
+    ```python showLineNumbers
+    @fused.udf
+    def load_data_udf(input_data):
+
+        results = fused.submit(
+            fetch_single_data,
+            input_data,
+            engine='local', # Cela garantit que l'UDF est exécuté sur notre serveur local plutôt que de créer de nouvelles instances.
+        )
+        fetched_data = results.collect_df()
+
+        return fetched_data
+    ```
+
+    C'est bien sûr un exemple simplifié, mais cela montre comment vous pouvez utiliser `fused.submit()` pour exécuter un UDF en parallèle pour chaque entrée.
+
+    Cela s'exécute maintenant beaucoup plus rapidement en exécutant le UDF `fetch_single_data` en parallèle pour chaque entrée.
+
+    :::note
+    L'exemple ici bloque le thread principal jusqu'à ce que tous les appels `fused.submit()` soient terminés. Cela signifie que vous pourriez avoir à attendre plus longtemps dans [Workbench](/workbench/overview/) pour que les résultats apparaissent.
+    :::
+
+    Comparaison des deux approches dans Workbench :
+
+    Exécution avec `fused.run()`, 30.89s :
+    ![10 inputs fused.run](/img/user-guide/best-practices/10_udfs_fused_run.png)
+
+    Exécution avec `fused.submit()`, 5.3s :
+    ![10 inputs fused.submit](/img/user-guide/best-practices/10_udfs_fused_submit.png)
+
+</details>
+
+### Utilisez [des instances hors ligne](/core-concepts/run-udfs/run_large/) pour vos gros travaux
+
+Vous pourriez ne pas être en mesure d'exécuter votre UDF dans la limite de 120s de l'appel par défaut [`fused.run(udf)`](/core-concepts/run-udfs/run-small-udfs/#fusedrun) ou de le décomposer en UDF plus petits et de le paralléliser avec [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit). Dans ce cas, vous pouvez [utiliser des instances hors ligne](/core-concepts/run-udfs/run_large/). Celles-ci vous permettent également de :
+- [Choisir des instances](/core-concepts/run-udfs/run_large/#run_batch-instance-arguments) avec plus de mémoire et de CPU
+- Exécuter votre UDF pendant plus de 120s (au prix d'un temps de démarrage plus lent et [nécessitant d'enregistrer vos données dans un stockage](/core-concepts/run-udfs/run_large/#getting-results) pour les récupérer)
+
+Vous pouvez trouver un exemple d'utilisation d'instances hors ligne dans [un de nos exemples de bout en bout](/tutorials/Geospatial%20with%20Fused/use-cases/dark-vessel-detection/#34---ingest-1-month-of-ais-data-into-a-geo-partitioned-format) lors de l'ingestion de données dans des formats cloud natifs partitionnés.
+
+### Mettez en cache autant que vous le pouvez
+
+Fused repose fortement sur [le caching](/core-concepts/cache/) des tâches répétitives pour rendre les appels récurrents beaucoup plus rapides (et plus efficaces en calcul).
+
+✅ Vous souhaitez utiliser le caching pour les fonctions avec des entrées récurrentes :
+- Chargement d'un ensemble de données
+- Calcul d'une opération récurrente avec des variables par défaut
+- Résultats intermédiaires que vous allez réutiliser bientôt
+
+❌ Quand ne pas utiliser le caching :
+- Dans la plupart des cas, pour les fonctions prenant `bounds` comme argument -> votre fonction + cache d'entrée seraient régénérés pour chaque nouveau `bounds` (qui change chaque fois que vous vous déplacez dans la vue [Workbench Map](/workbench/udf-builder/map/) par exemple)
+- Des données que vous souhaitez que d'autres membres de votre équipe ou des personnes extérieures à Fused utilisent. Il vaut mieux écrire vos données dans un stockage cloud comme `s3` ou `gcs`.
+
+<details>
+    <summary>Exemple : Mise en cache d'une tâche répétitive</summary>
+
+    Réutilisant l'exemple de [garder les choses petites](/core-concepts/best-practices/udf-best-practices/#keep-things-small) :
+
+    ❌ Pas recommandé :
+
+    ```python showLineNumbers
+    @fused.udf
+    def inefficient_pipeline_udf(data_path):
+        import pandas as pd
+
+        df = pd.read_csv(data_path)
+        # Une logique de traitement compliquée pour créer df_processed
+        processed_df = ...
+
+        return processed_df
+    ```
+
+    ✅ Au lieu de cela, décomposez-le ET mettez en cache les appels :
+
+    ```python showLineNumbers
+    @fused.udf
+    def load_data_udf(data_path):
+        import pandas as pd
+        return pd.read_csv(data_path)
+    ```
+
+    ```python showLineNumbers
+    @fused.udf
+    def process_data_udf(df):
+        import pandas as pd
+        # Une logique de traitement compliquée pour créer df_processed
+        # ...
+        return processed_df
+    ```
+
+    {/* NOTE: Cela pourrait en fait avoir un impact sur les performances car df doit passer de l'UDF -> serveur Fused -> UDF. Si cela a trop d'impact, nous devons mettre à jour ces directives */}
+    ```python {5-7,9-11} showLineNumbers
+    @fused.udf
+    def pipeline_udf(data_path):
+        import pandas as pd
+
+        @fused.cache
+        def load_data(data_path):
+            return fused.run(load_data_udf, data_path=data_path)
+
+        @fused.cache
+        def process_data(df):
+            return fused.run(process_data_udf, df=df)
+
+        df = load_data(data_path)
+        processed_df = process_data(df)
+
+        return processed_df
+    ```
+</details>
+
+:::tip
+Lisez-en plus sur les détails du caching :
+- [dans la section dédiée](/core-concepts/cache/)
+- Comment vous pouvez utiliser le cache pour [accélérer l'exploration de jeux de données lents à lire](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/why-ingestion/#using-cache-as-a-single-use-ingester)
+:::
+
+### Préparez vos grands ensembles de données
+
+Fused fonctionne au mieux avec des données qui sont rapides à lire et peuvent être lues en tuiles ou en morceaux. Nous savons que la plupart des données disponibles ne sont pas dans les [formats de fichiers les plus efficaces](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/geospatial-file-formats), c'est pourquoi nous fournissons des outils pour [ingérer vos propres données](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/ingest-your-data) dans des formats optimisés pour le cloud et partitionnés.
+
+Nous avons une [page dédiée](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/why-ingestion/#when-is-ingestion-needed) pour quand vous devriez envisager d'ingérer vos propres données. En règle générale, vous devriez envisager d'ingérer vos données lorsque :
+- Les fichiers sont lus plusieurs fois et >100Mo
+- Les fichiers qui sont lents ou nécessitent un certain traitement pour s'ouvrir (par exemple, `.zip`)
+
+### Ne partez pas de zéro : [Catalogue UDF](/workbench/udf-catalog/)
+
+Tout comme utiliser des bibliothèques en Python pour tirer parti des outils existants, vous n'avez pas besoin de partir de zéro dans Fused. Nous avons un [catalogue d'UDF existants](/workbench/udf-catalog/) construit et maintenu par nous et la communauté.
+
+Vous pouvez trouver une multitude d'UDF différents qui peuvent servir de point de départ ou d'inspiration pour créer vos propres UDF :
+- Ensembles de données ouvertes provenant de dépôts ouverts communs [comme les catalogues STAC](https://www.fused.io/workbench/catalog/Sentinel_Tile_Example_2-ddb4c495-40e3-48ba-849c-256487f8a9cb)
+- Exécuter [des prédictions ML à la volée](https://www.fused.io/workbench/catalog/Dl4eo_Airplane_Detection_Global-91f81c0c-08f6-4a0c-82f9-bd2e0322b4e7) sur des images satellites
+- Calculer un [joint spatial](https://www.fused.io/workbench/catalog/Overture_Nsi-dd89972c-ce30-4544-ba0f-81fc09f5bbef) entre 2 ensembles de données
+
+![Catalogue UDF](/img/user-guide/best-practices/udf_catalog.png)
+
+Vous pouvez également [contribuer vos propres UDF](/workbench/udf-catalog/#contribute-to-fused) à la communauté !
+
+## Débogage des UDF
+
+La réalité de l'écriture de code est que des choses se cassent, souvent et parfois de manière mystérieuse. Voici quelques-unes de nos recommandations pour déboguer vos UDF.
+
+### Utilisez `print()`
+
+Les UDF retournent `stdout` soit dans [l'Éditeur de code Workbench](/workbench/udf-builder/code-editor/), soit localement lors de l'exécution de `fused.run(udf)`, donc le moyen le plus simple d'obtenir des informations sur vos UDF est d'utiliser le bon vieux `print` :
+
+```python showLineNumbers
+@fused.udf
+def udf(n: int = 1):
+    print(f"{n=}")
+    return
+```
+
+Depuis Python 3.8, vous pouvez utiliser [le débogage avec f-string](https://docs.python.org/3/whatsnew/3.8.html#f-strings-support-for-self-documenting-expressions-and-debugging), ce que nous vous recommandons d'utiliser :
+```python showLineNumbers
+print(f"{my_fancy_variable=}")
+```
+
+Cela vous permet d'imprimer de nombreuses variables sans vous perdre dans ce qui est quoi.
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+<Tabs className="unique-tabs">
+  <TabItem value="workbench" label="Workbench" default>
+    ![Catalogue UDF](/img/user-guide/best-practices/stdout.png)
+  </TabItem>
+  <TabItem value="notebook" label="notebook" default>
+    ![Catalogue UDF](/img/user-guide/best-practices/notebook_print_stdout.png)
+  </TabItem>
+</Tabs>
+
+### Tapez toutes vos entrées
+
+Nous vous recommandons fortement de [taper](https://docs.python.org/3/library/typing.html) toutes vos entrées avec le type approprié :
+
+```python {3} showLineNumbers
+@fused.udf
+def udf(
+    bounds:fused.types.Bounds=None, n:int=1
+):
+    ...
+    return
+```
+
+Cela a 2 effets :
+- Cela rend votre code plus lisible pour les autres
+- Fused ne prend en charge qu'[un peu de types](/core-concepts/write/#supported-types) pour le moment. Tous les types non typés ou non pris en charge seront passés en tant que `str`.
+
+### Utilisez `time.time()`
+
+Parfois, vous n'êtes pas sûr de ce qui prend autant de temps. Le moyen le plus simple de le découvrir est d'utiliser [`time.time()`](https://docs.python.org/3/library/time.html#time.time) :
+
+<details>
+    <summary>Exemple : trouver un processus lent</summary>
+
+    ```python {4,9-11,17-19} showLineNumbers
+    @fused.udf
+    def udf():
+        import time
+        beginning_time = time.time()
+
+        # long processing step #1
+        time.sleep(5)
+        end_process_1 = time.time()
+        process_time_1 = round(
+            end_process_1 - beginning_time, 2
+        )
+        print(f"{process_time_1=}")
+
+
+        # short processing step
+        time.sleep(0.2)
+        process_time_2 = round(
+            time.time() - end_process_1, 2
+        )
+        print(f"{process_time_2=}")
+
+        return
+    ```
+
+    Cela nous donnerait :
+
+    ```
+    >>> process_time_1=5.0
+    >>> process_time_2=0.2
+    ```
+</details>
+
+### Testez vos UDF avant de les exécuter en parallèle
+
+Lorsque vous utilisez `fused.submit()` pour exécuter un UDF en parallèle, vous pouvez utiliser le `debug_mode` pour exécuter le 1er argument directement afin de tester si votre UDF fonctionne comme prévu :
+
+```python showLineNumbers
+job = fused.submit(udf, inputs, debug_mode=True)
+```
+
+Cela exécute `fused.run(udf, inputs[0])` et retourne les résultats. Cela vous permet de tester rapidement `udf` avant de l'exécuter sur un grand nombre d'entrées.
+
+:::tip
+Puisque [les UDF sont mis en cache par défaut](/core-concepts/cache/#caching-a-udf), utiliser `fused.submit(udf, inputs, debug_mode=True)` signifie que Fused ne réexécutera pas la 1ère entrée, car vous venez de l'exécuter ! (à moins que `udf` ne soit défini avec `cache_max_age=0`)
+:::
+
+
+### Rejoignez le [Discord](https://discord.com/invite/BxS5wMzdRk) pour obtenir de l'aide
+
+Nous hébergeons et gérons un serveur Discord où vous pouvez poser toutes vos questions ! Nous ou la communauté ferons de notre mieux pour vous aider !
+
+![Discord](/img/user-guide/best-practices/discord_server.png)

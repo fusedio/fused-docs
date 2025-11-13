@@ -1,0 +1,108 @@
+---
+slug: file-to-h3
+title: Fichier vers H3
+authors: [fused]
+tags: [h3, géospatial]
+sidebar_position: 1
+---
+
+# Fichier vers H3
+
+Transformer un petit ensemble de données unique en une grille d'hexagones H3.
+
+## Comptage de points à hexagone
+
+L'exemple suivant utilise un simple CSV des [appels 311](https://gist.githubusercontent.com/kashuk/670a350ea1f9fc543c3f6916ab392f62/raw/4c5ced45cc94d5b00e3699dd211ad7125ee6c4d3/NYC311_noise.csv) dans la région de New York, montrant une carte thermique des appels par cellule hex 9.
+
+<iframe 
+  src="https://unstable.fused.io/server/v1/realtime-shared/fc_4RviGoMsnragXi4YvzqFQ4-ny411_noise_sample_visualisation/run/file"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+<details>
+<summary>Code</summary>
+```python showLineNumbers
+@fused.udf
+def udf(
+    noise_311_link: str = "https://gist.githubusercontent.com/kashuk/670a350ea1f9fc543c3f6916ab392f62/raw/4c5ced45cc94d5b00e3699dd211ad7125ee6c4d3/NYC311_noise.csv",
+    res: int = 9
+):
+    # Charger des utilitaires communs (inclut l'aide de duckdb)
+    common = fused.load("https://github.com/fusedio/udfs/tree/b7637ee/public/common/")
+    con = common.duckdb_connect()
+
+    # Garder la latitude et la longitude (moyennées par hex) avec le comptage des hexagones
+    qr = f"""
+    SELECT
+      h3_latlng_to_cell(lat, lng, {res}) AS hex,
+      COUNT(*) AS cnt,
+      AVG(lat) AS lat,
+      AVG(lng) AS lng
+    FROM read_csv_auto('{noise_311_link}')
+    WHERE lat IS NOT NULL AND lng IS NOT NULL
+    GROUP BY 1
+    """
+
+    df = con.sql(qr).df()
+
+    # Débogage : imprimer le schéma du DataFrame résultant
+    print(df.T)
+
+    return df
+```
+</details>
+
+### Exigences
+
+- Fichier unique et petit (< 100 Mo) (GeoJSON, CSV, Parquet, etc.). Dans l'exemple :
+```csv
+lat,lng
+40.7128,-74.0060
+40.7128,-74.0060
+```
+
+- Résolution de l'hexagone (10, 11, 12, etc.). Dans cet exemple :
+```python showLineNumbers
+res: int = 9
+```
+
+- Champ à hexagoniser & Fonction d'agrégation (max 'population', avg 'income', mean 'elevation', etc.). Dans cet exemple, il s'agit simplement de compter le nombre d'appels par hexagone :
+```python showLineNumbers
+# Garder la latitude et la longitude (moyennées par hex) avec le comptage des hexagones
+qr = f"""
+SELECT
+    h3_latlng_to_cell(lat, lng, {res}) AS hex,
+    COUNT(*) AS cnt,
+    AVG(lat) AS lat,
+    AVG(lng) AS lng
+FROM read_csv_auto('{noise_311_link}')
+WHERE lat IS NOT NULL AND lng IS NOT NULL
+GROUP BY 1
+"""
+```
+
+{/* ## Polygone à Hex */}
+
+{/* TODO: Ajouter un exemple de recensement de Milind */}
+
+{/* ## Raster à Hex */}
+
+{/* TOOD: Ajouter un exemple de raster de Milind */}
+
+{/* ## Avancé
+
+### Lissage spatial avec K-Rings
+
+Le carrelage H3 permet également un lissage spatial utilisant des K-Rings */}
+
+
+## Visualiser H3 
+
+{/* ### UDF de carte personnalisée */}
+
+### Dans le visualiseur de carte Workbench
+
+- [Couche `H3HexagonLayer`](/workbench/udf-builder/styling#vector-h3hexagonlayer)

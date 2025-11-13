@@ -1,0 +1,82 @@
+# Écrire des données
+
+Lorsque vous travaillez avec Fused, nous vous recommandons de sauvegarder vos fichiers dans 2 formats : Parquet & Cloud Optimized GeoTIFF (COG).
+
+Lisez-en plus sur [pourquoi nous recommandons ces formats](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/geospatial-file-formats).
+
+### Tableau : vers parquet
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/housing/housing_2024.csv"):
+    import pandas as pd
+    housing = pd.read_csv(path)
+    housing['price_per_area'] = round(housing['price'] / housing['area'], 2)
+    
+    processed_data = housing[['price', 'price_per_area']]
+
+    # Sauvegarde à l'emplacement spécifique de l'utilisateur
+    username = fused.api.whoami()['handle']
+    output_path = f"s3://fused-users/fused/{username}/housing_2024_processed.parquet"
+    processed_data.to_parquet(output_path)
+
+    return f"Fichier sauvegardé à {output_path}"
+```
+
+### Tableau : vers Cloud Optimized GeoTIFF (COG)
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/satellite_imagery/wildfires.tiff"):
+    import rasterio
+    import numpy as np
+    
+    # Lire les données raster
+    with rasterio.open(path) as src:
+        data = src.read()
+        profile = src.profile
+    
+    # Traiter les données
+    processed_data = np.where(data > np.percentile(data, 80), 255, 0).astype(np.uint8)
+    
+    # Mettre à jour le profil pour l'écriture
+    profile.update({
+        'driver': 'GTiff',
+        'compress': 'lzw',
+        'dtype': 'uint8'
+    })
+    
+    # Écrire sur le disque partagé de Fused (accessible à tous les UDF dans l'organisation)
+    username = fused.api.whoami()['handle']
+    output_path = f"/mnt/cache/wildfires_processed_{username}.tif"
+    
+    with rasterio.open(output_path, 'w', **profile) as dst:
+        dst.write(processed_data)
+    
+    return f"Fichier sauvegardé sur le disque partagé à {output_path}"
+```
+
+### Geo-partitionnement de grands ensembles de données : `fused.ingest()`
+
+Les grandes données géospatiales peuvent ne pas être formatées ou partitionnées de manière optimale. Fused offre un moyen simple de [ingérer vos données](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/ingest-your-data) à grande échelle.
+
+```python
+# Obtenez votre identifiant utilisateur 
+user = fused.api.whoami()['handle']
+
+# Ingérer les données du recensement de Washington DC
+job = fused.ingest(
+    input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
+    output=f"fd://{user}/data/census/partitioned/", # Sauvegarde dans votre bucket Fused
+)
+
+job.run_batch()
+```
+
+Vous pouvez suivre les journaux pour voir comment le travail progresse :
+
+```python
+fused.api.job_tail_logs("your-job-id")
+```
+
+En savoir plus sur [l'ingestion de données Fused](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/ingest-your-data)

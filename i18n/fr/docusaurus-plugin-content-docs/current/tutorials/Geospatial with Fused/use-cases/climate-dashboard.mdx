@@ -1,0 +1,278 @@
+---
+id: Climate Dashboard
+title: Climate Dashboard
+sidebar_label: Climate Dashboard
+sidebar_position: 0
+---
+
+import LazyReactPlayer from '@site/src/components/LazyReactPlayer'
+
+# Construction d'un tableau de bord climatique
+
+Nous allons construire un tableau de bord interactif des données de température mondiale, après avoir traité 1 To de données en quelques minutes !
+
+### Installer `fused`
+
+```python
+pip install "fused[all]"
+```
+
+Lisez-en plus sur l'installation de Fused [ici](/python-sdk/#python-install).
+
+<details>
+<summary>Authentification dans Fused</summary>
+
+Dans un notebook :
+
+```python
+from fused.api import NotebookCredentials
+
+credentials = NotebookCredentials()
+print(credentials.url)
+```
+
+Suivez le lien pour vous authentifier.
+
+Lisez-en plus sur [l'authentification dans Fused](/python-sdk/authentication/).
+
+</details>
+
+{/* TODO:  Remove this to clean up. Not needed anymore*/}
+{/* ### Votre première fonction définie par l'utilisateur
+
+Fused est construit autour du concept de [fonctions définies par l'utilisateur (UDFs)](/core-concepts/why/). Ce sont des fonctions Python sans serveur :
+
+```python
+@fused.udf
+def udf(path: str = 's3://fused-asset/data/era5/t2m/datestr=2024-01-01/0.parquet'):
+    import pandas as pd
+    df = pd.read_parquet(path, columns=['daily_mean'])
+
+    return df.head()
+```
+
+Appelez votre UDF pour l'exécuter sur le serveur Fused :
+
+```python
+fused.run(udf)
+```
+
+Vous obtiendrez vos résultats en quelques secondes :
+
+```shell
+>>> 	daily_mean
+hex	
+644014746717455876	268.686016
+644014747002884118	268.747975
+644014747398193161	268.623347
+``` */}
+
+### Traitement de 1 mois
+
+{/* TODO: Have link to ingestion pipeline later on */}
+Les données météorologiques mondiales [ERA5](https://www.ecmwf.int/en/forecasts/dataset/ecmwf-reanalysis-v5) ont été ingérées à l'aide du pipeline d'ingestion de Fused.
+
+```python
+import fused
+```
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+<Tabs className="unique-tabs">
+  <TabItem value="DuckDB">
+    ```python
+      @fused.udf
+      def udf(
+          month: str = "2024-01",
+      ):
+          import duckdb
+          result = duckdb.sql(f"""
+            SELECT 
+                datestr::VARCHAR as datestr,
+                ROUND(AVG(daily_mean), 2) as daily_mean_temp
+            FROM 's3://fused-asset/data/era5/t2m/datestr={month}-*/*.parquet'
+            GROUP BY datestr
+            ORDER BY datestr
+          """).df()
+
+          # Le montage est accessible par les UDFs / Workbench de Fused
+          output_fp = fused.file_path(f"monthly_climate/{month}.pq")
+          result.to_parquet(output_fp)
+
+          return output_fp
+    ```
+  </TabItem>
+  <TabItem value="Pandas">
+
+    REMARQUE : L'approche `pandas` est un peu plus lente que DuckDB.
+
+    ```python
+    @fused.udf
+    def udf(month: str = "2024-01",):
+        import pandas as pd
+
+        files = fused.api.list(f"s3://fused-asset/data/era5/t2m/datestr={month}-")
+
+        dfs = [pd.read_parquet(file, columns=['daily_mean']).assign(datestr=file.split('datestr=')[1].split('/')[0]) for file in files]
+        result = pd.concat(dfs).groupby('datestr')['daily_mean'].mean().round(2).reset_index()
+
+        # Le montage est accessible par les UDFs / Workbench de Fused
+        output_fp = fused.file_path(f"monthly_climate/{month}.pq")
+        result.to_parquet(output_fp)
+        
+        return result
+    ```
+
+  </TabItem>
+</Tabs>
+
+Lisez-en plus sur [`fused.file_path()`](/python-sdk/top-level-functions/#fusedfile_path) et [montage](/core-concepts/content-management/file-system/#mntcache-disk)
+
+Exécuter cela depuis un notebook :
+```python
+# Exécution dans un notebook. Pas besoin de fused.run() dans le workbench
+fused.run(udf)
+```
+
+Nous ne retournons que le chemin du fichier pour limiter le transfert de données entre le serveur Fused < - > notre notebook. C'est pourquoi nous imprimons le dataframe :
+
+```shell
+>>>   result.T=                         0           1   ...          29          30
+datestr          2024-01-01  2024-01-02  ...  2024-01-30  2024-01-31
+daily_mean_temp      277.85      277.63  ...      277.93      278.11
+```
+
+### 20 ans de données (1 To en < 1 min !)
+
+Explorez les données disponibles par vous-même dans [File Explorer](https://www.fused.io/workbench/files?path=s3%3A%2F%2Ffused-asset%2Fdata%2Fera5%2Ft2m%2F)
+
+Nous allons traiter 20 ans de données :
+
+```python
+data_until = 2005
+
+available_days = fused.api.list('s3://fused-asset/data/era5/t2m/')
+recent_months = list(set([
+   path.split('datestr=')[1][:7] for path in available_days 
+   if int(path.split('datestr=')[1][:4]) >= data_until
+]))
+```
+
+Cela correspond à ~1 To de données !
+
+<details>
+<summary>Calcul rapide de la taille des données</summary>
+
+Chaque fichier faisant environ 140 Mo, un calcul rapide nous donne :
+```python
+recent_days = [day for day in available_days if day.split('datestr=')[1][:7] in recent_months]
+len(recent_days) * 140 / 1000 # taille en Go des fichiers que nous allons traiter
+```
+
+```bash
+1005.62
+```
+</details>
+
+Fused nous permet d'exécuter un [UDF en parallèle](/core-concepts/run-udfs/run-small-udfs/#running-jobs-in-parallel-fusedsubmit). Nous allons donc traiter 1 mois de données à travers des centaines de travaux :
+
+```python
+results = fused.submit(
+  udf, 
+  recent_months, 
+  max_workers=250, 
+  collect=False
+)
+```
+
+Voir une barre de progression des travaux en cours :
+
+```python
+results.wait()
+```
+
+Voir combien de temps tous les travaux ont pris :
+
+```python
+results.total_time()
+```
+
+```bash
+>>> datetime.timedelta(seconds=40, ...)
+```
+
+**Nous venons de traiter 20 ans de données mondiales, plus de 1 To en 40s !!**
+
+Nous pouvons maintenant écrire un UDF qui obtient toutes les données mensuelles et les agrège par mois :
+
+```python
+@fused.udf(cache_max_age='0s')
+def udf():
+    import duckdb
+    
+    # Lister tous les fichiers dans notre répertoire de montage
+    monthlys = fused.api.list(fused.file_path(f"monthly_climate/"))
+    file_list = "', '".join(monthlys)
+    
+    result = duckdb.sql(f"""
+       SELECT 
+           LEFT(datestr, 7) as month,
+           ROUND(AVG(daily_mean_temp), 2) as monthly_mean_temp
+       FROM read_parquet(['{file_list}'])
+       GROUP BY month
+       ORDER BY month
+    """).df()
+
+    return result
+```
+
+Au lieu de l'exécuter localement, nous allons l'ouvrir dans [Workbench](/workbench/), l'IDE basé sur le web de Fused :
+
+```python
+# Enregistrer dans Fused
+udf.to_fused("monthly_mean_temp")
+
+# Charger à nouveau pour obtenir l'URL du Workbench
+loaded_udf = fused.load("monthly_mean_temp")
+```
+
+Retournez `loaded_udf` dans un notebook et vous obtiendrez une URL qui vous mènera au Workbench :
+
+```python
+loaded_udf
+```
+
+Cliquez sur le lien pour ouvrir le UDF dans Workbench. Cliquez sur "+ Ajouter au constructeur de UDF" 
+
+![Agrégation de la température mensuelle dans Workbench](/img/uses-cases/climate_dashboard/climate_agg.png)
+
+
+{/* TODO: Add a screenshot of Table view in Wb */}
+
+### Graphique interactif (avec IA)
+
+Vous pouvez utiliser l'assistant IA pour vous aider à coder un graphique interactif de vos données.
+
+Il vous suffit de demander à l'IA :
+
+```
+Faites un graphique interactif des données de température mensuelles
+```
+
+Vous pouvez ensuite partager votre graphique :
+- Enregistrer (`Cmd + S` sur MacOS ou cliquez sur le bouton "Enregistrer")
+- Cliquez sur le bouton "URL" pour voir le graphique déployé !
+
+Chaque fois que vous effectuez une mise à jour, votre graphique se mettra automatiquement à jour !
+
+<LazyReactPlayer 
+  playsinline={true} 
+  className="video__player" 
+  playing={true} 
+  muted={true} 
+  controls 
+  height="100%" 
+  url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/climate_dashboard/sharing_grpah.mp4" 
+  width="100%" 
+/>

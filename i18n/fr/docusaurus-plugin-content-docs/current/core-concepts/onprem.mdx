@@ -1,0 +1,356 @@
+---
+title: 🐳 Sur site
+sidebar_label: Sur site
+id: onprem
+sidebar_position: 6
+---
+
+Fused propose une version sur site de l'application dans un conteneur Docker. Le conteneur fonctionne dans votre environnement informatique (comme AWS, GCP ou Azure) et vos données restent sous votre contrôle.
+
+L'image du conteneur est actuellement distribuée via une version privée. Envoyez un e-mail à `info@fused.io` pour accéder.
+
+## Guide d'installation de Fused On-Prem Docker
+
+![Sur site](/img/advanced/on_prem_diagram.png)
+
+_Diagramme de l'architecture du système_
+
+### 1. Installer Docker
+
+Suivez ces étapes pour installer Docker sur un environnement bare-metal :
+
+Étape 1 : Mettre à jour les paquets du système
+
+Assurez-vous que votre système est à jour :
+```bash
+sudo apt update && sudo apt upgrade -y
+```
+
+Étape 2 : Démarrer et activer Docker
+```bash
+sudo apt install -y ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/debian/gpg | sudo tee /etc/apt/keyrings/docker.asc > /dev/null
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable docker
+sudo systemctl start docker
+```
+
+Étape 3 : Ajouter la permission Docker à l'utilisateur local (après l'exécution de cette commande, la session shell doit être redémarrée)
+```bash
+sudo usermod -G docker $(whoami)
+```
+
+Étape 4 : Configurer le registre d'artefacts
+```bash
+gcloud auth configure-docker us-west1-docker.pkg.dev
+```
+
+### 2. Installer les dépendances et créer un environnement virtuel
+
+Étape 1 : Installer pip
+```bash
+sudo apt install python3-pip python3.11-venv
+```
+
+Étape 2 : Créer un environnement virtuel
+```bash
+python3 -m venv venv
+```
+
+Étape 3 : Activer l'environnement virtuel
+```bash
+source venv/bin/activate
+```
+
+Étape 4 : Installer Fused et les dépendances
+```bash
+pip install pandas ipython https://fused-magic.s3.us-west-2.amazonaws.com/fused-1.14.1.dev2%2B2c8d59a-py3-none-any.whl
+```
+
+### 3. Configurer Fused sur le conteneur Docker
+
+Exécutez ce qui suit dans un environnement Python à l'intérieur du conteneur pour configurer le profil sur site. L'équipe de Fused fournira des valeurs spécifiques à votre compte via une communication sécurisée.
+
+```python showLineNumbers
+# Exécutez ceci localement - pas dans Workbench
+import fused
+
+fused.options.base_url = "***"
+fused.options.auth.client_id = "***"
+fused.options.auth.client_secret = "***"
+fused.options.auth.audience = "***"
+fused.options.auth.oauth_token_url = "***"
+fused.options.auth.authorize_url = "***"
+
+fused.options.save()
+```
+
+Le code ci-dessus n'a besoin d'être exécuté qu'une seule fois. Une fois cela terminé, Fused utilisera la configuration locale pour les futurs travaux par lots.
+
+:::note
+Si Fused a déjà été configuré pour des travaux par lots, vous devrez peut-être supprimer le répertoire local `~/.fused` avant d'exécuter le code ci-dessus.
+:::
+
+### 4. Authentifier un compte utilisateur Fused individuel
+
+Étape 1 : Démarrer un shell Python
+```bash
+python
+```
+Étape 2 : Obtenir l'URL des informations d'identification
+
+```python showLineNumbers
+# Exécutez ceci localement - pas dans Workbench
+import fused
+credentials = fused.api.NotebookCredentials()
+credentials.url
+```
+
+Étape 3 :
+Allez à l'URL des informations d'identification de l'étape précédente dans un navigateur web. Copiez le code qui est généré et collez-le dans Python.
+```python showLineNumbers
+# Exécutez ceci localement - pas dans Workbench
+credentials.finalize(code="xxxxxxxxxxxxxxx")
+```
+
+### 5. Créer une clé de compte de service Google Cloud et l'ajouter à Fused
+
+Étape 1 :
+Dans Google Cloud Console, allez à `IAM & Admin > Comptes de service`. Sélectionnez le compte de service que vous souhaitez utiliser, cliquez sur les trois points à droite et sélectionnez `Gérer les clés`. Choisissez JSON et téléchargez la clé.
+
+Étape 2 :
+Connectez-vous aux [paramètres de l'environnement de Fused workbench](https://www.fused.io/workbench/settings/environment). Cliquez sur `Ajouter un nouveau secret`. Pour le nom, utilisez `gcs_fused` et pour la valeur, collez le contenu du fichier clé JSON.
+
+### 6. Exécuter l'API Fused : Tester UDF
+
+{/* TODO: Nous devons ajouter une section indiquant que cela écrit dans S3, donc si utilisé sur GCS, nous devons communiquer à l'utilisateur qu'il ne doit rien retourner mais écrire ses données ailleurs */}
+
+Étape 1 : Ouvrir [Fused Workbench](/workbench/udf-builder/code-editor/), créer un "Nouvel UDF" et copier cet UDF dans Workbench :
+
+```python showLineNumbers
+# Exécutez ceci localement dans le notebook - pas dans Workbench
+@fused.udf
+def udf(datestr=0):
+  import loguru
+  loguru.logger.info(f'hello world {datestr}')
+```
+
+Étape 2 : Renommer cet UDF en "hello_world_udf" & Enregistrer
+
+![Hello World UDF](/img/advanced/hello_world_udf.png)
+
+Étape 3 : Démarrer un shell Python
+```bash
+python
+```
+
+Étape 4 : Exécuter l'UDF depuis Python
+
+```python showLineNumbers
+# Exécutez ceci localement - pas dans Workbench
+import fused
+
+fused.api.FusedAPI()
+
+my_udf = fused.load("hello_world_udf") # Assurez-vous que c'est le même nom que l'UDF que vous avez enregistré
+job = my_udf(arg_list=[1, 2])
+fused.api.FusedDockerAPI(
+  set_global_api=True,
+  is_gcp=True,
+  repository="us-west1-docker.pkg.dev/daring-agent-375719/fused-job2/fused-job2",
+  additional_docker_args=[
+    "-e","FUSED_SERVER_ROOT=https://app.fused.io/server/v1"
+  ]
+)
+
+job_status = job.run_batch()
+job_status.run_and_tail_output()
+```
+
+Optionnellement, pour monter un volume de filestore sur le nœud qui exécute le travail, ajoutez ce qui suit aux `additional_docker_args`. Cela suppose que le filestore est monté à `/mnt/cache` sur la machine hôte.
+```python showLineNumbers
+# Exécutez ceci localement - pas dans Workbench
+additional_docker_args=["-v", "/mnt/cache:/mnt/cache"]
+```
+
+### 7. Exécuter l'API Fused : Exemple avec UDF d'ingestion ETL
+
+Maintenant que nous avons testé un UDF simple, nous pouvons passer à un UDF plus utile.
+
+Étape 1 : Ouvrir [Fused Workbench](/workbench/udf-builder/code-editor/), créer un "Nouvel UDF" et copier cet UDF dans Workbench :
+
+:::note
+Vous aurez besoin d'un bucket GCS pour enregistrer cela, passez-le à `bucket_name` dans la définition de l'UDF pour l'instant.
+:::
+
+```python {2,13} showLineNumbers
+@fused.udf
+def udf(datestr: str='2001-01-03', res:int=15, var='t2m', row_group_size:int=20_000, bucket_name:str):
+  import pandas as pd
+  import h3
+  import xarray
+  import io
+  import pyarrow.parquet as pq
+  import pyarrow as pa
+  import gcsfs
+  import json
+
+  path_in=f'https://storage.googleapis.com/gcp-public-data-arco-era5/raw/date-variable-single_level/{datestr.replace("-","/")}/2m_temperature/surface.nc'
+  path_out=f"gs://{bucket_name}/data/era5/t2m/datestr={datestr}/0.parquet"
+
+  if len(fused.api.list(path_out))>0:
+    df = pd.DataFrame([{'status':'Déjà existant.'}])
+    print("Déjà existant")
+    return None
+
+  def get_data(path_in, path_out):
+    path = fused.download(path_in, path_in)
+    xds = xarray.open_dataset(path)
+    df = xds[var].to_dataframe().unstack(0)
+    df.columns = df.columns.droplevel(0)
+    df['hex'] = df.index.map(lambda x:h3.api.basic_int.latlng_to_cell(x[0],x[1],res))
+    df = df.set_index('hex').sort_index()
+    df.columns=[f'heure{hr}' for hr in range(24)]
+    df['daily_min'] = df.iloc[:,:24].values.min(axis=1)
+    df['daily_max'] = df.iloc[:,:24].values.max(axis=1)
+    df['daily_mean'] = df.iloc[:,:24].values.mean(axis=1)
+    return df
+
+  df = get_data(path_in, path_out)
+
+  memory_buffer = io.BytesIO()
+  table = pa.Table.from_pandas(df)
+  pq.write_table(table, memory_buffer, row_group_size=row_group_size, compression='zstd', write_statistics=True)
+  memory_buffer.seek(0)
+
+  gcs = gcsfs.GCSFileSystem(token=json.loads(fused.secrets['gcs_fused']))
+  with gcs.open(path_out, "wb") as f:
+    f.write(memory_buffer.getvalue())
+
+  print(df.shape)
+  return None
+```
+
+Étape 2 : Renommer cet UDF en "ETL_Ingest"
+
+![Ingest ETL dans workbench](/img/advanced/ETL_udf.png)
+
+Étape 3 : Démarrer un shell Python
+```bash
+python
+```
+
+Étape 4 : Exécuter l'UDF
+
+```python showLineNumbers
+# Exécutez ceci localement - pas dans Workbench
+import fused
+import pandas as pd
+fused.api.FusedAPI()
+
+udf = fused.load("ETL_ingest")
+start_datestr='2020-02-01'; end_datestr='2020-03-01';
+arg_list = pd.date_range(start=start_datestr, end=end_datestr).strftime('%Y-%m-%d').tolist()
+job = udf(arg_list=arg_list)
+
+fused.api.FusedDockerAPI(
+  set_global_api=True,
+  is_gcp=True,
+  repository="us-west1-docker.pkg.dev/daring-agent-375719/fused-job2/fused-job2",
+  additional_docker_args=[
+    "-e","FUSED_SERVER_ROOT=https://app.fused.io/server/v1", "-v", "./.fused:/root/.fused"
+  ]
+)
+
+job_status = job.run_batch()
+job_status.run_and_tail_output()
+```
+
+
+
+## Commandes
+
+### `run-config`
+
+`run-config` exécute les travaux de l'utilisateur. La configuration du travail peut être spécifiée soit sur la ligne de commande, soit comme un chemin de fichier local, soit comme un chemin S3/GCS. Dans tous les cas, la configuration du travail est chargée au format JSON.
+
+```
+Options:
+  --config-from-gcs FILE_NAME   Configuration de l'étape de travail, sous forme de chemin GCS
+  --config-from-s3 FILE_NAME    Configuration de l'étape de travail, sous forme de chemin S3
+  --config-from-file FILE_NAME  Configuration de l'étape de travail, sous forme de nom de fichier que
+                                l'application peut charger (c'est-à-dire monté dans le
+                                conteneur)
+  -c, --config JSON             Configuration du travail à exécuter, au format JSON
+  --help                        Afficher ce message et quitter.
+```
+
+### `version`
+
+Affiche la version du conteneur et quitte.
+
+## Variables d'environnement
+
+Le conteneur sur site peut être configuré avec les variables d'environnement suivantes.
+
+- `FUSED_AUTH_TOKEN`: Token Fused pour l'utilisateur ou l'équipe licencié. Lors de l'utilisation de FusedDockerAPI, ce token est automatiquement récupéré.
+- `FUSED_DATA_DIRECTORY`: Le chemin vers un répertoire existant à utiliser pour stocker des fichiers temporaires. Cela peut être l'emplacement où un volume plus grand est monté à l'intérieur du conteneur. Par défaut, cela correspond au répertoire temporaire de Python.
+- `FUSED_GCP`: Si "true", active les fonctionnalités spécifiques à GCP. Par défaut, c'est faux.
+- `FUSED_AWS`: Si "true", active les fonctionnalités spécifiques à AWS. Par défaut, c'est faux.
+- `FUSED_AWS_REGION`: La région AWS actuelle.
+- `FUSED_LOG_MIN_LEVEL`: Seuls les journaux avec ce niveau de gravité ou supérieur seront émis. Par défaut, c'est "DEBUG".
+- `FUSED_LOG_SERIALIZE`: Si "true", les journaux seront écrits sous forme sérialisée, au format JSON. Par défaut, c'est faux.
+- `FUSED_LOG_AWS_LOG_GROUP_NAME`: Le groupe de journaux CloudWatch pour émettre des journaux. Par défaut, cela ne utilise pas CloudWatch Logs.
+- `FUSED_LOG_AWS_LOG_STREAM_NAME`: Le flux de journaux CloudWatch à créer et émettre des journaux. Par défaut, cela ne utilise pas CloudWatch Logs.
+- `FUSED_PROCESS_CONCURRENCY`: Le niveau de concurrence des processus à utiliser. Par défaut, c'est le nombre de cœurs CPU.
+- `FUSED_CREDENTIAL_PROVIDER`: D'où obtenir les informations d'identification AWS. L'un de "default" (par défaut à ec2 sur AWS, ou aucun sinon), "none", "ec2" (utiliser les métadonnées de l'instance EC2), ou "earthdata" (utiliser les informations d'identification EarthData dans `FUSED_EARTHDATALOGIN_USERNAME` et `FUSED_EARTHDATALOGIN_PASSWORD`).
+- `FUSED_EARTHDATALOGIN_USERNAME`: Nom d'utilisateur lors de l'utilisation du fournisseur d'informations d'identification earthdata, ci-dessus.
+- `FUSED_EARTHDATALOGIN_PASSWORD`: Mot de passe lors de l'utilisation du fournisseur d'informations d'identification earthdata, ci-dessus.
+- `FUSED_IGNORE_ERRORS`: Si "true", continuer à traiter même si certaines calculs renvoient des erreurs. Par défaut, c'est faux.
+- `FUSED_DISK_SPACE_GB`: Espace disque maximum disponible pour le travail, par exemple pour les fichiers temporaires sur disque, en gigaoctets.
+
+## Connexion à un bucket S3 chiffré
+
+Pour se connecter à un bucket S3 chiffré, l'accès à la fois au bucket et à la clé KMS est requis. La clé KMS doit être dans la même région que le bucket. Les étapes suivantes sont nécessaires pour connecter un bucket S3 chiffré :
+
+- Configurer la politique KMS
+```json
+{
+  "Sid": "AllowCrossAccountUseOfKMS",
+  "Effect": "Allow",
+  "Principal": {
+    "AWS": "arn:aws:iam::<FUSED_ACCOUNT>:role/<FUSED_ROLE_NAME>"
+  },
+  "Action": [
+    "kms:Decrypt",
+    "kms:Encrypt",
+    "kms:GenerateDataKey*",
+    "kms:DescribeKey"
+  ],
+  "Resource": "*"
+}
+```
+
+- Configurer la politique du bucket S3
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::<FUSED_ACCOUNT>:role/<FUSED_ROLE_NAME>"
+      },
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::<BUCKET_NAME>",
+        "arn:aws:s3:::<BUCKET_NAME>/*"
+      ]
+    }
+  ]
+}
+```

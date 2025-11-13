@@ -1,0 +1,82 @@
+---
+title: Batch jobs
+sidebar_label: Batch jobs
+unlisted: true
+---
+
+import LinkButtons from "@site/src/components/LinkButtons.jsx";
+import CellOutput from "@site/src/components/CellOutput.jsx";
+import {BokehFigure, PlotlyFigure} from "@site/src/components/Plotting.jsx";
+
+Ce guide montre comment exécuter un travail par lots avec [fused-py](/python-sdk/) depuis un Jupyter Notebook. Il a été inspiré par une [demande de la communauté Discord](https://discord.com/channels/1199097729243152434/1267578417411526788/1267578417411526788).
+
+L'exécution de processus longs peut être coûteuse en calcul ou sujette à des interruptions dues à des déconnexions réseau. Pour ces cas, [`fused-py`](/python-sdk/) peut exécuter des travaux par lots sur une instance EC2.
+
+Pour illustrer, ce guide montre comment déclencher et surveiller un travail par lots depuis un Jupyter Notebook pour décompresser un gros fichier et le télécharger sur S3.
+
+Cette UDF télécharge un fichier compressé depuis le chemin S3 spécifié par `source_s3_path`, le décompresse, puis le télécharge vers le chemin S3 spécifié par `destination_s3_path`.
+
+## 1. Définir UDF
+
+Cette UDF télécharge un fichier compressé avec `fused.download`, le décompresse et télécharge les fichiers extraits vers le `destination_s3_path`. Pour simplifier, vous pouvez choisir d'écrire dans le chemin de votre bucket S3 Fused que vous pouvez trouver dans votre [Explorateur de fichiers Workbench](/workbench/file-explorer/) - sinon, vous devrez peut-être ajuster les autorisations du bucket cible.
+
+```python showLineNumbers
+import fused
+
+@fused.udf
+def udf(
+    source_s3_path = '',
+    destination_s3_path = ''
+):
+    import zipfile
+    import s3fs
+    import os
+    import pandas as pd
+
+    file_path = fused.download(source_s3_path, source_s3_path.split('/')[-1])
+
+    # Créer un répertoire temporaire pour extraire les fichiers
+    s3 = s3fs.S3FileSystem()
+    with zipfile.ZipFile(file_path, 'r') as zip_ref:
+        zip_ref.extractall('/tmp/unzipped_files')
+
+    # Télécharger chaque fichier vers le bucket S3
+    for root, dirs, files in os.walk('/tmp/unzipped_files'):
+        for file in files:
+            file_path = os.path.join(root, file)
+            print('file_path', file_path, destination_s3_path)
+            s3.put(file_path, destination_s3_path)
+
+    return pd.DataFrame({'status': ['success']}) # Les UDF doivent retourner une table ou un raster
+
+```
+
+## 2. Exécuter UDF [sur une instance hors ligne](/core-concepts/run-udfs/run_large/)
+
+Pour dépasser la limite de 120s de l'appel par défaut [`fused.run(udf)`](/core-concepts/run-udfs/run-small-udfs/#fusedrun), nous allons définir un travail et utiliser [`job.run_batch()`](/core-concepts/run-udfs/run_large/#running-a-large-job-jobrun_batch) pour lancer un appel sur une grande instance hors ligne. Contactez Fused si votre compte n'a pas le mode par lots activé.
+
+Remarque : Assurez-vous de remplacer `<YOUR_DIR>` par votre propre répertoire.
+
+```python showLineNumbers
+# Exécutez cela localement - pas dans Workbench
+job = udf(
+    source_s3_path = 'https://datadownload-production.s3.amazonaws.com/WCMC_carbon_tonnes_per_ha.zip', 
+    destination_s3_path = 's3://fused-users/fused/<YOUR_DIR>/dswid/WCMC_carbon_tonnes_per_ha_10gb/'
+)
+job_id = job.run_batch()
+```
+
+## 3. Surveiller le travail
+
+`job_id` dispose d'[un certain nombre de méthodes pour surveiller le travail](/core-concepts/run-udfs/run_large/#accessing-job-logs). Par exemple, `job_tail_logs` diffuse les journaux pendant que le travail s'exécute.
+
+```python showLineNumbers
+fused.api.job_tail_logs("df335890-4406-4832-bf93-6a3b092e496d")
+```
+
+<CellOutput>
+{
+  `Logs for: df335890-4406-4832-bf93-6a3b092e496d
+Configuring packages and waiting for logs...`
+}
+</CellOutput>

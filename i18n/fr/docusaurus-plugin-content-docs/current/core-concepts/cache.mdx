@@ -1,0 +1,420 @@
+---
+id: cache
+title: Caching
+tags: [cache]
+sidebar_position: 5
+---
+
+# Caching
+
+_Cette page explique comment le caching rend Fused plus réactif et quelques meilleures pratiques pour en tirer le meilleur parti_
+
+## Caching Basics
+
+L'objectif de Fused est de rendre le développement et l'exécution de code plus rapides pour les data scientists. Cela se fait en utilisant des [formats de fichiers efficaces](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/geospatial-file-formats) et en rendant les [UDFs simples à exécuter](/core-concepts/run-udfs/). En plus de cela, Fused s'appuie fortement sur le caching pour rendre les appels récurrents beaucoup plus rapides.
+
+À un niveau élevé, le caching consiste à stocker la sortie d'une fonction exécutée avec une certaine entrée afin que nous puissions accéder directement au résultat la prochaine fois que cette fonction est appelée avec la même entrée, plutôt que de le recalculer pour gagner du temps et réduire les coûts de traitement.
+
+![Function + Input run](/img/core-concepts/caching/function_input_run_cache.png)
+
+_La première exécution d'une [Function + Input] est traitée, mais la prochaine fois que cette même combinaison est appelée, le résultat est récupéré beaucoup plus rapidement_
+
+Cependant, dès que la fonction ou les entrées changent, la sortie doit être traitée (car le résultat de cette nouvelle combinaison n'a pas été calculé auparavant)
+
+![Different Function + Input run](/img/core-concepts/caching/running_different_function.png)
+
+Fused utilise quelques types de cache différents, mais ils fonctionnent tous de la même manière
+
+
+## Caching any Python function: [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
+
+### Locally
+
+Toute fonction Python, que ce soit à l'intérieur d'un UDF ou même localement sur votre machine, peut être mise en cache en utilisant le décorateur [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) autour de celle-ci :
+
+```python {5} showLineNumbers
+# This works locally on your machine
+import python
+from datetime import datetime
+
+@fused.cache(cache_max_age='30s')
+def telling_time():
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return current_time
+
+telling_time()
+```
+
+![Fused_cache_function_locally](/img/core-concepts/caching/fused_cache_function.png)
+
+Comme vu dans les journaux de débogage, vos données mises en cache seront enregistrées sous `/tmp/cached_data/tmp/` localement.
+
+:::tip
+De manière similaire à ce qui se passe avec [`fused.run()`](/python-sdk/top-level-functions/#fusedrun), vous pouvez écraser [`cache_max_age`](/core-concepts/cache/#defining-your-cache-lifetime-cache_max_age) lorsque vous exécutez votre fonction directement :
+
+```python showLineNumbers
+telling_time(cache_max_age="0s") # Overwrite cache duration to be 0s, i.e. no caching
+```
+:::
+
+### Inside a UDF
+
+Cela fonctionne également à l'intérieur d'un UDF en passant le décorateur [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) autour de n'importe quelle fonction :
+
+```python {5} showLineNumbers
+@fused.udf
+def udf():
+    import pandas as pd
+
+    @fused.cache
+    def load_data(i):
+        # Do heavy processing here
+        return pd.DataFrame({"id": [i]})
+
+    df_first = load_data(i=1)
+    df_first_repeat = load_data(i=1)
+    df_second = load_data(i=2)
+
+    return pd.concat([df_first, df_first_repeat, df_second])
+```
+
+Sous le capot :
+- La première fois que Fused voit le code de la fonction et les paramètres, Fused exécute la fonction et stocke la valeur de retour dans un cache.
+    - C'est ce qui se passe dans notre exemple ci-dessus, ligne 10 : `load_data(i=1)`
+- La prochaine fois que la fonction est appelée avec les mêmes paramètres et le même code, Fused saute l'exécution de la fonction et retourne la valeur mise en cache
+    - Exemple ci-dessus : ligne 11, `df_first_repeat` est le même appel que `df_first`, donc la fonction est simplement récupérée du cache, pas recalculée
+- Dès que la fonction _ou_ l'entrée change, Fused recalculera la fonction
+    - Exemple ci-dessus : ligne 12 avec `i=2`, ce qui est différent des appels précédents
+
+**Implementation Details**
+
+Une fonction mise en cache avec [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) est :
+- Mise en cache pour [12h par défaut](/python-sdk/top-level-functions/#fusedcache) (peut être modifiée avec [`cache_max_age`](/core-concepts/cache/#defining-your-cache-lifetime-cache_max_age))
+- Stockée sous forme de fichier pickle sur `mount/`
+
+### Benchmark: With / without [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
+
+Utiliser [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) est principalement utile pour mettre en cache des fonctions qui ont des appels longs et répétitifs, comme par exemple le chargement de données à partir de formats de fichiers lents.
+
+Voici 2 UDF simples pour démontrer l'impact :
+- `without_cache_loading_udf` -> N'utilise pas de cache
+- `with_cache_loading_udf` -> Met en cache le chargement d'un CSV
+
+```python {6} showLineNumbers
+@fused.udf
+def without_cache_loading_udf(
+    ship_length_meters: int = 100,
+    ais_path: str = "s3://fused-users/fused/file_format_demo/AIS_2024_01_01_100k_points.csv"
+):
+    # @fused.cache
+    def load_ais_data(ais_path: str):
+        import pandas as pd
+        return pd.read_csv(ais_path)
+
+    ais = load_ais_data(ais_path)
+
+    return ais[ais.Length > ship_length_meters]
+```
+
+et le même :
+```python {6} showLineNumbers
+@fused.udf
+def with_cache_loading_udf(
+    ship_length_meters: int = 100,
+    ais_path: str = "s3://fused-users/fused/file_format_demo/AIS_2024_01_01_100k_points.csv"
+):
+    @fused.cache
+    def load_ais_data(ais_path: str):
+        import pandas as pd
+        return pd.read_csv(ais_path)
+
+    ais = load_ais_data(ais_path)
+
+    return ais[ais.Length > ship_length_meters]
+```
+
+Comparaison des 2 :
+
+![Caching benchmark](/img/core-concepts/caching/caching_benchmark.png)
+
+### Best Practices: [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
+
+Mettre en cache une fonction locale ou à l'intérieur d'un UDF fonctionne le mieux pour :
+- Charger des données à partir de formats lents (CSV, Shapefile)
+- Opérations répétitives qui peuvent prendre beaucoup de temps de traitement
+
+Cependant, méfiez-vous de compter sur [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) pour charger des ensembles de données très volumineux (>10 Go) car le cache n'est stocké que pendant quelques heures par défaut et est écrasé chaque fois que vous modifiez la fonction ou les entrées mises en cache.
+
+Consultez [l'ingestion de vos données](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/) dans des [formats natifs cloud partitionnés](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/geospatial-file-formats) si vous travaillez avec de grands ensembles de données.
+
+:::tip
+La frontière entre le moment d'ingérer vos données ou d'utiliser `@fused.cache` pour charger des données à l'intérieur d'un UDF est un peu floue. Consultez [cette section](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/why-ingestion/#using-cache-as-a-single-use-ingester) pour en savoir plus
+:::
+
+### Example use cases
+
+Vous pouvez consulter quelques cas d'utilisation réels dans certains de nos Exemples :
+- [Mise en cache d'une requête de catalogue STAC](/tutorials/Geospatial%20with%20Fused/use-cases/dark-vessel-detection/#41-cleaning-our-sentinel-1-udf) lors de la récupération d'une image satellite radar Sentinel 1 dans notre exemple de Détection de Vaisseaux Sombres
+- [Lisez l'utilisation de `@fused.cache` par Jeff Faudi](/blog/ai-for-object-detection-on-50cm-imagery/#implementing-aircraft-detection) pour exécuter un modèle d'inférence ML pour la détection d'avions. (Voir le [UDF public](https://github.com/fusedio/udfs/tree/main/public/DL4EO_Airplane_Detection) par vous-même)
+
+## Caching a UDF
+
+Bien que [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) vous permette de mettre en cache des fonctions localement ou _à l'intérieur_ des UDF, les UDF exécutés avec [`fused.run()`](/python-sdk/top-level-functions/#fusedrun) sont mis en cache par défaut sur le serveur Fused.
+
+Vous pouvez créer un token pour votre UDF en Python en enregistrant d'abord votre UDF sur le serveur Fused :
+
+```python showLineNumbers
+@fused.udf
+def slow_caching_udf():
+    import time
+    import pandas as pd
+    
+    time.sleep(5)
+    
+    return pd.DataFrame({"output": ["I'm done running my long task!"]})
+
+fused.run(slow_caching_udf)
+```
+
+Nous pouvons démontrer ce caching avec un UDF qui contient un `time.sleep(5)`. Exécuter ce même UDF deux fois :
+
+![Cached_fused_run_udf](/img/core-concepts/caching/cached_fused_run_udf.png)
+
+Cela signifie que les UDF qui sont appelés de manière répétée avec `fused.run()` deviennent beaucoup plus réactifs. N'oubliez pas une fois de plus que les UDF sont recalculés chaque fois que quelque chose dans la fonction UDF ou les entrées changent !
+
+**Implementation Details**
+
+Les UDF mis en cache sont :
+- Stockés pendant 90 jours par défaut (voir [Python SDK](/python-sdk/top-level-functions/#fusedudf) pour plus de détails)
+- Stockés sur S3
+- Vous pouvez écraser l'âge du cache en passant [`cache_max_age`](/core-concepts/cache/#defining-your-cache-lifetime-cache_max_age) soit lors de la définition de l'UDF avec [`@fused.udf(cache_max_age)`](/python-sdk/top-level-functions/#fusedudf) ou lors de l'exécution de l'UDF avec [`fused.run(udf, cache_max_age)`](/python-sdk/top-level-functions/#fusedrun)
+
+:::note Les arguments par défaut sont évalués lors de la définition de la fonction
+Notez que les UDF fonctionnent de manière similaire aux fonctions Python régulières, les arguments par défaut sont évalués lors de la définition de la fonction, et non lors de son appel.
+
+Par exemple :
+```python
+import datetime
+
+@fused.udf
+def abc(d: str = datetime.datetime.now().strftime('%Y-%m-%D')):
+    print("with default", d)
+```
+
+et
+```python
+@fused.udf
+def abc(d: str = None):
+    import datetime
+    d = datetime.datetime.now().strftime('%Y-%m-%D')
+    print("with default", d)
+```
+
+Seront tous deux mis en cache de manière similaire (c'est-à-dire que l'appel de l'une ou l'autre de ces fonctions 2 fois consécutivement renverra les résultats mis en cache).
+:::
+
+## Advanced
+
+### Caching & [`bounds`](/tutorials/Geospatial%20with%20Fused/filetile/#bounds)
+
+Passez [`bounds`](/tutorials/Geospatial%20with%20Fused/filetile/#bounds) pour rendre la sortie unique à chaque [Tile](/tutorials/Geospatial%20with%20Fused/filetile/#tile-udf).
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds=None):
+
+    @fused.cache
+    def fn(bounds):
+        # convert bounds to tile
+        common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+        zoom = common.estimate_zoom(bounds)
+        tile = common.get_tiles(bounds, zoom=zoom)
+        return tile
+
+    return fn(bounds)
+```
+
+Notez que cela signifie que si vous exécutez votre UDF Tile dans Workbench, chaque fois que vous vous déplacez sur la [carte](/workbench/udf-builder/map/), vous mettrez en cache un nouveau fichier
+
+Pour cette raison, il est recommandé de garder le cache pour les tâches qui _ne dépendent pas_ de vos `bounds` lorsque cela est possible, par exemple :
+
+```python {5} showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds=None):
+
+    @fused.cache
+    def loading_slow_geodataframe(data_path):
+        ...
+        return gdf
+
+    # convert bounds to tile
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    zoom = common.estimate_zoom(bounds)
+    tile = common.get_tiles(bounds, zoom=zoom)
+
+    # Loading of our slow data does not depend on bounds so can be cached even if we pan around
+    gdf = loading_slow_geodataframe()
+    gdf_in_bounds = gdf[gdf.geometry.within(tile.iloc[0].geometry)]
+
+    return gdf_in_bounds
+```
+
+### Defining your cache lifetime: `cache_max_age`
+
+Vous pouvez définir combien de temps garder vos données de cache avec `cache_max_age`. Les unités de temps valides incluent :
+- Secondes (`s`)
+- Minutes (`m`)
+- Heures (`h`)
+- Jours (`d`)
+
+Exemples : `24h` (24 heures), `30m` (30 minutes), `10s` (10 secondes)
+
+
+:::note
+**Cache Behavior :** Les exécutions d'UDF sont mises en cache par défaut. Pour contourner le caching et garantir des résultats frais, passez `cache_max_age="0s"` dans votre appel `fused.run()`.
+:::
+
+```python showLineNumbers
+@fused.udf
+def udf():
+
+    @fused.cache(
+        cache_max_age="24h" # Your cache will stay available for 24h
+    )
+    def loading_slow_geodataframe(data_path):
+        ...
+        return gdf
+
+    return gdf
+```
+
+Cela fonctionne également avec [`@fused.udf()`](/python-sdk/top-level-functions/#fusedudf) & [`fused.run()`](/python-sdk/top-level-functions/#fusedrun) :
+```python showLineNumbers
+@fused.udf(cache_max_age="24h") # This UDF will be cached for 24h after its initial run
+def udf(path):
+
+    gdf = gpd.read_file(path)
+
+    return gdf
+```
+
+Cet UDF sera mis en cache à partir du moment où il est exécuté avec `fused.run(udf)` pendant toute la durée définie dans `cache_max_age` :
+
+```python showLineNumbers
+fused.run(udf)
+```
+
+Si vous exécutez `fused.run(udf)` à nouveau sans modifications apportées à `udf`, alors pour les 24 prochaines heures, `fused.run(udf)` renverra un résultat mis en cache. C'est à la fois plus rapide et moins coûteux (économisant sur le calcul) tout en vous donnant le contrôle sur la durée de conservation de votre cache.
+
+{/* NOTE: This only works with a token for now! */}
+Vous pouvez également écraser le `cache_max_age` défini dans `udf` lors de l'exécution de votre UDF :
+
+```python showLineNumbers
+fused.run(udf, cache_max_age="12h")
+```
+
+Les résultats de `udf` ne seront désormais mis en cache que pendant `12h`, même si `udf` a été défini avec un `cache_max_age` de `24h` :
+
+L'âge de votre cache est défini comme suit :
+- Par défaut, un UDF est mis en cache pendant 90 jours.
+- Si `@fused.udf(cache_max_age)` est défini, ce nouvel âge de cache remplace le défaut.
+- Si `fused.run(udf, cache_max_age)` est passé, cet âge de cache prend la priorité sur le défaut et `@fused.udf(cache_max_age)`
+
+### Resetting cache: `cache_reset`
+
+Parfois, vous pourriez vouloir réinitialiser votre cache, par exemple :
+- Exécuter un UDF avec un `cache_max_age` inconnu, et vous voulez vous assurer que vous obtenez des résultats frais
+- Avoir un bloc `try / except` pour réinitialiser le cache si votre UDF par défaut avec cache échoue.
+
+Vous pouvez facilement le faire en passant `cache_reset=True` :
+
+```python showLineNumbers
+fused.run(udf, cache_reset=True)
+```
+
+Cela fonctionne également en combinaison avec [`@fused.cache`](/python-sdk/top-level-functions/#fusedcache) :
+
+```python showLineNumbers
+@fused.cache(cache_reset=True)
+def my_function():
+    ...
+    return gdf
+```
+
+<details>
+<summary>Exemple de cas d'utilisation pour `cache_reset`</summary>
+
+Définir un UDF qui renvoie simplement l'heure actuelle :
+```python showLineNumbers
+import fused
+
+@fused.udf
+def udf():
+    from datetime import datetime
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+```
+
+Exécuter cela une première fois :
+```python showLineNumbers
+fused.run(udf)
+```
+
+Renvoie :
+```bash
+2025-06-06 10:00:00
+```
+
+Exécuter cela une deuxième fois :
+```python showLineNumbers
+fused.run(udf)
+```
+
+Renvoie un résultat mis en cache :
+```bash
+Cached UDF result returned.
+2025-06-06 10:00:00
+```
+
+C'est parce que les UDF sont [mis en cache par défaut](/core-concepts/cache/#caching-a-udf) même sans passer d'argument [`cache_max_age`](/core-concepts/cache/#defining-your-cache-lifetime-cache_max_age)
+
+Nous pouvons briser ce cache en passant `cache_reset=True` :
+
+```python showLineNumbers
+fused.run(udf, cache_reset=True)
+```
+
+Renvoie :
+```bash
+2025-06-06 10:00:12
+```
+
+</details>
+
+{/* TODO: This needs to be linked to the Python SDK page once its updated */}
+{/* :::tip
+    Read more about this in the [Python SDK page on `@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
+::: */}
+
+{/* TODO: Don't want to expose this just yet  */}
+{/* ### Caching on `local` or `mount` storage
+
+Votre cache est par défaut enregistré dans `mount/`. Cela signifie que si vous ou un membre de l'équipe exécutez la même fonction avec la même entrée, ils peuvent également tirer parti de vos fonctions précédemment mises en cache
+
+Vous pouvez cependant décider de n'avoir cela disponible que pour chaque instance individuelle en passant `storage="local"`. Il y a quelques avantages / raisons de le faire :
+- Utiliser `@fused.cache` sur des fonctions Python régulières lors du développement local :
+    - Vous n'avez même pas besoin d'utiliser [`fused.run()`](/core-concepts/run-udfs/run-small-udfs/#fusedrun), vous pourriez utiliser `@fused.cache` sans jamais utiliser d'autres fonctionnalités de Fused
+
+```python {5} showLineNumbers
+@fused.cache(
+    storage="local"
+)
+def local_function_load(data_path):
+    ...
+    return gdf
+
+gdf = local_function_load()
+```
+
+:::tip
+    Read more about this in the [Python SDK page on `@fused.cache`](/python-sdk/top-level-functions/#fusedcache)
+::: */}

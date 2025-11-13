@@ -1,0 +1,245 @@
+---
+sidebar_label: fused.ingest
+title: fused.ingest
+toc_max_heading_level: 5
+unlisted: true
+---
+
+
+## `fused.ingest`
+
+
+```python showLineNumbers
+def ingest(
+    input: Union[str, Sequence[str], Path, gpd.GeoDataFrame],
+    output: Optional[str] = None,
+    *,
+    output_metadata: Optional[str] = None,
+    schema: Optional[Schema] = None,
+    file_suffix: Optional[str] = None,
+    load_columns: Optional[Sequence[str]] = None,
+    remove_cols: Optional[Sequence[str]] = None,
+    explode_geometries: bool = False,
+    drop_out_of_bounds: Optional[bool] = None,
+    partitioning_method: Literal["area", "length", "coords", "rows"] = "rows",
+    partitioning_maximum_per_file: Union[int, float, None] = None,
+    partitioning_maximum_per_chunk: Union[int, float, None] = None,
+    partitioning_max_width_ratio: Union[int, float] = 2,
+    partitioning_max_height_ratio: Union[int, float] = 2,
+    partitioning_force_utm: Literal["file", "chunk", None] = "chunk",
+    partitioning_split_method: Literal["mean", "median"] = "mean",
+    subdivide_method: Literal["area", None] = None,
+    subdivide_start: Optional[float] = None,
+    subdivide_stop: Optional[float] = None,
+    split_identical_centroids: bool = True,
+    target_num_chunks: int = 5000,
+    lonlat_cols: Optional[Tuple[str, str]] = None,
+    gdal_config: Union[GDALOpenConfig, Dict[str, Any], None] = None
+) -> GeospatialPartitionJobStepConfig
+```
+
+Ingest un ensemble de données dans le format partitionné Fused.
+
+**Arguments**:
+
+- `input` - Un `GeoDataFrame` GeoPandas ou un chemin vers un fichier ou des fichiers sur S3 à ingérer. Les fichiers peuvent être au format Parquet ou un autre format de données géographiques.
+- `output` - Emplacement sur S3 pour écrire la table `main`.
+- `output_metadata` - Emplacement sur S3 pour écrire la table `fused`.
+- `schema` - Schéma des données à ingérer. Ceci est optionnel et sera déduit des données si non fourni.
+- `file_suffix` - filtre les fichiers utilisés pour l'ingestion. Si `input` est un répertoire sur S3, tous les fichiers sous ce répertoire seront listés et utilisés pour l'ingestion. Si `file_suffix` n'est pas None, il sera utilisé pour filtrer les chemins en vérifiant les caractères de fin de chaque nom de fichier. Par exemple, passez `file_suffix=".geojson"` pour inclure uniquement les fichiers GeoJSON dans le répertoire.
+- `load_columns` - Lire uniquement cet ensemble de colonnes lors de l'ingestion de jeux de données géospatiaux. Par défaut, toutes les colonnes sont lues.
+- `remove_cols` - Les colonnes nommées à supprimer lors de l'ingestion de jeux de données géospatiaux. Par défaut, aucune colonne n'est supprimée.
+- `explode_geometries` - Indique s'il faut décomposer les géométries multipartites en géométries simples lors de l'ingestion de jeux de données géospatiaux, en enregistrant chaque partie comme sa propre ligne. Par défaut, c'est `False`.
+- `drop_out_of_bounds` - Indique s'il faut supprimer les géométries en dehors des limites WGS84 attendues. Par défaut, c'est True.
+- `partitioning_method` - La méthode à utiliser pour regrouper les lignes en partitions. Par défaut, c'est `"rows"`.
+  - `"area"` : Construire des partitions où toutes contiennent une superficie totale maximale parmi les géométries.
+  - `"length"` : Construire des partitions où toutes contiennent une longueur totale maximale parmi les géométries.
+  - `"coords"` : Construire des partitions où toutes contiennent un nombre total maximal de coordonnées parmi les géométries.
+  - `"rows"` : Construire des partitions où toutes contiennent un nombre maximal de lignes.
+- `partitioning_maximum_per_file` - Valeur maximale pour `partitioning_method` à utiliser par fichier. Si `None`, par défaut à _1/10ème_ de la valeur totale de `partitioning_method`. Donc, si la valeur est `None` et que `partitioning_method` est `"area"`, alors chaque fichier ne contiendra pas plus d'1/10ème de la superficie totale de toutes les géométries. Par défaut, c'est `None`.
+- `partitioning_maximum_per_chunk` - Valeur maximale pour `partitioning_method` à utiliser par morceau. Si `None`, par défaut à _1/100ème_ de la valeur totale de `partitioning_method`. Donc, si la valeur est `None` et que `partitioning_method` est `"area"`, alors chaque fichier ne contiendra pas plus d'1/100ème de la superficie totale de toutes les géométries. Par défaut, c'est `None`.
+- `partitioning_max_width_ratio` - Le rapport maximum de largeur à hauteur de chaque partition à utiliser dans le processus d'ingestion. Par exemple, si la valeur est `2`, alors si la largeur divisée par la hauteur est supérieure à `2`, la boîte sera divisée en deux le long de l'axe horizontal. Par défaut, c'est `2`.
+- `partitioning_max_height_ratio` - Le rapport maximum de hauteur à largeur de chaque partition à utiliser dans le processus d'ingestion. Par exemple, si la valeur est `2`, alors si la hauteur divisée par la largeur est supérieure à `2`, la boîte sera divisée en deux le long de l'axe vertical. Par défaut, c'est `2`.
+- `partitioning_force_utm` - Indique s'il faut forcer le partitionnement dans les zones UTM. Si défini sur `"file"`, cela garantira que le centroïde de toutes les géométries par _fichier_ se trouve dans la même zone UTM. Si défini sur `"chunk"`, cela garantira que le centroïde de toutes les géométries par _morceau_ se trouve dans la même zone UTM. Si défini sur `None`, aucun partitionnement basé sur UTM ne sera effectué. Par défaut, c'est "chunk".
+- `partitioning_split_method` - Comment diviser une partition en enfants. Par défaut, c'est `"mean"` (cela peut changer à l'avenir).
+  - `"mean"` : Diviser chaque axe selon la moyenne des valeurs des centroïdes.
+  - `"median"` : Diviser chaque axe selon la médiane des valeurs des centroïdes.
+- `subdivide_method` - La méthode à utiliser pour subdiviser de grandes géométries en plusieurs lignes. Actuellement, la seule option est `"area"`, où les géométries seront subdivisées en fonction de leur superficie (en degrés WGS84).
+- `subdivide_start` - La valeur au-dessus de laquelle les géométries seront subdivisées en parties plus petites, selon `subdivide_method`.
+- `subdivide_stop` - La valeur en dessous de laquelle les géométries ne seront jamais subdivisées en parties plus petites, selon `subdivide_method`.
+- `split_identical_centroids` - Si `True`, doit diviser une partition qui a des centroïdes identiques (comme si toutes les géométries dans la partition sont les mêmes) s'il y a plus de telles lignes que défini dans "partitioning_maximum_per_file" et "partitioning_maximum_per_chunk".
+- `target_num_chunks` - L'objectif pour le nombre de morceaux si `partitioning_maximum_per_file` est None. Notez que ce nombre n'est qu'un _objectif_ et que le nombre réel de fichiers et de morceaux générés peut être supérieur ou inférieur à ce nombre, en fonction de la distribution spatiale des données elles-mêmes.
+- `lonlat_cols` - Noms des colonnes de longitude et de latitude pour construire des géométries de points.
+
+  Si vos colonnes de points sont nommées `"x"` et `"y"`, alors passez :
+
+        ```python showLineNumbers
+        fused.ingest(
+            ...,
+            lonlat_cols=("x", "y")
+        )
+        ```
+
+  Cela ne s'applique qu'à la lecture des fichiers Parquet. Pour la lecture des fichiers CSV, passez des options à `gdal_config`.
+
+- `gdal_config` - Options de configuration à passer à GDAL pour la manière de lire ces fichiers. Pour tous les fichiers autres que les fichiers Parquet, Fused utilise GDAL comme étape dans le processus d'ingestion. Pour certaines entrées, comme les fichiers CSV ou les shapefiles compressés, vous devrez peut-être passer certains paramètres à GDAL pour lui indiquer comment ouvrir vos fichiers.
+
+  Cette configuration est censée être un dictionnaire avec jusqu'à deux clés :
+
+  - `layer` : `str`. Définir la couche du fichier d'entrée que vous souhaitez lire lorsque la source contient plusieurs couches, comme dans GeoPackage.
+  - `open_options` : `Dict[str, str]`. Passez des paires clé-valeur avec des options d'ouverture GDAL. Celles-ci sont définies sur la page de chaque pilote dans la documentation GDAL. Par exemple, le [pilote CSV](https://gdal.org/drivers/vector/csv.html) définit [ces options d'ouverture](https://gdal.org/drivers/vector/csv.html#open-options) que vous pouvez passer.
+
+  Par exemple, si vous ingérez un fichier CSV avec deux colonnes `"longitude"` et `"latitude"` désignant les informations de coordonnées, passez
+
+        ```python showLineNumbers
+        fused.ingest(
+            ...,
+            gdal_config={
+                "open_options": {
+                    "X_POSSIBLE_NAMES": "longitude",
+                    "Y_POSSIBLE_NAMES": "latitude",
+                }
+            }
+        )
+        ```
+
+
+**Returns**:
+
+Objet de configuration décrivant le processus d'ingestion. Appelez `.run_batch` sur cet objet pour démarrer un travail.
+
+
+
+**Examples**:
+
+```python showLineNumbers
+job = fused.ingest(
+    input="https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/06_CALIFORNIA/06/tl_rd22_06_bg.zip",
+    output="s3://fused-sample/census/ca_bg_2022/main/",
+    output_metadata="s3://fused-sample/census/ca_bg_2022/fused/",
+    explode_geometries=True,
+    partitioning_maximum_per_file=2000,
+    partitioning_maximum_per_chunk=200,
+).run_batch()
+```
+
+
+
+---
+#### `job.run_batch`
+
+`fused.ingest` retourne un objet `GeospatialPartitionJobStepConfig`. Appelez `.run_batch` sur cet objet pour démarrer le travail d'ingestion.
+
+
+
+```python
+def run_batch(output_table: Optional[str] = ...,
+               instance_type: Optional[WHITELISTED_INSTANCE_TYPES] = None,
+               *,
+               region: str | None = None,
+               disk_size_gb: int | None = None,
+               additional_env: List[str] | None = None,
+               image_name: Optional[str] = None,
+               ignore_no_udf: bool = False,
+               ignore_no_output: bool = False,
+               validate_imports: Optional[bool] = None,
+               validate_inputs: bool = True,
+               overwrite: Optional[bool] = None) -> RunResponse
+```
+
+Commencez l'exécution du travail.
+
+**Arguments**:
+
+- `output_table` - Le nom de la table à écrire. Par défaut, c'est None.
+- `instance_type` - Le type d'instance AWS EC2 à utiliser pour le travail. Les chaînes acceptables sont `m5.large`, `m5.xlarge`, `m5.2xlarge`, `m5.4xlarge`, `m5.8xlarge`, `m5.12xlarge`, `m5.16xlarge`, `r5.large`, `r5.xlarge`, `r5.2xlarge`, `r5.4xlarge`, `r5.8xlarge`, `r5.12xlarge`, ou `r5.16xlarge`. Par défaut, c'est None.
+- `region` - La région AWS dans laquelle exécuter. Par défaut, c'est None.
+- `disk_size_gb` - La taille du disque à spécifier pour le travail. Par défaut, c'est None.
+- `additional_env` - Toute variable d'environnement supplémentaire à passer dans le travail. Par défaut, c'est None.
+- `image_name` - Nom d'image personnalisé à exécuter. Par défaut, c'est None pour l'image par défaut.
+- `ignore_no_udf` - Ignorer les erreurs de validation concernant l'absence de spécification d'un UDF. Par défaut, c'est False.
+- `ignore_no_output` - Ignorer les erreurs de validation concernant l'absence de spécification d'un emplacement de sortie. Par défaut, c'est False.
+
+## Surveiller et gérer le travail
+
+Appeler `.run_batch()` retourne un objet `RunResponse` qui a les méthodes suivantes :
+
+
+
+#### `get_status`
+
+```python
+def get_status() -> RunResponse
+```
+
+Récupérer le statut de ce travail
+
+**Returns**:
+
+  Le statut du travail donné.
+
+---
+
+#### `print_logs`
+
+```python
+def print_logs(since_ms: Optional[int] = None,
+               file: Optional[IO] = None) -> None
+```
+
+Récupérer et imprimer les journaux
+
+**Arguments**:
+
+- `since_ms` - Horodatage, en millisecondes depuis l'époque, pour obtenir les journaux. Par défaut, c'est None pour tous les journaux.
+- `file` - Où imprimer les journaux. Par défaut, c'est sys.stdout.
+
+
+**Returns**:
+
+  Aucun
+
+---
+#### `get_exec_time`
+
+```python
+def get_exec_time() -> timedelta
+```
+
+Déterminer le temps d'exécution de ce travail, en utilisant les journaux.
+
+**Returns**:
+
+  Temps que le travail a pris. Si le travail est en cours, le temps du premier au dernier message de journal est retourné.
+
+---
+#### `tail_logs`
+
+```python
+def tail_logs(refresh_seconds: float = 1,
+              sample_logs: bool = True,
+              timeout: Optional[float] = None,
+              get_logs_retries: int = 1) -> None
+```
+
+Imprimer continuellement les journaux
+
+**Arguments**:
+
+- `refresh_seconds` - à quelle fréquence, en secondes, vérifier les nouveaux journaux. Par défaut, c'est 1.
+- `sample_logs` - si vrai, imprimer uniquement un échantillon de journaux. Par défaut, c'est True.
+- `timeout` - si pas None, combien de temps continuer à suivre les journaux. Par défaut, c'est None pour indéfini.
+- `get_logs_retries` - Nombre de tentatives supplémentaires pour les demandes de journaux. Par défaut, c'est 1.
+
+---
+#### `cancel`
+
+```python
+def cancel() -> RunResponse
+```
+
+Annuler ce travail
+
+**Returns**:
+
+  Un nouvel objet de travail.

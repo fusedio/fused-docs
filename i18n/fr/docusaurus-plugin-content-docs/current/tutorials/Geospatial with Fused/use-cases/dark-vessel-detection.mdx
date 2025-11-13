@@ -1,0 +1,1222 @@
+---
+sidebar_label: "Détection des Navires Sombres"
+title: "Détection des Navires Sombres"
+tags: ['exemple', 'sentinel 1', 'raster', 'vectoriel', 'ingestion']
+---
+
+_Un exemple complet montrant comment utiliser Fused pour ingérer des données dans un format partitionné géo, adapté au cloud, traiter des images et des vecteurs et utiliser des UDF pour produire une analyse_
+
+
+### Exigences
+- [Accès à Fused](/python-sdk/authentication/)
+- [Accès à un Jupyter Notebook](https://jupyter.org/)
+- [Installation de `fused`](/python-sdk/#python-install) avec les dépendances `[all]` (principalement pour avoir `pandas` et `geopandas`) :
+
+```python showLineNumbers
+pip install "fused[all]"
+```
+
+
+## 1. Le problème : Détecter les bateaux illégaux
+
+{/* Commencez par montrer à quoi ressemble le résultat final : "c'est ce que nous allons faire dans cet exemple"*/}
+
+Surveiller ce qui se passe en mer n'est pas la tâche la plus facile. Les côtes sont équipées de radars et chaque navire a un transpondeur pour diffuser publiquement sa position (en utilisant le [Système d'Identification Automatique, AIS](https://en.wikipedia.org/wiki/Automatic_identification_system)), mais les navires veulent parfois cacher leur position lorsqu'ils participent à des activités illégales.
+
+Global Fishing Watch [a rapporté sur "les navires sombres"](https://globalfishingwatch.org/research-project-dark-vessels/) en comparant les images radar de Sentinel 1 aux données AIS publiques et en faisant correspondre les deux pour comparer où les bateaux déclarent être par rapport à où ils _sont réellement_.
+
+Dans cet exemple, nous allons présenter une mise en œuvre de base d'une analyse similaire pour identifier des navires sombres _potentiels_, le tout dans Fused.
+
+![Flux de travail de Détection des Navires Sombres](/img/user-guide/examples/dvd/dark_vessel_methodology.png)
+
+Voici le résultat de notre analyse, s'exécutant en temps réel dans Fused :
+
+import LazyReactPlayer from '@site/src/components/LazyReactPlayer'
+
+<LazyReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/dark-vessel-detection/analysis_walkthrough_dark_vessel_detection.mp4" width="100%" />
+
+{/* Besoin de plus de contexte sur la façon dont l'analyse est effectuée */}
+
+Voici les étapes que nous allons produire :
+- Obtenir des images radar de Sentinel 1 sur notre zone d'intérêt et dans notre période d'intérêt
+- Exécuter un algorithme simple pour détecter des points lumineux dans les images radar -> Retourner le contour des bateaux
+- Récupérer les données AIS sur la même zone et période d'intérêt
+- Fusionner les 2 ensembles de données
+- Garder les bateaux qui apparaissent dans Sentinel 1 mais pas dans AIS -> Ce sont nos navires sombres potentiels.
+
+![Pipeline de données de Détection des Navires Sombres](/img/user-guide/examples/dvd/dark_vessel_data_breakdown.png)
+
+
+:::note
+    Il s'agit d'une analyse brute, principalement destinée à démontrer certains des principaux composants de Fused, et non à exposer des navires sombres. L'analyse présente des limitations majeures et doit être prise avec des pincettes.
+
+    Cela dit, nous vous encourageons à l'utiliser comme point de départ pour votre propre travail !
+:::
+
+
+
+## 2. Données pour notre analyse
+
+{/* Besoin d'un article de blog / page de documentation sur "pourquoi cloud native" ou quelque chose dans ce sens */}
+
+Nous allons utiliser des images radar et des données AIS provenant de sources de données libres et ouvertes pour cette étude. Comme nous voulons traiter et visualiser ces données, et itérer rapidement, nous voulons que nos ensembles de données soient dans un format Cloud Native.
+Au plus haut niveau et en pratique, cela signifie que nos données sont :
+- Sur un stockage cloud (c'est-à-dire sur des buckets S3)
+- Dans un format qui est rapide à lire et permet de charger uniquement de petites zones à la fois ([Cloud Optimized GeoTiff](https://cogeo.org/) ou [GeoParquet](https://geoparquet.org/))
+
+Les ensembles de données auxquels nous allons accéder :
+- Images radar de [Sentinel 1](https://sentinel.esa.int/web/sentinel/copernicus/sentinel-1) provenant du [Microsoft Planetary Computer Data Catalog](https://planetarycomputer.microsoft.com/dataset/sentinel-1-grd)
+
+
+<details>
+    <summary>Spécificités de l'ensemble de données Sentinel 1</summary>
+
+     Pour les nerds parmi vous, nous utilisons le produit Ground Range Detected, et non le [Radiometrically Terrain Corrected](https://planetarycomputer.microsoft.com/dataset/sentinel-1-rtc) car nous regardons des bateaux au milieu de l'océan, donc le terrain ne devrait pas poser de problème.
+    - Cet ensemble de données est disponible en tant que Cloud Optimized GeoTiff via un [STAC Catalog](https://stacspec.org/en/), ce qui signifie que nous pouvons utiliser directement ces données telles quelles.
+
+</details>
+
+- Données AIS provenant de la [NOAA Digital Coast](https://www.coast.noaa.gov/digitalcoast/tools/ais.html). Nous avons des données autour des États-Unis continentaux [par jour sous forme de fichiers `.zip` individuels](https://coast.noaa.gov/htdata/CMSP/AISDataHandler/2024/index.html)
+    - Cet ensemble de données n'est pas dans un format cloud native. Si nous devions l'utiliser directement, chaque fois que nous devrions apporter une modification à notre analyse ou examiner une nouvelle zone, nous devrions trouver le bon fichier `.zip`, le décompresser, lire toutes les données AIS pour un jour donné, puis interroger uniquement autour de notre zone d'intérêt. C'est possible, mais cela fait passer la vitesse d'itération de secondes à minutes.
+
+![Détection des Navires Sombres AIS](/img/user-guide/examples/AIS_noaa_coast_portal.png)
+
+## 3. Ingestion des données AIS
+
+{/*
+Sujets :
+- Sentinel 1 déjà en COG + STAC -> Pas besoin de l'ingérer nous-mêmes
+- AIS est dans des fichiers zip sur un serveur quelque part -> nous allons le ré-ingérer nous-mêmes pour le rendre cloud native (c'est-à-dire sur le cloud sur un bucket S3) + géo-partitionné (c'est-à-dire dans un format qui est rapide à lire - parquet + découpé en conséquence)
+ */}
+
+Puisque notre ensemble de données AIS n'est pas dans un format géo-partitionné, cloud native, notre première étape est de [l'ingérer](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/) dans un format en tuiles et de le mettre sur un bucket cloud. Heureusement, nous pouvons [faire tout cela dans Fused](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/ingest-your-data).
+Cela nous donnera nos données AIS de 2014 sur le stockage cloud dans un format GeoParquet, nous permettant de lire des données par petites portions à la fois.
+
+Pour ce faire, nous allons :
+1. Obtenir un emplacement pour stocker nos données AIS partitionnées (cela peut être n'importe quel bucket AWS S3, nous allons en utiliser un géré par Fused pour simplifier les choses)
+{/* Lien vers la documentation UDF */}
+2. Écrire une simple UDF pour dézipper chaque donnée AIS sur une plage de dates donnée, la lire et l'enregistrer sous forme de fichier parquet sur S3
+{/* Lien vers la documentation du travail par lot */}
+3. Exécuter cette UDF sur tout l'archive AIS de 2024
+4. Ingérer tous les fichiers `.parquet` mensuels AIS dans des fichiers géo-partitionnés pour accélérer leur temps de lecture sur de petites zones
+
+### 3.1 - Décider où stocker nos données partitionnées
+
+Nous devons d'abord dézipper et lire nos données AIS avant de les ingérer sous forme de format cloud native géo-partitionné. Une façon simple de le faire est d'écrire une UDF qui lit un fichier zip et l'enregistre sous forme de fichier `.parquet` sur un disque monté.
+Les points de données AIS de la plateforme NOAA sont disponibles par jour, mais nous allons les agréger par mois pour simplifier la gestion. Nous pouvons exécuter tout le code dans cette section dans un notebook localement, car nous n'avons pas besoin de visualiser de données.
+
+:::note
+    Les UDF de Fused s'exécutent par défaut sur des instances sans serveur, donc leur stockage local change à chaque exécution. Pour garder les données persistantes entre les exécutions, nous utilisons un stockage monté partagé entre toutes les instances de votre équipe.
+:::
+
+[`fused.file_path()`](/python-sdk/top-level-functions/#fusedfile_path) retourne le chemin de montage de tout fichier que nous aimerions créer. Lorsqu'il est exécuté localement, il retourne le répertoire local `/tmp/fused/` sur votre machine.
+Si cette fonction est appelée à l'intérieur d'une UDF, et que cette UDF est exécutée sur les serveurs Fused, le chemin retourné sera celui du stockage monté partagé `/mount/`. Spécifier [`engine='local'`](/python-sdk/top-level-functions/#fusedrun) exécute la UDF sur votre machine locale.
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+<Tabs className="unique-tabs">
+  <TabItem value="local" label="Local" default>
+
+        ```python showLineNumbers
+        # Exécutez ceci localement - pas dans Workbench
+        import fused
+
+        datestr='2024_09_01'
+        path=fused.file_path(f'/AIS/{datestr[:7]}')
+        print(path)
+
+        >>> /tmp/fused/AIS/2024_09
+        ```
+  </TabItem>
+  <TabItem value="udf" label="Dans une UDF" default>
+        Si vous exécutez ce code dans le Workbench Fused ou localement avec `fused.run()` avec les paramètres par défaut, vous verrez le répertoire `/mount/`.
+
+        ```python showLineNumbers
+        # Exécutez ceci localement - pas dans Workbench
+        @fused.udf
+        def see_file_path():
+            datestr='2024_09_01'
+            path=fused.file_path(f'/AIS/{datestr[:7]}')
+            print(path)
+            return
+
+        fused.run(see_file_path)
+
+        >>> /mount/AIS/2024_09
+        ```
+        Vous pouvez voir ce répertoire dans l'[Explorateur de fichiers](/workbench/file-explorer/) dans [Workbench](/workbench/).
+
+        <div style={{textAlign: 'center'}}>
+        ![Le répertoire /mount dans votre explorateur de fichiers Workbench Fused](/img/user-guide/examples/dvd/workbench_files.png)
+        </div>
+  </TabItem>
+  <TabItem value="local_udf" label="Dans une UDF exécutée localement" default>
+
+        ```python showLineNumbers
+        # Exécutez ceci localement - pas dans Workbench
+        @fused.udf
+        def see_file_path():
+            datestr='2024_09_01'
+            path=fused.file_path(f'/AIS/{datestr[:7]}')
+            print(path)
+            return
+
+        #highlight-next-line
+        fused.run(see_file_path, engine='local')
+
+        >>> /tmp/AIS/2024_09
+        ```
+  </TabItem>
+</Tabs>
+
+
+{/* REMARQUE : À partir de janvier 2024, fused.file_path() ne fonctionne pas de manière fiable entre le temps réel, local et run_batch() */}
+
+
+### 3.2 - Écrire une UDF pour ouvrir chaque ensemble de données AIS
+
+Le reste de la logique consiste à [écrire une UDF](/core-concepts/write/) pour ouvrir chaque fichier, le lire en tant que CSV et l'écrire en parquet.
+
+```python showLineNumbers
+@fused.udf()
+def read_ais_from_noaa_udf(datestr:str='2023_03_29', overwrite:bool=False):
+    import os
+    import requests
+    import io
+    import zipfile
+    import pandas as pd
+    import s3fs
+
+    # C'est l'URL spécifique où les données AIS quotidiennes sont disponibles
+    url=f'https://coast.noaa.gov/htdata/CMSP/AISDataHandler/{datestr[:4]}/AIS_{datestr}.zip'
+
+    # C'est notre chemin de fichier de montage local
+    path=fused.file_path(f'/AIS/{datestr[:7]}/')
+    daily_ais_parquet = f'{path}/{datestr[-2:]}.parquet'
+
+    # Ignorer les fichiers existants
+    if os.path.exists(daily_ais_parquet) and not overwrite:
+        print(f'{daily_ais_parquet} existe')
+        return pd.DataFrame({'status':['exist']})
+
+    # Télécharger le fichier ZIP sur le disque monté
+    r=requests.get(url)
+    if r.status_code == 200:
+        with zipfile.ZipFile(io.BytesIO(r.content), 'r') as z:
+            with z.open(f'AIS_{datestr}.csv') as f:
+                df = pd.read_csv(f)
+                # MMSI est l'identifiant unique de chaque bateau. C'est un nettoyage simple pour la démonstration
+                df['MMSI'] = df['MMSI'].astype(str)
+                df.to_parquet(daily_ais_parquet)
+                print(f"Enregistré {daily_ais_parquet}")
+        return pd.DataFrame({'status':['Done'], "file_path": [daily_ais_parquet]})
+    else:
+        return pd.DataFrame({'status':[f'read_error_{r.status_code}']})
+```
+
+Nous pouvons exécuter cette UDF une seule fois pour nous assurer qu'elle fonctionne :
+
+```python showLineNumbers
+# Exécutez ceci localement - pas dans Workbench
+single_ais_month = fused.run(read_ais_from_noaa_udf, datestr="2024_09_01")
+
+>>> Enregistré /mnt/cache/AIS/2024_09/01.parquet
+```
+
+Pour récapituler ce que nous avons fait jusqu'à présent :
+- Construire une UDF qui prend une date, récupère un fichier `.zip` depuis le portail AISDataHandler de la NOAA et l'enregistre sur le montage de notre UDF (afin que d'autres UDF puissent y accéder)
+- Exécuter cette UDF 1 fois pour une date spécifique
+
+### 3.3 - Exécuter cette UDF sur un mois de données AIS
+
+Étape suivante : Exécuter cela sur toute une période !
+
+Puisque chaque UDF prend quelques secondes à s'exécuter par date, nous allons utiliser [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#running-jobs-in-parallel-fusedsubmit) pour appeler un grand nombre de UDF en même temps, chacune s'exécutant sur une seule date.
+
+Avec un peu de gymnastique Python, nous pouvons créer un `DataFrame` de toutes les dates que nous aimerions traiter. Préparer à obtenir tout septembre 2024 ressemblerait à ceci :
+
+```python showLineNumbers
+# Exécutez ceci localement - pas dans Workbench
+import pandas as pd
+date_ranges = pd.DataFrame({
+    'datestr': [str(i)[:10].replace('-','_') for i in pd.date_range('2024-09','2024-10')[:-1]]
+})
+print(f"{date_ranges.shape=}")
+print(date_ranges.head())
+
+>>> date_ranges.shape=(30, 1)
+      datestr
+0  2024_09_01
+1  2024_09_02
+2  2024_09_03
+3  2024_09_04
+4  2024_09_05
+```
+
+[`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#running-jobs-in-parallel-fusedsubmit) nécessite des entrées sous forme de liste ou de `DataFrame`, auquel cas les colonnes doivent avoir les noms d'arguments que notre UDF attend, dans ce cas `datestr`. Nous vous recommandons également de toujours faire un premier essai avec `debug_mode=True` pour [tester votre travail de soumission](/core-concepts/run-udfs/run-small-udfs/#debug-mode) :
+
+```python {4} showLineNumbers
+# Exécutez ceci localement - pas dans Workbench
+fused.submit(
+    read_ais_from_noaa_udf, 
+    date_ranges, 
+    debug_mode=True
+)
+
+>>> Enregistré /mnt/cache/tmp/AIS/2024_09/01.parquet
+  |status  | file_path
+-------------------------------------------------
+0 |Done    | /mnt/cache/tmp/AIS/2024_09/01.parquet
+
+```
+
+`debug_mode=True` exécute la 1ère valeur à l'intérieur de `date_ranges` avec [`fused.run()`](/python-sdk/top-level-functions/#fusedrun). Cela vous permet de vous assurer que votre combinaison UDF + arg_list fonctionne correctement. 
+
+Maintenant que nous avons vu que notre UDF fonctionne, nous pouvons exécuter tous les 30 travaux en parallèle en supprimant `debug_mode=True` :
+
+```python showLineNumbers
+# Exécutez ceci localement - pas dans Workbench
+fused.submit(read_ais_from_noaa_udf, date_ranges)
+```
+
+Nous avons maintenant décompressé, ouvert et enregistré 30 jours de données !
+
+:::tip
+[`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#running-jobs-in-parallel-fusedsubmit) a [plus de paramètres](/core-concepts/run-udfs/run-small-udfs/#execution-parameters) que vous pouvez contrôler, vous permettant de changer le nombre de `max_workers`, `engine` ou les politiques de réessai. Consultez également la [documentation technique](/python-sdk/top-level-functions/#fusedsubmit) pour plus de détails.
+:::
+
+Une façon pratique de s'assurer que nos données sont au bon endroit est de les vérifier dans l'Explorateur de fichiers Workbench. Dans la barre de recherche, tapez : `file:///mount/AIS/2024_09/` :
+
+![Résultats en direct du Pool Runner](/img/user-guide/examples/dvd/fused_workbench_file_explorer_efs.png)
+
+Vous verrez tous nos fichiers quotidiens ! Remarquez comment chaque fichier fait quelques centaines de Mo. Ces fichiers sont encore de gros fichiers individuels, c'est-à-dire qu'il faudrait un certain temps pour les lire.
+
+### 3.4 - Ingérer 1 mois de données AIS dans un format géo-partitionné
+
+{/* TODO : Cette section (et la documentation en général) manque d'informations sur le nombre de morceaux */}
+
+Ces fichiers parquet individuels sont maintenant stockés sur notre disque de montage. Nous pourrions les enregistrer directement sur le stockage cloud, mais avant cela, nous pouvons les géo-partitionner pour les rendre encore plus rapides à lire. Cela nous permettra de réduire le temps d'accès à nos données de [minutes à secondes](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/why-ingestion/).
+Fused fournit un moyen simple de le faire avec le [processus d'ingestion](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/).
+
+![Un aperçu simple des avantages de Geoparquet](/img/user-guide/examples/geoparquet_overview.png)
+
+_Crédit d'image provenant du [diaporama Cloud Native Geo](https://guide.cloudnativegeo.org/overview.html#/geoparquet)_
+
+Pour ce faire, nous avons besoin de quelques éléments :
+- **Notre ensemble de données d'entrée** : dans ce cas, notre mois de données AIS.
+   {/*- Nous devons nous référer directement aux fichiers, donc nous allons utiliser le */}
+- **Un bucket cloud cible** : Nous allons créer un bucket pour stocker notre mois de données AIS géo-partitionnées dans des fichiers parquet
+- Un nombre cible de morceaux pour partitionner nos données. Pour l'instant, nous allons le garder à 500
+- Colonnes de latitude / longitude pour déterminer l'emplacement de chaque point
+
+```python showLineNumbers
+# Exécutez ceci localement - pas dans Workbench
+ais_daily_parquets = [f'file:///mnt/cache/AIS/{day[:-3]}/{day[-2:]}.parquet' for day in range_of_ais_dates]
+
+job = fused.ingest(
+    ais_daily_parquets,
+    's3://fused-users/fused/demo_user/AIS_2024_ingester/prod_2024_09',
+    target_num_chunks=500,
+    lonlat_cols=('LON','LAT')
+)
+```
+
+Nous allons envoyer ce travail à une [grande instance en utilisant `job.run_batch()`](/core-concepts/run-udfs/run_large/) car la latence n'a pas beaucoup d'importance (nous pouvons attendre quelques secondes supplémentaires) et nous préférons avoir une machine plus grande et un stockage plus grand :
+
+```python showLineNumbers
+# Exécutez ceci localement - pas dans Workbench
+job.run_batch(
+    instance_type='r5.8xlarge', # Nous voulons une grosse machine robuste pour effectuer le partitionnement en parallèle, donc un grand nombre de CPU
+    disk_size_gb=999 # Définir une grande quantité de disque car ce travail ouvrira chaque fichier parquet de sortie pour calculer le centroïde
+)
+```
+
+Exécuter cela dans un notebook nous donne un lien vers les journaux afin que nous puissions suivre l'avancement du travail sur la machine hors ligne :
+
+![Journaux d'exécution à distance de Workbench](/img/user-guide/examples/dvd/workbench_run_batch_logs.png)
+
+Suivre le lien nous montre les journaux en direct de ce que fait notre travail :
+
+![Journaux d'exécution à distance de Workbench](/img/user-guide/examples/dvd/workbench_run_batch_logs.png)
+
+Nous pouvons encore une fois vérifier que nos images géo-partitionnées sont disponibles en utilisant [l'Explorateur de fichiers](/workbench/file-explorer/). Cette fois, comme nos fichiers sont beaucoup plus rapides à lire, nous pouvons même voir l'aperçu dans la vue carte :
+
+<LazyReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="60%" width="80%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/dark-vessel-detection/geopartioned_AIS_file_explorer.mp4"/>
+
+
+Nos données AIS sont prêtes à être utilisées pour tout le mois de septembre 2024. Pour affiner notre recherche, nous devons maintenant obtenir une image Sentinel 1. Comme ces images sont prises tous les 6 à 12 jours selon la région, nous allons trouver une image Sentinel 1 puis restreindre nos données AIS à quelques minutes avant et après l'heure d'acquisition de l'image Sentinel 1.
+
+## 4. Récupération des images Sentinel 1
+
+Les images Sentinel 1 sont gratuites et ouvertes, donc heureusement pour nous, d'autres ont déjà fait le travail de transformation de l'archive en formats cloud native (et continuent de maintenir l'ingestion à mesure que de nouvelles données arrivent).
+
+Nous allons utiliser l'ensemble de données [Microsoft Planetary Computer Sentinel-1 Ground Range Detected](https://planetarycomputer.microsoft.com/dataset/sentinel-1-grd), car il offre :
+- Un accès via un [STAC Catalog](https://stacspec.org/en/) nous aidant à obtenir uniquement les données dont nous avons besoin et rien d'autre
+- Des images en [Cloud Optimized Geotiff](https://cogeo.org/) nous donnant des images en tuiles qui se chargent encore plus rapidement
+- [Exemples d'accès aux données](https://planetarycomputer.microsoft.com/dataset/sentinel-1-grd#Example-Notebook) donc la plupart de notre travail sera du copier-coller
+
+:::tip
+    La plupart de la section suivante a été écrite dans le [UDF Builder](/workbench/udf-builder/) de Workbench plutôt que dans des Jupyter Notebooks.
+
+    Nous aurons le code dans des blocs de code, vous pouvez exécuter cela n'importe où mais comme nous regardons des images, il est utile d'avoir la [carte en direct](/workbench/udf-builder/map/) du UDF Builder mise à jour pendant que vous écrivez votre code.
+
+    {/* TODO : Devrait également ajouter un lien vers les meilleures pratiques pour écrire des UDF dans Workbench une fois que nous avons cette section */}
+:::
+
+Commençons par une UDF de base retournant simplement notre zone d'intérêt :
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+):
+    common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
+    # Convertir les limites en GeoDataFrame en utilisant la fonction commune de Fused
+    bounds = common.bounds_to_gdf(bounds)
+    return bounds
+```
+
+:::info
+Le code ci-dessus démontre une fonction utilisateur définie (UDF) de base qui utilise [les fonctions communes de Fused](https://github.com/fusedio/udfs/blob/main/public/common). Ces utilitaires fournissent quelques fonctions générales pour les opérations et transformations géospatiales. 
+La fonction utilitaire `bounds_to_gdf` mentionnée ci-dessus est définie comme suit :
+
+```python
+def bounds_to_gdf(bounds_list, crs=4326):
+    import geopandas as gpd
+    import shapely
+    box = shapely.box(*bounds_list)
+    return gpd.GeoDataFrame(geometry=[box], crs=crs)
+```
+
+Cette fonction convertit une boîte englobante en un GeoDataFrame.
+:::
+
+Cette UDF retourne simplement notre [Vue de la carte](/tutorials/Geospatial%20with%20Fused/filetile/#legacy-fusedtypesviewportgdf) en tant que `gpd.GeoDataFrame`, c'est un bon point de départ pour notre UDF retournant des images Sentinel 1.
+
+Bien que vous puissiez faire cela n'importe où autour des États-Unis continentaux (notre ensemble de données AIS couvrait les côtes autour des États-Unis, donc nous voulons nous limiter là), si vous voulez suivre, voici la zone d'intérêt que nous allons utiliser. Vous pouvez la remplacer directement dans la UDF :
+
+```python {6-7} showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+):
+    # Définir nos limites spécifiques
+    specific_bounds = [-93.90425364, 29.61879782, -93.72767384, 29.7114987]
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds = common.bounds_to_gdf(specific_bounds)
+    return bounds
+```
+
+En suivant les [exemples de Microsoft Planetary Computer pour obtenir Sentinel-1](https://planetarycomputer.microsoft.com/dataset/sentinel-1-grd#Example-Notebook), nous pouvons ajouter quelques-unes des importations dont nous avons besoin et appeler le catalogue STAC :
+
+{/* TODO : expliquer les limites à gdf */}
+
+```python {5-8,13-17} showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+):
+    import planetary_computer
+    import pystac_client
+    import geopandas as gpd
+    import shapely
+    # Définir nos limites spécifiques et les convertir en GeoDataFrame
+    specific_bounds = [-93.90425364, 29.61879782, -93.72767384, 29.7114987]
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds = common.bounds_to_gdf(specific_bounds)
+
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        # Les détails sur pourquoi nous devons le signer sont abordés ici : https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+        modifier=planetary_computer.sign_inplace,
+    )
+
+    return bounds
+```
+
+Nous avons déjà une boîte englobante, mais réduisons notre recherche à la première semaine de septembre :
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+):
+    import planetary_computer
+    import pystac_client
+    import geopandas as gpd
+    import shapely
+
+    time_of_interest="2024-09-03/2024-09-04"
+    specific_bounds = [-93.90425364, 29.61879782, -93.72767384, 29.7114987]
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds = common.bounds_to_gdf(specific_bounds)
+
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        # Les détails sur pourquoi nous devons le signer sont abordés ici : https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+        modifier=planetary_computer.sign_inplace,
+    )
+
+    items = catalog.search(
+        collections=["sentinel-1-grd"],
+        bbox=bounds.total_bounds,
+        datetime=time_of_interest,
+        query=None,
+    ).item_collection()
+    print(f"{len(items)=}")
+    return bounds
+```
+
+Cette instruction print devrait retourner quelque chose comme :
+
+```bash
+Retour de 15 éléments
+```
+
+Ce sera le nombre d'images uniques Sentinel 1 couvrant nos `bounds` et notre `time_of_interest`.
+
+Nous pouvons maintenant utiliser le package [`odc`](https://odc-stac.readthedocs.io/en/latest/intro.html) pour charger la première image et nous allons utiliser la polarisation VV de Sentinel 1 (VH pourrait également fonctionner, et il serait bon d'itérer là-dessus pour évaluer visuellement laquelle fonctionnerait le mieux. Nous gardons cela simple pour l'instant, mais n'hésitez pas à tester les deux !).
+
+Nous allons obtenir un objet [`xarray.Dataset`](https://docs.xarray.dev/en/stable/generated/xarray.Dataset.html) que nous pouvons simplement ouvrir et retourner sous forme de tableau `uint8` :
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+):
+    import odc.stac
+    import planetary_computer
+    import pystac_client
+    import geopandas as gpd
+    import shapely
+
+
+    time_of_interest="2024-09-03/2024-09-04"
+    bands = ["vv"]
+
+    # Convertir les limites en GeoDataFrame pour les opérations STAC
+    specific_bounds = [-93.90425364, 29.61879782, -93.72767384, 29.7114987]
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds = common.bounds_to_gdf(specific_bounds)
+
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        # Les détails sur pourquoi nous devons le signer sont abordés ici : https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+        modifier=planetary_computer.sign_inplace,
+    )
+
+    items = catalog.search(
+        collections=["sentinel-1-grd"],
+        bbox=bounds.total_bounds,
+        datetime=time_of_interest,
+        query=None,
+    ).item_collection()
+    print(f"{len(items)=}")
+
+    ds = odc.stac.load(
+        items,
+        crs="EPSG:3857",
+        bands=bands,
+        resolution=10, # Nous voulons utiliser la résolution native de Sentinel 1 qui est de 10m
+        bbox=bounds.total_bounds,
+    ).astype(float)
+
+    da = ds[bands[0]].isel(time=0)
+    image = da.values * 1.0
+    return image.astype('uint8')
+```
+
+Ce qui nous donne une image Sentinel 1 sur notre zone d'intérêt :
+
+![Exécution de notebook à distance](/img/user-guide/examples/dvd/S1_da_return.png)
+
+Nous avons simplifié le processus ici, vous pourriez également :
+- Au lieu de charger `image.astype('uint8')`, effectuer une [calibration et conversion contrôlées en dB](https://www.mdpi.com/2504-3900/18/1/11)
+- Sélectionner une image plus spécifique plutôt que la première de notre pile
+- Utiliser une bande différente ou une combinaison de bandes
+- Utiliser des images [Radiometrically Terrain Corrected](https://planetarycomputer.microsoft.com/dataset/sentinel-1-rtc)
+
+### 4.1 Nettoyage de notre UDF Sentinel 1
+
+Avant d'ajouter de nouvelles fonctionnalités, nous allons nettoyer un peu notre UDF :
+- Déplacer certaines des fonctionnalités dans des fonctions séparées
+- Ajouter une gestion des erreurs commune (afin que notre UDF ne plante pas si aucune image Sentinel 1 n'est trouvée dans notre AOI + plage de dates si elle est trop étroite)
+- Ajouter un [décorateur de cache](/core-concepts/cache/) aux fonctions de code qui récupèrent des données pour accélérer l'UDF et réduire les coûts.
+
+Cela nous permettra de garder notre UDF plus lisible (en abstraisant le code) et plus réactif. Les fonctions mises en cache stockent leur résultat sur disque, ce qui rend une requête commune beaucoup plus réactive et moins coûteuse en utilisant moins de calcul.
+
+Voici notre UDF nettoyée :
+
+{/* TODO : expliquer les paramètres */}
+
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+    bands: list=["vv"],
+    resolution: int=10,
+    time_of_interest: str="2024-09-03/2024-09-10",
+):
+    import pandas as pd
+    da = get_data(bounds, time_of_interest, resolution, bands)
+
+    image = da.values * 1.0
+    return image.astype('uint8')
+
+@fused.cache
+def get_data(
+    bounds: fused.types.Bounds,
+    time_of_interest: str,
+    resolution: int,
+    bands: list,
+    data_name: str="sentinel-1-grd"
+):
+    """
+    Récupération des données Sentinel depuis MPC
+    La résolution est définie en mètres car nous utilisons EPSG:3857
+    """
+    import odc.stac
+    import planetary_computer
+    import pystac_client
+
+    # Convertir les limites en GeoDataFrame
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds = common.bounds_to_gdf(bounds)
+
+    if resolution < 10:
+        print("La résolution ne devrait pas être inférieure à la résolution native de Sentinel 1 ou 2. Passage à 10m")
+        resolution = 10
+        print(f"{resolution=}")
+
+    catalog = pystac_client.Client.open(
+            "https://planetarycomputer.microsoft.com/api/stac/v1",
+            # Les détails sur pourquoi nous devons le signer sont abordés ici : https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+            modifier=planetary_computer.sign_inplace,
+        )
+
+    items = catalog.search(
+        collections=[data_name],
+        bbox=bounds.total_bounds,
+        datetime=time_of_interest,
+        query=None,
+    ).item_collection()
+
+    if len(items) < 1:
+        print(f'Aucun élément trouvé. Veuillez soit zoomer, soit vous déplacer vers une autre zone')
+    else:
+        print(f"Retour de {len(items)} éléments")
+
+        def odc_load(bbox,resolution, time_of_interest):
+            ds = odc.stac.load(
+                    items,
+                    crs="EPSG:3857",
+                    bands=bands,
+                    resolution=resolution,
+                    bbox=bounds.total_bounds,
+                ).astype(float)
+            return ds
+
+        ds=odc_load(bounds,resolution, time_of_interest)
+        da = ds[bands[0]].isel(time=0)
+        return da
+```
+
+## 5. Détection simple des bateaux dans les images radar Sentinel 1
+
+Maintenant que nous avons une image Sentinel 1 sur une zone d'intérêt et une plage horaire, nous pouvons écrire un algorithme simple pour retourner des boîtes englobantes des bateaux dans l'image. Nous allons garder cela très basique car nous optimisons pour :
+- **Vitesse d'exécution** : Nous voulons que notre algorithme de détection de bateaux s'exécute en quelques secondes au maximum pendant que nous itérons. Surtout au début, lorsque nous développons notre pipeline, nous voulons un retour d'information rapide
+- **Simplicité** : Nous nous concentrons sur la démonstration de la construction d'un pipeline de bout en bout avec Fused dans cet exemple, et non sur la réalisation de l'analyse la plus approfondie possible. Cela devrait être une base sur laquelle vous pouvez construire !
+
+Les images radar sur une eau calme ont tendance à apparaître noires (car tout le signal radar est réfléchi _loin_ du capteur), tandis que les bateaux (principalement métalliques) réfléchissent vers le capteur, apparaissant comme des points lumineux dans notre image. Un algorithme simple de "détection de bateaux" consiste donc à effectuer une convolution 2D et à seuiliser la sortie à une certaine valeur de pixel :
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+    bands: list=["vv"],
+    resolution: int=10,
+    time_of_interest: str="2024-09-03/2024-09-10",
+):
+    import numpy as np
+
+    da = get_data(bounds, time_of_interest, resolution, bands)
+    image = da.values * 1.0
+
+    convoled_image = quick_convolution(np.array(image), kernel_size=2)
+
+    return convoled_image.astype('uint8')
+
+@fused.cache
+def get_data(
+    bounds: fused.types.Bounds,
+    time_of_interest: str,
+    resolution: int,
+    bands: list,
+    data_name: str="sentinel-1-grd"
+):
+    """
+    Récupération des données Sentinel depuis MPC
+    La résolution est définie en mètres car nous utilisons EPSG:3857
+    """
+    import odc.stac
+    import planetary_computer
+    import pystac_client
+
+
+    # Convertir les limites en GeoDataFrame
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds = common.bounds_to_gdf(bounds)
+
+    if resolution < 10:
+        print("La résolution ne devrait pas être inférieure à la résolution native de Sentinel 1 ou 2. Passage à 10m")
+        resolution = 10
+        print(f"{resolution=}")
+
+    catalog = pystac_client.Client.open(
+            "https://planetarycomputer.microsoft.com/api/stac/v1",
+            # Les détails sur pourquoi nous devons le signer sont abordés ici : https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+            modifier=planetary_computer.sign_inplace,
+        )
+
+    items = catalog.search(
+        collections=[data_name],
+        bbox=bounds.total_bounds,
+        datetime=time_of_interest,
+        query=None,
+    ).item_collection()
+
+    if len(items) < 1:
+        print(f'Aucun élément trouvé. Veuillez soit zoomer, soit vous déplacer vers une autre zone')
+    else:
+        print(f"Retour de {len(items)} éléments")
+
+        def odc_load(bounds,resolution, time_of_interest):
+            ds = odc.stac.load(
+                    items,
+                    crs="EPSG:3857",
+                    bands=bands,
+                    resolution=resolution,
+                    bbox=bounds.total_bounds,
+                ).astype(float)
+            return ds
+
+        ds=odc_load(bounds,resolution, time_of_interest)
+        da = ds[bands[0]].isel(time=0)
+
+        return da
+
+def quick_convolution(input_array, kernel_size):
+    import numpy as np
+    shifted_images = []
+
+    # Décalage de l'image dans toutes les combinaisons de directions (x, y) avec remplissage
+    for x in [-kernel_size, 0, kernel_size]:  # Décalage à gauche (kernel_size), pas de décalage (0), à droite (kernel_size)
+        for y in [-kernel_size, 0, kernel_size]:  # Décalage vers le haut (kernel_size), pas de décalage (0), vers le bas (kernel_size)
+            shifted = pad_and_shift_image(input_array, x, y, pad_value=0, kernel_size=kernel_size)
+            shifted_images.append(shifted)
+
+    stacked_image = np.stack(shifted_images)
+    return stacked_image.std(axis=0)
+
+def pad_and_shift_image(img, x_shift, y_shift, pad_value=0, kernel_size: int = 3):
+    import numpy as np
+    """Remplir et décaler une image par x_shift et y_shift avec la valeur de remplissage spécifiée."""
+
+    padded_img = np.pad(img, pad_width=kernel_size, mode='constant', constant_values=pad_value)
+    shifted_img = np.roll(np.roll(padded_img, y_shift, axis=0), x_shift, axis=1)
+
+    return shifted_img[kernel_size:-kernel_size, kernel_size:-kernel_size]
+```
+
+
+Cela retourne une image filtrée mettant en évidence les points les plus lumineux et réduisant le bruit naturel de l'image radar.
+
+![Exécution de notebook à distance](/img/user-guide/examples/dvd/convoled_s1_image.png)
+
+Il est maintenant relativement simple de vectoriser (transformer en objet vectoriel, de l'image aux polygones) :
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+    bands: list=["vv"],
+    resolution: int=10,
+    time_of_interest: str="2024-09-03/2024-09-10",
+):
+    import geopandas as gpd
+    import numpy as np
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds_gdf = common.bounds_to_gdf(bounds)
+    da = get_data(bounds, time_of_interest, resolution, bands)
+    image = da.values * 1.0
+
+    convoled_image = quick_convolution(np.array(image), kernel_size=2)
+
+    gdf_predictions = vectorise_raster(
+        raster=convoled_image.astype("uint8"),
+        bounds=bounds_gdf,
+        threshold=200 # Prendre un seuil élevé dans la plage 0-255 pour ne garder que les très lumineux
+    )
+
+    # Fusionner les polygones proches en un seul polygone, donc 1 polygone <-> 1 bateau
+    buffer_distance = 0.0001  # évalué à quelques mètres en EPSG:4326 (les degrés sont ennuyeux à travailler avec ¯\_(ツ)_/¯)
+    merged = gdf_predictions.geometry.buffer(buffer_distance).unary_union.buffer(
+        -buffer_distance/2
+    )
+    merged_gdf = gpd.GeoDataFrame(geometry=[merged], crs=bounds.crs).explode()
+
+    return merged_gdf
+
+@fused.cache
+def get_data(
+    bounds: fused.types.Bounds,
+    time_of_interest: str,
+    resolution: int,
+    bands: list,
+    data_name: str="sentinel-1-grd"
+):
+    """
+    Récupération des données Sentinel depuis MPC
+    La résolution est définie en mètres car nous utilisons EPSG:3857
+    """
+    import odc.stac
+    import planetary_computer
+    import pystac_client
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds = common.bounds_to_gdf(bounds)
+    if resolution < 10:
+        print("La résolution ne devrait pas être inférieure à la résolution native de Sentinel 1 ou 2. Passage à 10m")
+        resolution = 10
+        print(f"{resolution=}")
+
+    catalog = pystac_client.Client.open(
+            "https://planetarycomputer.microsoft.com/api/stac/v1",
+            # Les détails sur pourquoi nous devons le signer sont abordés ici : https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+            modifier=planetary_computer.sign_inplace,
+        )
+    items = catalog.search(
+        collections=[data_name],
+        bbox=bounds.total_bounds,
+        datetime=time_of_interest,
+        query=None,
+    ).item_collection()
+
+    if len(items) < 1:
+        print(f'Aucun élément trouvé. Veuillez soit zoomer, soit vous déplacer vers une autre zone')
+    else:
+        print(f"Retour de {len(items)} éléments")
+
+        def odc_load(bounds,resolution, time_of_interest):
+            ds = odc.stac.load(
+                    items,
+                    crs="EPSG:3857",
+                    bands=bands,
+                    resolution=resolution,
+                    bbox=bounds.total_bounds,
+                ).astype(float)
+            return ds
+
+        ds=odc_load(bounds,resolution, time_of_interest)
+        da =  ds[bands[0]].isel(time=0)
+
+        return da
+
+def quick_convolution(input_array, kernel_size):
+    import numpy as np
+    shifted_images = []
+
+    # Décalage de l'image dans toutes les combinaisons de directions (x, y) avec remplissage
+    for x in [-kernel_size, 0, kernel_size]: # Décalage à gauche (kernel_size), pas de décalage (0), à droite (kernel_size)
+        for y in [-kernel_size, 0, kernel_size]:  # Décalage vers le haut (kernel_size), pas de décalage (0), vers le bas (kernel_size)
+            shifted = pad_and_shift_image(input_array, x, y, pad_value=0, kernel_size=kernel_size)
+            shifted_images.append(shifted)
+
+    stacked_image = np.stack(shifted_images)
+    return stacked_image.std(axis=0)
+
+def pad_and_shift_image(img, x_shift, y_shift, pad_value=0, kernel_size: int = 3):
+    import numpy as np
+    """Remplir et décaler une image par x_shift et y_shift avec la valeur de remplissage spécifiée."""
+
+    padded_img = np.pad(img, pad_width=kernel_size, mode='constant', constant_values=pad_value)
+    shifted_img = np.roll(np.roll(padded_img, y_shift, axis=0), x_shift, axis=1)
+
+    return shifted_img[kernel_size:-kernel_size, kernel_size:-kernel_size]
+
+@fused.cache
+def vectorise_raster(raster, bounds, threshold: float = 0.5):
+    from rasterio import features
+    import rasterio
+    import geopandas as gpd
+    import shapely
+    import numpy as np
+
+    transform = rasterio.transform.from_bounds(*bounds.total_bounds, raster.shape[1], raster.shape[0])
+
+    shapes = features.shapes(
+        source=raster.astype(np.uint8),
+        mask = (raster > threshold).astype('uint8'),
+        transform=transform
+    )
+
+    gdf = gpd.GeoDataFrame(
+        geometry=[shapely.geometry.shape(shape) for shape, shape_value in shapes],
+        crs=bounds.crs
+    )
+    return gdf
+```
+
+
+
+Et c'est ainsi que nous avons transformé notre image Sentinel 1 en un `gpd.GeoDataFrame` vectoriel d'objets lumineux :
+
+![Exécution de notebook à distance](/img/user-guide/examples/dvd/vector_boats.png)
+
+
+## 6. Récupération des données AIS pour notre période d'intérêt
+
+Pour obtenir nos données AIS, nous devons maintenant récupérer le moment exact où nos images Sentinel 1 ont été acquises. Nous pouvons utiliser cette information pour ne garder que les points AIS dans quelques minutes autour de ce moment.
+
+```python showLineNumbers@fused.udf
+def udf(
+    bounds: fused.types.Bounds,
+    bands: list=["vv"],
+    resolution: int=10,
+    time_of_interest: str="2024-09-03/2024-09-10",
+):
+    import geopandas as gpd
+    import numpy as np
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds_gdf = common.bounds_to_gdf(bounds)
+
+    da = get_data(bounds, time_of_interest, resolution, bands)
+    image = da.values * 1.0
+
+    convoled_image = quick_convolution(np.array(image), kernel_size=2)
+
+    gdf_predictions = vectorise_raster(
+        raster=convoled_image.astype("uint8"),
+        bounds=bounds_gdf,
+        threshold=200 # Utilisation d'un seuil plus élevé pour s'assurer que seuls les points lumineux sont pris
+    )
+
+    # Fusionner les polygones proches
+    buffer_distance = 0.0001  # valeur évaluée en EPSG:4326 donc besoin d'utiliser des degrés. Je n'aime pas les degrés
+    merged = gdf_predictions.geometry.buffer(buffer_distance).unary_union.buffer(
+        -buffer_distance/2
+    )
+    merged_gdf = gpd.GeoDataFrame(geometry=[merged], crs=bounds.crs).explode()
+
+    # Garder les métadonnées à proximité pour fusionner avec les données AIS
+    merged_gdf['S1_acquisition_time'] = da['time'].values
+
+    return merged_gdf
+
+@fused.cache
+def get_data(
+    bounds: fused.types.Bounds,
+    time_of_interest: str,
+    resolution: int,
+    bands: list,
+    data_name: str="sentinel-1-grd"
+):
+    """
+    Récupération des données Sentinel depuis MPC
+    La résolution est définie en mètres car nous utilisons EPSG:3857
+    """
+    import odc.stac
+    import planetary_computer
+    import pystac_client
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    bounds = common.bounds_to_gdf(bounds)
+
+    if resolution < 10:
+        print("La résolution ne devrait pas être inférieure à la résolution native de Sentinel 1 ou 2. Passage à 10m")
+        resolution = 10
+        print(f"{resolution=}")
+
+    catalog = pystac_client.Client.open(
+            "https://planetarycomputer.microsoft.com/api/stac/v1",
+            # Les détails sur pourquoi nous devons le signer sont abordés ici : https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/#Searching
+            modifier=planetary_computer.sign_inplace,
+        )
+    items = catalog.search(
+        collections=[data_name],
+        bbox=bounds.total_bounds,
+        datetime=time_of_interest,
+        query=None,
+    ).item_collection()
+
+    if len(items) < 1:
+        print(f'Aucun élément trouvé. Veuillez soit zoomer, soit vous déplacer vers une autre zone')
+    else:
+        print(f"Retour de {len(items)} éléments")
+
+        def odc_load(bounds,resolution, time_of_interest):
+            ds = odc.stac.load(
+                    items,
+                    crs="EPSG:3857",
+                    bands=bands,
+                    resolution=resolution,
+                    bbox=bounds.total_bounds,
+                ).astype(float)
+            return ds
+
+        ds=odc_load(bounds,resolution, time_of_interest)
+        da =  ds[bands[0]].isel(time=0)
+
+        return da
+
+def quick_convolution(input_array, kernel_size):
+    import numpy as np
+    shifted_images = []
+
+    # Décalage de l'image dans toutes les combinaisons de directions (x, y) avec remplissage
+    for x in [-kernel_size, 0, kernel_size]:  # Décalage à gauche (kernel_size), pas de décalage (0), à droite (kernel_size)
+        for y in [-kernel_size, 0, kernel_size]:  # Décalage vers le haut (kernel_size), pas de décalage (0), vers le bas (kernel_size)
+            shifted = pad_and_shift_image(input_array, x, y, pad_value=0, kernel_size=kernel_size)
+            shifted_images.append(shifted)
+
+    stacked_image = np.stack(shifted_images)
+    return stacked_image.std(axis=0)
+
+def pad_and_shift_image(img, x_shift, y_shift, pad_value=0, kernel_size: int = 3):
+    import numpy as np
+    """Remplir et décaler une image par x_shift et y_shift avec la valeur de remplissage spécifiée."""
+
+    padded_img = np.pad(img, pad_width=kernel_size, mode='constant', constant_values=pad_value)
+    shifted_img = np.roll(np.roll(padded_img, y_shift, axis=0), x_shift, axis=1)
+
+    return shifted_img[kernel_size:-kernel_size, kernel_size:-kernel_size]
+
+@fused.cache
+def vectorise_raster(raster, bounds, threshold: float = 0.5):
+    from rasterio import features
+    import rasterio
+    import geopandas as gpd
+    import shapely
+    import numpy as np
+
+    transform = rasterio.transform.from_bounds(*bounds.total_bounds, raster.shape[1], raster.shape[0])
+
+    shapes = features.shapes(
+        source=raster.astype(np.uint8),
+        mask = (raster > threshold).astype('uint8'),
+        transform=transform
+    )
+
+    gdf = gpd.GeoDataFrame(
+        geometry=[shapely.geometry.shape(shape) for shape, shape_value in shapes],
+        crs=bounds.crs
+    )
+    return gdf
+```
+
+
+`merged_gdf` retourne maintenant une colonne appelée `S1_acquisition_time` avec l'heure à laquelle l'image Sentinel 1 a été prise.
+
+Si nous sauvegardons et appelons cette UDF avec un [token](/core-concepts/run-udfs/run-small-udfs/#token), nous pouvons l'appeler de n'importe où, d'un Jupyter Notebook ou d'une autre UDF. Créons une nouvelle UDF dans Workbench :
+
+```python showLineNumbers
+# Ceci est une nouvelle UDF
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds=None,
+    time_of_interest: int="2024-09-03/2024-09-10",
+):
+    import fused
+
+    @fused.cache()
+    def get_s1_detection(
+        time_of_interest=time_of_interest,
+        bounds=bounds):
+
+        return fused.run(
+            "fsh_673giUH9R6KqWFCOQtRfb3",
+            time_of_interest=time_of_interest,
+            bounds=bounds,
+        )
+
+    s1_detections = get_s1_detection()
+    print(f"Trouvé {s1_detections.shape[0]} détections uniques Sentinel 1")
+
+    # Nous voulons garder les données AIS juste autour du moment où l'image S1 a été acquise
+    s1_acquisition_date = s1_detections['S1_acquisition_time'].values[0]
+    s1_acquisition_month = str(s1_acquisition_date.astype('datetime64[M]'))
+    s1_acquisition_month_day_hour_min = s1_acquisition_date.astype('datetime64[s]').astype(str).replace('T', ' ')
+    print(f"L'image Sentinel 1 a été acquise à : {s1_acquisition_month_day_hour_min}")
+
+    return s1_detections
+```
+
+Cela imprime :
+
+```bash
+Trouvé 16 détections uniques Sentinel 1
+L'image Sentinel 1 a été acquise à : 2024-09-04 00:19:09
+```
+
+Nous pouvons maintenant créer une autre UDF qui prendra cette date `s1_acquisition_month_day_hour_min` + une boîte englobante en entrée et retournera tous les points AIS à ce moment + dans cette zone.
+
+Nous allons tirer parti du code de la communauté pour cette partie, à savoir la lecture des données AIS à partir d'un GeoParquet géo-partitionné. Fused nous permet de réutiliser facilement n'importe quel code que nous voulons et de le figer à un commit spécifique afin qu'il ne casse pas nos pipelines ([lisez-en plus ici](/core-concepts/run-udfs/run-small-udfs/#git-commit-hash-recommended-for-most-stable-use-cases))
+
+Nous pouvons utiliser [ce morceau de code appelé `table_to_tile`](https://github.com/fusedio/udfs/blob/f8f0c0f5f5565c4f8be599c9fcb43368352f145f/public/common/utils.py#L163) qui chargera soit les données AIS, soit la boîte englobante selon notre niveau de zoom pour garder notre UDF rapide et réactif.
+
+:::note
+    Vous pourriez écrire un lecteur GeoParquet depuis zéro ou appeler une UDF que vous avez déjà qui le fait, vous n'êtes pas obligé d'utiliser cette option. Mais nous voulons vous montrer comment vous pouvez réutiliser des morceaux de code d'autres ici.
+:::
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = None,
+    s1_acquisition_month_day_hour_min:str = '2024-09-04T00:19:09.175874',
+    time_delta_in_hours: float = 0.1, # par défaut 6min (60min * 0.1)
+    min_zoom_to_load_data: int = 14,
+    ais_table_path: str = "s3://fused-users/fused/demo_user/AIS_2024_ingester/prod_2024_09", # C'est l'emplacement où nous avons ingéré nos données AIS géo-partitionnées
+    ):
+    """Lecture des données AIS à partir des données AIS partitionnées Fused de la NOAA (données uniquement disponibles aux États-Unis)"""
+    import pandas as pd
+    from datetime import datetime, timedelta
+
+    # Charger le module utilitaires
+    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+    zoom = common.estimate_zoom(bounds)
+
+    sentinel1_time = pd.to_datetime(s1_acquisition_month_day_hour_min)
+    time_delta_in_hours = timedelta(hours=time_delta_in_hours)
+
+    month_date = sentinel1_time.strftime('%Y_%m')
+    monthly_ais_table = f"{ais_table_path}prod_{month_date}/"
+    print(f"{monthly_ais_table=}")
+
+    @fused.cache
+    def getting_ais_from_s3(bounds, monthly_table):
+        return common.table_to_tile(
+            bounds,
+            table=monthly_ais_table,
+            use_columns=None,
+            min_zoom=min_zoom_to_load_data
+        )
+
+    ais_df = getting_ais_from_s3(bounds, monthly_ais_table)
+
+    if ais_df.shape[0] == 0:
+        print("Aucune donnée AIS dans cette zone et ce délai. Changez la zone ou le délai")
+        return ais_df
+
+    if zoom > min_zoom_to_load_data:
+        print(f"Le zoom est {zoom=} | Affichage uniquement des limites")
+        return ais_df
+
+    print(f"{ais_df['BaseDateTime'].iloc[0]=}")
+    ais_df['datetime'] = pd.to_datetime(ais_df['BaseDateTime'])
+    mask = (ais_df['datetime'] >= sentinel1_time - time_delta_in_hours) & (ais_df['datetime'] <= sentinel1_time + time_delta_in_hours)
+    filtered_ais_df = ais_df[mask]
+    print(f'{filtered_ais_df.shape=}')
+    return filtered_ais_df
+```
+
+Dans le constructeur UDF de Workbench, nous pouvons maintenant voir la sortie de nos deux UDF :
+
+![Exécution de notebook à distance](/img/user-guide/examples/dvd/AIS_and_Sentinel1.png)
+
+Nous pouvons maintenant voir qu'un de ces bateaux n'a pas de point AIS associé (en rouge).
+
+:::tip
+    Vous pouvez changer le style de vos couches dans l'onglet Visualiser pour les faire ressembler à la capture d'écran ci-dessus.
+:::
+
+Maintenant, tout ce que nous avons à faire est de fusionner ces 2 ensembles de données ensemble et de garder tous les bateaux qui ne correspondent pas à un point AIS.
+
+## 7. Fusionner les 2 ensembles de données
+
+Nous pouvons étendre la UDF que nous avons commencée dans [section 6.](/tutorials/Geospatial%20with%20Fused/use-cases/dark-vessel-detection/#6-retrieving-ais-data-for-our-time-of-interest) pour appeler notre UDF AIS en passant une boîte englobante + `s1_acquisition_month_day_hour_min`.
+
+Nous allons obtenir les données AIS et les joindre avec les bateaux détectés par Sentinel 1 en utilisant [la fonction `sjoin_nearest` de geopandas](https://geopandas.org/en/stable/docs/reference/api/geopandas.sjoin_nearest.html) pour obtenir la distance la plus proche de chaque bateau à un point AIS.
+
+Tout point avec le point AIS le plus proche >100m du bateau Sentinel 1 sera considéré comme un "navire sombre" potentiel.
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds=None,
+    time_of_interest: str="2024-09-03/2024-09-10",
+    ais_search_distance_in_meters: int=10,
+):
+    import fused
+
+    @fused.cache()
+    def get_s1_detection(
+        time_of_interest=time_of_interest,
+        bounds=bounds):
+
+        return fused.run(
+            "fsh_673giUH9R6KqWFCOQtRfb3",
+            time_of_interest=time_of_interest,
+            bounds=bounds,
+        )
+
+    s1_detections = get_s1_detection()
+    print(f"Trouvé {s1_detections.shape[0]} détections uniques Sentinel 1")
+
+    # Nous voulons garder les données AIS juste autour du moment où l'image S1 a été acquise
+    s1_acquisition_date = s1_detections['S1_acquisition_time'].values[0]
+    s1_acquisition_month = str(s1_acquisition_date.astype('datetime64[M]'))
+    s1_acquisition_month_day_hour_min = s1_acquisition_date.astype('datetime64[s]').astype(str).replace('T', ' ')
+    print(f"L'image Sentinel 1 a été acquise à : {s1_acquisition_month_day_hour_min}")
+
+    @fused.cache()
+    def get_ais_from_s1_date(s1_acquisition_month_day_hour_min=s1_acquisition_month_day_hour_min, bounds=bounds):
+        return fused.run("fsh_FI1FTq2CVK9sEiX0Uqakv", s1_acquisition_month_day_hour_min=s1_acquisition_month_day_hour_min, bounds=bounds)
+
+    ais_gdf = get_ais_from_s1_date()
+
+    # S'assurer que les deux ont le même CRS
+    s1_detections.set_crs(ais_gdf.crs, inplace=True)
+
+    # Bufferiser les points AIS pour tirer parti de la jointure spatiale
+    ais_gdf['geometry'] = ais_gdf.geometry.buffer(0.005)
+
+    joined = s1_detections.to_crs(s1_detections.estimate_utm_crs()).sjoin_nearest(
+        ais_gdf.to_crs(s1_detections.estimate_utm_crs()),
+        how="inner", # Utilisation de gauche, c'est-à-dire S1 comme clés
+        distance_col='distance_in_meters',
+    )
+
+    # Les navires sombres seront des points S1 uniques qui n'ont pas de point AIS dans un rayon de 10m
+    potential_dark_vessels = joined[joined['distance_in_meters'] > ais_search_distance_in_meters]
+    print(f"Trouvé {potential_dark_vessels.shape[0]} navires sombres potentiels")
+
+    # retour à EPSG:4326
+    potential_dark_vessels.to_crs(s1_detections.crs, inplace=True)
+    return potential_dark_vessels
+```
+
+Et maintenant, nous avons une UDF qui prend une `time_of_interest` et une boîte englobante et retourne des navires sombres potentiels :
+
+![détection de navires sombres potentiels](/img/user-guide/examples/dvd/potential_dark_vessel.png)
+
+## Limitations et prochaines étapes
+
+Il s'agit d'une analyse simple, qui fait beaucoup d'hypothèses relativement naïves (par exemple : tous les points lumineux dans le SAR sont des bateaux, ce qui ne fonctionne que dans les eaux ouvertes et non près de la côte ou autour de structures solides comme les parcs éoliens marins ou les plateformes pétrolières). Il y a beaucoup de façons dont cela pourrait être amélioré, mais cela fournit un bon point de départ.
+
+Cela pourrait être amélioré de plusieurs façons :
+- Masquer toute côte ou zone connue avec une infrastructure statique (pour limiter les faux positifs potentiels autour des parcs éoliens côtiers)
+
+<LazyReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="80%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/dark-vessel-detection/false_positive_wind_mills.mp4" width="80%" />
+Exemple de la [Block Island Wind Farm](https://en.wikipedia.org/wiki/Block_Island_Wind_Farm) dans le Rhode Island apparaissant comme un faux positif "navire sombre potentiel" : Les éoliennes apparaissent comme des points lumineux mais n'ont aucune donnée AIS associée à elles
+(`bounds=[-71.08534386325134,41.06338103121641,-70.89011235861962,41.15718153299125]` & `s1_acquisition_month_day_hour_min = "2024-09-03T22:43:33"`)
+
+- Utiliser un algorithme plus sophistiqué pour détecter les bateaux. L'algorithme actuel est naïf, ne retourne pas de boîtes englobantes mais plutôt des formes générales.
+- Retourner plus d'informations dérivées des données AIS : Parfois, les bateaux deviennent sombres pendant une certaine période, ce qui permet de lier un bateau qui était sombre pendant un certain temps à un navire connu lorsqu'il active son AIS.
+- Exécuter cela sur toute la côte des États-Unis continentaux et/ou sur une année entière. Cela serait plus proche du [projet de détection des navires sombres de Global Fishing Watch](https://globalfishingwatch.org/research-project-dark-vessels/).
+
+Si vous souhaitez aller un peu plus loin, consultez :
+- Exécution [des UDF à grande échelle avec `run_batch()`](/core-concepts/run-udfs/run_large/#running-a-large-job-jobrun_batch). Vous pourriez utiliser cela pour exécuter ce pipeline sur une zone plus grande ou sur une série temporelle beaucoup plus longue (ou les deux !) pour découvrir plus de navires sombres potentiels.
+- Plus sur les concepts de base de Fused comme le choix entre [l'exécution des UDF en fonction de Tile ou File](/tutorials/Geospatial%20with%20Fused/filetile/)

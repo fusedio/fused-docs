@@ -1,0 +1,210 @@
+---
+id: load-export-data
+title: Charger & Exporter des Données
+sidebar_label: Charger & Exporter des Données
+sidebar_position: 2
+---
+
+# Charger & Exporter des Données 
+
+Exemples courants pour charger et enregistrer des données dans Fused.
+
+<iframe 
+    style={{
+        width: "100%",
+        maxWidth: "800px", 
+        aspectRatio: "16/9",
+        height: "auto",
+        margin: "0 auto",
+        display: "block"
+    }}
+    src="https://www.youtube.com/embed/E1j-V84_11k" 
+    title="Lecteur vidéo YouTube" 
+    frameBorder="0" 
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+    referrerPolicy="strict-origin-when-cross-origin" 
+    allowFullScreen>
+</iframe>
+
+## Charger des Données
+
+### `pandas`
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/housing_2024.csv"):
+    import pandas as pd
+    
+    return pd.read_csv(path)
+```
+
+### `duckdb`
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/housing_2024.parquet"):
+    import duckdb
+    
+    conn = duckdb.connect()
+    result = conn.execute(f"""
+        SELECT * 
+        FROM '{path}'
+        LIMIT 10
+    """).df()
+    
+    return result
+```
+
+### À partir d'autres UDFs
+
+{/* TODO: Utiliser un exemple non géographique ici */}
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds):
+    overture_udf = fused.load('https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example/')
+    buildings = fused.run(overture_udf, bounds=bounds, theme='buildings', overture_type='building')
+ 
+    return buildings
+```
+
+### Télécharger des données vers un montage partagé Fused
+
+```python
+@fused.udf
+def udf(url='https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_COLUMBIA/11/tl_rd22_11_bg.zip'):
+    out_path = fused.download(url=url, file_path='out.zip')
+    return str(out_path)
+```
+
+Les fichiers seront écrits dans `/mount/tmp/`, où tout autre UDF pourra ensuite y accéder.
+
+Lisez-en plus sur `fused.download()` [ici](/python-sdk/top-level-functions/#fuseddownload)
+
+### Snowflake
+
+Définissez `user` et `password` dans l'interface [gestion des secrets](/workbench/preferences/#secrets-management) de Fused d'abord.
+
+```python
+@fused.udf
+def udf(query: str = 'SELECT CURRENT_VERSION()'):
+    import snowflake.connector
+    import pandas as pd
+    
+    try:
+        conn = snowflake.connector.connect(
+            user=fused.secret('SNOWFLAKE_USER'),
+            password=fused.secret('SNOWFLAKE_PASSWORD'), 
+            account='your_account_identifier',
+            warehouse='your_warehouse',
+            database='your_database',
+            schema='your_schema'
+        )
+        
+        # Exécuter la requête et retourner sous forme de DataFrame
+        cursor = conn.cursor()
+        cursor.execute(query)
+        
+        # Utiliser pandas pour lire directement à partir du curseur
+        df = cursor.fetch_pandas_all()
+        
+        cursor.close()
+        conn.close()
+        
+        return df
+        
+    except Exception as e:
+        print(f"La connexion à Snowflake a échoué : {e}")
+        raise
+```
+
+Lisez-en plus sur [l'authentification de Snowflake](https://docs.snowflake.com/en/developer-guide/python-connector/python-connector-connect)
+
+
+## Exporter des Données
+
+### Stockage géré par Fused : `fd://`
+
+```python
+df.to_parquet("fd://my-dataset/data.parquet")
+```
+
+Lisez-en plus sur le [`fd://` S3 Bucket](/core-concepts/content-management/file-system/#fd-s3-bucket)
+
+### Disque monté Fused : `/mnt/cache`
+
+```python
+df.to_parquet("/mnt/cache/data.parquet")
+```
+
+Lisez-en plus sur le [`/mnt/cache` disque monté](/core-concepts/content-management/file-system/#mntcache-disk)
+
+
+### AWS S3 : `s3://`
+
+```python
+df.to_parquet("s3://my-bucket/data.parquet")
+```
+
+### Google Cloud Storage : `gcs://`
+
+```python
+df.to_parquet("gcs://my-bucket/data.parquet")
+```
+
+### Utiliser comme API (Aucun enregistrement de fichier requis)
+
+Vous pouvez appeler directement vos UDFs comme des APIs, supprimant ainsi le besoin d'enregistrer vos données !
+
+Nous créons un [Token Partagé](/core-concepts/run-udfs/run-small-udfs/#shared-token) pour votre UDF la première fois que vous enregistrez, afin que vous puissiez changer le format de sortie de votre point de terminaison HTTPS :
+
+```bash
+https://fused.io/.../run/file?format=json
+```
+
+**Téléchargements de données tabulaires :**
+
+```bash
+?format=csv          # Téléchargement CSV
+?format=geojson      # Téléchargement GeoJSON
+?format=parquet      # Téléchargement Parquet
+?format=json         # Téléchargement JSON
+?format=mvt          # Téléchargement Mapbox Vector Tile
+```
+
+**Téléchargements de données d'image :**
+
+```bash
+?format=png          # Image PNG
+?format=tiff         # Téléchargement GeoTIFF
+```
+
+## Intégrations
+
+Appelez vos UDFs depuis d'autres outils après avoir créé un [Token Partagé](/core-concepts/run-udfs/run-small-udfs/#shared-token) pour votre UDF :
+
+### DuckDB
+
+```bash
+select * from read_parquet('https://fused.io/.../run/file?');
+```
+
+### Curl
+
+```bash
+curl -L -XGET 'https://fused.io/.../run/file?'
+```
+
+### Google Sheets
+
+Assurez-vous que vos Sheets sont réglées sur "Visionneuse" pour "Quiconque avec le lien" :
+
+![Réglage de Google Sheets sur "Quiconque avec le lien" peut voir](/img/tutorials/GSheets_viewer.png)
+
+```bash
+=importData('https://fused.io/.../run/file?')
+```
+
+### Notion
+
+- Utilisez le bloc `/embed` avec le point de terminaison UDF : `'https://fused.io/.../run/file?'`

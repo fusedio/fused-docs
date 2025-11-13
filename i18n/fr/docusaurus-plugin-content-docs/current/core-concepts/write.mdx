@@ -1,0 +1,200 @@
+---
+id: write
+title:  Écrire des UDF
+tags: [write, "@fused.udf", "@fused.cache", typed parameters, utility functions, return object]
+sidebar_position: 1
+---
+
+![udf anatomy](/img/udfanatomy.png)
+
+Suivez ces étapes pour écrire une [User Defined Function (UDF)](/core-concepts/why/).
+
+- Décorez une fonction avec [`@fused.udf`](/core-concepts/write/#fusedudf-decorator)
+- [Déclarez la fonction](/core-concepts/write/#function-declaration) logique
+- Optionnellement [mettez en cache](/core-concepts/write/#fusedcache-decorator) des parties de la fonction
+- Définissez des [paramètres typés](/core-concepts/write/#typed-parameters) pour s'exécuter dynamiquement en fonction des entrées
+- Importez des [modules utilitaires](/core-concepts/write/#utils-module) pour garder votre code organisé
+- [Retournez](/core-concepts/write/#return-object) une table vectorielle ou un raster
+- [Enregistrez](/core-concepts/write/#save-udfs) l'UDF
+
+## `@fused.udf` décorateur
+
+Tout d'abord, décorez une fonction Python avec `@fused.udf` pour indiquer à Fused de la traiter comme une UDF.
+
+## Déclaration de fonction
+
+Ensuite, structurez le code de l'UDF. Déclarez les instructions d'importation dans le corps de la fonction, exprimez les opérations pour charger et transformer les données, et définissez une instruction de retour. Cette UDF s'appelle `udf` et retourne un objet `pd.DataFrame`.
+
+```python showLineNumbers
+@fused.udf # <- Fused decorator
+# highlight-start
+def udf(name: str = "Fused"): # <- Function declaration
+    import pandas as pd
+    return pd.DataFrame({'message': [f'Hello {name}!']})
+# highlight-end
+```
+:::info
+Le constructeur UDF dans Workbench importe automatiquement le module `fused`. Pour écrire des UDF en dehors de Workbench, installez le [Fused Python SDK](/python-sdk/) avec `pip install fused` et importez-le avec `import fused`.
+:::
+
+:::note
+Placer des instructions d'importation dans le corps d'une fonction UDF (connues sous le nom d'"importations locales") n'est pas une pratique Python courante, mais il y a des raisons spécifiques de le faire lors de la construction d'UDF. Les UDF sont distribuées aux serveurs en tant qu'unités autonomes, et chaque unité doit importer tous les modules dont elle a besoin pour son exécution. Les UDF peuvent être exécutées sur de nombreux serveurs (dizaines, centaines, milliers), et tout temps perdu à importer des modules inutilisés sera multiplié.
+
+Une exception à cette convention concerne les modules utilisés pour l'annotation de fonction, qui doivent être importés en dehors de la fonction annotée.
+:::
+
+## `@fused.cache` décorateur
+
+Utilisez le [@fused.cache](/core-concepts/cache/) décorateur pour persister la sortie d'une fonction entre les exécutions afin que les UDF s'exécutent plus rapidement.
+
+```python showLineNumbers
+@fused.udf # <- Fused decorator
+def udf(bounds: fused.types.Bounds = None, name: str = "Fused"):
+    import pandas as pd
+
+    # highlight-start
+    @fused.cache # <- Cache decorator
+    def structure_output(name):
+        return pd.DataFrame({'message': [f'Hello {name}!']})
+    # highlight-end
+
+    df = structure_output(name)
+    return df
+```
+
+## Paramètres typés
+
+Les UDF résolvent les paramètres d'entrée aux types spécifiés dans leurs annotations de fonction. Cet exemple montre le [`paramètre bounds`](/tutorials/Geospatial%20with%20Fused/filetile/#bounds) typé comme `fused.types.Bounds` et `name` comme une chaîne.
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = None, # <- Typed parameters
+    name: str = "Fused"
+):
+```
+
+:::tip
+
+Pour écrire des UDF qui s'exécutent avec succès à la fois comme [`File` et `Tile`](/tutorials/Geospatial%20with%20Fused/filetile/), définissez `bounds` comme le premier paramètre, avec `None` comme valeur par défaut. Cela permet à l'UDF d'être invoquée avec succès à la fois comme `File` (lorsque `bounds` n'est pas passé) et comme `Tile`. Par exemple :
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    ...
+    return ...
+```
+
+:::
+
+### Types pris en charge
+
+Fused prend en charge les types Python natifs `int`, `float`, `bool`, `list`, `dict`, et `list`. Les paramètres sans type spécifié sont traités par défaut comme des chaînes.
+
+Le constructeur UDF exécute l'UDF en tant que [Map Tile](/tutorials/Geospatial%20with%20Fused/filetile/) si le [premier paramètre](/tutorials/Geospatial%20with%20Fused/filetile/#the-bounds-object) est typé comme `fused.types.Bounds`.
+
+### `pd.DataFrame` comme JSON
+
+Passez des tables et des géométries comme paramètres UDF sérialisés dans des appels HTTPS. Les paramètres JSON et GeoJSON sérialisés peuvent être convertis en `pd.DataFrame` ou `gpd.GeoDataFrame`. Notez que bien que Fused exige que les instructions d'importation soient déclarées dans la signature de l'UDF, les bibliothèques utilisées pour le typage doivent être importées en haut du fichier.
+
+```python showLineNumbers
+import geopandas as gpd
+import pandas as pd
+
+@fused.udf
+def udf(
+    gdf: gpd.GeoDataFrame = None,
+    df: pd.DataFrame = None
+):
+```
+
+## Paramètres réservés
+
+Lors de l'exécution d'une UDF avec `fused.run`, il est possible de spécifier le [map tile](/tutorials/Geospatial%20with%20Fused/filetile/#tile) que Fused utilisera pour structurer l'objet `bounds` en utilisant les paramètres réservés suivants.
+
+### Avec les paramètres `x`, `y`, `z`
+
+```python showLineNumbers
+fused.run("UDF_Overture_Maps_Example", x=5241, y=12662, z=15)
+```
+
+### Passer un `GeoDataFrame`
+```python showLineNumbers
+import geopandas as gpd
+bounds = gpd.GeoDataFrame.from_features({"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"coordinates":[[[-122.41152460661726,37.80695951427788],[-122.41152460661726,37.80386837460925],[-122.40744576928229,37.80386837460925],[-122.40744576928229,37.80695951427788],[-122.41152460661726,37.80695951427788]]],"type":"Polygon"},"id":1}]})
+fused.run("UDF_Overture_Maps_Example", bounds=bounds)
+```
+
+### Passer une liste de boîte englobante
+
+Vous pouvez également passer une liste de 4 points représentant `[min_x, min_y, max_x, max_y]`
+
+```python showLineNumbers
+fused.run('UDF_Overture_Maps_Example', bounds=[-122.349, 37.781, -122.341, 37.818])
+```
+
+### Importer des fonctions d'autres UDF
+
+Les UDF peuvent importer des fonctions d'autres UDF avec `fused.load` dans le [dépôt GitHub des UDF](https://github.com/fusedio/udfs/tree/main) ou [dépôts GitHub privés](/core-concepts/content-management/git/). Ici, le commit SHA `05ba2ab` fixe l'UDF à un commit spécifique [pour le contrôle de version](/core-concepts/run-udfs/run-small-udfs/#git-commit-hash-recommended-for-most-stable-use-cases).
+
+```python showLineNumbers
+common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+```
+
+## Objet `return`
+
+Les UDF peuvent retourner les objets suivants :
+
+- Tables : `pd.DataFrame`, `pd.Series`, `gpd.GeoDataFrame`,  `gpd.GeoSeries`, et `shapely geometry`.
+- Tableaux : `numpy.ndarray`, `xarray.Dataset`, `xarray.DataArray`, et `io.BytesIO`. Fused Workbench ne prend en charge que le rendu des tableaux `uint8`. Les rasters sans métadonnées spatiales doivent indiquer leurs [limites de tuiles](/tutorials/Geospatial%20with%20Fused/filetile/#tile).
+- Objets Python simples : `str`, `int`, `float`, `bool`.
+- Dictionnaires : `dict`. Utile pour retourner des dictionnaires de tableaux numpy raster par exemple.
+
+## Enregistrer des UDF
+
+Les UDF exportées depuis le [Constructeur UDF](/workbench/udf-builder/) ou enregistrées localement sont formatées en tant que fichier `.zip` contenant des fichiers associés au code des UDF, au module `utils`, aux métadonnées et au `README.md`.
+
+```
+└── Sample_UDF
+    ├── README.MD       # Description et métadonnées
+    ├── Sample_UDF.py   # Code UDF
+    ├── meta.json       # Métadonnées Fused
+    └── utils.py        # Module `utils`
+```
+
+### En Python : `.to_fused()`
+
+Lorsque vous êtes en dehors de Workbench, enregistrez l'UDF sur votre système de fichiers local avec `my_udf.to_directory('Sample_UDF')` et sur le cloud Fused avec `my_udf.to_fused()`.
+
+Cela vous permettra d'accéder à votre UDF à l'aide d'un [token](/core-concepts/run-udfs/run-small-udfs/#token), d'un [commit GitHub](/core-concepts/run-udfs/run-small-udfs/#git-commit-hash-recommended-for-most-stable-use-cases) ou en l'importation directement dans [Workbench depuis l'URL GitHub](/workbench/udf-catalog/#add-from-github-url)
+
+### Dans Workbench : Enregistrement via GitHub
+
+Vous pouvez également enregistrer vos UDF directement via GitHub en tant qu'UDF personnelle, d'équipe ou communautaire. Consultez [Contribuer à Fused](/workbench/udf-catalog/#contribute-to-fused) pour en savoir plus.
+
+## Mettre à jour les tags et les métadonnées
+
+Modifiez les métadonnées de l'UDF pour gérer des tags personnalisés qui persistent à travers le système de fichiers local, le Cloud Fused et le dépôt GitHub de votre équipe.
+
+```python showLineNumbers
+# Supposons que my_udf ait été chargé ou créé ci-dessus
+my_udf.metadata['my_company:tags']=['tag_1', 'tag_2']
+
+# Pousser vers Fused
+my_udf.to_fused()
+
+# Vous pouvez recharger votre UDF et voir les métadonnées mises à jour
+fused.load('my_udf').metadata
+```
+
+## Déboguer des UDF
+
+#### Constructeur UDF
+
+Une approche courante pour déboguer des UDF est de montrer des résultats intermédiaires dans le [Constructeur UDF](/workbench/udf-builder) [panneau d'exécution](/workbench/udf-builder/runtime/) avec des instructions `print`.
+
+#### Requêtes HTTPS
+
+Lors de l'utilisation de requêtes HTTPS, tout message d'erreur est inclus dans l'en-tête de réponse `X-Fused-Metadata`. Ces messages peuvent être utilisés pour déboguer. Pour inspecter l'en-tête dans un navigateur, ouvrez l'onglet réseau des [Outils de développement](https://developer.chrome.com/docs/devtools/network).
+
+![network](/img/network.png)

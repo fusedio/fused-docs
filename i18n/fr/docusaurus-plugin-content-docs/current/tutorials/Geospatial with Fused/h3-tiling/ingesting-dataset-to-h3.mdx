@@ -1,0 +1,75 @@
+---
+slug: ingesting-dataset-to-h3
+title: Ingestion de Dataset à H3
+authors: [fused]
+tags: [h3, géospatial]
+sidebar_position: 4
+---
+
+# Ingestion de Dataset à H3
+
+## Vecteur à Hex
+
+Exemple d'ingestion d'une version du dataset Overture Building dans des hexagones H3 :
+
+:::note Exécutez ceci dans un notebook ou un shell Python, pas dans Workbench
+
+Ce qui suit est similaire à une [ingestion de dataset vectoriel](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/ingest-your-data), s'exécutant sur des [jobs en lot](/core-concepts/run-udfs/run_large/).
+
+Nous recommandons donc d'exécuter ceci dans un notebook ou un shell Python, pas dans Workbench.
+
+:::
+
+```python showLineNumbers
+# Exécutez ceci dans un notebook ou un shell Python, pas dans Workbench
+username = fused.api.whoami() # Obtention du nom d'utilisateur pour enregistrer des données dans votre propre bucket S3
+release = '2025-01-22-0'
+```
+
+```python showLineNumbers
+# Exécutez ceci dans un notebook ou un shell Python, pas dans Workbench
+args = [{'input_path': f's3://us-west-2.opendata.source.coop/fused/overture/{release}/theme=buildings/type=building/',
+         'output_path': f's3://fused-users/fused/{username}/overture_overview/{release}/',
+         'hex_res': 11}]
+```
+
+Dans cet exemple, nous allons simplement [compter le nombre de bâtiments](https://github.com/fusedlabs/fusedudfs/blob/main/Overture_Hexify/Overture_Hexify.py#L36-L39) par hexagone.
+
+```python showLineNumbers
+# Exécutez ceci dans un notebook ou un shell Python, pas dans Workbench
+Overture_Hexify = fused.load("https://github.com/fusedlabs/fusedudfs/tree/main/Overture_Hexify/")
+j = Overture_Hexify(arg_list=args)
+
+j.run_remote(instance_type='r5.16xlarge', disk_size_gb=999)
+```
+
+Lire les données ingérées devient beaucoup plus simple et rapide :
+
+<iframe 
+  src="https://www.fused.io/server/v1/realtime-shared/fsh_1P5dqTKyPeryNpoPslct0o/run/file"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+<details>
+<summary>Code</summary>
+```python showLineNumbers
+common = fused.load("https://github.com/fusedio/udfs/blob/main/public/common/")
+@fused.udf
+def udf(bounds: fused.types.Bounds = [-122.71963771127753,36.53196328805067,-120.70395948802646,38.082911654639275]):
+    res = bounds_to_res(bounds)
+    print(res)
+    releases = ['2024-02-15-alpha-0', '2024-03-12-alpha-0', '2024-08-20-0', '2024-09-18-0', '2024-10-23-0', '2024-11-13-0', '2024-12-18-0', '2025-01-22-0', '2025-03-19-1', '2025-04-23-0', '2025-05-21-0']
+    release1 = releases[-1]
+    df1 = common.read_hexfile(bounds, f"s3://fused-users/fused/sina/overture_overview/{release1}/hex{res}.parquet", clip=True)
+
+    return df1
+
+@fused.cache
+def bounds_to_res(bounds, res_offset=0, max_res=14, min_res=3):
+    z = common.estimate_zoom(bounds)
+    return max(min(int(3 + max(0, z - 3) / 1.7 + res_offset), max_res), min_res)
+```
+</details>

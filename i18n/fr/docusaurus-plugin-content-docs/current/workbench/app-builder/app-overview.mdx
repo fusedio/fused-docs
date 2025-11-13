@@ -1,0 +1,182 @@
+---
+id: app-overview
+title: Vue d'ensemble de l'App Builder
+tags: [app]
+sidebar_position: 1
+---
+
+# Vue d'ensemble de l'App Builder
+
+L'App Builder est un IDE pour transformer [User Defined Functions (UDFs)](/core-concepts/why/) en applications interactives et partageables.
+
+Les data scientists ont souvent besoin de rendre l'analytique interactive et accessible à un public plus large. Cependant, construire des applications React traditionnelles avec des cartes et des widgets peut être impraticable, surtout si l'on considère que les prototypes peuvent être abandonnés. De plus, les frameworks frontend ne sont pas bien adaptés pour transformer des données ou gérer de grands ensembles de données.
+
+Dans cet esprit, l'App Builder permet aux utilisateurs de créer et d'exécuter des applications avec [serverless Streamlit](https://github.com/whitphx/stlite), un framework open source pour livrer des applications de données dynamiques avec juste quelques lignes de Python. Voici quelques-unes de ses capacités à garder à l'esprit :
+
+{/* Lisez-en plus sur la synergie entre Streamlit et Fused [ici](https://blog.fused.io/2021/11/09/streamlit-fused/). */}
+
+- [Créer des applications](/workbench/app-builder/app-overview/#build-apps)
+- Installer des [dépendances](/workbench/app-builder/app-overview/#dependencies)
+- [Déboguer](/workbench/app-builder/app-overview/#troubleshoot)
+- [Appeler des UDFs](/workbench/app-builder/app-overview/#call-udfs) et [mettre en cache](/workbench/app-builder/app-overview/#caching) les réponses
+- [Partager](/workbench/app-builder/app-overview/#share) des applications en direct
+
+import ReactPlayer from 'react-player'
+
+<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/app_builder_edit3.mp4" width="100%" />
+
+
+
+## Créer des applications
+
+Vous créez des applications en écrivant du Python dans l'éditeur de code, comme montré ci-dessous. Au fur et à mesure que vous écrivez du code, vous remarquerez que l'application se relance automatiquement à mesure que le code et les widgets changent (configurable dans les [préférences](/workbench/preferences)).
+
+Vous pouvez ajouter des [widgets d'entrée](https://docs.streamlit.io/develop/api-reference/widgets) qui interagissent avec les UDFs, afficher des données avec des éléments de [données](https://docs.streamlit.io/develop/api-reference/data) et de [texte](https://docs.streamlit.io/develop/api-reference/text), et structurer l'application avec des [composants de mise en page](https://docs.streamlit.io/develop/api-reference/layout).
+
+import Iframe from "@site/src/components/Iframe";
+import CODE from "@site/src/app-iframe/python/basic.py";
+
+<div style={{marginTop: '2rem'}}>
+<Iframe
+  id="iframe-1"
+  code={CODE}
+  requirements={[
+    "/pyarrow/pyarrow-17.0.0-cp312-cp312-pyodide_2024_0_wasm32.whl",
+    "micropip",
+    "pyodide-unix-timezones", // nécessaire pour pyarrow
+    "requests",
+    "yarl",
+    "pydeck",
+  ]}
+  height="400px"
+/>
+</div>
+
+\
+Essayez d'exécuter les extraits de code ci-dessous pour vous familiariser avec l'App Builder.
+
+
+```python showLineNumbers
+import streamlit as st
+
+st.write("Bonjour, *Fused!* :rocket:")
+```
+
+
+
+
+
+
+## Dépendances
+
+Pour définir des packages Python pour votre application, seuls les packages compatibles avec [Pyodide](https://pyodide.org/en/stable/) sont pris en charge. Veuillez nous contacter si vous avez besoin d'aide avec un package spécifique.
+
+Vous pouvez également choisir d'installer des dépendances à l'exécution pour réduire le temps de démarrage. Utilisez [micropip](https://pypi.org/project/micropip/) pour installer des packages à l'exécution. 
+
+
+```python showLineNumbers
+import micropip
+await micropip.install(["geopandas", "mercantile"])
+```
+
+
+
+## Écrire des UDFs
+
+Vous pouvez définir des UDFs dans l'éditeur de code de l'App Builder et les invoquer avec [`fused.run`](/workbench/app-builder/app-overview/#with-fusedrun-beta). Cet extrait crée un UDF qui retourne un `DataFrame` avec une colonne de zéros dont la longueur est déterminée par un widget de curseur.
+
+```python showLineNumbers
+import fused
+import streamlit as st
+
+count = st.slider("Compter", 1, 10, 4)
+
+@fused.udf
+def udf(count: int = 1):
+    import pandas as pd
+    return pd.DataFrame({'values': [0] * count})
+
+df = fused.run(udf, count=count)
+st.write(df)
+```
+
+Vous pouvez également exécuter l'UDF sur un travailleur distant en définissant `engine='remote'` dans l'appel `fused.run`.
+
+```python showLineNumbers
+df = fused.run(udf, count=count, engine='remote')
+```
+
+## Appeler des UDFs
+
+Les applications peuvent appeler des UDFs et charger leur sortie en mémoire. Cela leur permet d'exécuter des opérations gourmandes en ressources et d'utiliser des bibliothèques non prises en charge par Pyodide. Ces extraits illustrent quelques façons d'appeler des UDFs.
+
+### Avec `fused.run` (bêta)
+
+Appelez un UDF par son jeton partagé avec `fused.run` et passez des paramètres d'un [curseur](https://docs.streamlit.io/develop/api-reference/widgets/st.slider).
+
+```python showLineNumbers
+import fused
+import streamlit as st
+
+threshold = st.slider("Filtre de compte", 0, 400, 25)
+df = fused.run('UDF_DuckDB_H3_SF', count=threshold)
+```
+
+
+### Points de terminaison HTTPS
+
+Appelez des UDF [points de terminaison HTTPS](/core-concepts/run-udfs/run-small-udfs/#https-requests) avec la [bibliothèque requests](https://pypi.org/project/requests/) et passez des paramètres d'une [boîte de sélection déroulante](https://docs.streamlit.io/develop/api-reference/widgets/st.selectbox).
+
+```python showLineNumbers
+import streamlit as st
+import requests
+
+city = st.selectbox("Sélectionnez une ville", ("Boston", "Paris", "New York"))
+url = f"https://www.fused.io/server/v1/realtime-shared/fsh_2wEv0k8Xu2grl4vTVRlGVk/run/file?format=geojson&city={city}"
+response = requests.get(url)
+st.json(response.json())
+```
+
+Rendez la réponse raster des UDFs sous forme d'images.
+
+```python showLineNumbers
+import streamlit as st
+
+st.image('https://www.fused.io/server/v1/realtime-shared/fsh_7Yuq2R1Ru1x5hgEEfNDF5t/run/tiles/11/583/787?format=png')
+```
+
+## Mise en cache
+
+Il peut être utile de mettre en cache la réponse des appels UDF. Pour mettre en cache une fonction dans Streamlit, décorez-la avec [`@st.cache_data`](https://docs.streamlit.io/develop/concepts/architecture/caching).
+
+```python showLineNumbers
+import fused
+import streamlit as st
+
+@st.cache_data
+def cached_output():
+    return fused.run('fsh_1uQkWaPFfB2O7Qy1zzOHS9')
+
+df = cached_output()
+
+st.write(fused.run('fsh_1uQkWaPFfB2O7Qy1zzOHS9'))
+```
+
+
+## Partager
+
+Le menu des paramètres de l'App Builder comprend des options pour générer une URL pour partager l'application ou l'intégrer avec un `<iframe>`.
+
+<ReactPlayer playsinline={true} className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/app_builder_share_edit7.mp4" width="100%" />
+
+
+### Liens partageables
+L'application est enregistrée sur Fused et référencée par un jeton, tel que `https://www.fused.io/app/fsh_7hVSIymGijZ53YGmEs2EIM`.
+
+
+
+## Déboguer
+
+Cliquez sur "Rerun" dans le menu en haut à droite de la vue de l'application si les choses ne fonctionnent pas comme prévu.
+
+![Rerun App](/img/app-builder/rerun.png)

@@ -1,0 +1,159 @@
+---
+id: engineering-etl
+title: Engineering & ETL
+sidebar_label: Engineering & ETL
+sidebar_position: 2
+---
+
+# Engineering & ETL
+
+
+### Connecter des données à Fused
+
+#### Connectez vos propres sources de données
+
+Vous pouvez connecter directement vos seaux de données à Fused :
+- [AWS S3](/workbench/file-explorer/#amazon-s3)
+- [Google Cloud Storage](/workbench/file-explorer/#google-cloud-storage-gcs)
+- [GCP BigQuery](/tutorials/Geospatial%20with%20Fused/gee_bigquery/#bigquery)
+- [Google Earth Engine](/tutorials/Geospatial%20with%20Fused/gee_bigquery/#google-earth-engine)
+
+#### Apportez des données directement dans Fused
+
+Apportez rapidement toutes les données qui ne sont pas dans le cloud dans Fused :
+
+1. Glissez-déposez dans [File Explorer](/workbench/file-explorer/) !
+
+![Glissez et déposez des fichiers directement dans Workbench](/img/tutorials/drag_and_drop.gif)
+
+2. Utilisez [`fused.upload()`](/python-sdk/api-reference/api/#upload)
+
+[Installez `fused`](/python-sdk/#python-install) Python, [authentifiez-vous](/python-sdk/authentication/#authenticate) et exécutez :
+
+```python
+fused.api.upload("my_local_file.csv", "fd://my_data/file.csv")
+```
+
+Remarque : [`fd://`](/core-concepts/content-management/file-system/#fd-s3-bucket) est le [chemin S3 privé provisionné par Fused](/core-concepts/content-management/file-system/#fd-s3-bucket) pour votre équipe.
+
+
+#### Optimisez le chargement des données
+
+Pour les fichiers < 1 Go :
+
+Profitez du [caching](/core-concepts/cache/#caching-basics) intégré à Fused pour rendre le chargement de toutes les données plus rapide :
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/housing_2024.csv"):
+    import pandas as pd
+    
+    @fused.cache
+    def load_data(path):
+        return pd.read_csv(path)
+
+    # Quelques traitements 
+    
+    return load_data(path)
+```
+
+- Au fur et à mesure que vous apportez des modifications à votre UDF, `load_data()` sera [appelé depuis le cache](/core-concepts/cache/#caching-any-python-function-fusedcache).
+- Cela est particulièrement utile pour les formats lents (CSV, Excel, etc.) ou les fichiers qui ne sont pas bien partitionnés.
+
+Pour les fichiers > 1 Go :
+
+Utilisez [`fused.ingest()`](/python-sdk/top-level-functions/#fusedingest) pour ingérer de grands ensembles de données dans des fichiers optimisés pour le cloud et partitionnés.
+
+```python
+job = fused.ingest(
+    input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
+    output=f"s3://fused-users/{user_id}/census/dc_tract/",
+)
+
+job.run_batch()
+```
+
+Lisez-en plus sur [comment ingérer vos données](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/ingest-your-data). 
+
+
+### Transformez vos données en API
+
+<iframe 
+    style={{
+        width: "100%",
+        maxWidth: "800px", 
+        aspectRatio: "16/9",
+        height: "auto"
+    }}
+    src="https://www.youtube.com/embed/4R6b52KliTw" 
+    title="Lecteur vidéo YouTube" 
+    frameBorder="0" 
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+    referrerPolicy="strict-origin-when-cross-origin" 
+    allowFullScreen>
+</iframe>
+
+1. Dans Workbench, créez un nouvel UDF qui renvoie des données, par exemple :
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/housing/housing_2024.csv"):
+    import pandas as pd
+    housing = pd.read_csv(path)
+    housing['price_per_area'] = round(housing['price'] / housing['area'], 2)
+    
+    return housing[['price', 'price_per_area']]
+```
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+<Tabs className="unique-tabs">
+  <TabItem value="udf-editor" label="Éditeur UDF" default>
+
+    1. Cliquez sur "Partager" pour ouvrir votre UDF dans un nouvel onglet en tant que page HTML
+    2. Optionnel : Modifiez l'URL pour renvoyer les données dans le format de fichier de votre choix.
+    
+    Par exemple, en changeant le `format` de `parquet` à `json` :
+
+    ```bash
+    # Renvoyer en tant que JSON
+    https://fused.io/.../run/file?format=json
+
+    # Renvoyer en tant que CSV
+    https://fused.io/.../run/file?format=csv
+    ```
+
+
+  </TabItem>
+  <TabItem value="advanced-udf-editor" label="Éditeur UDF Avancé">
+
+    1. [Enregistrez votre UDF](/workbench/udf-builder/code-editor/#save-a-udf) avec `Cmd + S` (MacOS) / `Ctrl + S` (Win / Linux)
+    2. Cliquez sur les 3 points et ouvrez "Paramètres"
+    3. Cliquez sur l'URL HTTPS pour ouvrir l'UDF dans son format de fichier par défaut
+
+    Optionnel : Modifiez l'URL pour renvoyer les données dans le format de fichier de votre choix.
+    
+    Par exemple, en changeant le `format` de `parquet` à `json` :
+
+    ```bash
+    # Renvoyer en tant que JSON
+    https://fused.io/.../run/file?format=json
+
+    # Renvoyer en tant que CSV
+    https://fused.io/.../run/file?format=csv
+    ```
+
+  </TabItem>
+</Tabs>
+
+### Infrastructure (Github / Secrets / Sur site)
+
+Vous pouvez utiliser Fused avec votre propre infrastructure :
+- Permettez à votre équipe d'enregistrer des UDF dans [votre propre dépôt Github](/core-concepts/content-management/git/)
+- Enregistrez et accédez aux [secrets](/workbench/preferences/#secrets-management) dans Fused
+- Utilisez Fused sur [vos propres serveurs](/core-concepts/onprem/) (option sur site)
+
+### Exemples
+
+- [Ingérer des données de transpondeur de navire](/tutorials/Geospatial%20with%20Fused/use-cases/dark-vessel-detection/#3-ingesting-ais-data) dans Fused

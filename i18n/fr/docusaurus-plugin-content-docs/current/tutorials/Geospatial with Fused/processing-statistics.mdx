@@ -1,0 +1,120 @@
+# Traitement & Statistiques
+
+### Analyse de tampon
+
+```python
+@fused.udf
+def udf(n_points: int=1000, buffer: float=0.0025):
+    import geopandas as gpd
+    from shapely.geometry import Point, Polygon, LineString
+    import random
+
+    # Créer un LineString pour représenter une route
+    linestring_columbus = LineString([[-122.4194,37.8065],[-122.4032,37.7954]])
+    gdf_road = gpd.GeoDataFrame({'geometry': [linestring_columbus], 'name': ['Columbus Ave']})
+
+    # Créer des Points pour représenter des pings GPS
+    minx, miny, maxx, maxy = gdf_road.total_bounds
+    points = [Point(random.uniform(minx, maxx), random.uniform(miny, maxy)) for _ in range(n_points)]
+    gdf_points = gpd.GeoDataFrame({'geometry': points})
+
+    # Créer un tampon autour de la route
+    buffered_polygon = gdf_road.buffer(buffer)
+
+    # Colorer les points qui se trouvent dans le polygone tamponné
+    points_within = gdf_points[gdf_points.geometry.within(buffered_polygon.unary_union)]
+    gdf_points = gdf_points.loc[points_within.index]
+
+    return gdf_points
+```
+
+{/* ### Statistiques Zonales
+
+```python
+@fused.udf
+def udf(buffer_meters: int = 500):
+    import geopandas as gpd
+    import odc.stac
+    import pystac_client
+    import numpy as np
+    from shapely.geometry import box
+    import rasterio
+    from rasterio.mask import mask
+    from rasterio.io import MemoryFile
+
+    # Charger les stations de métro de NYC
+    gdf_stations = gpd.read_file('s3://fused-sample/demo_data/subway_stations.geojson')
+    
+    # Obtenir les limites des stations de métro pour les données d'élévation
+    bounds = gdf_stations.total_bounds  # [minx, miny, maxx, maxy]
+    
+    # Charger les données d'élévation en utilisant STAC
+    odc.stac.configure_s3_access(aws_unsigned=True)
+    catalog = pystac_client.Client.open("https://earth-search.aws.element84.com/v1")
+    
+    items = catalog.search(
+        collections=["cop-dem-glo-30"], 
+        bbox=bounds
+    ).item_collection()
+
+    xarray_dataset = odc.stac.load(
+        items,
+        crs="EPSG:3857",
+        bands=["data"],
+        resolution=150,
+        bbox=bounds,
+    ).astype(int)
+    
+    elevation_data = xarray_dataset["data"]
+    
+    # Convertir en UTM pour un tamponnement précis
+    gdf_utm = gdf_stations.to_crs(gdf_stations.estimate_utm_crs())
+    gdf_utm['buffer'] = gdf_utm.geometry.buffer(buffer_meters)
+    gdf_buffered = gdf_utm.set_geometry('buffer').to_crs(4326)
+    
+    # Créer un raster en mémoire pour les statistiques zonales
+    with MemoryFile() as memfile:
+        with memfile.open(
+            driver='GTiff',
+            height=elevation_data.shape[1],  # Utiliser la bonne dimension pour la hauteur
+            width=elevation_data.shape[2],   # Utiliser la bonne dimension pour la largeur
+            count=1,
+            dtype=elevation_data.dtype,
+            crs='EPSG:3857',
+            transform=rasterio.transform.from_bounds(*bounds, elevation_data.shape[2], elevation_data.shape[1])
+        ) as dst:
+            # Écrire la première bande (en supposant que elevation_data est 3D avec la forme (1, hauteur, largeur))
+            dst.write(elevation_data.values[0], 1)
+        
+        # Calculer les statistiques zonales
+        results = []
+        with memfile.open() as src:
+            for idx, row in gdf_buffered.iterrows():
+                geom = [row.geometry.__geo_interface__]
+                try:
+                    masked_data, _ = mask(src, geom, crop=True)
+                    valid_data = masked_data[masked_data != src.nodata]
+                    if len(valid_data) > 0:
+                        mean_elevation = np.mean(valid_data)
+                    else:
+                        mean_elevation = np.nan
+                        
+                    results.append({
+                        'station_name': gdf_stations.iloc[idx].get('name', f'Station_{idx}'),
+                        'mean_elevation_m': round(mean_elevation, 2) if not np.isnan(mean_elevation) else None
+                    })
+                except Exception:
+                    results.append({
+                        'station_name': gdf_stations.iloc[idx].get('name', f'Station_{idx}'),
+                        'mean_elevation_m': None
+                    })
+    
+    # Créer un GeoDataFrame des résultats
+    results_gdf = gpd.GeoDataFrame(results, geometry=gdf_stations.geometry, crs=4326)
+    
+    return results_gdf
+``` */}
+
+{/* ### Jointure Spatiale */}
+
+{/* ### Raster à H3 */}

@@ -1,0 +1,808 @@
+---
+sidebar_label: Fonctions de haut niveau
+title: Fonctions de haut niveau
+toc_max_heading_level: 4
+---
+
+## @fused.udf
+
+```python
+udf(
+    fn: Optional[Callable] = None,
+    *,
+    name: Optional[str] = None,
+    cache_max_age: Optional[str] = None,
+    instance_type: Optional[str] = None,
+    default_parameters: Optional[Dict[str, Any]] = None,
+    headers: Optional[Sequence[Union[str, Header]]] = None,
+    **kwargs: dict[str, Any]
+) -> Callable[..., Udf]
+```
+
+Un décorateur qui transforme une fonction en un Fused UDF.
+
+**Paramètres :**
+
+- **name** (<code>Optional[str]</code>) – Le nom de l'objet UDF. Par défaut, il prend le nom de la fonction.
+
+- **cache_max_age** (<code>Optional[str]</code>) – L'âge maximum lors du retour d'un résultat du cache.
+
+- **instance_type** (<code>Optional[str]</code>) – Le type d'instance par défaut à utiliser pour l'exécution à distance
+  ('realtime' ou 'batch').
+
+- **default_parameters** (<code>Optional\[Dict[str, Any]\]</code>) – Paramètres à intégrer dans l'objet UDF, séparément de la liste des arguments
+  de la fonction. Par défaut, None pour des paramètres vides.
+
+- **headers** (<code>Optional\[Sequence\[Union[str, Header]\]\]</code>) – Une liste de fichiers à inclure en tant que modules lors de l'exécution de l'UDF. Par exemple,
+  en spécifiant `headers=['my_header.py']`, à l'intérieur de la fonction UDF, il peut être
+  référencé comme :
+
+  ```py
+  import my_header
+  my_header.my_function()
+  ```
+
+  Par défaut, None pour aucun en-tête.
+
+**Retourne :**
+
+- <code>[Callable](#typing.Callable)\[..., [Udf](#fused.models.udf.Udf)\]</code> – Un appelable qui représente l'UDF transformé. Cet appelable peut être utilisé
+- <code>[Callable](#typing.Callable)\[..., [Udf](#fused.models.udf.Udf)\]</code> – dans des flux de travail GeoPandas pour appliquer l'opération définie sur des données géospatiales.
+
+**Exemples :**
+
+Pour créer un UDF simple qui appelle une fonction utilitaire pour calculer l'aire des géométries dans un GeoDataFrame :
+
+```py
+@fused.udf
+def udf(bbox, table_path="s3://fused-asset/infra/building_msft_us"):
+    ...
+    gdf = table_to_tile(bbox, table=table_path)
+    return gdf
+```
+
+---
+
+## @fused.cache
+
+```python
+cache(
+    func: Callable[..., Any] | None = None,
+    cache_max_age: str | int = DEFAULT_CACHE_MAX_AGE,
+    cache_folder_path: str = "tmp",
+    concurrent_lock_timeout: str | int = 120,
+    cache_reset: bool | None = None,
+    cache_storage: StorageStr | None = None,
+    cache_key_exclude: Iterable[str] = None,
+    cache_verbose: bool | None = None,
+    **kwargs: Any
+) -> Callable[..., Any]
+```
+
+Décorateur pour mettre en cache la valeur de retour d'une fonction.
+
+Cette fonction sert de décorateur qui peut être appliqué à n'importe quelle fonction
+pour mettre en cache ses valeurs de retour. Le comportement de cache peut être personnalisé via
+des arguments de mots-clés.
+
+**Paramètres :**
+
+- **func** (<code>Callable</code>) – La fonction à décorer. Si None, cela
+  retourne un décorateur partiel avec les arguments de mots-clés passés.
+- **cache_max_age** (<code>str | int</code>) – Une chaîne avec un composant numérique et des unités. Les unités prises en charge sont secondes (s), minutes (m), heures (h), et
+  jours (d) (par exemple "48h", "10s", etc.).
+- **cache_folder_path** (<code>str</code>) – Dossier à ajouter au répertoire de cache configuré.
+- **concurrent_lock_timeout** (<code>str | int</code>) – Temps maximum en secondes pour que les appels concurrents suivants attendent qu'un appel concurrent précédent termine son exécution et écrive le fichier de cache.
+- **cache_reset** (<code>bool | None</code>) – Ignorer `cache_max_age` et écraser le résultat mis en cache.
+- **cache_storage** (<code>StorageStr | None</code>) – Définir où les données de cache sont stockées. Les valeurs prises en charge sont "auto", "mount" et "local". Auto sélectionnera
+  automatiquement l'emplacement de stockage défini dans les options (mount si cela existe, sinon local) et
+  s'assure qu'il existe et est accessible en écriture. Mount est partagé entre les exécutions tandis que local ne sera partagé
+  que dans la même exécution.
+- **cache_key_exclude** (<code>Iterable[str]</code>) – Un itérable de noms de paramètres à exclure du calcul de la clé de cache. Utile pour
+  les arguments qui n'affectent pas le résultat de la fonction et pourraient provoquer une expiration de cache non intentionnelle (par exemple,
+  objets de connexion à la base de données)
+- **cache_verbose** (<code>bool | None</code>) – Imprimer un message lorsqu'un résultat mis en cache est retourné
+
+Retourne :
+Callable: Un décorateur qui, lorsqu'il est appliqué à une fonction, met en cache ses
+valeurs de retour selon les arguments de mots-clés spécifiés.
+
+**Exemples :**
+
+Utilisez le décorateur `@cache` pour mettre en cache la valeur de retour d'une fonction dans un chemin personnalisé.
+
+```py
+@cache(path="/tmp/custom_path/")
+def expensive_function():
+    # L'implémentation de la fonction va ici
+    return result
+```
+
+Si la sortie d'une fonction mise en cache change, par exemple si des données distantes sont modifiées,
+elle peut être réinitialisée en exécutant la fonction avec l'argument de mot-clé `cache_reset`. Ensuite,
+l'argument peut être effacé.
+
+```py
+@cache(path="/tmp/custom_path/", cache_reset=True)
+def expensive_function():
+    # L'implémentation de la fonction va ici
+    return result
+```
+
+---
+
+## fused.load
+
+```python
+load(
+    url_or_udf: Union[str, Path],
+    /,
+    *,
+    cache_key: Any = None,
+    import_globals: bool = True,
+) -> AnyBaseUdf
+```
+
+Charge un UDF à partir de diverses sources, y compris les URL GitHub,
+et un identifiant spécifique à la plateforme Fused.
+
+Cette fonction prend en charge le chargement des UDF à partir d'une URL de dépôt GitHub, ou d'un Fused
+identifiant spécifique à la plateforme composé d'un e-mail et du nom de l'UDF. Elle détermine intelligemment
+le type de source en fonction du format de l'entrée et récupère l'UDF
+en conséquence.
+
+**Paramètres :**
+
+- **url_or_udf** (<code>Union[str, Path]</code>) – Une chaîne représentant l'emplacement de l'UDF, ou le code brut de l'UDF.
+  L'emplacement peut être une URL GitHub commençant par "https://github.com",
+  un identifiant spécifique à la plateforme Fused au format "email/udf_name",
+  ou un chemin de fichier local pointant vers un fichier Python.
+- **cache_key** (<code>Any</code>) – Une clé optionnelle utilisée pour mettre en cache l'UDF chargé. Si fournie, la fonction
+  tentera de charger l'UDF à partir du cache en utilisant cette clé avant d'essayer de
+  le charger à partir de la source spécifiée. Par défaut, None, indiquant aucune mise en cache.
+- **import_globals** (<code>bool</code>) – Exposer les globals définis dans le contexte de l'UDF en tant qu'attributs sur l'objet UDF (par défaut True).
+  Cela nécessite d'exécuter le code de l'UDF. Pour configurer ce comportement globalement, utilisez `fused.options.never_import`.
+
+**Retourne :**
+
+- **AnyBaseUdf** (<code>[AnyBaseUdf](#fused.models.udf.AnyBaseUdf)</code>) – Une instance de l'UDF chargé.
+
+**Lève :**
+
+- <code>[ValueError](#ValueError)</code> – Si l'URL ou le format de l'identifiant spécifique à la plateforme Fused est incorrect ou
+  ne peut pas être analysé.
+- <code>[Exception](#Exception)</code> – Pour des erreurs liées à des problèmes de réseau, des permissions d'accès aux fichiers, ou d'autres
+  erreurs imprévues lors du processus de chargement.
+
+**Exemples :**
+
+Chargez un UDF à partir d'une URL GitHub :
+
+```py
+udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/REM_with_HyRiver/")
+```
+
+Chargez un UDF en utilisant un identifiant spécifique à la plateforme Fused :
+
+```py
+udf = fused.load("username@fused.io/REM_with_HyRiver")
+```
+
+---
+
+## fused.run
+
+```python
+run(
+    udf: Union[str, None, UdfJobStepConfig, Udf, UdfAccessToken] = None,
+    *,
+    x: Optional[int] = None,
+    y: Optional[int] = None,
+    z: Optional[int] = None,
+    sync: bool = True,
+    engine: Optional[Literal["remote", "local"]] = None,
+    instance_type: Optional[InstanceType] = None,
+    type: Optional[Literal["tile", "file"]] = None,
+    max_retry: int = 0,
+    cache_max_age: Optional[str] = None,
+    cache: bool = True,
+    parameters: Optional[Dict[str, Any]] = None,
+    _return_response: Optional[bool] = False,
+    _ignore_unknown_arguments: bool = False,
+    _cancel_callback: Callable[[], bool] | None = None,
+    **kw_parameters: Callable[[], bool] | None
+) -> Union[
+    ResultType,
+    Coroutine[ResultType, None, None],
+    UdfEvaluationResult,
+    Coroutine[UdfEvaluationResult, None, None],
+]
+```
+
+Exécute une fonction définie par l'utilisateur (UDF) avec diverses options d'exécution et d'entrée.
+
+Cette fonction prend en charge l'exécution des UDF dans différents environnements (local ou distant),
+avec différents types d'entrées (coordonnées de tuiles, boîtes géographiques, etc.), et
+permet une exécution à la fois synchrone et asynchrone. Elle détermine dynamiquement le chemin d'exécution
+en fonction des paramètres fournis.
+
+**Paramètres :**
+
+- **udf** (<code>str, Udf or UdfJobStepConfig</code>) – l'UDF à exécuter.
+  L'UDF peut être spécifié de plusieurs manières :
+  - Une chaîne représentant un nom UDF ou un jeton partagé UDF.
+  - Un objet UDF.
+  - Un objet UdfJobStepConfig pour une configuration d'exécution détaillée.
+- **x, y, z** (<code>int</code>) – Coordonnées de tuiles pour l'exécution UDF basée sur des tuiles.
+- **sync** (<code>bool</code>) – Si True, exécute l'UDF de manière synchrone. Si False, exécute de manière asynchrone.
+- **engine** (<code>Optional\[Literal['remote', 'local']\]</code>) – Le moteur d'exécution à utiliser ('remote' ou 'local').
+- **instance_type** (<code>Optional[InstanceType]</code>) – Le type d'instance à utiliser pour l'exécution à distance ('realtime',
+  ou 'small', 'medium', 'large' ou l'un des types d'instance sur liste blanche).
+  Si non spécifié, obtient la valeur par défaut de l'UDF (si spécifié dans le
+  décorateur `@fused.udf()`, et l'UDF n'est pas exécuté en tant que jeton partagé),
+  sinon par défaut à 'realtime'.
+- **type** (<code>Optional\[Literal['tile', 'file']\]</code>) – Le type d'exécution UDF ('tile' ou 'file').
+- **max_retry** (<code>int</code>) – Le nombre maximum de tentatives à effectuer si l'UDF échoue.
+  Par défaut, ne réessaie pas.
+- **cache_max_age** (<code>Optional[str]</code>) – L'âge maximum lors du retour d'un résultat du cache.
+  Les unités prises en charge sont secondes (s), minutes (m), heures (h), et jours (d) (par exemple “48h”, “10s”, etc.).
+  La valeur par défaut est `None`, donc une exécution UDF avec `fused.run()` suivra `cache_max_age` défini dans `@fused.udf()` à moins que cette valeur ne soit modifiée.
+- **cache** (<code>bool</code>) – Défini sur False comme un raccourci pour `cache_max_age='0s'` pour désactiver la mise en cache.
+- **verbose** – Défini sur False pour supprimer toute instruction d'impression de l'UDF.
+- **parameters** (<code>Optional\[Dict[str, Any]\]</code>) – Paramètres supplémentaires à passer à l'UDF.
+- \*\***kw_parameters** – Paramètres supplémentaires à passer à l'UDF.
+
+**Lève :**
+
+- <code>[ValueError](#ValueError)</code> – Si l'UDF n'est pas spécifié ou est spécifié de plus d'une manière.
+- <code>[TypeError](#TypeError)</code> – Si le premier paramètre n'est pas d'un type attendu.
+- <code>[Warning](#Warning)</code> – Divers avertissements sont émis pour les paramètres ignorés en fonction du chemin d'exécution choisi.
+
+**Retourne :**
+
+- <code>[Union](#typing.Union)\[[ResultType](#fused._run.ResultType), [Coroutine](#typing.Coroutine)\[[ResultType](#fused._run.ResultType), None, None\], [UdfEvaluationResult](#fused.models.udf._eval_result.UdfEvaluationResult), [Coroutine](#typing.Coroutine)\[[UdfEvaluationResult](#fused.models.udf._eval_result.UdfEvaluationResult), None, None\]\]</code> – Le résultat de l'exécution de l'UDF, qui varie en fonction de l'UDF et du chemin d'exécution.
+
+**Exemples :**
+
+Exécutez un UDF enregistré dans le système Fused :
+
+```py
+fused.run("username@fused.io/my_udf_name")
+```
+
+Exécutez un UDF enregistré sur GitHub :
+
+```py
+loaded_udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/Building_Tile_Example")
+fused.run(loaded_udf, bbox=bbox)
+```
+
+Exécutez un UDF enregistré dans un répertoire local :
+
+```py
+loaded_udf = fused.load("/Users/local/dir/Building_Tile_Example")
+fused.run(loaded_udf, bbox=bbox)
+```
+
+<details class="note" open>
+<summary>Note</summary>
+Cette fonction détermine dynamiquement le chemin d'exécution et les paramètres en fonction des entrées.
+Elle est conçue pour être flexible et prendre en charge divers scénarios d'exécution UDF.
+</details>
+
+---
+
+## fused.submit
+
+```python
+submit(
+    udf: AnyBaseUdf | FunctionType | str,
+    arg_list: AnyBaseUdf | FunctionType | str,
+    /,
+    *,
+    engine: Literal["remote", "local"] | None = "remote",
+    instance_type: InstanceType | None = None,
+    max_workers: int | None = None,
+    n_processes_per_worker: int | None = None,
+    max_retry: int = 2,
+    debug_mode: bool = False,
+    collect: bool = True,
+    execution_type: ExecutionType = "thread_pool",
+    cache_max_age: str | None = None,
+    cache: bool = True,
+    ignore_exceptions: bool = False,
+    flatten: bool = True,
+    _before_run: float | None = None,
+    _before_submit: float | None = 0.01,
+    **kwargs: float | None,
+) -> Union[BaseJobPool, ResultType, pd.DataFrame]
+```
+
+Exécute une fonction définie par l'utilisateur (UDF) plusieurs fois pour une liste de paramètres d'entrée, et retourne immédiatement un objet JobPool "paresseux" permettant
+d'inspecter les travaux et d'attendre les résultats.
+
+Chaque exécution UDF individuelle sera mise en cache suivant la logique de mise en cache standard comme avec `fused.run()`
+et le `cache_max_age` spécifié. De plus, lorsque `collect=True` (par défaut), les résultats collectés
+sont mis en cache localement pour la durée de `cache_max_age` ou 12h par défaut.
+
+Voir `fused.run` pour plus de détails sur l'exécution de l'UDF.
+
+**Paramètres :**
+
+- **udf** (<code>AnyBaseUdf | FunctionType | str</code>) – l'UDF à exécuter.
+  Voir `fused.run` pour plus de détails sur la façon de spécifier l'UDF.
+- **arg_list** – une liste de paramètres d'entrée pour l'UDF. Peut être spécifié comme :
+  - une liste de valeurs pour paramétrer un seul paramètre, c'est-à-dire
+    le premier paramètre de l'UDF
+  - une liste de dictionnaires pour paramétrer plusieurs paramètres
+  - Un DataFrame pour paramétrer plusieurs paramètres où chaque
+    ligne est un ensemble de paramètres
+- **engine** (<code>Literal['remote', 'local'] | None</code>) – Le moteur d'exécution à utiliser. Par défaut, 'remote'.
+- **instance_type** (<code>InstanceType | None</code>) – Le type d'instance à utiliser pour l'exécution à distance ('realtime',
+  ou 'small', 'medium', 'large' ou l'un des types d'instance sur liste blanche).
+  Si non spécifié, obtient la valeur par défaut de l'UDF (si spécifié dans le
+  décorateur `@fused.udf()`, et l'UDF n'est pas exécuté en tant que jeton partagé),
+  sinon par défaut à 'realtime'.
+- **max_workers** (<code>int | None</code>) – Le nombre maximum de travailleurs à utiliser. Par défaut, 32 pour
+  le moteur en temps réel (avec un maximum de 1024), et 1 pour d'autres instances de lot
+  (avec un maximum de 5).
+- **n_processes_per_worker** (<code>int | None</code>) – Le nombre de processus à utiliser par travailleur.
+  Toujours 1 pour le moteur en temps réel, mais par défaut au nombre de cœurs
+  pour les moteurs de lot. Spécifiez ce mot-clé pour réduire le nombre de processus.
+- **max_retry** (<code>int</code>) – Le nombre maximum de tentatives pour les travaux échoués. Par défaut, 2.
+- **debug_mode** (<code>bool</code>) – Si True, exécute uniquement le premier élément dans arg_list directement en utilisant
+  `fused.run()`, utile pour le débogage de l'exécution de l'UDF. La valeur par défaut est False.
+- **collect** (<code>bool</code>) – Si True, attend que tous les travaux soient terminés et retourne le DataFrame collecté
+  contenant les résultats. Si False, retourne un objet JobPool, qui est non-bloquant
+  et vous permet d'inspecter les résultats individuels et les journaux.
+  La valeur par défaut est True.
+- **execution_type** (<code>ExecutionType</code>) – Le type de traitement à utiliser. Soit "thread_pool" (par défaut) pour
+  la concurrence basée sur ThreadPoolExecutor ou "async_loop" pour la concurrence basée sur asyncio.
+- **cache_max_age** (<code>str | None</code>) – L'âge maximum lors du retour d'un résultat du cache.
+  Les unités prises en charge sont secondes (s), minutes (m), heures (h), et jours (d)
+  (par exemple "48h", "10s", etc.).
+  La valeur par défaut est `None`, donc une exécution UDF avec `fused.run()` suivra
+  `cache_max_age` défini dans `@fused.udf()` à moins que cette valeur ne soit modifiée.
+- **cache** (<code>bool</code>) – Défini sur False comme un raccourci pour `cache_max_age='0s'` pour désactiver la mise en cache.
+- **ignore_exceptions** (<code>bool</code>) – Défini sur True pour ignorer les exceptions lors de la collecte des résultats.
+  Les exécutions qui entraînent des exceptions seront silencieusement ignorées. La valeur par défaut est False.
+- **flatten** (<code>bool</code>) – Défini sur True pour recevoir un DataFrame de résultats, sans imbrication d'une
+  colonne `results`, lors de la collecte des résultats. Lorsque False, les résultats seront imbriqués
+  dans une colonne `results`. Si l'UDF ne retourne pas un DataFrame (par exemple, une chaîne
+  à la place), les résultats seront imbriqués dans une colonne `results` indépendamment de ce paramètre.
+  La valeur par défaut est True.
+- \*\***kwargs** – Arguments de mots-clés supplémentaires (constants) à passer à l'UDF.
+
+**Retourne :**
+
+- <code>[Union](#typing.Union)\[[BaseJobPool](#fused._submit.BaseJobPool), [ResultType](#fused._run.ResultType), [DataFrame](#pandas.DataFrame)\]</code> – JobPool, AsyncJobPool, ou DataFrame selon les paramètres execution_type et collect
+
+**Exemples :**
+
+Exécutez un UDF plusieurs fois pour les valeurs de 0 à 9 passées comme le premier
+argument positionnel de l'UDF :
+
+```py
+df = fused.submit("username@fused.io/my_udf_name", range(10))
+```
+
+Utilisation du type de lot asynchrone :
+
+```py
+df = fused.submit(udf, range(10), execution_type="async_loop")
+```
+
+Être explicite sur le nom du paramètre :
+
+```py
+df = fused.submit(udf, [dict(n=i) for i in range(10)])
+```
+
+Obtenez le pool des tâches en cours :
+
+```py
+pool = fused.submit(udf, [dict(n=i) for i in range(10)], collect=False)
+```
+
+---
+
+## fused.download
+
+```python
+download(url: str, file_path: str, storage: StorageStr = 'auto') -> str
+```
+
+Télécharge un fichier.
+
+Peut être appelé depuis plusieurs processus avec les mêmes entrées pour obtenir le même résultat.
+
+Fused exécute les UDF de haut en bas chaque fois que le code change. Cela signifie que les objets dans l'UDF sont recréés à chaque fois, ce qui peut ralentir un UDF qui télécharge des fichiers depuis un serveur distant.
+
+💡 Les fichiers téléchargés sont écrits dans un volume monté partagé entre tous les UDF dans une organisation. Cela signifie qu'un fichier téléchargé par un UDF peut être lu par d'autres UDF.
+
+Fused aborde la latence du téléchargement de fichiers avec la fonction utilitaire de téléchargement. Elle stocke les fichiers dans le système de fichiers monté afin qu'ils ne soient téléchargés que la première fois.
+
+💡 Étant donné qu'un UDF de tuile exécute plusieurs morceaux en parallèle, la fonction de téléchargement définit un verrou de signal pendant la première tentative de téléchargement, pour s'assurer que le téléchargement se produit une seule fois.
+
+**Paramètres :**
+
+- **url** (<code>str</code>) – L'URL à télécharger.
+- **file_path** (<code>str</code>) – Le chemin local où enregistrer le fichier.
+- **storage** (<code>StorageStr</code>) – Définir où les données de cache sont stockées. Les valeurs prises en charge sont "auto", "mount" et "local". Auto sélectionnera
+  automatiquement l'emplacement de stockage défini dans les options (mount si cela existe, sinon local) et
+  s'assure qu'il existe et est accessible en écriture. Mount est partagé entre les exécutions tandis que local ne sera partagé
+  que dans la même exécution.
+
+**Retourne :**
+
+- <code>[str](#str)</code> – La fonction télécharge le fichier uniquement lors de la première exécution, et retourne le chemin du fichier.
+
+**Exemples :**
+
+```python
+@fused.udf
+def geodataframe_from_geojson():
+    import geopandas as gpd
+    url = "s3://sample_bucket/my_geojson.zip"
+    path = fused.core.download(url, "tmp/my_geojson.zip")
+    gdf = gpd.read_file(path)
+    return gdf
+```
+
+---
+
+## fused.ingest
+
+```python
+ingest(
+    input: str | Path | Sequence[str | Path] | gpd.GeoDataFrame,
+    output: str | None = None,
+    *,
+    output_metadata: str | None = None,
+    schema: Schema | None = None,
+    file_suffix: str | None = None,
+    load_columns: Sequence[str] | None = None,
+    remove_cols: Sequence[str] | None = None,
+    explode_geometries: bool = False,
+    drop_out_of_bounds: bool | None = None,
+    partitioning_method: Literal["area", "length", "coords", "rows"] = "rows",
+    partitioning_maximum_per_file: int | float | None = None,
+    partitioning_maximum_per_chunk: int | float | None = None,
+    partitioning_max_width_ratio: int | float = 2,
+    partitioning_max_height_ratio: int | float = 2,
+    partitioning_force_utm: Literal["file", "chunk", None] = "chunk",
+    partitioning_split_method: Literal["mean", "median"] = "mean",
+    subdivide_method: Literal["area", None] = None,
+    subdivide_start: float | None = None,
+    subdivide_stop: float | None = None,
+    split_identical_centroids: bool = True,
+    target_num_chunks: int = 500,
+    lonlat_cols: tuple[str, str] | None = None,
+    partitioning_schema_input: str | pd.DataFrame | None = None,
+    gdal_config: GDALOpenConfig | dict[str, Any] | None = None,
+    overwrite: bool = False,
+    as_udf: bool = False
+) -> GeospatialPartitionJobStepConfig
+```
+
+Incorpore un ensemble de données dans le format partitionné Fused.
+
+**Paramètres :**
+
+- **input** (<code>str | Path | Sequence[str | Path] | gpd.GeoDataFrame</code>) – Un GeoPandas `GeoDataFrame` ou un chemin vers un ou plusieurs fichiers sur S3 à ingérer. Les fichiers peuvent être Parquet ou un autre format de données géographiques.
+
+- **output** (<code>str | None</code>) – Emplacement sur S3 pour écrire la table `main`.
+
+- **output_metadata** (<code>str | None</code>) – Emplacement sur S3 pour écrire la table `fused`.
+
+- **schema** (<code>Schema | None</code>) – Schéma des données à ingérer. Ceci est optionnel et sera déduit des données si non fourni.
+
+- **file_suffix** (<code>str | None</code>) – filtre les fichiers utilisés pour l'ingestion. Si `input` est un répertoire sur S3, tous les fichiers sous ce répertoire seront listés et utilisés pour l'ingestion. Si `file_suffix` n'est pas None, il sera utilisé pour filtrer les chemins en vérifiant les caractères de fin de chaque nom de fichier. Par exemple, passez `file_suffix=".geojson"` pour inclure uniquement les fichiers GeoJSON à l'intérieur du répertoire.
+
+- **load_columns** (<code>Sequence[str] | None</code>) – Lire uniquement cet ensemble de colonnes lors de l'ingestion de jeux de données géospatiaux. Par défaut, toutes les colonnes.
+
+- **remove_cols** (<code>Sequence[str] | None</code>) – Les colonnes nommées à supprimer lors de l'ingestion de jeux de données géospatiaux. Par défaut, aucune colonne n'est supprimée.
+
+- **explode_geometries** (<code>bool</code>) – Que faut-il déballer les géométries multiparties en géométries simples lors de l'ingestion de jeux de données géospatiaux, en sauvegardant chaque partie comme sa propre ligne. Par défaut, `False`.
+
+- **drop_out_of_bounds** (<code>bool | None</code>) – Que faut-il supprimer les géométries en dehors des limites WGS84 attendues. Par défaut, True.
+
+- **partitioning_method** (<code>Literal['area', 'length', 'coords', 'rows']</code>) – La méthode à utiliser pour regrouper les lignes en partitions. Par défaut, `"rows"`.
+
+  - `"area"` : Construire des partitions où toutes contiennent une aire totale maximale parmi les géométries.
+  - `"length"` : Construire des partitions où toutes contiennent une longueur totale maximale parmi les géométries.
+  - `"coords"` : Construire des partitions où toutes contiennent un nombre total maximal de coordonnées parmi les géométries.
+  - `"rows"` : Construire des partitions où toutes contiennent un nombre maximal de lignes.
+
+- **partitioning_maximum_per_file** (<code>int | float | None</code>) – Valeur maximale pour `partitioning_method` à utiliser par fichier. Si `None`, par défaut à _1/10ème_ de la valeur totale de `partitioning_method`. Donc si la valeur est `None` et `partitioning_method` est `"area"`, alors chaque fichier n'aura pas plus de 1/10ème de la surface totale de toutes les géométries. Par défaut, `None`.
+
+- **partitioning_maximum_per_chunk** (<code>int | float | None</code>) – Valeur maximale pour `partitioning_method` à utiliser par morceau. Si `None`, par défaut à _1/100ème_ de la valeur totale de `partitioning_method`. Donc si la valeur est `None` et `partitioning_method` est `"area"`, alors chaque fichier n'aura pas plus de 1/100ème de la surface totale de toutes les géométries. Par défaut, `None`.
+
+- **partitioning_max_width_ratio** (<code>int | float</code>) – Le ratio maximum de largeur à hauteur de chaque partition à utiliser dans le processus d'ingestion. Donc par exemple, si la valeur est `2`, alors si la largeur divisée par la hauteur est supérieure à `2`, la boîte sera divisée en deux le long de l'axe horizontal. Par défaut, `2`.
+
+- **partitioning_max_height_ratio** (<code>int | float</code>) – Le ratio maximum de hauteur à largeur de chaque partition à utiliser dans le processus d'ingestion. Donc par exemple, si la valeur est `2`, alors si la hauteur divisée par la largeur est supérieure à `2`, la boîte sera divisée en deux le long de l'axe vertical. Par défaut, `2`.
+
+- **partitioning_force_utm** (<code>Literal['file', 'chunk', None]</code>) – Que faut-il forcer le partitionnement dans les zones UTM. Si défini sur `"file"`, cela garantira que le centroïde de toutes les géométries par _fichier_ est contenu dans la même zone UTM. Si défini sur `"chunk"`, cela garantira que le centroïde de toutes les géométries par _morceau_ est contenu dans la même zone UTM. Si défini sur `None`, alors aucun partitionnement basé sur UTM ne sera effectué. Par défaut, "chunk".
+
+- **partitioning_split_method** (<code>Literal['mean', 'median']</code>) – Comment diviser une partition en enfants. Par défaut, `"mean"` (cela peut changer à l'avenir).
+
+  - `"mean"` : Diviser chaque axe selon la moyenne des valeurs des centroïdes.
+  - `"median"` : Diviser chaque axe selon la médiane des valeurs des centroïdes.
+
+- **subdivide_method** (<code>Literal['area', None]</code>) – La méthode à utiliser pour subdiviser de grandes géométries en plusieurs lignes. Actuellement, la seule option est `"area"`, où les géométries seront subdivisées en fonction de leur aire (en degrés WGS84).
+
+- **subdivide_start** (<code>float | None</code>) – La valeur au-dessus de laquelle les géométries seront subdivisées en parties plus petites, selon `subdivide_method`.
+
+- **subdivide_stop** (<code>float | None</code>) – La valeur en dessous de laquelle les géométries ne seront pas subdivisées en parties plus petites, selon `subdivide_method`. Recommandé d'être égal à subdivide_start. Si `None`, les géométries seront subdivisées jusqu'à une profondeur de récursion de 100 ou jusqu'à ce que la géométrie subdivisée soit rectangulaire.
+
+- **split_identical_centroids** (<code>bool</code>) – Si `True`, doit diviser une partition qui a
+  des centroïdes identiques (comme si toutes les géométries dans la partition sont les
+  mêmes) s'il y a plus de telles lignes que défini dans "partitioning_maximum_per_file" et
+  "partitioning_maximum_per_chunk".
+
+- **target_num_chunks** (<code>int</code>) – L'objectif pour le nombre de fichiers si `partitioning_maximum_per_file` est None. Notez que ce nombre est seulement un _objectif_ et le nombre réel de fichiers générés peut être supérieur ou inférieur à ce nombre, selon la distribution spatiale des données elles-mêmes.
+  Par défaut, 500, valeur par défaut approximative à utiliser dans la plupart des cas.
+
+- **lonlat_cols** (<code>tuple[str, str] | None</code>) – Noms des colonnes de longitude, latitude pour construire des géométries de points.
+
+  Si vos colonnes de points sont nommées `"x"` et `"y"`, alors passez :
+
+  ```py
+  fused.ingest(
+      ...,
+      lonlat_cols=("x", "y")
+  )
+  ```
+
+  Cela ne s'applique qu'à la lecture à partir de fichiers Parquet. Pour la lecture à partir de fichiers CSV, passez des options à `gdal_config`.
+
+- **gdal_config** (<code>GDALOpenConfig | dict[str, Any] | None</code>) – Options de configuration à passer à GDAL pour la façon de lire ces fichiers. Pour tous les fichiers autres que les fichiers Parquet, Fused utilise GDAL comme étape dans le processus d'ingestion. Pour certaines entrées, comme les fichiers CSV ou les shapefiles compressés, vous devrez peut-être passer certains paramètres à GDAL pour lui indiquer comment ouvrir vos fichiers.
+
+  Cette configuration est censée être un dictionnaire avec jusqu'à deux clés :
+
+  - `layer`: `str`. Définir la couche du fichier d'entrée que vous souhaitez lire lorsque la source contient plusieurs couches, comme dans GeoPackage.
+  - `open_options`: `Dict[str, str]`. Passer des paires clé-valeur avec les options d'ouverture GDAL. Celles-ci sont définies sur la page de chaque pilote dans la documentation GDAL. Par exemple, le [pilote CSV](https://gdal.org/drivers/vector/csv.html) définit [ces options d'ouverture](https://gdal.org/drivers/vector/csv.html#open-options) que vous pouvez passer.
+
+  Par exemple, si vous ingérez un fichier CSV avec deux colonnes
+  `"longitude"` et `"latitude"` désignant les informations de coordonnées, passez
+
+  ```py
+  fused.ingest(
+      ...,
+      gdal_config={
+          "open_options": {
+              "X_POSSIBLE_NAMES": "longitude",
+              "Y_POSSIBLE_NAMES": "latitude",
+          }
+      }
+  )
+  ```
+
+- **overwrite** (<code>bool</code>) – Si True, écraser le répertoire de sortie s'il existe déjà
+  (en supprimant d'abord tout le contenu existant du répertoire, c'est-à-dire qu'il
+  n'écrase pas seulement les fichiers en conflit).
+  Par défaut, False.
+
+- **as_udf** (<code>bool</code>) – Retourner le flux de travail d'ingestion en tant qu'UDF qui peut être exécuté en utilisant
+  `fused.run()`. Les fichiers locaux ou les objets python passés à `input` ou
+  `partitioning_schema_input` sont toujours téléchargés sur S3 d'abord afin que
+  ceux-ci soient disponibles lors de l'exécution de l'UDF à distance. Par défaut, False.
+
+**Retourne :**
+
+- <code>[GeospatialPartitionJobStepConfig](#fused.models.api.GeospatialPartitionJobStepConfig)</code> – Objet de configuration décrivant le processus d'ingestion. Appelez `.execute` sur cet objet pour démarrer un travail.
+
+**Exemples :**
+
+Par exemple, pour ingérer le jeu de données du recensement de Californie pour l'année 2022 :
+
+```py
+job = fused.ingest(
+    input="https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/06_CALIFORNIA/06/tl_rd22_06_bg.zip",
+    output="s3://fused-sample/census/ca_bg_2022/main/",
+    output_metadata="s3://fused-sample/census/ca_bg_2022/fused/",
+    explode_geometries=True,
+    partitioning_maximum_per_file=2000,
+    partitioning_maximum_per_chunk=200,
+).execute()
+```
+
+---
+
+
+#### `job.run_batch`
+
+```python showLineNumbers
+def run_batch(output_table: Optional[str] = ...,
+    instance_type: Optional[WHITELISTED_INSTANCE_TYPES] = None,
+    *,
+    region: str | None = None,
+    disk_size_gb: int | None = None,
+    additional_env: List[str] | None = None,
+    image_name: Optional[str] = None,
+    ignore_no_udf: bool = False,
+    ignore_no_output: bool = False,
+    validate_imports: Optional[bool] = None,
+    validate_inputs: bool = True,
+    overwrite: Optional[bool] = None) -> RunResponse
+```
+
+Commence l'exécution du travail d'ingestion en appelant `run_batch` sur l'objet de travail.
+
+**Arguments** :
+
+- `output_table` - Le nom de la table à écrire. Par défaut, None.
+- `instance_type` - Le type d'instance AWS EC2 à utiliser pour le travail. Les chaînes acceptables sont `m5.large`, `m5.xlarge`, `m5.2xlarge`, `m5.4xlarge`, `m5.8xlarge`, `m5.12xlarge`, `m5.16xlarge`, `r5.large`, `r5.xlarge`, `r5.2xlarge`, `r5.4xlarge`, `r5.8xlarge`, `r5.12xlarge`, ou `r5.16xlarge`. Par défaut, None.
+- `region` - La région AWS dans laquelle exécuter. Par défaut, None.
+- `disk_size_gb` - La taille du disque à spécifier pour le travail. Par défaut, None.
+- `additional_env` - Toute variable d'environnement supplémentaire à passer dans le travail. Par défaut, None.
+- `image_name` - Nom d'image personnalisé à exécuter. Par défaut, None pour l'image par défaut.
+- `ignore_no_udf` - Ignorer les erreurs de validation concernant la non-spécification d'un UDF. Par défaut, False.
+- `ignore_no_output` - Ignorer les erreurs de validation concernant la non-spécification d'un emplacement de sortie. Par défaut, False.
+
+#### Surveiller et gérer le travail
+
+L'appel à `run_batch` retourne un objet `RunResponse` avec des méthodes d'aide.
+
+```python showLineNumbers
+# Déclarer le travail d'ingestion
+job = fused.ingest(
+  input="https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/06_CALIFORNIA/06/tl_rd22_06_bg.zip",
+  output="s3://fused-sample/census/ca_bg_2022/main/"
+)
+
+# Démarrer le travail d'ingestion
+job_id = job.run_batch()
+```
+
+Récupérez le statut du travail.
+
+```python showLineNumbers
+job_id.get_status()
+```
+
+Récupérez et imprimez les journaux du travail.
+
+```python showLineNumbers
+job_id.print_logs()
+```
+
+Déterminez le temps d'exécution du travail.
+
+```python showLineNumbers
+job_id.get_exec_time()
+```
+
+Imprimez continuellement les journaux du travail.
+
+```python showLineNumbers
+job_id.tail_logs()
+```
+
+Annulez le travail.
+
+```python showLineNumbers
+job_id.cancel()
+```
+
+---
+
+#### `job.run_remote`
+
+Alias de `job.run_batch` pour la compatibilité ascendante. Voir `job.run_batch` ci-dessus
+pour les détails.
+
+---
+
+## fused.ingest_nongeospatial
+
+```python
+ingest_nongeospatial(
+    input: str | Path | Sequence[str, Path] | pd.DataFrame | gpd.GeoDataFrame,
+    output: str | None = None,
+    *,
+    output_metadata: str | None = None,
+    partition_col: str | None = None,
+    partitioning_maximum_per_file: int = 2500000,
+    partitioning_maximum_per_chunk: int = 65000
+) -> NonGeospatialPartitionJobStepConfig
+```
+
+Incorpore un ensemble de données dans le format partitionné Fused.
+
+**Paramètres :**
+
+- **input** (<code>str | Path | Sequence[str, Path] | pd.DataFrame | gpd.GeoDataFrame</code>) – Un GeoPandas `GeoDataFrame` ou un chemin vers un ou plusieurs fichiers sur S3 à ingérer. Les fichiers peuvent être Parquet ou un autre format de données géographiques.
+- **output** (<code>str | None</code>) – Emplacement sur S3 pour écrire la table `main`.
+- **output_metadata** (<code>str | None</code>) – Emplacement sur S3 pour écrire la table `fused`.
+- **partition_col** (<code>str | None</code>) – Partition le long de cette colonne pour les ensembles de données non géospatiaux.
+- **partitioning_maximum_per_file** (<code>int</code>) – Nombre maximum d'éléments à stocker dans un seul fichier. Par défaut, 2 500 000.
+- **partitioning_maximum_per_chunk** (<code>int</code>) – Nombre maximum d'éléments à stocker dans un seul fichier. Par défaut, 65 000.
+
+**Retourne :**
+
+- <code>[NonGeospatialPartitionJobStepConfig](#fused.models.api.NonGeospatialPartitionJobStepConfig)</code> – Objet de configuration décrivant le processus d'ingestion. Appelez `.execute` sur cet objet pour démarrer un travail.
+
+**Exemples :**
+
+```py
+job = fused.ingest_nongeospatial(
+    input=gdf,
+    output="s3://sample-bucket/file.parquet",
+).execute()
+```
+
+---
+
+## fused.file_path
+
+```python
+file_path(
+    file_path: str, mkdir: bool = True, storage: StorageStr = "auto"
+) -> str
+```
+
+Crée un répertoire dans un répertoire temporaire prédéfini.
+
+Cela donne aux utilisateurs la possibilité de gérer des répertoires lors de l'exécution d'un UDF.
+Il prend un chemin de fichier relatif, crée la structure de répertoire correspondante,
+et retourne son chemin absolu.
+
+Ceci est utile pour les UDF qui stockent temporairement des résultats intermédiaires sous forme de fichiers,
+comme lors de l'écriture de fichiers intermédiaires sur disque lors du traitement de grands ensembles de données.
+`file_path` s'assure que les répertoires nécessaires existent.
+Le répertoire est conservé pendant 12h.
+
+**Paramètres :**
+
+- **file_path** (<code>str</code>) – Le chemin de fichier relatif à localiser.
+- **mkdir** (<code>bool</code>) – Si True, crée le répertoire s'il n'existe pas déjà. Par défaut, True.
+- **storage** (<code>StorageStr</code>) – Définir où les données de cache sont stockées. Les valeurs prises en charge sont "auto", "mount" et "local". Auto sélectionnera
+  automatiquement l'emplacement de stockage défini dans les options (mount si cela existe, sinon local) et
+  s'assure qu'il existe et est accessible en écriture. Mount est partagé entre les exécutions tandis que local ne sera partagé
+  que dans la même exécution.
+
+**Retourne :**
+
+- <code>[str](#str)</code> – Le chemin de fichier localisé.
+
+---
+
+## fused.get_chunks_metadata
+
+```python
+get_chunks_metadata(url: str) -> gpd.GeoDataFrame
+```
+
+Retourne un GeoDataFrame avec chaque morceau dans la table comme une ligne.
+
+**Paramètres :**
+
+- **url** (<code>str</code>) – URL de la table.
+
+---
+
+## fused.get_chunk_from_table
+
+```python
+get_chunk_from_table(
+    url: str,
+    file_id: Union[str, int, None],
+    chunk_id: Optional[int],
+    *,
+    columns: Optional[Iterable[str]] = None
+) -> gpd.GeoDataFrame
+```
+
+Retourne un morceau d'une table et des coordonnées de morceau.
+
+Cela peut être appelé avec file_id et chunk_id de `get_chunks_metadata`.
+
+**Paramètres :**
+
+- **url** (<code>str</code>) – URL de la table.
+- **file_id** (<code>Union[str, int, None]</code>) – ID de fichier à lire.
+- **chunk_id** (<code>Optional[int]</code>) – ID de morceau à lire.
+- **columns** (<code>Optional\[Iterable[str]\]</code>) – Lire uniquement les colonnes spécifiées.
+
+---

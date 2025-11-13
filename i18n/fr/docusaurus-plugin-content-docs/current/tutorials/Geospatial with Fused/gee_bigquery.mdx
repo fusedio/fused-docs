@@ -1,0 +1,190 @@
+# Google Earth Engine & BigQuery
+
+## Google Earth Engine
+
+import CellOutput from "@site/src/components/CellOutput.jsx";
+import Tag from '@site/src/components/Tag'
+
+Fused intègre [Google Earth Engine](https://earthengine.google.com/) avec la bibliothèque Python [`earthengine-api`](https://github.com/google/earthengine-api). Cet exemple montre comment charger des données à partir des [datasets](https://developers.google.com/earth-engine/datasets) de GEE dans des UDFs Fused et les lire avec xarray.
+
+### 1. Authentifiez-vous avec un compte de service Google
+
+Créez un UDF pour définir vos [identifiants de compte de service Google](https://developers.google.com/earth-engine/guides/service_account) dans votre runtime Fused [disk](/core-concepts/content-management/file-system/#mntcache-disk) dans un fichier du répertoire `/mnt/cache`.
+
+```python showLineNumbers
+@fused.udf
+def udf():
+
+    import os, json
+
+    # Google Key as JSON
+    data = {
+        'type': 'service_account',
+        'project_id': 'MYPROJECT',
+        'private_key_id': '1234',
+        'private_key': '-----BEGIN PRIVATE KEY-----...\n-----END PRIVATE KEY-----\n',
+        'client_email': 'fused-account@MYPROJECT.iam.gserviceaccount.com',
+        'client_id': '1234567',
+        'auth_uri': 'https://accounts.google.com/o/oauth2/auth',
+        'token_uri': 'https://oauth2.googleapis.com/token',
+        'auth_provider_x509_cert_url': 'https://www.googleapis.com/oauth2/v1/certs',
+        'client_x509_cert_url': 'https://www.googleapis.com/robot/v1/metadata/x509/fused-pg%40MYPROJECT.iam.gserviceaccount.com',
+        'universe_domain': 'googleapis.com'
+    }
+
+    # Define the target path for the new GEE credentials file
+    key_path = '/mnt/cache/gee_creds.json'
+
+    # Write the loaded JSON data to the new file
+    with open(key_path, 'w') as file:
+        json.dump(data, file)
+```
+
+### 2. Charger des données à partir de Google Earth Engine
+
+Créez un UDF pour charger des données à partir d'une ImageCollection GEE et l'ouvrir avec xarray. Authentifiez-vous en passant le chemin du fichier clé à `ee.ServiceAccountCredentials`.
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.TileGDF=None, n=10):
+    import ee
+    import xarray
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
+
+    # Authenticate GEE
+    key_path = '/mnt/cache/gee_creds.json'
+    credentials = ee.ServiceAccountCredentials("fused-account@fused-gee.iam.gserviceaccount.com", key_path)
+    ee.Initialize(opt_url="https://earthengine-highvolume.googleapis.com", credentials=credentials)
+
+    # Generate GEE bounding box for spatial filter
+    geom = ee.Geometry.Rectangle(*bounds.total_bounds)
+    scale = 1 / 2 ** max(0, bounds.z[0])  # Une échelle plus grande augmentera votre résolution par z mais ralentira le chargement
+
+    # Load data from a GEE ImageCollection
+    ic = ee.ImageCollection("MODIS/061/MOD13A2").filter(
+        ee.Filter.date("2023-01-01", "2023-06-01")
+    )
+
+    # Open with xarray (the `xee` package must be present for engine="ee" to work)
+    ds = xarray.open_dataset(ic, engine="ee", geometry=geom, scale=scale).isel(time=0)
+
+    # Transform image color with a utility function
+    arr = common.arr_to_plasma(ds["NDVI"].values.squeeze().T, min_max=(0, 8000))
+    return arr
+
+```
+
+
+## BigQuery - Option 1: Fichier d'identifiants
+
+Fused s'intègre à [Google BigQuery](https://cloud.google.com/bigquery/docs/introduction) avec la bibliothèque Python [`bigquery`](https://cloud.google.com/python/docs/reference/bigquery/latest).
+
+### 1. Authentifiez-vous avec un compte de service Google
+
+Créez un UDF pour définir vos [identifiants de compte de service Google](https://cloud.google.com/bigquery/docs/use-service-accounts) dans votre runtime Fused [disk](/core-concepts/content-management/file-system/#mntcache-disk) dans un fichier du répertoire `/mnt/cache`.
+
+```python showLineNumbers
+@fused.udf
+def udf():
+
+    import os, json
+
+    # Google Key as JSON
+    data = {
+        'type': 'service_account',
+        'project_id': 'MYPROJECT',
+        'private_key_id': '1234',
+        'private_key': '-----BEGIN PRIVATE KEY-----...\n-----END PRIVATE KEY-----\n',
+        'client_email': 'fused-account@MYPROJECT.iam.gserviceaccount.com',
+        'client_id': '1234567',
+        'auth_uri': 'https://accounts.google.com/o/oauth2/auth',
+        'token_uri': 'https://oauth2.googleapis.com/token',
+        'auth_provider_x509_cert_url': 'https://www.googleapis.com/oauth2/v1/certs',
+        'client_x509_cert_url': 'https://www.googleapis.com/robot/v1/metadata/x509/fused-pg%40MYPROJECT.iam.gserviceaccount.com',
+        'universe_domain': 'googleapis.com'
+    }
+
+    # Define the target path for the new GEE credentials file
+    key_path = '/mnt/cache/bq_creds.json'
+
+    # Write the loaded JSON data to the new file
+    with open(key_path, 'w') as file:
+        json.dump(data, file)
+```
+
+### 2. Charger des données à partir de BigQuery
+
+Créez un UDF pour effectuer une requête sur un dataset BigQuery et retourner les résultats sous forme de DataFrame ou GeoDataFrame. Authentifiez-vous en passant le chemin du fichier clé à `service_account.Credentials`.
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.TileGDF=None, geography_column=None):
+    from google.cloud import bigquery
+    from google.oauth2 import service_account
+
+    # This UDF will only work on runtime with mounted EFS
+    key_path = "/mnt/cache/bq_creds.json"
+
+    # Authenticate BigQuery
+    credentials = service_account.Credentials.from_service_account_file(
+        key_path, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+
+    # Create a BigQuery client
+    client = bigquery.Client(credentials=credentials, project=credentials.project_id)
+
+    # Structure spatial query
+    query = f"""
+        SELECT * FROM `bigquery-public-data.new_york.tlc_yellow_trips_2015`
+        LIMIT 10
+    """
+
+    if geography_column:
+        return client.query(query).to_geodataframe(geography_column=geography_column)
+    else:
+        return client.query(query).to_dataframe()
+```
+
+
+## Big Query - Option 2: Secrets
+
+Si vous avez déjà un `gcs_secret` dans les secrets Fused, vous pouvez l'utiliser pour accéder à vos secrets GCP. Sinon, vous pouvez simplement créer de nouveaux secrets dans le gestionnaire de secrets Fused avec :
+- `GS_ACCESS_KEY_ID`
+- `GS_SECRET_ACCESS_KEY`
+
+Vous pouvez par exemple utiliser cela pour accéder aux [Github Activity Data](https://console.cloud.google.com/marketplace/product/github/github-repos?inv=1&invt=Ab5M6w)
+
+```python showLineNumbers
+@fused.udf
+def udf(repo_name: str = "athasdev/athas"):
+    import os
+    # Ceci n'est pas nécessaire si votre compte a déjà le `gcs_secret` dans les secrets Fused
+    os.environ['GS_ACCESS_KEY_ID'] = fused.secrets["GS_ACCESS_KEY_ID"]
+    os.environ['GS_SECRET_ACCESS_KEY'] = fused.secrets["GS_SECRET_ACCESS_KEY"]
+    
+    from google.cloud import bigquery
+    # Initialize BigQuery client
+    client = bigquery.Client()
+    
+    # Get total stars 
+    total_query = f"""
+        SELECT 
+            repo.name as repository,
+            COUNT(*) as total_stars
+        FROM `githubarchive.day.202508*`
+        WHERE type = 'WatchEvent' 
+ --           AND repo.name = '{repo_name}'
+        GROUP BY repository
+    """
+    
+    total_query = f""" SELECT  * FROM `githubarchive.day.202508*` limit 10"""
+    
+    # Run the query
+    query_job = client.query(total_query)
+    
+    # Convert to pandas DataFrame
+    total_df = query_job.to_dataframe()
+     
+    return total_df
+```

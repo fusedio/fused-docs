@@ -1,0 +1,353 @@
+# Autres Intégrations
+
+Cette section montre comment intégrer les UDF Fused avec des outils de cartographie et de visualisation populaires.
+
+## DeckGL
+
+[DeckGL](https://deck.gl/) est un cadre hautement performant pour créer des visualisations de cartes interactives qui gèrent de grands ensembles de données.
+
+Ce guide montre comment charger des données de Fused dans des cartes DeckGL créées à partir d'une seule page HTML autonome.
+### Configuration
+
+1. Tout d'abord, créez un UDF et [générez un point de terminaison HTTPS](/core-concepts/run-udfs/run-small-udfs/#https-requests).
+
+2. Créez un fichier `.html` en suivant ce modèle. Ce code crée une carte DeckGL puis introduit une couche qui rend les données du point de terminaison Fused spécifié.
+
+```html
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Fused DeckGL</title>
+    <meta
+      name="viewport"
+      content="initial-scale=1,maximum-scale=1,user-scalable=no"
+    />
+
+    <script src="https://unpkg.com/@deck.gl/core@^9.0.0/dist.min.js"></script>
+    <script src="https://unpkg.com/@deck.gl/layers@^9.0.0/dist.min.js"></script>
+    <script src="https://unpkg.com/@deck.gl/geo-layers@^9.0.0/dist.min.js"></script>
+    <script src="https://unpkg.com/@deck.gl/carto@^9.0.0/dist.min.js"></script>
+    <script src="https://unpkg.com/h3-js"></script>
+    <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.js"></script>
+    <link
+      href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        width: 100vw;
+        height: 100vh;
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script>
+      const { DeckGL, H3HexagonLayer, GeoJsonLayer, BitmapLayer, TileLayer } = deck;
+
+      new DeckGL({
+        mapboxApiAccessToken:
+          "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+        mapStyle: "mapbox://styles/mapbox/dark-v10",
+        initialViewState: {
+          longitude: -122.417759,
+          latitude: 37.776452,
+          zoom: 12,
+        },
+        controller: true,
+        layers: [
+          new H3HexagonLayer({
+            id: "H3HexagonLayer",
+            data: "https://www.fused.io/server/v1/realtime-shared/f393efed9c75425365f2f00254d37cb15166e22fc5defabcc7ee6fd9e2d7a3b4/run/file?format=json",
+            extruded: true,
+            getElevation: (d) => d.count,
+            elevationScale: 20,
+            filled: true,
+            stroked: true,
+            getFillColor: (d) => [255, (1 - d.count / 500) * 255, 0],
+            getHexagon: (d) => d.hex,
+            getLineColor: [255, 255, 255],
+            getLineWidth: 2,
+            lineWidthUnits: "pixels",
+          }),
+        ],
+      });
+    </script>
+  </body>
+</html>
+```
+
+### H3HexagonLayer
+
+Créez un [`H3HexagonLayer`](https://deck.gl/docs/api-reference/geo-layers/h3-hexagon-layer).
+
+<iframe src="/img/deckgl_h3.html"  height="400px" width="100%" scrolling="no"></iframe>
+
+```js
+new H3HexagonLayer({
+    id: "H3HexagonLayer",
+    data: "https://www.fused.io/server/v1/realtime-shared/f393efed9c75425365f2f00254d37cb15166e22fc5defabcc7ee6fd9e2d7a3b4/run/file?format=json",
+    extruded: true,
+    getElevation: (d) => d.count,
+    elevationScale: 20,
+    filled: true,
+    stroked: true,
+    getFillColor: (d) => [255, (1 - d.count / 500) * 255, 0],
+    getHexagon: (d) => d.hex,
+    getLineColor: [255, 255, 255],
+    getLineWidth: 2,
+    lineWidthUnits: "pixels",
+}),
+```
+
+### Couche de Tuiles Vectorielles
+
+Les couches de tuiles vectorielles sont créées en plaçant une sous-couche [`GeoJsonLayer`](https://deck.gl/docs/api-reference/layers/geojson-layer) à l'intérieur d'une [`TileLayer`](https://deck.gl/docs/api-reference/geo-layers/tile-layer). Utilisez le snippet suivant pour introduire une couche vectorielle.
+
+La couche dans la carte d'exemple provient de [Overture Buildings UDF](https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example).
+
+<iframe src="/img/deckgl_vector.html"  height="400px" width="100%" scrolling="no"></iframe>
+
+```js
+new TileLayer({
+  // Utilisez geojsonlayer à l'intérieur de tilelayer. C'est au lieu de MVT Layer, qui a des optimisations qui peuvent causer des coupures lorsque le polygone s'étend au-delà de la zone de la tuile.
+  id: "VectorTileLayer",
+  data: "https://www.fused.io/server/v1/realtime-shared/UDF_Overture_Maps_Example/run/tiles/{z}/{x}/{y}?format=geojson",
+  maxZoom: 19,
+  minZoom: 0,
+
+  renderSubLayers: (props) => {
+    const { boundingBox } = props.tile;
+
+    return new GeoJsonLayer(props, {
+      data: props.data,
+      stroked: true,
+      getLineColor: [0, 255, 10],
+      getLineWidth: 10,
+      getFillColor: [0, 40, 0, 0.5],
+      getPointRadius: 4,
+      getLineWidth: 5,
+      pointRadiusUnits: "pixels",
+      bounds: [
+        boundingBox[0][0],
+        boundingBox[0][1],
+        boundingBox[1][0],
+        boundingBox[1][1],
+      ],
+    });
+  },
+});
+```
+
+### Couche de Tuiles Raster
+
+Les couches de tuiles raster sont créées en plaçant une sous-couche [`BitmapLayer`](https://deck.gl/docs/api-reference/layers/bitmap-layer) à l'intérieur d'une [`TileLayer`](https://deck.gl/docs/api-reference/geo-layers/tile-layer). Utilisez le snippet suivant pour introduire une couche raster. La couche d'exemple ci-dessous a été créée à partir de [NAIP Tile UDF](https://github.com/fusedio/udfs/tree/main/public/NAIP_Tile_Example).
+
+<iframe src="/img/deckgl_raster.html"  height="300px" width="100%" scrolling="no"></iframe>
+
+```js
+new TileLayer({
+  id: "RasterTileLayer",
+  data: `https://www.fused.io/server/v1/realtime-shared/UDF_Arcgis_Rgb/run/tiles/{z}/{x}/{y}?format=png`,
+  maxZoom: 19,
+  minZoom: 0,
+
+  renderSubLayers: (props) => {
+    const { boundingBox } = props.tile;
+
+    return new BitmapLayer(props, {
+      data: null,
+      image: props.data,
+      bounds: [
+        boundingBox[0][0],
+        boundingBox[0][1],
+        boundingBox[1][0],
+        boundingBox[1][1],
+      ],
+    });
+  },
+  pickable: true,
+});
+```
+
+[En savoir plus sur DeckGL](https://deck.gl/docs)
+
+## Felt
+
+[Felt](https://felt.com/) est une plateforme de cartographie collaborative pour créer des cartes interactives. Chargez les données Fused directement via des URL.
+
+### Tuiles Raster
+
+1. Créez un UDF qui retourne des tuiles raster
+2. Générez une URL partagée et modifiez-la :
+   - Définissez `format=png`
+   - Remplacez le chemin par le modèle `/{z}/{x}/{y}`
+
+```bash
+https://www.fused.io/server/v1/realtime-shared/YOUR_UDF/run/tiles/{z}/{x}/{y}?format=png
+```
+
+3. Dans Felt, cliquez sur "Télécharger depuis l'URL" et collez l'URL modifiée
+
+### Données Vectorielles
+
+1. Créez un UDF qui retourne des données vectorielles
+2. Générez une URL partagée et modifiez-la :
+   - Définissez `format=csv` ou `format=parquet`
+   - Ajoutez des paramètres UDF si nécessaire
+
+```bash
+https://www.fused.io/server/v1/realtime-shared/YOUR_UDF/run/file?format=csv&param1=value1
+```
+
+3. Dans Felt, cliquez sur "Télécharger depuis l'URL" et collez l'URL
+
+[En savoir plus sur Felt](https://felt.com/help)
+
+## Kepler
+
+[Kepler](https://kepler.gl/) est un outil open source pour visualiser de grands ensembles de données géospatiales. Le Fused UDF Builder fournit une intégration directe avec Kepler.
+
+### Utilisation
+
+1. Créez un UDF qui retourne des données vectorielles
+2. Dans le UDF Builder, cliquez sur "Ouvrir dans Kepler.gl" dans le menu en haut à droite
+3. Attendez le transfert de données et cliquez sur "Ouvrir dans Kepler.gl" en bas à droite
+
+Cela ouvre vos données directement dans Kepler pour une visualisation et une analyse avancées.
+
+[En savoir plus sur Kepler](https://kepler.gl/docs)
+
+## Mapbox
+
+[Mapbox GL JS](https://docs.mapbox.com/mapbox-gl-js/) crée des cartes web interactives. Chargez les données Fused en utilisant des sources de tuiles.
+
+### Configuration de Base
+
+- Générez un [jeton Mapbox](https://docs.mapbox.com/help/dive-deeper/access-tokens/)
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.js"></script>
+</head>
+<body>
+    <div id="map"></div>
+    <script>
+        mapboxgl.accessToken = 'YOUR_MAPBOX_TOKEN';
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/dark-v10',
+            center: [-122.447303, 37.753574],
+            zoom: 13
+        });
+    </script>
+</body>
+</html>
+```
+
+### Tuiles Vectorielles
+
+```html
+<script>
+map.on('load', () => {
+    map.addSource('fused-source', {
+        'type': 'vector',
+        'tiles': [
+            'https://www.fused.io/server/v1/realtime-shared/YOUR_UDF/run/tiles/{z}/{x}/{y}?format=mvt'
+        ],
+        'minzoom': 6,
+        'maxzoom': 14
+    });
+    
+    map.addLayer({
+        'id': 'fused-layer',
+        'type': 'line',
+        'source': 'fused-source',
+        'source-layer': 'udf', // Toujours 'udf' pour les tuiles vectorielles Fused
+        'paint': {
+            'line-color': 'rgb(53, 175, 109)',
+            'line-width': 2
+        }
+    });
+});
+</script>
+```
+
+### Tuiles Raster
+
+```html
+<script>
+map.on('load', () => {
+    map.addSource('fused-raster-source', {
+        'type': 'raster',
+        'tiles': [
+            'https://www.fused.io/server/v1/realtime-shared/YOUR_UDF/run/tiles/{z}/{x}/{y}?format=png'
+        ],
+        'tileSize': 256
+    });
+    
+    map.addLayer({
+        'id': 'fused-raster-layer',
+        'type': 'raster',
+        'source': 'fused-raster-source'
+    });
+});
+</script>
+```
+
+[En savoir plus sur Mapbox GL JS](https://docs.mapbox.com/mapbox-gl-js/api/)
+
+## QGIS
+
+[QGIS](https://www.qgis.org/) est une plateforme GIS de bureau open source. Chargez les données Fused sous forme de tuiles raster, de tuiles vectorielles ou de fichiers vectoriels.
+
+### Tuiles Raster
+
+1. Créez un UDF qui retourne des tuiles raster
+2. Générez une URL partagée et modifiez-la :
+   - Définissez `format=png`
+   - Remplacez par le modèle `/{z}/{x}/{y}`
+
+```bash
+https://www.fused.io/server/v1/realtime-shared/YOUR_UDF/run/tiles/{z}/{x}/{y}?format=png
+```
+
+3. Dans QGIS : Clic droit sur "XYZ Tiles" → "Nouvelle Connexion"
+4. Collez l'URL et configurez la couche
+
+### Tuiles Vectorielles
+
+1. Créez un UDF qui retourne des tuiles vectorielles
+2. Générez une URL partagée avec `format=mvt`
+
+```bash
+https://www.fused.io/server/v1/realtime-shared/YOUR_UDF/run/tiles/{z}/{x}/{y}?format=mvt
+```
+
+3. Dans QGIS : Clic droit sur "Vector Tiles" → "Nouvelle Connexion"
+4. Collez l'URL et configurez la couche
+
+### Fichiers Vectoriels
+
+1. Créez un UDF qui retourne des données vectorielles
+2. Générez une URL partagée avec `format=geojson`
+
+```bash
+https://www.fused.io/server/v1/realtime-shared/YOUR_UDF/run/file?format=geojson
+```
+
+3. Dans QGIS : Couche → Ajouter une Couche → Ajouter une Couche Vectorielle
+4. Collez l'URL comme source de données
+
+[En savoir plus sur QGIS](https://docs.qgis.org/3.34/en/docs/user_manual/)
+
+## Liens Connexes 
+
+- [Générez des points de terminaison HTTPS](/core-concepts/run-udfs/run-small-udfs/#https-requests) pour vos UDF
+- Consultez le [catalogue Fused](https://www.fused.io/workbench/catalog/) pour des UDF prêts à l'emploi 

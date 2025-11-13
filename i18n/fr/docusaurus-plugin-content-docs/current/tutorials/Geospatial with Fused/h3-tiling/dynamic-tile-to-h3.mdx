@@ -1,0 +1,398 @@
+---
+slug: dynamic-tile-to-h3
+title: Tuiles Dynamiques vers H3
+authors: [fused]
+tags: [h3, géospatial]
+sidebar_position: 2
+---
+
+# Tuiles Dynamiques vers H3
+
+Tuiler dynamiquement des données en hexagones H3 dans un viewport donné. La résolution hexagonale est calculée en fonction des limites du viewport.
+
+Les exemples suivants sont disponibles dans un [Fused Canvas dédié](https://www.fused.io/canvas/fc_6axFAIdiqYrWuLNkDXi06c)
+
+:::note Configurez votre UDF en mode [Tile UDF](/tutorials/Geospatial%20with%20Fused/filetile/#tile-udf)
+
+Les exemples sur cette page utilisent tous le [mode Tile UDF](/tutorials/Geospatial%20with%20Fused/filetile/#tile-udf) pour calculer dynamiquement H3 en fonction des limites du viewport.
+
+Lisez-en plus sur les différences entre le [mode Tile UDF](/tutorials/Geospatial%20with%20Fused/filetile/#tile-udf) et le [mode Single UDF](/tutorials/Geospatial%20with%20Fused/filetile/#single-udf).
+
+:::
+
+## Polygone vers Hex
+
+L'exemple suivant utilise un [jeu de données simplifié des blocs de recensement de l'État de Californie](https://www.fused.io/workbench/files?path=s3%3A%2F%2Ffused-asset%2Fdemos%2Fcatchment_analysis%2Fsimplified_acs_bg_ca_2022.parquet), montrant une carte thermique de la densité de population par cellule hexagonale 9 :
+
+<iframe 
+  src="https://www.fused.io/server/v1/realtime-shared/UDF_Hex_Tile_Map_Template/run/file"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+Lien vers UDF dans le [Catalogue Fused](https://www.fused.io/workbench/catalog/census_to_hex_template_v2-53ff4b2f-fb6e-4284-9c0d-4b5f04b4f3d1)
+
+<details>
+<summary>Code</summary>
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-125.0, 24.0, -66.9, 49.0],
+    path: str = "s3://fused-asset/demos/catchment_analysis/simplified_acs_bg_ca_2022.parquet",
+    min_hex_cell_res: int= 11, # Augmentez ceci si vous travaillez avec des données locales à haute résolution
+    max_hex_cell_res: int= 4,
+):
+    import pandas as pd
+    import geopandas as gpd
+    
+    common = fused.load("https://github.com/fusedio/udfs/tree/f430c25/public/common/")
+    
+    # Résolution H3 dynamique
+    def dynamic_h3_res(b):
+        z = common.estimate_zoom(b)
+        return max(min(int(2 + z / 1.5),min_hex_cell_res), max_hex_cell_res)
+    
+    parent_res = max(dynamic_h3_res(bounds) - 1, 0)
+    
+    # Charger et découper les données
+    gdf = gpd.read_parquet(path)
+    tile = common.get_tiles(bounds, clip=True)
+    gdf = gdf.to_crs(4326).clip(tile)
+    
+    # Sortie anticipée si vide
+    if len(gdf) == 0:
+        return pd.DataFrame(columns=["hex", "POP", "pct"])
+    
+    # Hexifier
+    con = common.duckdb_connect()
+    df_hex = common.gdf_to_hex(gdf, res=parent_res, add_latlng_cols=None)
+    con.register("df_hex", df_hex)
+    
+    # Agréger aux hexagones parents et calculer les pourcentages
+    # Dans ce cas, nous agrégeons par somme
+    query = f"""
+    WITH agg AS (
+        SELECT 
+            h3_cell_to_parent(hex, {parent_res}) AS hex, 
+            SUM(POP) AS POP
+        FROM df_hex
+        GROUP BY hex
+    )
+    SELECT
+        hex,
+        POP,
+        POP * 100.0 / SUM(POP) OVER () AS pct
+    FROM agg
+    ORDER BY POP DESC
+    """
+    
+    return con.sql(query).df()
+```
+</details>
+
+### Exigences
+
+- Jeu de données polygonal
+```csv
+          GEOID  POP  ...                                           geometry
+0  060376500012  82   ...  POLYGON ((-118.32649 33.88282, -118.32206 33.8...
+1  060376500014  315  ...  POLYGON ((-118.32647 33.87978, -118.32214 33.8...
+2  060376503002  145  ...  POLYGON ((-118.3525 33.87249, -118.34388 33.87...
+```
+
+- Passer les [limites du viewport](/tutorials/Geospatial%20with%20Fused/filetile/#bounds)
+
+```python showLineNumbers
+bounds: fused.types.Bounds = [-118.32649, 33.87249, -118.32206, 33.88282]
+```
+
+- Champ à hexagonifier & fonction d'agrégation. Dans cet exemple, nous additionnons la population : `POP`
+
+### Logique
+
+1. Obtenir la tuile & la résolution hexagonale
+
+```python showLineNumbers
+common = fused.load("https://github.com/fusedio/udfs/tree/f430c25/public/common/")
+
+def dynamic_h3_res(b):
+    z = common.estimate_zoom(b)
+    return max(min(int(2 + z / 1.5),min_hex_cell_res), max_hex_cell_res)
+
+parent_res = max(dynamic_h3_res(bounds) - 1, 0)
+```
+
+2. Charger les données & découper à la tuile
+
+```python showLineNumbers
+gdf = gpd.read_parquet(path)
+tile = common.get_tiles(bounds, clip=True)
+gdf = gdf.to_crs(4326).clip(tile)
+```
+
+3. Hexifier
+
+```python showLineNumbers
+# Nous utiliserons des fonctions des UDFs communs
+df_hex = common.gdf_to_hex(gdf, res=parent_res, add_latlng_cols=None)
+```
+
+4. Agréger
+
+```python showLineNumbers
+query = f"""
+WITH agg AS (
+    SELECT 
+        h3_cell_to_parent(hex, {parent_res}) AS hex, 
+        SUM(POP) AS POP
+    FROM df_hex
+    GROUP BY hex
+)
+SELECT
+    hex,
+    POP,
+    POP * 100.0 / SUM(POP) OVER () AS pct
+FROM agg
+ORDER BY POP DESC
+"""
+
+hex_df = con.sql(query).df()
+```
+
+## Raster vers Hex
+
+Cet exemple utilise des données GeoTiff en tuiles de [Terrain Tiles d'AWS](https://registry.opendata.aws/terrain-tiles/). Les hexagones montrent les données d'élévation :
+
+<iframe 
+  src="https://www.fused.io/server/v1/realtime-shared/fsh_5o5UNLYxDNTN5ldzVFkeuR/run/file"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+Lien vers UDF dans le [Catalogue Fused](https://www.fused.io/workbench/catalog/DEM_Tile_Hexify-c9aae65c-0047-42ba-8b3c-4326a5a2e47b)
+
+<details>
+<summary>Détails du Code</summary>
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds = [-90.691,-21.719,-21.300,75.897], stats_type="mean", type='hex', color_scale:float=1):
+    import pandas as pd
+    import rioxarray
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/b7637ee/public/common/")
+    # convertir les limites en tuile
+    tile = common.get_tiles(bounds, clip=True)
+
+    # 1. Paramètres initiaux
+    x, y, z = tile.iloc[0][["x", "y", "z"]]
+    url = f"https://s3.amazonaws.com/elevation-tiles-prod/geotiff/{z}/{x}/{y}.tif"
+    if type=='png':
+        return url_to_plasma(url, min_max=(-1000,2000/color_scale**0.5), colormap='plasma')
+    else:
+        
+        res_offset = 1  # plus bas rend l'hexagone plus fin
+        h3_size = max(min(int(3 + z / 2), 12) - res_offset, 2)
+        print(h3_size)
+    
+        # 2. Lire tiff
+        da_tiff = rioxarray.open_rasterio(url).squeeze(drop=True).rio.reproject("EPSG:4326")
+        df_tiff = da_tiff.to_dataframe("data").reset_index()[["y", "x", "data"]]
+    
+        # 3. Hexagonifier & agréger
+        df = aggregate_df_hex(
+            df_tiff, h3_size, latlng_cols=["y", "x"], stats_type=stats_type
+        )
+        df["elev_scale"] = int((15 - z) * 1)
+        df["metric"]=df["metric"]*color_scale
+        df = df[df["metric"] > 0]
+        return df
+
+
+
+def url_to_plasma(url, min_max=None, colormap='plasma'):
+    common = fused.load("https://github.com/fusedio/udfs/tree/b7637ee/public/common/")
+
+    return common.arr_to_plasma(common.url_to_arr(url).squeeze(), min_max=min_max, colormap=colormap, reverse=False)
+
+
+@fused.cache
+def df_to_hex(df, res, latlng_cols=("lat", "lng")):  
+    common = fused.load("https://github.com/fusedio/udfs/tree/b7637ee/public/common/")
+    qr = f"""
+            SELECT h3_latlng_to_cell({latlng_cols[0]}, {latlng_cols[1]}, {res}) AS hex, ARRAY_AGG(data) as agg_data
+            FROM df
+            group by 1
+          --  order by 1
+        """
+    con = common.duckdb_connect()
+    return con.query(qr).df()
+
+
+@fused.cache
+def aggregate_df_hex(df, res, latlng_cols=("lat", "lng"), stats_type="mean"):
+    import pandas as pd
+
+    df = df_to_hex(df, res=res, latlng_cols=latlng_cols)
+    if stats_type == "sum":
+        fn = lambda x: pd.Series(x).sum()
+    elif stats_type == "mean":
+        fn = lambda x: pd.Series(x).mean()
+    else:
+        fn = lambda x: pd.Series(x).mean()
+    df["metric"] = df.agg_data.map(fn)
+    return df
+
+```
+</details>
+
+### Exigences
+
+- Jeu de données raster (dans ce cas [Terrain Tiles d'AWS](https://registry.opendata.aws/terrain-tiles/)):
+
+```bash
+                y           x  data
+0       84.776183 -179.725474 -2191
+1       84.776183 -179.176421 -2176
+2       84.776183 -178.627369 -2176
+```
+
+- Passer les [limites du viewport](/tutorials/Geospatial%20with%20Fused/filetile/#bounds)
+
+```python showLineNumbers
+bounds: fused.types.Bounds = [-90.691,-21.719,-21.300,75.897]
+```
+
+### Logique
+
+1. Obtenir la tuile & la résolution hexagonale
+
+```python showLineNumbers
+x, y, z = tile.iloc[0][["x", "y", "z"]]
+url = f"https://s3.amazonaws.com/elevation-tiles-prod/geotiff/{z}/{x}/{y}.tif"
+
+res_offset = 1  # plus bas rend l'hexagone plus fin
+h3_size = max(min(int(3 + z / 2), 12) - res_offset, 2)
+```
+
+2. Lire le tableau & retourner sous forme de dataframe
+
+```python showLineNumbers
+da_tiff = rioxarray.open_rasterio(url).squeeze(drop=True).rio.reproject("EPSG:4326")
+df_tiff = da_tiff.to_dataframe("data").reset_index()[["y", "x", "data"]]
+```
+
+3. Hexagonifier & agréger
+
+```python showLineNumbers
+df = df_tiff
+res = h3_size
+latlng_cols=("lat", "lng")
+
+# requête duckdb 
+qr = f"""
+        SELECT h3_latlng_to_cell({latlng_cols[0]}, {latlng_cols[1]}, {res}) AS hex, ARRAY_AGG(data) as agg_data
+        FROM df
+        group by 1
+    """
+```
+
+4. Agréger 
+
+```python showLineNumbers
+@fused.cache
+def aggregate_df_hex(df, res, latlng_cols=("lat", "lng"), stats_type="mean"):
+    import pandas as pd
+
+    df = df_to_hex(df, res=res, latlng_cols=latlng_cols)
+    if stats_type == "sum":
+        fn = lambda x: pd.Series(x).sum()
+    elif stats_type == "mean":
+        fn = lambda x: pd.Series(x).mean()
+    else:
+        fn = lambda x: pd.Series(x).mean()
+    df["metric"] = df.agg_data.map(fn)
+    return df
+```
+
+## Visualiser H3 
+
+### UDF de Carte Personnalisée
+
+Nous avons construit un [modèle UDF de carte personnalisée](https://www.fused.io/workbench/catalog/Hex_Tile_Map_Template-f9e91177-3225-4cf5-ab07-7b5d10b6bdff) qui prend des hexagones H3 et les rend sur une carte.
+
+En utilisant ce modèle, vous devez simplement passer vos données et une configuration personnalisée pour rendre une carte HTML personnalisée :
+
+<iframe 
+  src="https://www.fused.io/server/v1/realtime-shared/fsh_3dFHuJqgI1wucNJMJf06Ii/run/file"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+<details>
+<summary>Code</summary>
+
+```python showLineNumbers
+@fused.udf
+def udf():
+    """
+    Visualisez les tuiles hexagonales des blocs de recensement de Californie sur une carte en utilisant le
+    modèle `hex_tile_map_template_with_tooltip_v2`.
+
+    Le modèle est appelé via son jeton partagé (ou nom) et est fourni avec :
+      • tile_url_template – pointe vers l'UDF de tuiles vectorielles `census_hex_all_california_bg`
+      • config_json – une échelle de couleur violette pour l'attribut POP (0-10 000)
+      • tooltip_columns – colonnes à afficher lors du survol (POP, GEOID, NAME)
+    """
+    # URL qui sert les tuiles vectorielles pour les données hexagonales de recensement.
+    tile_url_template = (
+        "https://www.fused.io/server/v1/realtime-shared/"
+        "fsh_3jeg2MDjozUl8kXqSAxFGE/run/tiles/{z}/{x}/{y}?dtype_out_vector=json"
+    )
+
+    # Configuration pour le H3HexagonLayer – dégradé de couleur violet sur POP (0-10 000)
+    config_json = r"""{
+      "tileLayer": {
+        "@@type": "TileLayer",
+        "maxZoom": 12
+      },
+      "hexLayer": {
+        "@@type": "H3HexagonLayer",
+        "filled": true,
+        "pickable": true,
+        "extruded": false,
+        "getHexagon": "@@=properties.hex",
+        "getFillColor": {
+          "@@function": "colorContinuous",
+          "attr": "POP",
+          "domain": [0, 10000],
+          "steps": 20,
+          "colors": "Purp",
+          "nullColor": [184,184,184]
+        }
+      }
+    }"""
+
+    # Colonnes que nous voulons afficher dans l'infobulle lors du survol d'un hexagone.
+    tooltip_columns = ["POP", "GEOID", "NAME"]
+
+    return fused.run(
+        "UDF_Hex_Tile_Map_Template",
+        tile_url_template=tile_url_template,
+        config_json=config_json,
+        center_lng=-119.4179,
+        center_lat=36.7783,
+        zoom=5,
+        tooltip_columns=tooltip_columns,
+    )
+```
+</details>
+
+### Dans le Visualiseur de Carte Workbench
+
+- [Couche Vectorielle `H3HexagonLayer` avec Tuiles](/workbench/udf-builder/styling/#vector-h3hexagonlayer-with-tiles)

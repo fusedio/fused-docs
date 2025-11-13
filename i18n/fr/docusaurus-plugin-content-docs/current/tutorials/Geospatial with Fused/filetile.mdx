@@ -1,0 +1,212 @@
+---
+id: filetile
+title: UDFs de carte unique / en tuiles
+tags: [write, endpoints, api, http, file, single, tile]
+sidebar_position: 4
+---
+
+# Travailler avec des données spatiales : Unique vs Tuiles
+
+Il existe 2 principales façons de travailler avec des données spatiales dans Fused :
+
+## UDF Unique
+
+Les UDF uniques sont le comportement par défaut dans Fused. L'UDF est exécuté 1 fois avec les limites de la fenêtre de visualisation actuelle.
+
+![Mode UDF Unique](/img/tutorials/single_udf_mode.png)
+
+Caractéristiques :
+- 1 UDF unique est appelé sur l'ensemble de la fenêtre de visualisation de la carte
+- Le déplacement de la carte NE relance PAS l'UDF
+- L'onglet "Résultats" affiche la sortie de l'unique UDF appelé
+
+### Appel HTTPS Unique
+
+Un UDF unique est appelé comme tout autre UDF via une [requête HTTPS](/core-concepts/run-udfs/run-small-udfs#https-requests) :
+
+```bash
+https://www.fused.io/.../run/file?format=csv
+```
+
+Ou via le [SDK Python Fused](/python-sdk/) :
+
+```python showLineNumbers
+fused.run("single_udf")
+```
+
+Il existe 2 types d'UDF uniques spatiaux :
+
+### Unique (Viewport)
+
+Priorisera les limites de la FENÊTRE DE VISUALISATION DE LA CARTE actuelle, indépendamment du paramètre [`bounds`](/tutorials/Geospatial%20with%20Fused/filetile#bounds).
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds = [-74.38,40.32,-73.31,41.29]):
+    print(bounds) # Ce sera les limites de la FENÊTRE DE VISUALISATION DE LA CARTE actuelle, indépendamment du paramètre `bounds`
+    return bounds
+```
+
+### Unique (Paramètre)
+
+Utilisera le paramètre [`bounds`](/tutorials/Geospatial%20with%20Fused/filetile#bounds), indépendamment des limites de la FENÊTRE DE VISUALISATION DE LA CARTE actuelle.
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds = [-74.38,40.32,-73.31,41.29]):
+    print(bounds) # Ce sera le paramètre `bounds`, indépendamment des limites de la FENÊTRE DE VISUALISATION DE LA CARTE actuelle
+    return bounds
+```
+
+### Exemple UDF
+
+- [Obtenir Isochrone](https://www.fused.io/workbench/udf/catalog/Get_Isochrone-15dcecd8-c401-42a8-b9f0-a9dac3d7ddc3)
+    - Retourne un polygone isochrone (distance qu'une personne peut marcher / conduire) pour un point donné
+
+## UDF en Tuiles
+
+Les UDF en tuiles divisent la fenêtre de visualisation de l'utilisateur en une grille de tuiles plus petites et exécutent un UDF pour chacune d'elles.
+
+![Mode UDF en Tuiles](/img/tutorials/tile_udf_mode.png)
+
+Caractéristiques :
+- Plusieurs UDF en tuiles sont appelés pour couvrir la fenêtre de visualisation de la carte actuelle
+- Le déplacement de la carte relance l'UDF pour chaque tuile
+- L'onglet "Résultats" affiche la sortie de la _dernière_ tuile appelée
+
+### Appel HTTPS en Tuiles
+
+Un UDF en tuiles est appelé en passant des [tuiles XYZ Web mercator](https://en.wikipedia.org/wiki/Tiled_web_map) via la [requête HTTPS](/core-concepts/run-udfs/run-small-udfs#https-requests)
+
+**Deux façons d'appeler le point de terminaison HTTPS :**
+
+**1. Serveur de tuiles dynamique (pour les applications cartographiques)**
+
+```bash
+https://www.fused.io/.../run/tiles/{z}/{x}/{y}?format=png
+```
+Utilisez cette URL modèle dans les bibliothèques de cartographie `{z}/{x}/{y}` est automatiquement remplacé par les coordonnées de la tuile au fur et à mesure que les utilisateurs se déplacent et zooment.
+
+Exemples de cas d'utilisation :
+- [QGIS](/tutorials/Geospatial%20with%20Fused/other-integrations/#qgis)
+- [Felt](/tutorials/Geospatial%20with%20Fused/other-integrations/#felt)
+- [DeckGL](/tutorials/Geospatial%20with%20Fused/other-integrations/#deckgl)
+- [Mapbox](/tutorials/Geospatial%20with%20Fused/other-integrations/#mapbox)
+
+**2. Appel de tuile spécifique**
+```bash
+# Appelle une seule tuile - centre de San Francisco au zoom 13
+https://www.fused.io/.../run/tiles/13/1316/3169?format=png
+```
+Utilisez ceci pour récupérer des données pour un emplacement de tuile spécifique.
+
+Ou via le [SDK Python Fused](/python-sdk/) :
+
+```python showLineNumbers
+# Avec le paramètre bounds
+fused.run("tile_udf", bounds=bounds)
+```
+
+```python showLineNumbers
+# Avec les paramètres x, y, z
+fused.run("tile_udf", x=1, y=2, z=3)
+```
+
+### Exemple UDF
+
+- [Exemple de cartes Overture](https://www.fused.io/workbench/udf/catalog/Overture_Maps_Example-64071fb8-2c96-4015-adb9-596c3bac6787)
+    - Manipule _tous_ les bâtiments du jeu de données Overture Maps en tirant parti de [l'ingestion Fused](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion)
+- [Exemple de tuile Landsat](https://www.fused.io/workbench/udf/catalog/Landsat_Tile_Example-942a9608-77cb-4d2b-8627-ea5f2747d96d)
+    - Retourne une tuile NDVI calculée à la volée à partir des données Landsat
+
+## Comparaison des UDFs Uniques et en Tuiles
+
+| Fonctionnalité | UDF Unique | UDF en Tuiles |
+|----------------|------------|----------------|
+| Appels UDF | 1 | Multiple |
+| Paramètres | [`bounds`](/tutorials/Geospatial%20with%20Fused/filetile#bounds) (Optionnel) | [`bounds`](/tutorials/Geospatial%20with%20Fused/filetile#bounds) ou `x`, `y`, `z` |
+| Rendu de la carte | Statique | Dynamique |
+| Appel HTTP | Appel unique | Appels serveur de tuiles ou appel unique (tuile spécifique) |
+| Affichage de l'[onglet Runtime](/workbench/udf-builder/runtime/) | Sortie unique de l'UDF appelé | Sortie de la _dernière_ tuile appelée |
+| Cas d'utilisation | Petites données statiques | Appel d'un grand ensemble de données via le serveur de tuiles |
+
+## `bounds`
+
+`bounds` est simplement une liste de 4 coordonnées représentant les limites d'une géométrie. Les 4 coordonnées représentent `[xmin, ymin, xmax, ymax]` des limites.
+
+Dans Fused, il est défini avec le type `fused.types.Bounds` :
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds=None):
+    print(bounds)
+
+>>> [-1.52244399, 48.62747869, -1.50004107, 48.64359255]
+```
+
+### `bounds` vers `GeoDataFrame`
+
+Conversion de `bounds` (liste de 4 coordonnées) en un `GeoDataFrame` :
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+<Tabs className="unique-tabs">
+  <TabItem value="fused" label="Fonction commune Fused" default>
+    ```python showLineNumbers
+    @fused.udf
+    def udf(bounds: fused.types.Bounds=None):
+        common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
+        return common.bounds_to_gdf(bounds)
+    ```
+</TabItem>
+  <TabItem value="Python Libraries" label="shapely & geopandas">
+        ```python showLineNumbers
+        @fused.udf
+        def udf(bounds: fused.types.Bounds=None):
+            import shapely
+            import geopandas as gpd
+            box = shapely.box(*bounds)
+            return gpd.GeoDataFrame(geometry=[box], crs=4326)
+        ```
+</TabItem>
+</Tabs>
+
+
+### Types hérités
+
+Types hérités qui pourraient encore apparaître dans les anciens UDFs.
+
+#### [Hérité] `fused.types.Tile`
+
+C'est un [geopandas.GeoDataFrame](https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.html) avec des colonnes `x`, `y`, `z`, et `geometry`.
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Tile=None):
+    print(bounds)
+
+>>>      x    y   z                                           geometry
+>>> 0  327  790  11  POLYGON ((-122.0 37.0, -122.0 37.1, -122.1 37.1, -122.1 37.0, -122.0 37.0))
+```
+
+#### [Hérité] `fused.types.TileGDF`
+
+Cela se comporte de la même manière que [`fused.types.Tile`](/tutorials/Geospatial%20with%20Fused/filetile/#legacy-fusedtypestile).
+
+#### [Hérité] `fused.types.ViewportGDF`
+
+C'est un [geopandas.geodataframe.GeoDataFrame](https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.html) avec une colonne `geometry` correspondant à la géométrie Polygon de la fenêtre de visualisation actuelle dans la carte.
+```python showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.ViewportGDF=None):
+    print(bbox)
+    return bbox
+
+>>>  geometry
+>>>  POLYGON ((-122.0 37.0, -122.0 37.1, -122.1 37.1, -122.1 37.0, -122.0 37.0))
+```
+
+#### Objet [Hérité] `bbox`
+
+Les UDFs définis en utilisant le mot-clé hérité `bbox` sont maintenant automatiquement mappés à `bounds`. Veuillez mettre à jour votre code pour utiliser `bounds` directement car cet alias sera supprimé dans une future version.

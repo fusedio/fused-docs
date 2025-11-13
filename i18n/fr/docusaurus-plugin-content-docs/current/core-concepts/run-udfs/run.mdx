@@ -1,0 +1,688 @@
+---
+id: run-small-udfs
+title: Realtime
+tags: [write, endpoints, api, http, file, tile]
+sidebar_position: 1
+toc_min_heading_level: 2
+toc_max_heading_level: 4
+---
+
+Les UDF brillent vraiment une fois que vous commencez à les appeler de n'importe où. Realtime est la méthode par défaut pour exécuter des UDF. Vous pouvez les exécuter de 2 manières principales :
+1.  [`fused.run()`](/python-sdk/top-level-functions/#fusedrun) en Python. Tout ce dont vous avez besoin est le package [`fused` Python](/python-sdk/#python-install) installé
+    - Utile lorsque vous souhaitez exécuter un UDF dans le cadre d'un autre pipeline, à l'intérieur d'un autre UDF ou n'importe où dans Python / le code.
+2.  [**Appel HTTPS**](/core-concepts/run-udfs/run-small-udfs/#https-requests) depuis *n'importe où*
+    - Utile lorsque vous souhaitez appeler un UDF en dehors de Python. Par exemple, recevoir des dataframes dans Google Sheets ou tracer des points et des images dans une [carte Felt](/tutorials/Geospatial%20with%20Fused/other-integrations/#felt)
+{/* TODO: Might want to mention `fused.submit()` here to be able to run multiple jobs? */}
+
+### Définir les exécutions UDF en temps réel
+
+Les exécutions UDF en temps réel sont définies comme tout travail étant :
+- Moins de 120s à exécuter
+- Utilisant moins de quelques Go de RAM pour s'exécuter
+
+Celles-ci s'exécutent en "temps réel" sans temps de démarrage, donc sont rapides à exécuter, mais avec des ressources limitées et un délai d'attente si cela prend trop de temps.
+
+## [`fused.run()`](/python-sdk/top-level-functions/#fusedrun)
+
+[`fused.run()`](/python-sdk/top-level-functions/#fusedrun) est la manière la plus simple et la plus courante d'exécuter un UDF depuis n'importe quel script ou notebook Python.
+
+La manière la plus simple d'appeler un UDF public est d'utiliser un [nom d'UDF public](/core-concepts/run-udfs/run-small-udfs/#public-udf-name) et de l'appeler comme : `UDF_` + nom. Prenons cet UDF qui renvoie [l'emplacement de la Tour Eiffel](https://github.com/fusedio/udfs/tree/main/public/Single_point_Eiffel_Tower) dans un `GeoDataFrame` comme exemple :
+
+```python showLineNumbers
+fused.run("UDF_Single_point_Eiffel_Tower")
+```
+
+
+![Simple UDF fused.run() returning a geodataframe](/img/core-concepts/run-udfs/running_simple_eiffel_tower_udf.png)
+
+Il existe quelques autres façons d'exécuter un UDF :
+
+- [Par nom depuis votre compte](/core-concepts/run-udfs/run-small-udfs/#name-from-your-account)
+- [Par nom d'UDF public](/core-concepts/run-udfs/run-small-udfs/#public-udf-name)
+- [En utilisant un token](/core-concepts/run-udfs/run-small-udfs/#token)
+- [En utilisant un objet `udf`](/core-concepts/run-udfs/run-small-udfs/#udf-object)
+- [Depuis l'URL Github](/core-concepts/run-udfs/run-small-udfs/#github-url)
+- [Depuis le hash de commit git (le plus recommandé pour les équipes)](/core-concepts/run-udfs/run-small-udfs/#git-commit-hash-recommended-for-most-stable-use-cases)
+
+### _Nom_ (de votre compte)
+
+_Quand utiliser : Lorsque vous appelez un UDF que vous avez créé, depuis votre propre compte._
+
+Vous pouvez appeler n'importe quel UDF que vous avez créé simplement en le référant par son nom (donné lorsque vous [enregistrez un UDF](/core-concepts/write/#save-udfs)).
+
+(Note : Cela nécessite une authentification)
+
+
+![Hello World UDF](/img/core-concepts/run-udfs/hello_world_bbox_udf.png)
+
+Cet UDF peut ensuite être exécuté dans un notebook localement (à condition que vous vous soyez authentifié) :
+
+```python showLineNumbers
+fused.run("Hello_World_bbox")
+```
+
+
+![Running Hello World UDF](/img/core-concepts/run-udfs/running_hello_world_bbox_udf.png)
+
+### _Nom_ (du compte de votre coéquipier)
+
+_Quand utiliser : Lorsque vous appelez un UDF qu'un membre de votre équipe a créé, depuis votre propre compte._
+
+De même, vous pouvez référencer par nom et exécuter n'importe quel UDF sous les comptes de vos coéquipiers. Il suffit de préfixer le nom de l'UDF avec l'adresse e-mail de la personne, séparée par un `/`.
+
+```python showLineNumbers
+fused.run("teammate@fused.io/Hello_World_bbox")
+```
+
+Notez que les comptes de vous et de votre coéquipier doivent appartenir à la même organisation.
+
+### _Nom d'UDF public_
+
+_Quand exécuter : Chaque fois que vous souhaitez exécuter un UDF public gratuitement depuis n'importe où_
+
+Tout UDF enregistré dans le [dépôt UDF public](https://github.com/fusedio/udfs/tree/main) peut être exécuté gratuitement.
+
+Référez-vous à eux en préfixant leur nom avec `UDF_`. Par exemple, [l'UDF public `Get_Isochrone`](https://github.com/fusedio/udfs/tree/main/public/Get_Isochrone) est exécuté avec `UDF_Get_Isochrone` :
+
+```python showLineNumbers
+fused.run('UDF_Get_Isochrone')
+```
+
+### _Token_
+
+_Quand utiliser : Chaque fois que vous souhaitez que quelqu'un puisse exécuter un UDF mais que vous ne souhaitez pas partager le code avec lui._
+
+Vous pouvez obtenir le token d'un UDF soit dans [Workbench](/workbench/) (Enregistrez votre UDF puis cliquez sur "Partager") ou en retournant le token en Python.
+
+Voici un UDF jouet que nous voulons que d'autres puissent exécuter, mais nous ne voulons pas qu'ils voient le code :
+
+```python showLineNumbers
+# Cet exemple provient d'un notebook
+import fused
+
+@fused.udf()
+def my_super_duper_private_udf(my_udf_input):
+    import pandas as pd
+    # Ce code est si privé que je ne veux pas que quiconque puisse le lire
+    return pd.DataFrame({"input": [my_udf_input]})
+```
+
+Nous devons ensuite [enregistrer cet UDF sur le serveur Fused](/core-concepts/write/#save-udfs) pour le rendre accessible de n'importe où.
+
+```python showLineNumbers
+# Cet exemple provient d'un notebook
+my_super_duper_private_udf.to_fused()
+```
+
+:::note
+`my_udf.to_fused()` enregistre votre UDF dans vos UDF utilisateur personnels. Ceux-ci sont privés pour vous et votre équipe. Vous pouvez créer un token que quiconque (même en dehors de votre équipe) peut utiliser pour exécuter votre UDF, mais par défaut, ces UDF sont privés.
+:::
+
+Nous pouvons créer un token pour ce `my_super_duper_private_udf` et le partager :
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import LazyReactPlayer from '@site/src/components/LazyReactPlayer'
+
+<Tabs className="unique-tabs">
+  <TabItem value="python" label="Python" default>
+
+    ```python showLineNumbers
+    token = my_super_duper_private_udf.create_access_token()
+    print(token)
+    ```
+
+    Cela renverrait quelque chose comme : `'fsh_**********q6X'` (Vous pouvez reconnaître qu'il s'agit d'un token partagé car il commence par `fsh_`)
+
+  </TabItem>
+  <TabItem value="workbench" label="Workbench">
+
+    Vous pouvez créer un token de partage directement depuis Workbench :
+
+    <LazyReactPlayer playsinline={true} className="video__player" playing={true} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/core-concepts/run-udfs/get_share_token.mp4" width="100%" />
+
+  </TabItem>
+</Tabs>
+
+Une fois que vous avez votre token `'fsh_***'`, vous pouvez l'utiliser pour exécuter votre UDF :
+
+```python showLineNumbers
+fused.run(token, my_udf_input="J'utilise directement l'objet token")
+```
+
+ou directement :
+
+```python showLineNumbers
+fused.run('fsh_**********q6X', my_udf_input="Je ne peux pas voir votre UDF privé mais je peux toujours l'exécuter")
+```
+
+### _Objet UDF_
+
+_Quand exécuter : Lorsque vous écrivez votre UDF dans le même fichier Python / notebook jupyter et que vous souhaitez vous référer directement à l'objet Python. Vous pourriez vouloir faire cela pour tester que votre UDF fonctionne localement par exemple_
+
+Vous pouvez également passer un objet UDF Python à `fused.run` :
+
+```python showLineNumbers
+@fused.udf
+def local_udf():
+    import pandas as pd
+    return pd.DataFrame({})
+
+# Notez qu'en passant `engine='local'`, nous exécutons cela comme une fonction Python normale
+fused.run(local_udf, engine='local')
+```
+
+### _URL Github_
+
+{/* Need to emphasise why this isn't recommended  */}
+_Quand utiliser : [Non recommandé] Cela est utile si vous travaillez sur une branche que vous contrôlez. Cette méthode pointe toujours vers le dernier commit sur une branche, donc votre UDF peut se casser sans que vous le sachiez si quelqu'un d'autre pousse un nouveau commit ou fusionne et supprime votre branche_
+
+```python showLineNumbers
+gh_udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/REM_with_HyRiver/")
+fused.run(gh_udf)
+```
+
+:::warning
+Nous ne recommandons PAS d'utiliser cette approche car votre UDF pourrait se casser si des modifications y sont apportées
+
+    En particulier, utiliser une URL pointant vers une branche `main` signifie que votre UDF changera si quelqu'un d'autre y pousse, d'une manière qui n'est pas visible pour vous.
+
+    Pour cette raison, nous recommandons d'utiliser un [hash de commit git](/core-concepts/run-udfs/run-small-udfs/#git-commit-hash-recommended-for-most-stable-use-cases) à la place
+
+:::
+
+### _Hash de commit git_ (recommandé pour la plupart des cas d'utilisation stables)
+
+_Quand utiliser : Chaque fois que vous souhaitez vous fier à un UDF, par exemple en production ou lorsque vous utilisez un UDF comme élément constitutif d'un autre UDF._
+
+C'est la manière la plus sûre d'utiliser un UDF. Puisque vous pointez vers un hash de commit git spécifique, vous ne finirez pas avec des changements qui cassent votre UDF.
+
+Utiliser un hash de commit git est la manière la plus sûre, et donc recommandée, d'appeler des UDF depuis Github.
+
+Cela signifie que vous devez mettre à jour le commit où vos UDF sont appelés si vous souhaitez propager les mises à jour. Mais cela vous donne le plus de contrôle.
+
+Prenons à nouveau l'exemple de l'UDF Simple Tour Eiffel :
+
+![Running Hello World UDF](/img/core-concepts/run-udfs/commit_hash_demo.png)
+
+```python showLineNumbers
+commit_hash = "bdfb4d0"
+commit_udf = fused.load(f"https://github.com/fusedio/udfs/tree/{commit_hash}/public/Single_point_Eiffel_Tower/")
+fused.run(commit_udf)
+```
+
+### _Noms d'UDF d'équipe_
+
+Les UDF d'équipe peuvent être chargés ou exécutés en spécifiant le nom "team", comme dans :
+
+```python showLineNumbers
+fused.load("team/udf_name")
+```
+
+Cela peut être utile lors de la collaboration avec des membres de l'équipe car cela **ne nécessite pas** [de créer un token partagé](/core-concepts/run-udfs/run-small-udfs/#token)
+
+## Moteurs d'exécution
+
+{/* Need more details for this */}
+
+`fused.run` peut exécuter l'UDF dans divers modes d'exécution, comme spécifié par le paramètre `engine`, soit local soit distant
+
+- `local` : Exécuter dans le processus actuel.
+- `remote` : Exécuter dans le moteur cloud sans serveur Fused (c'est la valeur par défaut).
+{/*- `batch` : Exécuter un travail de longue durée dans un serveur Fused. Cela doit d'abord être activé pour le compte.*/}
+
+```python showLineNumbers
+# Par défaut, fused.run utilisera le moteur distant
+fused.run(my_udf)
+```
+
+```python showLineNumbers
+# Pour exécuter localement, spécifiez explicitement engine="local"
+fused.run(my_udf, engine="local")
+```
+
+:::warning
+> ⚠️ **Changement important :** `fused.run()` par défaut utilise maintenant `engine="remote"` dans tous les cas, même lorsque les utilisateurs ne sont pas authentifiés. Auparavant, il serait par défaut `engine="local"` pour les utilisateurs non authentifiés.
+> Si vous n'êtes pas authentifié, vous devez spécifier explicitement `engine="local"` pour exécuter des UDF localement.
+:::
+
+Définissez `sync=False` pour exécuter un UDF [de manière asynchrone](/core-concepts/async/).
+
+## Passer des arguments dans [`fused.run()`](/python-sdk/top-level-functions/#fusedrun)
+
+Un appel typique de [`fused.run()`](/python-sdk/top-level-functions/#fusedrun) d'un UDF ressemble à ceci :
+
+```python showLineNumbers
+@fused.udf
+def my_udf(inputs: str):
+    import pandas as pd
+    return pd.DataFrame({"output": [inputs]})
+
+fused.run(my_udf, inputs="hello world")
+```
+
+Un appel [`fused.run()`](/python-sdk/top-level-functions/#fusedrun) nécessitera les arguments suivants :
+
+1. [Obligatoire] Le premier argument doit être l'UDF à exécuter (nom, objet, token, etc. [comme vu ci-dessus](/core-concepts/run-udfs/run-small-udfs/#fusedrun))
+2. [Optionnel] Tout argument de l'UDF lui-même (s'il en a). Dans l'exemple ci-dessus, c'est `inputs` car `my_udf` prend `inputs` comme argument.
+3. [Optionnel] Tout argument protégé comme vu dans la page dédiée [docs API](/python-sdk/top-level-functions/#fusedrun) (le cas échéant). Ceux-ci incluent par exemple :
+   - `bounds` -> Une boîte de délimitation géographique (sous forme de liste de 4 points : `[min_x, min_y, max_x, max_y]`) définissant la zone d'intérêt.
+   - `cache_max_age` -> L'âge maximum [du cache de l'UDF](/core-concepts/cache/#defining-your-cache-lifetime-cache_max_age).
+
+#### Exemples d'utilisation des paramètres
+
+Changer l'âge maximum du cache par défaut :
+```python showLineNumbers
+fused.run("UDF_CDLs_Tile_Example", cache_max_age='1d')
+```
+
+## Exécution de travaux en parallèle : [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)
+
+Parfois, vous souhaitez exécuter un UDF sur une liste d'entrées (par exemple, exécuter un [UDF qui décompresse un fichier sur une liste de fichiers](/tutorials/Geospatial%20with%20Fused/use-cases/dark-vessel-detection/#33---run-this-udf-over-a-month-of-ais-data)). Si chaque exécution elle-même est assez petite, alors vous pouvez exécuter un lot d'UDF sur une liste d'entrées.
+
+:::warning fused.submit() ne doit pas être exécuté dans Workbench 
+Puisque Workbench peut automatiquement exécuter des UDF à chaque changement de code, il n'est pas recommandé d'utiliser `fused.submit()` dans Workbench car cela peut déclencher un grand nombre de travaux de multiprocessus. 
+
+Nous recommandons d'utiliser `fused.submit()` dans un notebook ou un script uniquement.
+:::
+
+Utilisons un UDF simple pour démontrer :
+
+```python showLineNumbers
+@fused.udf
+def udf(val):
+    import pandas as pd
+    return pd.DataFrame({'val':[val]})
+```
+
+Disons que nous voulions exécuter ce `udf` 10 fois :
+
+```python showLineNumbers
+inputs = [0,1,2,3,4,5,6,7,8,9]
+```
+
+### [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)
+
+Fused est conçu pour vous aider à étendre votre traitement à d'énormes ensembles de données et le cœur de cette capacité est [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit). Vous pouvez exécuter 1 UDF sur un grand nombre d'arguments :
+
+```python showLineNumbers
+# Cet exemple provient d'un notebook, pas de workbench
+results = fused.submit(udf, inputs)
+```
+
+```bash
+>>> 100%|██████████| 10/10 
+```
+
+[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) exécute tous ces travaux en parallèle et par défaut renvoie directement les résultats sous forme de dataframe :
+
+```python showLineNumbers
+# Cet exemple provient d'un notebook, pas de workbench
+results
+```
+
+```
+>>>
+ 		val
+val
+0	0	0
+1	0	1
+...
+```
+
+### Conseils pour utiliser [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)
+
+- Vérifiez que vos paramètres sont correctement configurés avec `debug_mode=True` (plus de détails [ci-dessous](/core-concepts/run-udfs/run-small-udfs/#debug-mode))
+
+```python showLineNumbers
+# Cet exemple provient d'un notebook, pas de workbench
+single_run = fused.submit(udf, inputs, debug_mode=True)
+```
+
+- Commencez par un petit nombre de travaux, puis augmentez
+
+```python showLineNumbers   
+# Cet exemple provient d'un notebook, pas de workbench
+# Exécuter uniquement les 5 premières entrées pour s'assurer que l'UDF fonctionne comme prévu
+results = fused.submit(udf, inputs[:5])
+```
+
+- Vérifiez le temps d'exécution de chaque travail :
+
+```python showLineNumbers
+# Cet exemple provient d'un notebook, pas de workbench
+# Exécutez uniquement 10 travaux et voyez combien de temps chacun a pris
+results = fused.submit(udf, inputs[:5], collect=False)
+results.times()
+```
+
+:::tip Règle générale sur la durée des travaux : 30-45s
+Visez un UDF unique qui prend 30-45s. Cela vous donne une marge de "sécurité" car les UDF [expirent après 120s](/core-concepts/run-udfs/run-small-udfs/#running-udfs). Ainsi, ils peuvent encore prendre un peu plus de temps et ne pas expirer.
+:::
+
+- Lisez la page [Meilleures Pratiques](/core-concepts/best-practices/udf-best-practices/#writing-efficient-udfs) pour plus de conseils sur l'écriture d'UDF efficaces
+
+
+### Options avancées [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)
+
+#### Appels bloquants vs non bloquants
+
+Par défaut, nous avons configuré [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) pour être bloquant, ce qui signifie qu'il attendra que tous les travaux soient terminés avant de renvoyer les résultats.
+
+Cependant, vous pouvez définir `collect=False` et ensuite suivre la progression des travaux au fur et à mesure qu'ils s'exécutent :
+
+```python showLineNumbers
+# Cet exemple provient d'un notebook, pas de workbench
+results = fused.submit(udf, inputs, collect=False)
+```
+
+#### Journaux en temps réel
+
+- Affichez une barre de progression du nombre de travaux terminés :
+
+```python showLineNumbers
+# Cet exemple provient d'un notebook, pas de workbench
+results.wait()
+```
+
+```
+100%|██████████| 10/10 [00:01<00:00, 9.31it/s]
+```
+
+- Affichez le temps total qu'il a fallu pour exécuter tous les travaux :
+
+```python showLineNumbers
+# Cet exemple provient d'un notebook, pas de workbench
+results.total_time()
+```
+
+```
+>>> datetime.timedelta(seconds=1, microseconds=96764)
+```
+
+- Vérifiez la première erreur qui s'est produite :
+
+```python showLineNumbers
+# Cet exemple provient d'un notebook, pas de workbench
+results.first_error()
+```
+
+```
+>>> fused.types.UdfRuntimeError("[Run #0 {'val': 3'}] mon message d'erreur ici...")
+```
+
+
+- Récupérez vos données sous forme de dataframe :
+
+```python showLineNumbers
+# Cet exemple provient d'un notebook, pas de workbench
+results.collect()
+```
+
+```python showLineNumbers
+>>>
+ 		val
+val
+0	0	0
+1	0	1
+...
+```
+
+#### Mode débogage
+
+Parfois, vous pourriez simplement vouloir vous assurer que votre code fonctionne correctement avant de lancer un grand nombre de travaux. C'est ce que permet le Mode Débogage :
+
+```python showLineNumbers
+# Cet exemple provient d'un notebook, pas de workbench
+results = fused.submit(udf, inputs, debug_mode=True)
+```
+
+Cela exécutera le premier élément dans `inputs` directement en utilisant `fused.run()` (équivalent à `fused.run(udf, inputs[0])`) et renverra ensuite les résultats :
+
+```python showLineNumbers
+>>>
+	val
+0	0
+```
+
+Vous pouvez ensuite remettre `debug_mode` à False et être plus confiant que votre UDF fonctionne comme prévu !
+
+#### Paramètres d'exécution
+
+[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) a également des paramètres vous donnant plus de contrôle sur l'exécution. Consultez la page [docs](/python-sdk/top-level-functions/#fusedsubmit) du SDK Python pour plus de détails :
+
+- `max_workers` : Le nombre de travailleurs à utiliser pour le pool de travaux.
+- `engine` : `local` ou `remote` (la valeur par défaut est `remote`).
+    Tout comme `fused.run()`, par défaut `fused.submit()` exécutera l'UDF dans le serveur Fused (`engine='remote'`). Vous pouvez définir `engine='local'` pour exécuter `udf` localement soit sur votre machine, soit à l'intérieur d'une grande machine que vous démarrez.
+- `max_retry` : Le nombre maximum de tentatives pour un travail.
+
+ #### Évaluation des performances
+
+<details>
+  <summary>Évaluation simple [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)</summary>
+
+    `fused.submit(udf)` exécute tous les appels UDF en parallèle, ce qui en fait un outil utile pour exécuter plusieurs UDF en même temps.
+
+    Nous pouvons démontrer cela en ajoutant un simple `time.sleep(1)` dans notre UDF d'origine :
+    ```python {4-5} showLineNumbers
+    @fused.udf
+    def udf(val):
+        import pandas as pd
+        import time
+        time.sleep(1)
+        return pd.DataFrame({'val':[val]})
+    ```
+
+    Dans un notebook, nous pouvons chronométrer combien de temps chaque cellule prend pour s'exécuter avec la commande magique [`%%time`](https://ipython.readthedocs.io/en/stable/interactive/magics.html#magic-time)
+
+    ```python showLineNumbers
+    # Dans un notebook jupyter
+    %%time
+    fused.run(udf, val=1)
+    ```
+
+    ![Singe run](/img/core-concepts/run-udfs/fused_run_single_job.png)
+
+    Cela prend 2s : Quelques ms de surcharge pour envoyer l'UDF au serveur Fused et exécuter + 1s de `time.sleep(1)`
+
+    Maintenant, en utilisant `fused.submit()` pour exécuter cela sur 50 UDF :
+
+    ![30 runs](/img/core-concepts/run-udfs/submit_50jobs.png)
+
+    Cela prend quelques secondes de plus, mais pas 100s. `fused.submit()` est une manière utile d'étendre un UDF unique à de nombreuses entrées de manière opportune.
+
+
+</details>
+
+### Temps d'exécution réel vs temps CPU
+
+Il existe 2 calculs de temps d'exécution différents pour les travaux `fused.submit()` :
+
+**Temps d'exécution réel** : Temps total réel pris pour exécuter les travaux :
+
+```python showLineNumbers
+results.total_time()
+```
+
+Le calcul exact est :
+```python showLineNumbers
+round(results.total_time().seconds + results.total_time().microseconds / 10e6, 2)
+```
+
+```bash
+# Temps total que vous avez dû attendre
+>>> 11.05
+```
+
+**Temps CPU** : Somme de tout le temps CPU pris par les travaux
+
+C'est le temps qui compte pour votre facture.
+
+```python showLineNumbers
+round(sum([t.seconds for t in results.times()]) + sum([t.microseconds for t in results.times()]) / 10e6, 2)
+```
+
+```bash
+# Temps total CPU
+>>> 21.78
+```
+
+
+### Exemples de cas d'utilisation
+
+[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) est utilisé à de nombreux endroits dans notre documentation, voici quelques exemples :
+
+- 📈 Traitement de 20 To de données en quelques minutes : [Création d'un tableau de bord climatique](/tutorials/Geospatial%20with%20Fused/use-cases/Climate%20Dashboard/) de 20 ans de données
+- ⛴️ [Récupération de 30 jours](/tutorials/Geospatial%20with%20Fused/use-cases/dark-vessel-detection/#33---run-this-udf-over-a-month-of-ais-data) de données de transpondeurs de bateaux AIS autour des États-Unis pour détecter la pêche illégale
+- 🛰️ [Récupération de tous les catalogues de données ouvertes STAC de Maxar](/tutorials/Geospatial%20with%20Fused/use-cases/exploring_maxar_data/#preparing-fusedsubmit-to-run-in-parallel) pour chaque événement pour lequel ils ont des images.
+
+💡 Consultez la page [Meilleures Pratiques](/core-concepts/best-practices/udf-best-practices/#run-tasks-in-parallel) pour plus d'informations sur quand utiliser `submit()` et quand utiliser d'autres méthodes.
+
+## Requêtes HTTPS
+
+{/* Need to showcase this in video */}
+
+Vous pouvez appeler des UDF enregistrés via des appels HTTPs, transformant efficacement vos données en une API !
+
+Il en va de même pour le [SDK Python Fused](/python-sdk/).
+
+#### Token partagé
+
+Lorsque vous enregistrez un UDF pour la première fois, il crée par défaut un token partagé pour vous, quelque chose comme :
+
+```
+fsh_**********h4t
+```
+
+C'est un token unique qui est utilisé pour identifier votre UDF et l'appeler via des requêtes HTTPS
+
+Voici à quoi ressemble un point de terminaison UDF :
+
+```
+https://www.fused.io/server/v1/realtime-shared/******/run/file?format=png
+```
+
+Gérez les tokens partagés de votre compte [ici](https://www.fused.io/workbench/tokens).
+
+### Passer des paramètres
+
+Vous pouvez également passer des paramètres à votre UDF via l'URL en ajoutant [des paramètres de requête](https://www.branch.io/glossary/query-parameters/) (`&param=value`) à l'URL.
+
+Par exemple, un UDF qui prend `lat` et `lon` comme paramètres :
+
+```python showLineNumbers
+@fused.udf
+def udf(lat, lon):
+    return pd.DataFrame({'lat': [lat], 'lon': [lon]})
+```
+
+Pourrait être appelé avec :
+
+```
+https://www.fused.io/...&lat=37.7749&lon=-121.4194
+```
+
+### Tuilage 
+
+Vous pouvez intégrer votre UDF en tant que serveur de tuiles vectorielles ou raster en ajoutant le paramètre de chemin `tiles`, suivi des paramètres de chemin templés `/{z}/{x}/{y}`.
+
+Vous devez vous assurer que :
+- Votre UDF est réglé sur [mode Tile](/tutorials/Geospatial%20with%20Fused/filetile/#tile)
+- Vous passez correctement `/{z}/{x}/{y}` au lieu de la valeur par défaut
+- En fonction de votre type de serveur, vous pourriez avoir besoin d'ajouter le paramètre `format`. Par exemple, [QGIS](/tutorials/Geospatial%20with%20Fused/other-integrations/#qgis) exige que vous utilisiez `format=mvt` pour [les serveurs de tuiles vectorielles](/tutorials/Geospatial%20with%20Fused/other-integrations/#vector-tiles-1)
+
+```
+https://www.fused.io/server/v1/realtime-shared/******/run/tiles/{z}/{x}/{y}?format=png
+```
+
+Consultez nos [guides d'intégration](/tutorials/Geospatial%20with%20Fused/other-integrations/) pour des exemples.
+
+### Token privé
+
+Appeler des UDF avec [l'authentification Bearer](https://swagger.io/docs/specification/authentication/bearer-authentication/) nécessite un [token privé du compte](/python-sdk/authentication/#get-bearer-access-token). La structure de l'URL pour exécuter des UDF avec le token privé varie légèrement, car l'URL spécifie le nom de l'UDF et le compte utilisateur du propriétaire.
+
+```bash
+curl -XGET "https://app.fused.io/server/v1/realtime/fused/api/v1/run/udf/saved/user@fused.io/caltrain_live_location?format=png" -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+:::warning Ne partagez pas votre token Bearer
+
+Ne partagez pas votre token Bearer avec qui que ce soit. Ceux-ci permettent d'usurper votre compte et doivent être traités comme tels.
+
+:::
+
+### Format de sérialisation
+
+Le paramètre `format` définit le type de données de sortie pour le résultat sérialisé de l'UDF.
+
+- Les types pris en charge pour les tables vectorielles sont `parquet`, [`geojson`](/tutorials/Geospatial%20with%20Fused/other-integrations/#deckgl), [`json`](/tutorials/Geospatial%20with%20Fused/other-integrations/#deckgl), `feather`, `csv`, [`mvt`](/tutorials/Geospatial%20with%20Fused/other-integrations/#mapbox), `html`, `excel`, et `xml`.
+- Pour le tableau raster : [`png`](/tutorials/Geospatial%20with%20Fused/other-integrations/#deckgl), `gif`, `jpg`, `jpeg`, `webp`, `tif`, et `tiff`.
+- Pour des objets Python simples comme des chaînes : `json`, `html`
+
+```
+https://www.fused.io/server/v1/realtime-shared/****/run/file?format=png
+```
+
+Lisez comment structurer les points de terminaison HTTPS pour appeler l'UDF en tant que [carte de tuiles & fichier](/tutorials/Geospatial%20with%20Fused/filetile/#tile-https-call).
+
+
+### Appeler des UDF sans SDK Python 
+
+Vous pouvez également exécuter un UDF entier directement dans la requête HTTP sans avoir besoin de Python lors de l'appel
+
+Vous devez d'abord récupérer votre [token bearer](/python-sdk/authentication/#get-bearer-access-token) (cela nécessite Python) :
+```python showLineNumbers
+# Déterminez votre token bearer :
+from fused._auth import AUTHORIZATION
+AUTHORIZATION.credentials.access_token
+```
+
+Cela renvoie quelque chose comme :
+```bash
+'eyJ4K9pL2Mx...'
+```
+
+Ensuite, nous devons faire une requête POST vers le point de terminaison du serveur Fused : `'https://www.fused.io/server/v1/realtime/basic-tier/api/v1/run/udf'`
+
+Vous aurez besoin de l'identifiant client :
+
+**Sans environnement (Niveau de base)**
+
+Utilisez simplement `basic-tier` comme nom de votre identifiant client.
+
+**Avec environnement**
+
+1. Dans [Workbench](/workbench/), allez dans "Préférences"
+2. Notez le nom "Kernel" que vous voyez affiché, dans ce cas `fused` :
+
+![Finding your kernel name in Workbench](/img/core-concepts/run-udfs/kernel_name_from_workbench.png)
+
+Voici un exemple d'appel avec un simple UDF "Hello World" utilisant le compte `basic-tier` :
+
+```bash
+curl -X 'POST' \
+  'https://www.fused.io/server/v1/realtime/basic-tier/api/v1/run/udf' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer <BEARER_TOKEN_GOES_HERE>' \
+  -H 'Content-Type: application/json' \
+  -d '{"step_config":"{\"type\":\"udf\",\"udf\":{\"type\":\"geopandas_v2\",\"name\":\"azure_lion\",\"entrypoint\":\"udf\",\"parameters\":{},\"metadata\":{\"fused:udfType\":\"auto\",\"fused:slug\":\"azure_lion\",\"fused:name\":\"azure_lion\"},\"code\":\"@fused.udf\\ndef udf(name: str = \\\"world\\\"):\\n    import pandas as pd\\n\\n    return pd.DataFrame({\\\"hello\\\": [name]})\\n\",\"headers\":[]}}","dtype_in":"json","format":"geojson,png","cache":true}'
+```
+
+Cela :
+- Exécute le UDF suivant directement en le passant par la requête HTTP :
+```python showLineNumbers
+@fused.udf
+def udf(name: str = "world"):
+    import pandas as pd
+    return pd.DataFrame({"hello": [name]})
+```
+- Sur le compte `basic-tier` (ou quel que soit le compte que vous utilisez)
+Si vous utilisez un compte abonné, vous devrez ajuster `basic-tier` pour s'adapter à votre environnement :
+
+```bash
+https://www.fused.io/server/v1/realtime/<your-client-id>/api/v1/run/udf
+```
+
+## Mise en cache des réponses
+
+Si le [cache](/core-concepts/cache/) d'un UDF est activé, ses points de terminaison mettent en cache les sorties pour chaque combinaison de code et de paramètres. Le premier appel exécute et met en cache l'UDF, et les appels suivants renvoient des données mises en cache.

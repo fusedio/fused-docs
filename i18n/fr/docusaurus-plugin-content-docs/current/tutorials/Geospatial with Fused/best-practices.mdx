@@ -1,0 +1,125 @@
+# Meilleures Pratiques
+
+### Explorer les données en "Vue Carte"
+
+import ReactPlayer from 'react-player';
+
+
+Bien que vous puissiez être tenté d'explorer une ligne spécifique d'un `GeoDataFrame` en la filtrant et en l'imprimant, parfois il est plus rapide de simplement cliquer dessus dans [Vue Carte](/workbench/udf-builder/map/). Une fois sélectionné, utilisez l'icône de copie de l'info-bulle pour copier l'objet au format JSON, que vous pouvez ensuite inspecter ailleurs.
+
+<ReactPlayer className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/eiffel_tower_edit5.mp4" width="100%" />
+
+### Changer la couche de base de la carte
+
+La Vue Carte prend en charge [plusieurs cartes de base](/workbench/udf-builder/map/#map-controls) qui pourraient être mieux adaptées à différents cas d'utilisation.
+
+- ⧉ Parfois, vous voulez juste une carte de base neutre pour vous concentrer sur vos données -> les cartes de base "Claires", "Sombres" ou même "Vides" sont les meilleures
+- 🌍 D'autres fois, vous pourriez vouloir un peu de contexte, auquel cas l'utilisation de la carte de base "Satellite" répondra le mieux à vos besoins
+
+![Changer la Vue Carte](/img/user-guide/best-practices/eiffel_tower.png)
+
+### Utiliser la Visualisation
+
+Vous pouvez facilement changer le style de vos données dans la [Visualisation](/workbench/udf-builder/styling/):
+- [Changer la couleur de vos données](/workbench/udf-builder/styling/#color-styling) (surtout pour les fichiers vectoriels)
+- Utiliser les préréglages de Visualiser sous "Préréglage"
+- [Créer votre propre `loadingLayer` personnalisé](/workbench/udf-builder/styling/#custom-loadinglayer-and-errorlayer)
+
+<ReactPlayer className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench/walkthrough-videos/docs_rewrite/visualization_new_edit5.mp4" width="100%" />
+
+
+### Ajuster l'Opacité pour de Meilleures Informations (Conseils Avancés)
+
+Le contrôle de l'opacité est essentiel pour analyser des données superposées ou denses :
+
+- **Détection de la densité des données** : Une opacité plus faible (20-50%) aide à identifier les zones où plusieurs points ou caractéristiques se chevauchent, apparaissant comme des régions plus sombres
+- **Visualisation à travers les couches** : Réglez l'opacité entre 30-70% pour voir les cartes de base sous-jacentes ou d'autres couches de données
+- **Mettre en évidence les niveaux de confiance** : Utilisez l'opacité pour représenter la confiance ou l'importance des différentes caractéristiques
+
+##### Exemple : Segmentation de la Végétation avec Superposition Semi-Transparente
+
+Le [UDF de Segmentation de la Végétation](https://github.com/fusedio/udfs/tree/b87a6638603d96f0eb13a1d259474817227b9245/public/Vegetation_Segmentation) démontre comment réduire l'opacité aide à visualiser les résultats de segmentation tout en voyant encore l'imagerie sous-jacente :
+
+```json
+"rasterLayer": {
+  "@@type": "BitmapLayer",
+  "opacity": 0.3,
+  "pickable": true
+}
+```
+
+Cette visualisation utilise :
+- 30% d'opacité pour montrer les résultats de la segmentation de la végétation comme une superposition semi-transparente
+- L'imagerie satellite sous-jacente reste visible pour le contexte
+- La propriété pickable permet aux utilisateurs de survoler les zones pour voir des valeurs détaillées
+
+![Segmentation de la végétation avec opacité](/img/user-guide/best-practices/veg_segmentation.png)
+
+#### Détection des Chevauchements de Caractéristiques
+
+Trouver des caractéristiques qui se chevauchent est crucial pour la validation et l'analyse des données :
+
+- **Accent sur le remplissage vs. le contour** : Pour la détection de chevauchement, utilisez des polygones remplis avec une opacité de 40-60% et des contours fins
+- **Couleurs contrastées** : Utilisez des couleurs complémentaires lorsque vous devez distinguer les caractéristiques qui se chevauchent
+- **Utilisation des hexagones H3** : Convertissez des polygones irréguliers en hexagones H3 pour une comparaison régularisée
+- **Codage couleur des catégories** : Assignez des couleurs différentes aux zones d'intersection et de différence
+
+##### Exemple : Analyse Avancée des Chevauchements avec Hexagones H3
+
+Le [UDF Overture East Asian Buildings IOU](https://github.com/fusedio/udfs/tree/b87a6638603d96f0eb13a1d259474817227b9245/public/Overture_East_Asian_Buildings_IOU) compare 2 ensembles de données ensemble. Voici la visualisation que nous avons utilisée :
+
+```json
+{
+  "tileLayer": {
+    "@@type": "TileLayer",
+    "minZoom": 0,
+    "maxZoom": 14,
+    "tileSize": 256,
+    "extrude": true,
+    "pickable": true
+  },
+  "hexLayer": {
+    "opacity": 0.5,
+    "@@type": "H3HexagonLayer",
+    "stroked": true,
+    "filled": true,
+    "pickable": true,
+    "extruded": true,
+    "getFillColor": {
+      "@@function": "colorCategories",
+      "attr": "how",
+      "domain": [
+        "intersection",
+        "symmetric_difference"
+      ],
+      "colors": "TealRose"
+    },
+    "getHexagon": "@@=properties.hex",
+    "getElevation": "@@=properties.ratio",
+    "elevationScale": 50
+  }
+}
+```
+
+Cette visualisation utilise :
+- Des hexagones H3 pour normaliser les formes de polygones irréguliers
+- Différentes couleurs pour montrer où les ensembles de données se chevauchent par rapport à ceux qui diffèrent
+- L'élévation pour représenter le ratio de chevauchement
+- 50% d'opacité pour voir à travers les caractéristiques qui se chevauchent
+
+<div style={{ textAlign: 'center' }}>
+<img src="https://fused-magic.s3.us-west-2.amazonaws.com/thumbnails/udfs-staging/overture_iou.png" alt="Analyse de chevauchement d'hexagones H3" style={{ width: '80%'}} />
+</div>
+
+### Incliner la vue de la carte pour explorer des ensembles de données 3D
+
+La Vue Carte vous donne une vue de haut niveau du monde par défaut. Mais maintenez `Cmd` (ou `Ctrl` sur Windows / Mac) pour incliner la vue !
+
+![Vue Incliné](/img/user-guide/best-practices/3dmap.png)
+
+🏘️ Cela peut être vraiment utile pour explorer des ensembles de données 3D comme dans ce [UDF DSM Zonal Stats](https://www.fused.io/workbench/catalog/DSM_Zonal_Stats-0c801e56-d0c4-47e8-a5ce-90d37703bdb7).
+
+{/* NOTE: Pas de mention du raccourci clavier réel car au moment de l'écriture c'est `Shift + Home` mais home n'est pas un vrai raccourci et entre en conflit */}
+:::tip
+Vous pouvez réinitialiser la vue en exécutant le raccourci "Réinitialiser la vue 3D en vue de dessus" depuis [Palette de Commandes](/core-concepts/best-practices/workbench-best-practices/#using-keyboard-shortcuts-command-palette)
+:::

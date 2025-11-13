@@ -1,0 +1,63 @@
+---
+title: Appeler des UDF de manière asynchrone
+sidebar_label: Appels asynchrones
+sidebar_position: 6
+---
+
+import LinkButtons from "@site/src/components/LinkButtons.jsx";
+import CellOutput from "@site/src/components/CellOutput.jsx";
+import {BokehFigure, PlotlyFigure} from "@site/src/components/Plotting.jsx";
+import Tag from '@site/src/components/Tag'
+
+
+Un UDF peut être appelé de manière asynchrone en utilisant la syntaxe [async/await](https://docs.python.org/3/library/asyncio.html). Une implémentation courante consiste à appeler un UDF plusieurs fois en parallèle avec différents paramètres, puis à combiner les résultats.
+
+:::note
+    Définir `sync=False` dans `fused.run` est destiné aux appels asynchrones lors de l'exécution dans le cloud avec `engine='remote'`. Le paramètre n'a aucun effet si l'UDF est exécuté dans l'environnement local avec `engine='local'`.
+:::
+
+Pour illustrer ce concept, créons un UDF simple et enregistrons-le sous le nom `udf_to_run_async` dans le workbench :
+
+```python showLineNumbers
+@fused.udf
+def udf(date: str='2020-01-01'):
+    import pandas as pd
+    import time
+    time.sleep(2)
+    return pd.DataFrame({'selected_date': [date]})
+```
+:::note
+    Nous ne pouvons pas passer un objet UDF directement à `fused.run`. L'exécution asynchrone n'est prise en charge que pour les UDF enregistrés spécifiés par nom ou token.
+:::
+
+Nous pouvons maintenant invoquer l'UDF de manière asynchrone pour chaque date dans la liste `dates` et concaténer les résultats :
+
+```python showLineNumbers
+async def parent_fn():
+    import pandas as pd
+    import asyncio
+
+    # Paramètre à parcourir
+    dates = ['2020-01-01', '2021-01-01', '2022-01-01', '2023-01-01']
+
+    # Invoquer l'UDF en tant que coroutines
+    promises_dfs = []
+    for date in dates:
+        df = fused.run("udf_to_run_async", date=date, engine='remote', sync=False)
+        promises_dfs.append(df)
+
+    # Exécuter en parallèle et collecter les résultats
+    dfs = await asyncio.gather(*promises_dfs)
+    return pd.concat(dfs)
+```
+
+
+
+:::note
+[nest_asyncio](https://pypi.org/project/nest-asyncio/) pourrait être nécessaire pour exécuter des UDF de manière asynchrone depuis Jupyter Notebooks.
+```python showLineNumbers
+!pip install nest-asyncio -q
+import nest_asyncio
+nest_asyncio.apply()
+```
+:::

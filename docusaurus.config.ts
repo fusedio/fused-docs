@@ -38,7 +38,8 @@ const config: Config = {
   // may want to replace "en" with "zh-Hans".
   i18n: {
     defaultLocale: "en",
-    locales: ["en"],
+    locales: ["en", "fr"], // Only showing locales with translated content
+    // locales: ["en", "fr", "es", "ja"], // Uncomment when Spanish/Japanese are ready
   },
 
   // Currently set to docs only mode. Change to enable blog and main site. https://docusaurus.io/docs/docs-introduction#docs-only-mode
@@ -148,6 +149,11 @@ const config: Config = {
           label: "Status",
           position: "right",
         },
+        // Language dropdown hidden for now - French accessible via /fr/ URL
+        // {
+        //   type: 'localeDropdown',
+        //   position: 'right',
+        // },
       ],
     },
     footer: {

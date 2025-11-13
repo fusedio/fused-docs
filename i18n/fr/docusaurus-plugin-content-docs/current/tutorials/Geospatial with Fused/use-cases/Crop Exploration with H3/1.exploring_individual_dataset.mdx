@@ -1,0 +1,640 @@
+---
+title: Chargement et Exploration des Ensembles de Données
+sidebar_label: Étape 1 - Chargement et Exploration des Ensembles de Données
+description: Apprenez à charger et explorer des ensembles de données agricoles en utilisant Fused, y compris une analyse géospatiale de base et une visualisation.
+sidebar_position: 1
+---
+
+# Étape 1 : Chargement et Exploration des Ensembles de Données
+
+## Zone d'Étude & Résolution H3
+
+Nous utiliserons l'ensemble des États-Unis comme notre zone d'étude.
+
+Cette analyse sera effectuée en utilisant des hexagones H3 pour joindre ces ensembles de données. Chacun de ces ensembles de données provient à l'origine de rasters. Nous les avons ingérés dans des hexagones H3, bien que nous devions décider d'une résolution H3 pour effectuer notre analyse.
+
+Voici une comparaison des différentes résolutions H3 sur la même zone d'étude :
+
+| Zone d'Intérêt      | Résolution Hex H3 | Taille Moy. de Cellule H3 | # Cellules H3 dans la Zone      |
+|---------------------- |-------------------|----------------------|-------------------------|
+| États-Unis Continentaux* | 4                 | ~1,770 km²             | ~10,000                 |
+| États-Unis Continentaux* | 5                 | ~252 km²             | ~70,000                 |
+| États-Unis Continentaux* | 6                 | ~36 km²              | ~49,000                 |
+
+* Les États-Unis étant définis par les limites : `[-130, 25, -60, 50]`, c'est-à-dire environ 17,6M km² (les États-Unis font environ 9,8M km²)
+
+Voir les [Statistiques de Comptage des Cellules H3 pour plus de détails](https://h3geo.org/docs/core-library/restable#cell-counts)
+
+Nous avons décidé d'utiliser une **résolution H3 de 5** pour cette analyse.
+
+:::info Règle générale H3
+Augmenter une résolution d'un niveau réduit la surface de chaque hexagone par un facteur de 7. Cela signifie qu'à la résolution 5, chaque hexagone est 7x7 = 49x plus petit qu'à la résolution 3. 
+
+Gardez cela à l'esprit car plus d'hexagones nécessitent également un temps de calcul plus long.
+:::
+
+<details>
+<summary>Obtenir le nombre de cellules H3 pour les limites et la résolution</summary>
+
+Nous pouvons écrire une simple UDF pour estimer le nombre de cellules H3 pour des limites et une résolution données.
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = [-130, 25, -60, 50], res: int = 5):
+    
+    # Charger la bibliothèque commune pour les utilitaires H3
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    
+    # Convertir les limites en GeoDataFrame et calculer la surface UTM
+    gdf_bounds = common.bounds_to_gdf(bounds)
+    gdf_bounds = common.add_utm_area(gdf_bounds)
+    area_millions = round(gdf_bounds['utm_area_sqm'].iloc[0] / 1e12, 1)
+    print(f"Surface des limites : {area_millions}M kilomètres carrés")
+    
+    # Obtenir les hexagones H3 dans les limites à la résolution spécifiée
+    df_hex = common.bounds_to_hex(bounds=bounds, res=res, hex_col="hex")
+    print(f"{df_hex.T}")
+    
+    return df_hex
+```
+
+Renvoie :
+```bash
+>>> Surface des limites : 17.6M kilomètres carrés
+>>>               0      ...               67634
+hex  599309241731252223  ...  600345878259040255
+
+[1 lignes x 67635 colonnes]
+```
+
+Ce résultat est de 17,6M km², c'est-à-dire environ 1,8 fois plus que la surface réelle des États-Unis (9,8M km²). 
+
+C'est parce que les limites forment un rectangle _autour_ des États-Unis, et non la frontière exacte des États-Unis :
+
+</details>
+
+## Ingestion de Données : Raster à Hex
+
+Il existe quelques options pour ingérer des données raster dans des hexagones H3
+
+{/* TODO: Ajouter un exemple / section dans la documentation */}
+
+| Méthode      | Méthode de Traitement | Utilisabilité | Comment Faire      |
+|---------------------- |-------------------|----------------------|-------------------------|
+| Fichier Unique    | Zone d'Intérêt dans 1 UDF     | Recalcul requis pour chaque nouvelle zone / résolution  | Voir Exemple UDF : [DEM_Tile_Hexify](https://www.fused.io/workbench/udf/catalog/DEM_Tile_Hexify-c9aae65c-0047-42ba-8b3c-4326a5a2e47b) (Définir en [Mode UDF Unique](/tutorials/Geospatial%20with%20Fused/filetile/#single-udf))  |
+| Tuile Dynamique   | Zone d'Intérêt dans des UDF parallèles  | Recalcul requis pour chaque nouvelle zone / résolution | [Voir la Section Documentation sur le Tiling H3](/tutorials/Geospatial%20with%20Fused/h3-tiling/dynamic-tile-to-h3#raster-to-hex) |
+| Ingestion Complète | Une seule fois  | Lecture seule | Contacter Fused (`info@fused.io`)  |
+
+Le reste de cet exemple suppose que les ensembles de données sont déjà dans un format hex.
+
+## Ensemble de Données 1 : Cultures
+
+**Données**
+- Ensemble de données raster original de [CroplandCROS](https://pdi.scinet.usda.gov/portal/apps/sites/#/cropcros)
+- Ensemble de données partitionné en hex [par Fused](https://docs.fused.io/blog/cdl-census-hex) disponible sur [Source Cooperative](https://source.coop/repositories/fused/hex/description)
+
+Pour simplifier, nous avons déjà créé un ensemble de données hex dans une taille de cellule H3 de 5 pour 2024 : `s3://fused-asset/misc/hex/CDL_h12k1p1/year=2024/overview/hex5.parquet`
+
+### Lecture des données dans UDF
+
+- Charger l'ensemble de données hex en utilisant DuckDB depuis un `.parquet` sur S3
+
+```python
+# cdl_data_all_crops
+@fused.udf
+def udf():
+    import duckdb
+
+    df = duckdb.query(f"""
+        SELECT * 
+        FROM 's3://fused-asset/misc/hex/CDL_h12k1p1/year=2024/overview/hex5.parquet'
+        and area>1000
+    """).to_df()
+
+    df = df.rename(columns={'data': 'crop_type'})
+
+    return df
+```
+
+Renvoie :
+
+```bash
+>>>      0             1       ...        706262        706263
+crop_type   0.000000e+00  0.000000e+00  ...  0.000000e+00  0.000000e+00
+hex         5.992301e+17  5.992302e+17  ...  6.003962e+17  6.003962e+17
+area        6.128944e+07  2.849653e+08  ...  2.162687e+07  2.917735e+08
+chunk_id    5.767422e+17  5.767422e+17  ...  5.779033e+17  5.779033e+17
+year        2.024000e+03  2.024000e+03  ...  2.024000e+03  2.024000e+03
+```
+
+Cette UDF :
+- Charge toutes les données en tant que cellules hex
+- Ne conserve que les cellules dont la surface est supérieure à 1000 kilomètres carrés (filtre les plus petites types de cultures)
+- Renvoie 1 ligne par type de culture par cellule (donc chaque cellule H3 peut avoir plusieurs lignes)
+
+### Visualisation d'un type de culture unique
+
+Les [UDF Fused](/core-concepts/write/) sont des fonctions Python sans serveur, nous pouvons donc également créer des visualisations avec elles. Nous avons construit une simple bibliothèque UDF pour rendre les données sur des cartes.
+
+Nous pouvons créer une nouvelle UDF qui charge les données et filtre pour un type de culture spécifique (vous pouvez voir les codes de culture CDL [ici](https://developers.google.com/earth-engine/datasets/catalog/USDA_NASS_CDL#bands))
+
+<details>
+<summary>Code : UDF de carte pour un type de culture unique</summary>
+
+```python
+@fused.udf
+def udf(
+    crop_type=1 # Culture 1 = Maïs
+):
+    utils = fused.load('team/map_utils')
+
+    data = fused.run("cdl_data_all_crops")
+    # Ne conserver que le type de culture spécifique sélectionné
+    data = data[data['crop_type'] == crop_type]
+
+    # conserver un sous-ensemble de colonnes afin que l'infobulle n'affiche que celles-ci
+    data = data[['crop_type', 'hex', 'area']]
+    
+    print(data)
+    config = {
+        "initialViewState": {
+            "longitude": -95.7129,
+            "latitude": 37.0902,
+            "zoom": 3
+        },
+        "hexLayer": {
+            "@@type": "H3HexagonLayer",
+            "filled": True,
+            "pickable": True,
+            "extruded": False,
+            "getHexagon": "@@=properties.hex",
+            "getFillColor": {
+                "@@function": "colorContinuous",
+                "attr": "area",
+                "domain": [0, 30_000_000],
+                "steps": 20,
+                "colors": "Peach"
+            }
+        }
+    }
+    return utils.deckgl_hex(
+        data, 
+        config=config
+    )
+```
+
+</details>
+
+Cela renvoie une UDF autonome :
+
+<iframe
+  src="https://staging.udf.ai/fsh_h6aHGvOun7wR3hyNELA0j/run?dtype_out_raster=png&dtype_out_vector=html"
+  style={{ width: "100%", height: "600px", border: "none" }}
+  title="Exemple de carte UDF d'exploration des cultures"
+  allowFullScreen
+/>
+
+### Visualisation de plusieurs types de cultures
+
+Dans Fused Canvas, nous pouvons créer différentes visualisations du _même UDF_ simplement en filtrant pour un type de culture spécifique. Nous allons créer :
+
+1. Notre UDF original `cdl_data_all_crops` chargeant tous les types de cultures
+2. Une UDF renvoyant une carte de `crop_type = 1` (Maïs)
+2. Une UDF renvoyant une carte de `crop_type = 3` (Riz)
+2. Une UDF renvoyant une carte de `crop_type = 111` (Eau Ouverte)
+
+<div style={{ position: 'relative', display: 'flex', justifyContent: 'center', marginBottom: '1em' }}>
+  <div 
+    style={{ position: 'relative', maxWidth: '100%', cursor: 'pointer' }}
+    onMouseEnter={e => {
+      const link = e.currentTarget.querySelector('a');
+      if (link) {
+        link.style.background = 'rgba(0, 0, 0, 0.9)';
+        link.style.textDecoration = 'underline';
+        link.style.color = '#E8FF59';
+      }
+    }}
+    onMouseLeave={e => {
+      const link = e.currentTarget.querySelector('a');
+      if (link) {
+        link.style.background = 'rgba(0, 0, 0, 0.7)';
+        link.style.textDecoration = 'none';
+        link.style.color = 'white';
+      }
+    }}
+    onClick={e => {
+      if (e.target.tagName !== 'A' && e.target.tagName !== 'VIDEO') {
+        window.open('https://staging.fused.io/canvas/fc_58ODijIVSE1RfX7OHhmCix', '_blank');
+      }
+    }}
+  >
+    <video
+      src="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/canvas_deep_dive/crop_canvas_exploration_compressed.mp4"
+      style={{ maxWidth: '100%', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'block' }}
+      title="Vidéo de présentation de l'exploration des cultures"
+      muted
+      playsInline
+      loop
+      autoPlay
+      controls
+    />
+    <a
+      href="https://staging.fused.io/canvas/fc_58ODijIVSE1RfX7OHhmCix"
+      target="_blank"
+      style={{
+        position: 'absolute',
+        top: '10px',
+        left: '10px',
+        background: 'rgba(0, 0, 0, 0.7)',
+        color: 'white',
+        padding: '5px 10px',
+        borderRadius: '4px',
+        textDecoration: 'none',
+        fontSize: '11px',
+        fontWeight: '600',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+        transition: 'all 0.2s',
+        zIndex: 10,
+        whiteSpace: 'nowrap',
+        display: 'inline-block',
+        lineHeight: '1.4',
+        pointerEvents: 'auto'
+      }}
+    >Canvas →</a>
+  </div>
+</div>
+
+Explorez ce Fused Canvas par vous-même :
+- [Lien vers le canvas en direct](https://staging.fused.io/canvas/fc_58ODijIVSE1RfX7OHhmCix)
+- Cliquez sur le bouton "Télécharger Canvas" pour télécharger le fichier `.zip` du canvas et le télécharger directement dans votre Workbench
+
+
+## Ensemble de Données 2 : Élévation
+
+**Données**
+- Tuiles Raster originales de [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/)
+- Ensemble de données partitionné en hex par Fused : `s3://fused-asset/data/dem/r6_z4_100k.parquet` (Voir sur [File Explorer](https://www.fused.io/workbench/files?path=s3%3A%2F%2Ffused-asset%2Fdata%2Fdem%2Fr6_z4_100k.parquet))
+
+### Lecture des Données
+
+Le fichier `.parquet` que nous allons utiliser n'est pas à la résolution hex 5, donc nous allons dynamiquement :
+- Utiliser `h3_cell_to_parent(hex, 5) as hex,` pour convertir l'hex en l'hex parent à la résolution 5
+- Utiliser `avg(mean_value) as mean_value` pour agréger par élévation moyenne de toutes les valeurs d'élévation couvrant l'hex parent
+- Conserver uniquement les valeurs dans le viewport des limites avec `h3_cell_to_lng(hex)`
+
+```python
+@fused.udf
+def udf(
+    bounds:fused.types.Bounds=[-130, 25, -60, 50]
+):
+    # Chargement de la bibliothèque hex commune de Fused pour accéder à la bibliothèque H3 pré-installée dans DuckDB
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    con = common.duckdb_connect() 
+
+    query = """
+        SELECT  
+            h3_cell_to_parent(hex, 5) as hex, 
+            avg(mean_value) as mean_value 
+        FROM read_parquet('s3://fused-asset/data/dem/r6_z4_100k.parquet')
+        where 1=1
+        and h3_cell_to_lng(hex) between ? and ? 
+        and h3_cell_to_lat(hex) between ? and ? 
+        group by 1
+    """
+    data = con.execute(query, [bounds[0], bounds[2], bounds[1], bounds[3]]).df()
+
+    return data
+```
+
+Renvoie :
+```bash
+                   0             1      ...         68042         68043
+hex         5.992300e+17  5.992301e+17  ...  5.996693e+17  5.996693e+17
+mean_value  3.876500e+02  2.390833e+02  ...  1.530952e+02  1.819881e+02
+```
+
+### Visualisation de l'Élévation
+
+Nous pouvons visualiser les données d'élévation de manière similaire aux [données de culture](/tutorials/Geospatial%20with%20Fused/use-cases/Crop%20Exploration%20with%20H3/exploring_individual_dataset#visualizing-a-single-crop-type):
+
+<iframe
+  src="https://staging.udf.ai/fsh_4jXe0wHl91xnG2q1pW1Wx/run?dtype_out_raster=png&dtype_out_vector=html"
+  style={{ width: "100%", height: "600px", border: "1px solid #ccc", borderRadius: "6px" }}
+  loading="lazy"
+  allowFullScreen
+  title="Visualisation Hex d'Élévation"
+/>
+
+<details>
+  <summary>Afficher les détails du code</summary>
+
+    ```python
+    @fused.udf
+def udf():
+    utils = fused.load('team/map_utils')
+    data = fused.run("elevation_hex_mean_height")
+    print(data.T)
+    
+    config = {
+        "initialViewState": {
+            "longitude": -95.7129,
+            "latitude": 37.0902,
+            "zoom": 3
+        },
+        "hexLayer": {
+            "@@type": "H3HexagonLayer",
+            "filled": True,
+            "pickable": True,
+            "extruded": False,
+            "getHexagon": "@@=properties.hex",
+            "getFillColor": {
+                "@@function": "colorContinuous",
+                "attr": "mean_value",
+                "domain": [0, 3000], # Plage d'élévation approximative en mètres aux États-Unis
+                "steps": 20,
+                "colors": "Earth"
+            }
+        }
+    }
+    return utils.deckgl_hex(
+        data, 
+        config=config
+    )
+    ```
+
+</details>
+
+Joindre les deux sur un Fused Canvas :
+
+<div style={{ position: 'relative', display: 'flex', justifyContent: 'center', marginBottom: '1em' }}>
+  <div 
+    style={{ position: 'relative', maxWidth: '100%', cursor: 'pointer' }}
+    onMouseEnter={e => {
+      const link = e.currentTarget.querySelector('a');
+      if (link) {
+        link.style.background = 'rgba(0, 0, 0, 0.9)';
+        link.style.textDecoration = 'underline';
+        link.style.color = '#E8FF59';
+      }
+    }}
+    onMouseLeave={e => {
+      const link = e.currentTarget.querySelector('a');
+      if (link) {
+        link.style.background = 'rgba(0, 0, 0, 0.7)';
+        link.style.textDecoration = 'none';
+        link.style.color = 'white';
+      }
+    }}
+    onClick={e => {
+      if (e.target.tagName !== 'A' && e.target.tagName !== 'VIDEO') {
+        window.open('https://staging.fused.io/canvas/fc_4qZYB74lMQJLm79LjRzLiW', '_blank');
+      }
+    }}
+  >
+    <video
+      src="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/canvas_deep_dive/elevation_canva_compressed.mp4"
+      style={{ maxWidth: '100%', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'block' }}
+      title="Vidéo de présentation du Canvas d'Élévation"
+      muted
+      playsInline
+      loop
+      autoPlay
+      controls
+    />
+    <a
+      href="https://staging.fused.io/canvas/fc_4qZYB74lMQJLm79LjRzLiW"
+      target="_blank"
+      style={{
+        position: 'absolute',
+        top: '10px',
+        left: '10px',
+        background: 'rgba(0, 0, 0, 0.7)',
+        color: 'white',
+        padding: '5px 10px',
+        borderRadius: '4px',
+        textDecoration: 'none',
+        fontSize: '11px',
+        fontWeight: '600',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+        transition: 'all 0.2s',
+        zIndex: 10,
+        whiteSpace: 'nowrap',
+        display: 'inline-block',
+        lineHeight: '1.4',
+        pointerEvents: 'auto'
+      }}
+    >Canvas →</a>
+  </div>
+</div>
+
+Explorez le Fused Canvas :
+
+- [Lien vers le canvas en direct](https://staging.fused.io/canvas/fc_4qZYB74lMQJLm79LjRzLiW)
+- Cliquez sur le bouton "Télécharger Canvas" pour télécharger le fichier `.zip` du canvas et le télécharger directement dans votre Workbench
+
+## Ensemble de Données 3 : Température 
+
+**Données**
+- Tuiles Raster originales de [ERA5 Climate Reanalysis](https://registry.opendata.aws/era5-reanalysis-single-levels/)
+- Ensemble de données partitionné en hex par Fused : `s3://fused-asset/data/era5/t2m_daily_mean_v2_1000/` (Voir sur [File Explorer](https://www.fused.io/workbench/files?path=s3%3A%2F%2Ffused-asset%2Fdata%2Fera5%2Ft2m_daily_mean_v2_1000%2Fmonth%3D))
+
+### Lecture des Données
+
+Nous allons créer une UDF qui prend :
+- Une année et un mois donnés sous la forme `YYYY-MM`
+- Une liste de limites 
+
+Et renvoie :
+- La température moyenne pour tout hexagone donné au cours de ce mois
+
+Nous pouvons charger les données en utilisant DuckDB et les visualiser en utilisant la fonction `deckgl_hex` :
+
+```python
+@fused.udf
+def udf(month='2024-05',
+    bounds:fused.types.Bounds=[-130, 25, -60, 50]
+):
+    path = f's3://fused-asset/data/era5/t2m_daily_mean_v2_1000/month={month}/0.parquet'
+    
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    con = common.duckdb_connect() 
+
+    query = """
+        SELECT  
+            hex, 
+            avg(daily_mean) - 273.15 as daily_mean 
+        FROM read_parquet(?)
+        WHERE 1=1
+        AND h3_cell_to_lng(hex) between ? and ? 
+        AND h3_cell_to_lat(hex) between ? and ? 
+        GROUP BY 1
+    """
+
+    data = con.execute(
+        query,
+        [path, bounds[0], bounds[2], bounds[1], bounds[3]]
+    ).df()
+
+    print(f"{data.T=}")
+
+    return data
+```
+
+<iframe
+  src="https://staging.udf.ai/fsh_7Q6UyVNnM9x18ThmxWuB1b/run?dtype_out_raster=png&dtype_out_vector=html"
+  style={{ width: "100%", height: "500px", border: "1px solid #ccc", borderRadius: "6px" }}
+  loading="lazy"
+  allowFullScreen
+  title="Visualisation de la Sortie UDF des Données de Température"
+/>
+
+Notez quelques points ici :
+1. L'ensemble de données n'est pas à la résolution hex 5, c'est une résolution différente de celle des autres ensembles de données avec lesquels nous avons travaillé.
+2. Les données ont beaucoup de zones "vides". 
+
+C'est parce que les données sous-jacentes, l'ensemble de données ERA5, ont une résolution spatiale beaucoup plus grossière que les 2 autres ensembles de données (environ ~31 km à l'équateur, comparé à 30 m pour le Crop Data Layer et 5 m pour les données d'Élévation) 
+
+Nous pouvons lisser les données à la résolution hex 5 en utilisant une agrégation de voisinage en k-ring :
+
+```python
+@fused.udf
+def udf(month='2024-05',
+    bounds:fused.types.Bounds=[-130, 25, -60, 50]
+):
+    common = fused.load("https://github.com/fusedio/udfs/tree/56ec615/public/common/")
+    import pandas as pd  
+    path = f's3://fused-asset/data/era5/t2m_daily_mean_v2_1000/month={month}/0.parquet'
+ 
+    con = common.duckdb_connect() 
+
+    query = """
+        WITH base_data AS (
+            SELECT  
+                h3_cell_to_parent(hex, 5) as hex, 
+                avg(daily_mean) - 273.15 as daily_mean 
+            FROM read_parquet(?)
+            WHERE 1=1
+            AND h3_cell_to_lng(hex) between ? and ? 
+            AND h3_cell_to_lat(hex) between ? and ? 
+            GROUP BY 1
+        ),
+        all_hexes AS (
+            -- Obtenir tous les hexes y compris les voisins en élargissant le k-ring
+            SELECT DISTINCT unnest(h3_grid_disk(hex, 1)) as hex
+            FROM base_data
+        ),
+        smoothed AS (
+            -- Pour chaque hex (original + voisins), obtenir ses voisins en k-ring
+            SELECT 
+                ah.hex as hex,
+                unnest(h3_grid_disk(ah.hex, 1)) as neighbor_hex
+            FROM all_hexes ah
+        )
+        SELECT 
+            s.hex,
+            round(avg(b.daily_mean), 2) as daily_mean
+        FROM smoothed s
+        JOIN base_data b ON b.hex = s.neighbor_hex
+        GROUP BY s.hex
+    """ 
+
+    data = con.execute(
+        query,
+        [path, bounds[0], bounds[2], bounds[1], bounds[3]]
+    ).df()
+
+    print(f"{data.T=}")
+
+    return data
+```
+
+### Visualisation d'un mois unique
+
+Comme ci-dessus, nous pouvons visualiser les données de température sur un mois unique :
+
+<iframe
+  src="https://staging.udf.ai/fsh_P0hfxVa5wkT5szOsHYvMn/run?dtype_out_raster=png&dtype_out_vector=html"
+  style={{ width: "100%", height: "600px", border: "1px solid #ccc", borderRadius: "6px" }}
+  loading="lazy"
+  allowFullScreen
+  title="Visualisation de la Température pour un Mois Unique"
+/>
+
+
+### Visualisation de plusieurs mois 
+
+Nous pouvons créer un Fused Canvas pour visualiser les données de différents mois à la fois. Nous créons un Canvas de 'récapitulatif' pour montrer, de gauche à droite :
+1. Ensemble de données original à la résolution hex originale
+2. Convertir en hex parent à la résolution 5
+3. Lisser les données à la résolution hex 5 -> Visualiser 3 mois différents à la fois
+
+<div style={{ position: 'relative', display: 'flex', justifyContent: 'center', marginBottom: '1em' }}>
+  <div 
+    style={{ position: 'relative', maxWidth: '100%', cursor: 'pointer' }}
+    onMouseEnter={e => {
+      const link = e.currentTarget.querySelector('a');
+      if (link) {
+        link.style.background = 'rgba(0, 0, 0, 0.9)';
+        link.style.textDecoration = 'underline';
+        link.style.color = '#E8FF59';
+      }
+    }}
+    onMouseLeave={e => {
+      const link = e.currentTarget.querySelector('a');
+      if (link) {
+        link.style.background = 'rgba(0, 0, 0, 0.7)';
+        link.style.textDecoration = 'none';
+        link.style.color = 'white';
+      }
+    }}
+    onClick={e => {
+      if (e.target.tagName !== 'A' && e.target.tagName !== 'VIDEO') {
+        window.open('https://staging.fused.io/canvas/fc_3XQLMjkeQjDryti56Q9ZDE', '_blank');
+      }
+    }}
+  >
+    <video
+      src="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/canvas_deep_dive/temperature_canvas_compressed.mp4"
+      style={{ maxWidth: '100%', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'block' }}
+      title="Vidéo de présentation du Canvas de Température"
+      muted
+      playsInline
+      loop
+      autoPlay
+      controls
+    />
+    <a
+      href="https://staging.fused.io/canvas/fc_3XQLMjkeQjDryti56Q9ZDE"
+      target="_blank"
+      style={{
+        position: 'absolute',
+        top: '10px',
+        left: '10px',
+        background: 'rgba(0, 0, 0, 0.7)',
+        color: 'white',
+        padding: '5px 10px',
+        borderRadius: '4px',
+        textDecoration: 'none',
+        fontSize: '11px',
+        fontWeight: '600',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+        transition: 'all 0.2s',
+        zIndex: 10,
+        whiteSpace: 'nowrap',
+        display: 'inline-block',
+        lineHeight: '1.4',
+        pointerEvents: 'auto'
+      }}
+    >Canvas →</a>
+  </div>
+</div>
+
+Explorez le Fused Canvas :
+- [Lien vers le canvas en direct](https://staging.fused.io/canvas/fc_3XQLMjkeQjDryti56Q9ZDE)
+- Cliquez sur le bouton "Télécharger Canvas" pour télécharger le fichier `.zip` du canvas et le télécharger directement dans votre Workbench
+
+## Résumé & Prochaines Étapes
+
+Nous avons maintenant chaque ensemble de données à la même résolution hex5 sur les mêmes `limites` des États-Unis. Ensuite :
+- [Étape 2 : Joindre les Ensembles de Données](/tutorials/Geospatial%20with%20Fused/use-cases/Crop%20Exploration%20with%20H3/joining_datasets)
+- [Étape 3 : Visualisation Interactive](/tutorials/Geospatial%20with%20Fused/use-cases/Crop%20Exploration%20with%20H3/interactive_visualization)
