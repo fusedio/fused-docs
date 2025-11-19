@@ -295,7 +295,7 @@ submitted jobs from [`fused.submit()`](/python-sdk/top-level-functions/#fusedsub
 # listing and rendering the methods separately to avoid including the JobPool 
 # class signature and docstring (which is not public -> use submit() to get this object)
 import fused
-methods = [key for key in fused._submit.BaseJobPool.__dict__.keys() if not key.startswith("_")]
+methods = [key for key in fused._submit.JobPool.__dict__.keys() if not key.startswith("_")]
 
 config = dict(default_config)
 config["heading_level"] = default_config["heading_level"] + 1
