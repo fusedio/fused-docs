@@ -1,6 +1,7 @@
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
+#   # replace with "fused @ /path/to/application/fused-py" for local development
 #   "fused",
 #   "griffe ~= 1.7",
 #   "griffe2md @ https://github.com/jorisvandenbossche/griffe2md/archive/refs/heads/parameter-type-description.zip",
@@ -190,6 +191,7 @@ result = """\
 sidebar_label: fused.api
 title: fused.api
 toc_max_heading_level: 5
+sidebar_position: 2
 ---
 
 """
@@ -244,6 +246,7 @@ result = """\
 sidebar_label: fused.options
 title: fused.options
 toc_max_heading_level: 5
+sidebar_position: 4
 ---
 
 """
@@ -280,6 +283,7 @@ result = """\
 sidebar_label: JobPool
 title: JobPool
 toc_max_heading_level: 5
+sidebar_position: 1
 ---
 
 """
@@ -316,6 +320,7 @@ result = """\
 sidebar_label: Udf
 title: Udf
 toc_max_heading_level: 5
+sidebar_position: 0
 ---
 
 """
@@ -351,4 +356,32 @@ for meth in methods:
     result += docstring + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w") as f:
+    f.write(result)
+
+
+## `fused.h3` page
+
+api_listing = [
+    "run_ingest_raster_to_h3",
+]
+
+result = """\
+---
+sidebar_label: fused.h3
+title: fused.h3
+toc_max_heading_level: 5
+sidebar_position: 3
+---
+
+"""
+
+mod_api = mod["h3"]
+
+for obj in api_listing:
+    docstring = render_object_docs(mod_api[obj], default_config)
+    result += docstring + "\n---\n\n"
+
+result = result.replace("`fused.submit()`", "[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)")
+
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "h3.mdx", "w") as f:
     f.write(result)
