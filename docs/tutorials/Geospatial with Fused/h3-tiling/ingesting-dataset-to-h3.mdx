@@ -74,3 +74,166 @@ def bounds_to_res(bounds, res_offset=0, max_res=14, min_res=3):
 ```
 </details>
 
+
+## Raster to H3
+
+The `fused` package includes functionality to automate the ingestion of raster data
+to an H3 dataset, through [`fused.h3.run_ingest_raster_to_h3()`](/python-sdk/api-reference/h3/#fusedh3run_ingest_raster_to_h3).
+
+In the following example, we will illustrate the usage of this function by
+ingesting a small Digital Elevation Model (DEM) file for the New York City
+region, available at `"s3://fused-asset/data/nyc_dem.tif"` (see in [File
+Explorer](https://www.fused.io/workbench/files?path=s3%3A%2F%2Ffused-asset%2Fdata%2Fnyc_dem.tif)).
+
+The basic ingestion can be triggered from Workbench by running the following UDF:
+
+```python showLineNumbers
+@fused.udf
+def udf():
+    src_path = "s3://fused-asset/data/nyc_dem.tif"
+    output_path = "s3://fused-users/fused/joris/nyc_dem_h3/"  # <-- update this path
+
+    # run the ingestion process
+    result_extract, result_partition = fused.h3.run_ingest_raster_to_h3(
+        src_path, output_path, metrics=["avg"],
+    )
+
+    # verify that the ingestion finished succesfully,
+    # and if not, print the error to help debugging
+    if not result_extract.all_succeeded():
+        print(result_extract.errors())
+    if result_partition is not None and not result_partition.all_succeeded():
+        print(result_partition.errors())
+```
+
+What is required to run this:
+- Your input data (`src_path`) needs to be available in a raster format (e.g. a
+  TIFF file, any raster format readable by GDAL) on S3.
+- Specify a writeble location on S3 as the output directory (`output_path`)
+- Specify the metrics to compute per H3 cell: typically, multiple multiple pixel
+  values from the input raster data will be used to calculate the value for a
+  certain H3 cell. In this case of a DEM, we want the average pixel value
+  (`metrics=["avg"]`).
+
+Important to understand is that the `run_ingest_raster_to_h3` function will run
+multiple UDFs under the hood to perform the separate steps of the ingestion
+process in parallel. Therefore, the above UDF itself does not need much
+resources (the heavy lifting is done in the UDF runs it spawns) but can take
+longer than the 2-min limit of [realtime UDF runs](/core-concepts/run-udfs/run-small-udfs#defining-realtime-udf-runs).
+
+For this small example, it runs fine on realtime. But for larger data, we will
+typically run this main UDF using a ["small" batch
+instance](/core-concepts/run-udfs/run_large#running-a-job-from-workbench).
+
+```python showLineNumbers
+# highlight-start
+@fused.udf(instance_type="small")
+# highlight-end
+def udf():
+    src_path = "s3://fused-asset/data/nyc_dem.tif"
+    ...
+```
+
+### What data did it create?
+
+The [`run_ingest_raster_to_h3`](/python-sdk/api-reference/h3/#fusedh3run_ingest_raster_to_h3) function will write a set of files to the specified
+output directory:
+
+- A number of Parquet files with the actual ingested data
+  (`577234808489377791.parquet` in the example, but typically this will be
+  multiple files)
+- A single `_sample` metadata file, with information about the files and chunks
+  that can help speed up reading a subset of the data.
+- Overview files in the `/overview` sub-directory, such as `hex3.parquet` for
+  the overview at H3 resolution 3.
+
+For the NYC DEM example, this looks like:
+
+![Files created by the ingestion process](/img/tutorials/geospatial/raster_to_h3_nyc_dem.png)
+
+See an example of the ingested elevation data in [File
+Explorer](https://www.fused.io/workbench/udf/files?path=s3%3A%2F%2Ffused-asset%2Fhex%2Fnyc_dem%2F).
+
+### Reading and visualizing the H3 dataset
+
+Both the data and overview files are Parquet files that can be read individually
+by any tool supporting the Parquet format. To make this easier, the example below
+uses the `read_h3_dataset` utility, that will automatically choose between reading
+a subset of actual data files vs overview files based on the viewport (`bounds`).
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],  # Default to full NYC
+    res: int = None,
+):
+    path = "s3://fused-users/fused/joris/nyc_dem_h3/"
+
+    # highlight-start
+    utils = fused.load("https://github.com/fusedio/udfs/tree/7a33f4b/community/joris/Read_H3_dataset/")
+    df = utils.read_h3_dataset(path, bounds, res=res)
+    # highlight-start
+
+    print(df.head())
+    return df
+```
+
+```
+using resolution 7
+                  hex   data_avg
+0  608725921037287423  13.776936
+1  608725921054064639  14.747111
+2  608725921070841855  21.287103
+3  608725921087619071  17.117635
+4  608725921104396287   3.297785
+```
+
+The data includes a `"hex"` column with the H3 cell ids at a specific
+resolution, and one or more columns derived from the raster data. In this case
+we have a single `"data_avg"` column with the average height in the H3 cell.
+
+We can visualize the data with DeckGL using the `map_utils` helper:
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],  # Default to full NYC
+    res: int = 9,
+):
+    path = "s3://fused-users/fused/joris/nyc_dem_h3/"
+
+    utils = fused.load("https://github.com/fusedio/udfs/tree/7a33f4b/community/joris/Read_H3_dataset/")
+    df = utils.read_h3_dataset(path, bounds, res=res)
+
+    map_utils = fused.load("https://github.com/fusedio/udfs/tree/7a33f4b/community/milind/map_utils")
+
+    config = {
+        "hexLayer": {
+            "@@type": "H3HexagonLayer",
+            "filled": True,
+            "pickable": True,
+            "extruded": False,
+            "opacity": 0.25,
+            "getHexagon": "@@=properties.hex",
+            "getFillColor": {
+                "@@function": "colorContinuous",
+                "attr": "data_avg",
+                "domain": [0, 400],
+                "steps": 20,
+                "colors": "BrwnYl"
+            }
+        }
+    }
+    return map_utils.deckgl_hex(
+        df, 
+        config=config
+    )
+```
+
+<iframe 
+  src="https://unstable.udf.ai/fsh_a5N9mw6GSbjNbR1U7UKXx.html"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
