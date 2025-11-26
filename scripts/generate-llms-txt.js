@@ -16,6 +16,7 @@ const SECTIONS = {
 };
 
 // Parameters to hide from LLM output (per function/decorator)
+// We're hiding this to prevent AI from renaming UDFs which could infer with the batch logs. Batch jobs take the UDF name by default, manually changing the name in the decorator messed this up 
 const HIDDEN_PARAMS = {
   udf: ["name"],
   // Add more as needed, e.g.:
