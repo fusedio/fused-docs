@@ -364,3 +364,83 @@ def udf(
 
 In this case, we have always one row per H3 cell id (in contrast to ingested
 data using the "cnt" metric).
+
+## H3 resolution levels
+
+The [`run_ingest_raster_to_h3`](/python-sdk/api-reference/h3/#fusedh3run_ingest_raster_to_h3)
+function allows to specify the H3 resolution for different aspects of the
+ingested data through the `res`, `file_res`, `chunk_res`, `overview_res`, and
+`overview_chunk_res`.
+
+### Resolution of the data (`res`)
+
+The main H3 resolution to specify is the resolution of the H3 cells in "hex"
+column in the output data. The raster data are converted to a grid of H3 cells
+at this resolution.
+
+By default (if left unspecified), the resolution is inferred from the raster
+data. Using the resolution of the raster input, it chooses an H3 resolution with
+a cell size that is as close as possible to but larger than the pixel size (at
+the center of the raster). For example, this inference gives a resolution of 11
+for a raster with pixel size of 30x30m, and a resolution of 10 for a raster with
+pixel size of 90x90m.
+
+### Dataset partitioning (`file_res` and `chunk_res`)
+
+The ingested data as Parquet dataset is spatially partitioned. In this case,
+this means that the data is sorted by the "hex" column (the H3 cells at
+resolution `res`), and further splitted into multiple files and chunks.
+
+To determine how to split the dataset in multiple files, a lower H3 resolution
+is used (`file_res`). By default, this is inferred based on the resolution `res`
+of the data, targetting to have individual files of around 100MB up to 1GB in
+size (approximately, and assuming there is one row per H3 cell).
+
+Each Parquet file is further chunked into "row groups", and by default another
+H3 resolution is used to determine this level of splitting (`chunk_res`). By
+default, this is again inferred from the data resolution, targetting chunks of
+around 1 million rows (assuming one row per H3 cell and full coverage).
+
+**Example:** for a data resolution of 10, by default a file resolution of 0 and
+chunk resolution of 3 will be used. The file resolution of 0 results in a
+maximum of 122 files for a global dataset. The chunk resolution of 3 gives a
+maximum of 343 (`7^3`) row groups, and for a dataset with full coverage and one
+row per H3 cell at the data resolution, approximately 820,000 rows (`7^(10-3)`)
+in a single file.
+
+The optimal values for those resolutions will of course depend on the
+characteristics of the input data and ingestion (raster resolution, extent,
+cardinality of the categories, which metrics are used, etc), and the desired
+trade off for file and chunk sizes (in general, smaller chunks improve the speed
+of selective queries (i.e. reading a small (spatial) subset) but slow down
+queries that have to scan the whole file). It is therefore always possible to
+override the defaults by specifying the keywords in the
+[`run_ingest_raster_to_h3()`](/python-sdk/api-reference/h3/#fusedh3run_ingest_raster_to_h3)
+call.
+
+Two special cases to mention:
+
+- If you have a smaller dataset, it might not be worth splitting into multiple
+  files. In that case, specify `file_res=-1` to request a single output file.
+- The chunks can also be determined by specifying an exact size (number of
+  rows), instead of specifying an H3 resolution (`chunk_res`), using the
+  `max_rows_per_chunk` keyword instead.
+
+### Overview resolutions (`overview_res`)
+
+In addition to the actual data files at resolution `res`, the ingestion process
+also produces "overview" files in the `/overview/` sub-directory. Those files
+each have an aggregated version of the full dataset at a lower overview
+resolution (aggregated using the same metric as the actual data).
+
+The files use the naming pattern of `hex<res>.parquet`, e.g.
+`/overview/res3.parquet` for the overview file at resolution 3.
+
+By default, overviews are created for H3 resolutions 3 to 7 (or capped at `res -
+1` if data resolution is lower than 8). But you can specify a list of
+resolutions for which to create overview files by specifying the `overview_res`
+keyword.
+
+Also the overview files are chunked in row groups. By default it uses a chunk
+resolution of `overview_res - 5`, but this default can be overriden with the
+`overview_chunk_res` keyword, or by specifying a `max_rows_per_chunk`.
