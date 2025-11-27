@@ -272,3 +272,53 @@ While the H3 cells at the data resolution might not cover that many pixel values
 possible), but note that those aggregations are also used for creating the
 overview files when aggregating the higher resolution H3 cells to lower
 resolution data.
+
+### Counting raster values
+
+For raster with discrete or categorical pixel values, e.g. as land use data, the
+`"cnt"` metric will count the number of occurences per catgory for each H3 cell.
+
+This results in a "data" column with the category (i.e. original pixel values),
+a "cnt" column with the count for that category, and a "cnt_total" column with a
+sum of the counts per H3 cell (which allows to easily calculate the fraction of
+the H3 cell that is covered by a certain category).
+
+Illustrating this with the example of ingested Cropland Data Layer (CDL) data,
+the resulting dataset looks like:
+
+<details>
+<summary>Code</summary>
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-73.983, 40.763, -73.969, 40.773],  # Default to a small area in NYC
+    res: int = None,
+):
+    # Cropland Data Layer (CDL) data, crop-specific land cover data layer
+    # provided by the USDA National Agricultural Statistics Service (NASS).
+    # Ingested using the "cnt" metric, counting the occurence of the land cover classes
+    path = "s3://fused-asset/hex/cdls_v8/year=2024/"
+
+    utils = fused.load("https://github.com/fusedio/udfs/tree/79f8203/community/joris/Read_H3_dataset")
+    df = utils.read_h3_dataset(path, bounds, res=res)
+
+    print(df.head())
+    return df
+```
+</details>
+
+```
+                  hex  data  cnt  cnt_total
+0  626740321835323391   122   12         14
+1  626740321835323391   123    1         14
+2  626740321835323391   121    1         14
+3  626740321835327487   122    9         17
+4  626740321835327487   121    4         17
+```
+
+Important to note: each H3 cell id can occur multiple times in the data in this
+case, because we have one row per category ("data") that occurs in that specific
+H3 cell.
+
+In the example above, you can see the first H3 cell (626740321835323391)
+occuring 3 times, having counts for three categories (121, 122, 123).
