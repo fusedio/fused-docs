@@ -172,7 +172,7 @@ def udf(
     # highlight-start
     utils = fused.load("https://github.com/fusedio/udfs/tree/7a33f4b/community/joris/Read_H3_dataset/")
     df = utils.read_h3_dataset(path, bounds, res=res)
-    # highlight-start
+    # highlight-end
 
     print(df.head())
     return df
@@ -444,3 +444,45 @@ keyword.
 Also the overview files are chunked in row groups. By default it uses a chunk
 resolution of `overview_res - 5`, but this default can be overriden with the
 `overview_chunk_res` keyword, or by specifying a `max_rows_per_chunk`.
+
+## Ingesting multiple files
+
+The [`run_ingest_raster_to_h3`](/python-sdk/api-reference/h3/#fusedh3run_ingest_raster_to_h3)
+function takes a path to a single file, a path to a directory, or a list of file
+paths as input (`src_path`). It can thus ingest a single raster file, or
+multiple raster files at once.
+
+When ingesting multiple files, each file is processed separately in the first
+step of extracting the raster values and assigning to H3 cells. And then all
+data is combined when calculating the metrics and repartitioning the data,
+before writing to Parquet. Thus, this assumes that the raster files have no overlap.
+
+For example, ingesting a subset of the Copernicus Digital Elevation Model (DEM) tiles:
+
+```python showLineNumbers
+@fused.udf
+def udf():
+    # ingesting Copernicus Digital Elevation Model (DEM) data
+    # from https://copernicus-dem-90m.s3.amazonaws.com/readme.html
+    # this dataset consists of 26k tiles, listing 4 here as example
+    dem_listing = [
+        "s3://copernicus-dem-90m/Copernicus_DSM_COG_30_N51_00_E004_00_DEM/Copernicus_DSM_COG_30_N51_00_E004_00_DEM.tif",
+        "s3://copernicus-dem-90m/Copernicus_DSM_COG_30_N51_00_E005_00_DEM/Copernicus_DSM_COG_30_N51_00_E005_00_DEM.tif",
+        "s3://copernicus-dem-90m/Copernicus_DSM_COG_30_N52_00_E004_00_DEM/Copernicus_DSM_COG_30_N52_00_E004_00_DEM.tif",
+        "s3://copernicus-dem-90m/Copernicus_DSM_COG_30_N52_00_E005_00_DEM/Copernicus_DSM_COG_30_N52_00_E005_00_DEM.tif",
+    ]
+    output_path = "s3://fused-users/fused/joris/copernicus-dem-90m/"  # <-- update this path
+
+    # run the ingestion process
+    result_extract, result_partition = fused.h3.run_ingest_raster_to_h3(
+        # highlight-start
+        dem_listing,
+        # highlight-end
+        output_path,
+        metrics=["avg"],
+    )
+    ...
+```
+
+For ingesting the full dataset, you can create the list of input paths by
+listing the online S3 bucket and filtering for the desired TIFF files.
