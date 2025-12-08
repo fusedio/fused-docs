@@ -4,64 +4,13 @@ title: Ingesting Dataset to H3
 authors: [fused]
 tags: [h3, geospatial]
 sidebar_position: 4
+custom_edit_url: null
+hide_table_of_contents: false
+toc_min_heading_level: 2
+toc_max_heading_level: 4
 ---
 
 # Ingesting Dataset to H3
-
-## Vector to Hex
-
-Example of ingesting a release of the Overture Building dataset to H3 hexagons:
-
-```python showLineNumbers
-release = '2025-01-22-0'
-```
-
-```python showLineNumbers
-args = [{'input_path': f's3://us-west-2.opendata.source.coop/fused/overture/{release}/theme=buildings/type=building/',
-         'output_path': f's3://fused-users/fused/max/overture_overview/{release}/', # <-- replace this with your own S3 bucket 
-         'hex_res': 11}]
-```
-
-In this example we'll be simply [counting the number of buildings](https://github.com/fusedlabs/fusedudfs/blob/main/Overture_Hexify/Overture_Hexify.py#L36-L39) per hexagon.
-
-```python showLineNumbers
-Overture_Hexify = fused.load("https://github.com/fusedlabs/fusedudfs/tree/main/Overture_Hexify/")
-j = Overture_Hexify(arg_list=args)
-
-j.run_remote(instance_type='r5.16xlarge', disk_size_gb=999)
-```
-
-Reading the ingested data becomes a lot simpler & faster:
-
-<iframe 
-  src="https://www.fused.io/server/v1/realtime-shared/fsh_1P5dqTKyPeryNpoPslct0o/run/file"
-  width="100%"
-  height="600px"
-  frameBorder="0"
-  style={{borderRadius: '8px'}}
-></iframe>
-
-<details>
-<summary>Code</summary>
-```python showLineNumbers
-common = fused.load("https://github.com/fusedio/udfs/blob/main/public/common/")
-@fused.udf
-def udf(bounds: fused.types.Bounds = [-122.71963771127753,36.53196328805067,-120.70395948802646,38.082911654639275]):
-    res = bounds_to_res(bounds)
-    print(res)
-    releases = ['2024-02-15-alpha-0', '2024-03-12-alpha-0', '2024-08-20-0', '2024-09-18-0', '2024-10-23-0', '2024-11-13-0', '2024-12-18-0', '2025-01-22-0', '2025-03-19-1', '2025-04-23-0', '2025-05-21-0']
-    release1 = releases[-1]
-    df1 = common.read_hexfile(bounds, f"s3://fused-users/fused/sina/overture_overview/{release1}/hex{res}.parquet", clip=True)
-
-    return df1
-
-@fused.cache
-def bounds_to_res(bounds, res_offset=0, max_res=14, min_res=3):
-    z = common.estimate_zoom(bounds)
-    return max(min(int(3 + max(0, z - 3) / 1.7 + res_offset), max_res), min_res)
-```
-</details>
-
 
 ## Raster to H3
 
@@ -100,7 +49,7 @@ What is required to run this:
 - `src_path`: A raster file path or list of file paths on S3 (e.g. a
   TIFF file, any raster format readable by GDAL)
 - `output_path`: Specify a writeble location on S3 as the output directory
-- `metrics`: Specify the metrics to compute per H3 cell: typically, multiple multiple pixel
+- `metrics`: [Specify the metrics](/tutorials/Geospatial%20with%20Fused/h3-tiling/ingesting-dataset-to-h3#specifying-the-metrics) to compute per H3 cell: typically, multiple multiple pixel
   values from the input raster data will be used to calculate the value for a
   certain H3 cell. In this case of a DEM, we want the average pixel value
   (`metrics=["avg"]`).
@@ -168,21 +117,34 @@ def udf(
     return df
 ```
 
+Default files (using res 14 - [example file](https://www.fused.io/workbench/files?path=s3%3A%2F%2Ffused-asset%2Fhex%2Fgeorgia_subset_4_counties_3dep_1m_res14_10_v3%2F604691848023244799.parquet)):
 ```
-using resolution 7
-                  hex   data_avg
-0  608725921037287423  13.776936
-1  608725921054064639  14.747111
-2  608725921070841855  21.287103
-3  608725921087619071  17.117635
-4  608725921104396287   3.297785
+                   hex   data_avg                                         source_url  res
+0  634151330858880447  71.528941  [s3://fused-asset/dem/3dep_tmn/georgia/USGS_1M...   14
+1  634151330858880448  71.412385  [s3://fused-asset/dem/3dep_tmn/georgia/USGS_1M...   14
+2  634151330858880449  71.334829  [s3://fused-asset/dem/3dep_tmn/georgia/USGS_1M...   14
+3  634151330858880450  71.250196  [s3://fused-asset/dem/3dep_tmn/georgia/USGS_1M...   14
+4  634151330858880451  71.195883  [s3://fused-asset/dem/3dep_tmn/georgia/USGS_1M...   14
+```
+
+[Overview](/tutorials/Geospatial%20with%20Fused/h3-tiling/ingesting-dataset-to-h3#overview-resolutions-overview_res) files (using res 9 - [example file](https://www.fused.io/workbench/files?path=s3%3A%2F%2Ffused-asset%2Fhex%2Fgeorgia_subset_4_counties_3dep_1m_res14_10_v3%2Foverview%2Fhex9.parquet)):
+```
+                   hex   data_avg        lat        lng
+0  618202600000000000  71.259480  32.562230 -83.554810
+1  618202600000000001  81.583760  32.550860 -83.554850
+2  618202600000000002  75.432100  32.489230 -83.612340
+3  618202600000000003  89.048190  31.786910 -84.338880
+4  618202600000000004  89.011300  31.787690 -84.335540
 ```
 
 The data includes a `"hex"` column with the H3 cell ids at a specific
 resolution, and one or more columns derived from the raster data. In this case
-we have a single `"data_avg"` column with the average height in the H3 cell.
+we have `"data_avg"` (average height in the H3 cell), `"source_url"` (source raster files), and `"res"` (H3 resolution).
 
-We can visualize the data with DeckGL using the `map_utils` helper:
+We can visualize the data with DeckGL using the [`map_utils`](https://github.com/fusedio/udfs/tree/main/community/milind/map_utils) helper:
+
+<details>
+<summary>Standalone map UDF</summary>
 
 ```python showLineNumbers
 @fused.udf
@@ -219,6 +181,7 @@ def udf(
         config=config
     )
 ```
+</details>
 
 <iframe 
   src="https://unstable.udf.ai/fsh_a5N9mw6GSbjNbR1U7UKXx.html"
@@ -228,7 +191,7 @@ def udf(
   style={{borderRadius: '8px'}}
 ></iframe>
 
-## Specifying the metrics
+#### Specifying the metrics
 
 In the basic DEM example above, we specified `metrics=["avg"]` to get the average
 height for each H3 cell.
@@ -263,7 +226,7 @@ possible), but note that those aggregations are also used for creating the
 overview files when aggregating the higher resolution H3 cells to lower
 resolution data.
 
-### Counting raster values
+### Counting raster values (metrics=`cnt`)
 
 For raster with discrete or categorical pixel values, e.g. as land use data, the
 `"cnt"` metric will count the number of occurences per catgory for each H3 cell.
@@ -313,7 +276,7 @@ H3 cell.
 In the example above, you can see the first H3 cell (626740321835323391)
 occuring 3 times, having counts for three categories (121, 122, 123).
 
-### Aggregating raster values
+### Aggregating raster values (metrics=`avg`, `sum`, `min`, etc.)
 
 When specifying one or more of the non-count metrics ("sum", "avg", "min",
 "max", "stddev"), a single value is obtained for each H3 cell by aggregating the
@@ -355,14 +318,14 @@ def udf(
 In this case, we have always one row per H3 cell id (in contrast to ingested
 data using the "cnt" metric).
 
-## H3 resolution levels
+### H3 resolution levels
 
 The [`run_ingest_raster_to_h3`](/python-sdk/api-reference/h3/#fusedh3run_ingest_raster_to_h3)
 function allows to specify the H3 resolution for different aspects of the
 ingested data through the `res`, `file_res`, `chunk_res`, `overview_res`, and
 `overview_chunk_res`.
 
-### Resolution of the data (`res`)
+#### Resolution of the data (`res`)
 
 The main H3 resolution to specify is the resolution of the H3 cells in "hex"
 column in the output data. The raster data are converted to a grid of H3 cells
@@ -375,7 +338,35 @@ the center of the raster). For example, this inference gives a resolution of 11
 for a raster with pixel size of 30x30m, and a resolution of 10 for a raster with
 pixel size of 90x90m.
 
-### Dataset partitioning (`file_res` and `chunk_res`)
+{/* TODO: Modis / ERA 5 */}
+
+| H3 Resolution (`res`) | Average Hex Area (m²) | Average Hex Edge Length (m) | Pixel Size Equivalent (m, √ avg hex area) | Common Raster Dataset Example          |
+|-----------------------|-----------------------|-----------------------------|-----------------------------------|----------------------------------------|
+| 0                     | 4,357,449,416,078     | 1,281,256                   | 2,087,465                         |                                        |
+| 1                     |   609,788,441,794     |   483,057                   |   780,889                         |                                        |
+| 2                     |    86,801,780,399     |   182,513                   |   294,621                         |                                        |
+| 3                     |    12,393,434,655     |    68,979                   |   111,325                         |                                        |
+| 4                     |     1,770,347,654     |    26,072                   |    42,075                         |  [ERA 5 (0.25deg ~ 27km at Equator)](https://planetarycomputer.microsoft.com/dataset/era5-pds)|
+| 5                     |       252,903,858     |     9,854                   |    15,903                         |                                        |
+| 6                     |        36,129,062     |     3,725                   |     6,011                         |                                        |
+| 7                     |         5,161,293     |     1,406                   |     2,272                         |                                        |
+| 8                     |           737,328     |       531                   |       859                         |                                        |
+| 9                     |           105,333     |       201                   |       325                         | [Modis  Vegetation Index (250m)](https://planetarycomputer.microsoft.com/dataset/modis-13Q1-061)|
+| 10                    |            15,048     |        76                   |       123                         |                                        |
+| 11                    |             2,150     |        29                   |        46                         | [Landsat Collection 2 (30m)](https://planetarycomputer.microsoft.com/dataset/landsat-c2-l2)                      |
+| 12                    |             307.1     |      10.8                   |      17.5                         | [Sentinel-2 (10m)](https://planetarycomputer.microsoft.com/dataset/sentinel-2-l2a)                        |
+| 13                    |              43.9     |       4.1                   |       6.6                         |                                        |
+| 14                    |               6.3     |       1.5                   |       2.5                         | [USGS LiDAR DEM (1m)](https://www.usgs.gov/3d-elevation-program)                             |
+| 15                    |               0.9     |       0.6                   |       0.9                         |                                        |
+
+**Notes:**
+- Values are approximate (area and edge length slightly vary by latitude/longitude).
+- "Pixel Size Equivalent" is the square root of the average hex area, to aid raster/pixel comparison.
+
+For more details see the [H3 Cell Counts Stats](https://h3geo.org/docs/core-library/restable) page.
+
+
+#### Dataset partitioning (`file_res` and `chunk_res`)
 
 The ingested data as Parquet dataset is spatially partitioned. In this case,
 this means that the data is sorted by the "hex" column (the H3 cells at
@@ -416,7 +407,7 @@ Two special cases to mention:
   rows), instead of specifying an H3 resolution (`chunk_res`), using the
   `max_rows_per_chunk` keyword instead.
 
-### Overview resolutions (`overview_res`)
+#### Overview resolutions (`overview_res`)
 
 In addition to the actual data files at resolution `res`, the ingestion process
 also produces "overview" files in the `/overview/` sub-directory. Those files
@@ -431,11 +422,36 @@ By default, overviews are created for H3 resolutions 3 to 7 (or capped at `res -
 resolutions for which to create overview files by specifying the `overview_res`
 keyword.
 
+```python showLineNumbers
+@fused.udf(instance_type="small")
+def udf():
+    src_path = "s3://fused-asset/data/nyc_dem.tif"
+    output_path = "s3://fused-users/fused/joris/nyc_dem_h3/"  # <-- update this path
+
+    result_extract, result_partition = fused.h3.run_ingest_raster_to_h3(
+        src_path, 
+        output_path, 
+        metrics=["avg"],
+        overview_res=[7,6,5,4,3],   # Setting up overviews for resolutions 7 through 3
+    )
+)
+```
+
+This would create the following overview files:
+
+| File Path                                     | Size     |
+|-----------------------------------------------|----------|
+| `s3://.../nyc_dem_h3/overview/hex3.parquet`   | 36.9 kB  |
+| `s3://.../nyc_dem_h3/overview/hex4.parquet`   | 36.9 kB  |
+| `s3://.../nyc_dem_h3/overview/hex5.parquet`   | 37.1 kB  |
+| `s3://.../nyc_dem_h3/overview/hex6.parquet`   | 37.4 kB  |
+| `s3://.../nyc_dem_h3/overview/hex7.parquet`   | 41.1 kB  |
+
 Also the overview files are chunked in row groups. By default it uses a chunk
-resolution of `overview_res - 5`, but this default can be overriden with the
+resolution of `overview_res - 5` (i.e. if the `res` is 11, the default chunk resolution for the overview files will be 6), but this default can be overridden with the
 `overview_chunk_res` keyword, or by specifying a `max_rows_per_chunk`.
 
-## Ingesting multiple files
+### Ingesting multiple files
 
 The [`run_ingest_raster_to_h3`](/python-sdk/api-reference/h3/#fusedh3run_ingest_raster_to_h3)
 function takes a path to a single file, a path to a directory, or a list of file
@@ -477,7 +493,7 @@ def udf():
 For ingesting the full dataset, you can create the list of input paths by
 listing the online S3 bucket and filtering for the desired TIFF files.
 
-## Controlling the ingestion execution
+### Controlling the ingestion execution
 
 The `run_ingest_raster_to_h3()` function will run
 multiple UDFs under the hood to perform the separate steps of the ingestion
@@ -506,3 +522,77 @@ keyword to specify the exact instance you want to use for the steps.
 Further keywords of [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)
 can be specified to tweak the exact execution of the steps. For example, 
 specify `max_workers` to indicate a larger number of parallel workers to use.
+
+#### Running ingestion on GCP
+
+Fused can run the ingestion fully on GCP [batch instances](/core-concepts/run-udfs/run_large) (realtime execution will still be done on AWS at this point however), if they are available in your environment:
+
+```python showLineNumbers
+@fused.udf(instance_type="c2-standard-4") # <- using GCP instance to orchestrate the ingestion
+def udf():
+
+    src_path = "s3://fused-asset/data/nyc_dem.tif"
+    output_path = "s3://fused-users/fused/joris/nyc_dem_h3/"  # <-- update this path
+
+    result_extract, result_partition = fused.h3.run_ingest_raster_to_h3(
+        src_path, 
+        output_path, 
+        metrics=["avg"],                # DEM, so using avg 
+        instance_type="c2-standard-60", # Using large GCS for actual compute steps
+    )
+```
+
+
+## Vector to Hex
+
+Example of ingesting a release of the Overture Building dataset to H3 hexagons:
+
+```python showLineNumbers
+release = '2025-01-22-0'
+```
+
+```python showLineNumbers
+args = [{'input_path': f's3://us-west-2.opendata.source.coop/fused/overture/{release}/theme=buildings/type=building/',
+         'output_path': f's3://fused-users/fused/max/overture_overview/{release}/', # <-- replace this with your own S3 bucket 
+         'hex_res': 11}]
+```
+
+In this example we'll be simply [counting the number of buildings](https://github.com/fusedlabs/fusedudfs/blob/main/Overture_Hexify/Overture_Hexify.py#L36-L39) per hexagon.
+
+```python showLineNumbers
+Overture_Hexify = fused.load("https://github.com/fusedlabs/fusedudfs/tree/main/Overture_Hexify/")
+j = Overture_Hexify(arg_list=args)
+
+j.run_remote(instance_type='r5.16xlarge', disk_size_gb=999)
+```
+
+Reading the ingested data becomes a lot simpler & faster:
+
+<iframe 
+  src="https://www.fused.io/server/v1/realtime-shared/fsh_1P5dqTKyPeryNpoPslct0o/run/file"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+<details>
+<summary>Code</summary>
+```python showLineNumbers
+common = fused.load("https://github.com/fusedio/udfs/blob/main/public/common/")
+@fused.udf
+def udf(bounds: fused.types.Bounds = [-122.71963771127753,36.53196328805067,-120.70395948802646,38.082911654639275]):
+    res = bounds_to_res(bounds)
+    print(res)
+    releases = ['2024-02-15-alpha-0', '2024-03-12-alpha-0', '2024-08-20-0', '2024-09-18-0', '2024-10-23-0', '2024-11-13-0', '2024-12-18-0', '2025-01-22-0', '2025-03-19-1', '2025-04-23-0', '2025-05-21-0']
+    release1 = releases[-1]
+    df1 = common.read_hexfile(bounds, f"s3://fused-users/fused/sina/overture_overview/{release1}/hex{res}.parquet", clip=True)
+
+    return df1
+
+@fused.cache
+def bounds_to_res(bounds, res_offset=0, max_res=14, min_res=3):
+    z = common.estimate_zoom(bounds)
+    return max(min(int(3 + max(0, z - 3) / 1.7 + res_offset), max_res), min_res)
+```
+</details>
