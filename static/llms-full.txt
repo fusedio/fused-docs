@@ -1616,16 +1616,15 @@ job.run_batch(instance_type="m5.4xlarge", disk_size_gb=100)
   ```
 
   - **GCP instance types:**
-  ```python showLineNumbers
-  gcp_instance_types = [
-    # Compute optimized - C2 family
-    "c2-standard-4",
-    "c2-standard-8",
-    "c2-standard-16",
-    "c2-standard-30",
-    "c2-standard-60",
-  ]
-  ```
+  | `name`              | vCPUs | Memory (GB) |
+  |---------------------|-------|-------------|
+  | `c2-standard-4`     | 4     | 16          |
+  | `c2-standard-8`     | 8     | 32          |
+  | `c2-standard-16`    | 16    | 64          |
+  | `c2-standard-30`    | 30    | 120         |
+  | `c2-standard-60`    | 60    | 240         |
+  | `m3-ultramem-32`    | 32    | 896         |
+  | `m3-ultramem-64`    | 64    | 1792        |
 
   - **Standard aliases:** For those who don't know which instance type to use, we provide convenient aliases that map to AWS instance types.
   ```python showLineNumbers
@@ -3598,6 +3597,253 @@ def bounds_to_res(bounds, res_offset=0, max_res=14, min_res=3):
     z = common.estimate_zoom(bounds)
     return max(min(int(3 + max(0, z - 3) / 1.7 + res_offset), max_res), min_res)
 ```
+
+## Specifying the metrics
+
+In the basic DEM example above, we specified `metrics=["avg"]` to get the average
+height for each H3 cell.
+
+In general, when converting the raster data to H3, an H3 cell can cover
+(partially) multiple pixels from the raster, and thus an aggregation is needed
+to calculate the resulting data point for the given H3 cell.
+
+The type of aggregation best suited will depend on the kind of raster data:
+
+- `"cnt"`: for raster with discrete or categorical pixel values, e.g. as land
+  use data, specify `metric="cnt"` to get a count per category for each H3 cell.
+  This results in a "data" column with the category, a "cnt" column with the
+  count for that category, and a "cnt_total" column with a sum of the counts per
+  H3 cell (which allows to calculate the fraction of the H3 cell that is covered
+  by a certain category).
+- `"avg"`: for raster data where each pixel represents the average value for
+  that area, e.g. temperate, elevation or population density, the average gets
+  preserved when converting to H3 cell areas (using a weighted average).
+- `"sum"`: for raster data where each pixel represents the total of the variable
+  for that area, e.g. population counts, use the sum metric to preserve sums.
+
+In addition, also the `"min"`, `"max"` and `"stddev"` metrics are supported to
+calculate the minimum, maximum and standard deviation, respectively, of the
+pixel values covered by the H3 cell. Those metrics can be combined with
+calculating sums or averages, e.g. `metrics=["avg", "min", "max"]`, while the
+`"cnt"` metric cannot be combined with any other metric, currently.
+
+While the H3 cells at the data resolution might not cover that many pixel values
+(by default a resolution is chosen that matches the pixel area as close as
+possible), but note that those aggregations are also used for creating the
+overview files when aggregating the higher resolution H3 cells to lower
+resolution data.
+
+### Counting raster values
+
+For raster with discrete or categorical pixel values, e.g. as land use data, the
+`"cnt"` metric will count the number of occurences per catgory for each H3 cell.
+
+This results in a "data" column with the category (i.e. original pixel values),
+a "cnt" column with the count for that category, and a "cnt_total" column with a
+sum of the counts per H3 cell (which allows to easily calculate the fraction of
+the H3 cell that is covered by a certain category).
+
+Illustrating this with an example of ingested Cropland Data Layer (CDL) data,
+the resulting dataset looks like:
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-73.983, 40.763, -73.969, 40.773],  # Default to a small area in NYC
+    res: int = None,
+):
+    # Cropland Data Layer (CDL) data, crop-specific land cover data layer
+    # provided by the USDA National Agricultural Statistics Service (NASS).
+    # Ingested using the "cnt" metric, counting the occurence of the land cover classes
+    path = "s3://fused-asset/hex/cdls_v8/year=2024/"
+
+    utils = fused.load("https://github.com/fusedio/udfs/tree/79f8203/community/joris/Read_H3_dataset")
+    df = utils.read_h3_dataset(path, bounds, res=res)
+
+    print(df.head())
+    return df
+```
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-73.983, 40.763, -73.969, 40.773],  # Default to a small area in NYC
+    res: int = None,
+):
+    # Ingested NYC DEM using the "avg" metric
+    path = "s3://fused-asset/hex/nyc_dem/"
+
+    utils = fused.load("https://github.com/fusedio/udfs/tree/79f8203/community/joris/Read_H3_dataset")
+    df = utils.read_h3_dataset(path, bounds, res=res)
+
+    print(df.head())
+    return df
+```
+</details>
+
+```
+                  hex   data_avg
+0  617733122581069823  78.822576
+1  617733122610954239  78.225562
+2  617733123866886143  47.372763
+3  617733123867410431  55.030614
+4  617733123871080447  74.679518
+```
+
+In this case, we have always one row per H3 cell id (in contrast to ingested
+data using the "cnt" metric).
+
+## H3 resolution levels
+
+The `run_ingest_raster_to_h3`
+function allows to specify the H3 resolution for different aspects of the
+ingested data through the `res`, `file_res`, `chunk_res`, `overview_res`, and
+`overview_chunk_res`.
+
+### Resolution of the data (`res`)
+
+The main H3 resolution to specify is the resolution of the H3 cells in "hex"
+column in the output data. The raster data are converted to a grid of H3 cells
+at this resolution.
+
+By default (if left unspecified), the resolution is inferred from the raster
+data. Using the resolution of the raster input, it chooses an H3 resolution with
+a cell size that is as close as possible to but larger than the pixel size (at
+the center of the raster). For example, this inference gives a resolution of 11
+for a raster with pixel size of 30x30m, and a resolution of 10 for a raster with
+pixel size of 90x90m.
+
+### Dataset partitioning (`file_res` and `chunk_res`)
+
+The ingested data as Parquet dataset is spatially partitioned. In this case,
+this means that the data is sorted by the "hex" column (the H3 cells at
+resolution `res`), and further splitted into multiple files and chunks.
+
+To determine how to split the dataset in multiple files, a lower H3 resolution
+is used (`file_res`). By default, this is inferred based on the resolution `res`
+of the data, targetting to have individual files of around 100MB up to 1GB in
+size (approximately, and assuming there is one row per H3 cell).
+
+Each Parquet file is further chunked into "row groups", and by default another
+H3 resolution is used to determine this level of splitting (`chunk_res`). By
+default, this is again inferred from the data resolution, targetting chunks of
+around 1 million rows (assuming one row per H3 cell and full coverage).
+
+**Example:** for a data resolution of 10, by default a file resolution of 0 and
+chunk resolution of 3 will be used. The file resolution of 0 results in a
+maximum of 122 files for a global dataset. The chunk resolution of 3 gives a
+maximum of 343 (`7^3`) row groups, and for a dataset with full coverage and one
+row per H3 cell at the data resolution, approximately 820,000 rows (`7^(10-3)`)
+in a single file.
+
+The optimal values for those resolutions will of course depend on the
+characteristics of the input data and ingestion (raster resolution, extent,
+cardinality of the categories, which metrics are used, etc), and the desired
+trade off for file and chunk sizes (in general, smaller chunks improve the speed
+of selective queries (i.e. reading a small (spatial) subset) but slow down
+queries that have to scan the whole file). It is therefore always possible to
+override the defaults by specifying the keywords in the
+`run_ingest_raster_to_h3()`
+call.
+
+Two special cases to mention:
+
+- If you have a smaller dataset, it might not be worth splitting into multiple
+  files. In that case, specify `file_res=-1` to request a single output file.
+- The chunks can also be determined by specifying an exact size (number of
+  rows), instead of specifying an H3 resolution (`chunk_res`), using the
+  `max_rows_per_chunk` keyword instead.
+
+### Overview resolutions (`overview_res`)
+
+In addition to the actual data files at resolution `res`, the ingestion process
+also produces "overview" files in the `/overview/` sub-directory. Those files
+each have an aggregated version of the full dataset at a lower overview
+resolution (aggregated using the same metric as the actual data).
+
+The files use the naming pattern of `hex<res>.parquet`, e.g.
+`/overview/res3.parquet` for the overview file at resolution 3.
+
+By default, overviews are created for H3 resolutions 3 to 7 (or capped at `res -
+1` if data resolution is lower than 8). But you can specify a list of
+resolutions for which to create overview files by specifying the `overview_res`
+keyword.
+
+Also the overview files are chunked in row groups. By default it uses a chunk
+resolution of `overview_res - 5`, but this default can be overriden with the
+`overview_chunk_res` keyword, or by specifying a `max_rows_per_chunk`.
+
+## Ingesting multiple files
+
+The `run_ingest_raster_to_h3`
+function takes a path to a single file, a path to a directory, or a list of file
+paths as input (`src_path`). It can thus ingest a single raster file, or
+multiple raster files at once.
+
+When ingesting multiple files, each file is processed separately in the first
+step of extracting the raster values and assigning to H3 cells. And then all
+data is combined when calculating the metrics and repartitioning the data,
+before writing to Parquet. Thus, this assumes that the raster files have no overlap.
+
+For example, ingesting a subset of the Copernicus Digital Elevation Model (DEM) tiles:
+
+```python showLineNumbers
+@fused.udf
+def udf():
+    # ingesting Copernicus Digital Elevation Model (DEM) data
+    # from https://copernicus-dem-90m.s3.amazonaws.com/readme.html
+    # this dataset consists of 26k tiles, listing 4 here as example
+    dem_listing = [
+        "s3://copernicus-dem-90m/Copernicus_DSM_COG_30_N51_00_E004_00_DEM/Copernicus_DSM_COG_30_N51_00_E004_00_DEM.tif",
+        "s3://copernicus-dem-90m/Copernicus_DSM_COG_30_N51_00_E005_00_DEM/Copernicus_DSM_COG_30_N51_00_E005_00_DEM.tif",
+        "s3://copernicus-dem-90m/Copernicus_DSM_COG_30_N52_00_E004_00_DEM/Copernicus_DSM_COG_30_N52_00_E004_00_DEM.tif",
+        "s3://copernicus-dem-90m/Copernicus_DSM_COG_30_N52_00_E005_00_DEM/Copernicus_DSM_COG_30_N52_00_E005_00_DEM.tif",
+    ]
+    output_path = "s3://fused-users/fused/joris/copernicus-dem-90m/"  # <-- update this path
+
+    # run the ingestion process
+    result_extract, result_partition = fused.h3.run_ingest_raster_to_h3(
+        # highlight-start
+        dem_listing,
+        # highlight-end
+        output_path,
+        metrics=["avg"],
+    )
+    ...
+```
+
+For ingesting the full dataset, you can create the list of input paths by
+listing the online S3 bucket and filtering for the desired TIFF files.
+
+## Controlling the ingestion execution
+
+The `run_ingest_raster_to_h3()` function will run
+multiple UDFs under the hood to perform the separate steps of the ingestion
+process in parallel. 
+
+The different steps:
+
+- "extract": extract the pixels values and assign to H3 cells in chunks
+- "partition": combine the chunked, extracted data per partition (file), and
+  prepare metadata and overview files
+- create the metadata `_sample` file (with information about the file and chunk
+  bounding boxes)
+- "overview": create the combined overview files
+
+The extract, partition and overview steps are each run in parallel using
+`fused.submit()`.
+
+By default, each of those steps are first tried as realtime UDF runs,
+and retry any failed runs using "large" batch instances
+(e.g. the realtime run can fail because the chunk takes too much time to process or the
+data is too big to fit in a small realtime instance).
+
+You can override this default behavior by specifying the `engine` and/or `instance_type`
+keyword to specify the exact instance you want to use for the steps.
+
+Further keywords of `fused.submit()`
+can be specified to tweak the exact execution of the steps. For example, 
+specify `max_workers` to indicate a larger number of parallel workers to use.
 
 ================================================================================
 
@@ -7264,7 +7510,7 @@ The token does not allow running any other UDF on your account.
 - **client_id** (<code>str | Ellipsis | None</code>) – If specified, overrides which realtime environment to run the UDF under.
 - **cache** (<code>bool</code>) – If True, UDF tiles will be cached.
 - **metadata_json** (<code>dict\[str, Any\] | None</code>) – Additional metadata to serve as part of the tiles metadata.json.
-- **enable** – If True, the token can be used.
+- **enabled** (<code>bool</code>) – If True, the token can be used.
 
 ---
 
@@ -7752,7 +7998,7 @@ run_ingest_raster_to_h3(
     overview_res: list[int] | None = None,
     overview_chunk_res: int | list[int] | None = None,
     max_rows_per_chunk: int = 0,
-    target_chunk_size: int = 10000000,
+    target_chunk_size: int | None = None,
     debug_mode: bool = False,
     remove_tmp_files: bool = True,
     overwrite: bool = False,
@@ -7784,6 +8030,10 @@ This process involves multiple steps:
 - **res** (<code>int</code>) – The resolution of the H3 cells in the output data.
   The pixel values are assigned to H3 cells at resolution
   `res + res_offset` and then aggregated to `res`.
+  By default, this is inferred based on the resolution of the
+  input data ensuring the H3 cell size is close to the pixel size
+  (e.g. for a raster with pixel size of 30x30m, a resolution of 11
+  is inferred).
 - **k_ring** (<code>int</code>) – The k-ring distance at resolution `res + res_offset`
   to which the pixel value is assigned (in addition to the center
   cell). Defaults to 1.
@@ -7809,8 +8059,12 @@ This process involves multiple steps:
   resulting data and overview files. If 0 (the default), `chunk_res`
   and `overview_chunk_res` are used to determine the chunking.
 - **target_chunk_size** (<code>int</code>) – The approximate number of pixel values to
-  process per chunk in the first "extract" step (only used when
-  ingesting a single file).
+  process per chunk in the first "extract" step. Defaults to
+  10,000,000 for ingesting a single file or a few files. If ingesting
+  more than 20 files, each file is processed as a single chunk by
+  default, but you can override this by specifying a specific
+  `target_chunk_size` value, or by specifying `target_chunk_size=0` to
+  always process each file as a single chunk.
 - **debug_mode** (<code>bool</code>) – If True, run only the first two chunks for
   debugging purposes. Defaults to False.
 - **remove_tmp_files** (<code>bool</code>) – If True, remove the temporary files after
@@ -10321,8 +10575,10 @@ A decorator that transforms a function into a Fused UDF.
 
 - **cache_max_age** (<code>Optional[str]</code>) – The maximum age when returning a result from the cache.
 
-- **instance_type** (<code>Optional[str]</code>) – The default type of instance to use for remote execution
-  ('realtime' or 'batch').
+- **instance_type** (<code>Optional[str]</code>) – The type of instance to use for remote execution ('realtime',
+  or 'small', 'medium', 'large' or one of the whitelisted instance types).
+  If not specified (and also not specified in `fused.run()`, defaults
+  to 'realtime'.
 
 - **disk_size_gb** (<code>Optional[int]</code>) – The size of the disk in GB to use for remote execution
   (only supported for a batch instance type).
@@ -13769,5 +14025,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2025-11-27
+Generated automatically from Fused documentation. Last updated: 2025-12-08
 Total sections: 3
