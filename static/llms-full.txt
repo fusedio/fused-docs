@@ -1587,49 +1587,50 @@ job.run_batch(instance_type="m5.4xlarge", disk_size_gb=100)
 
   Fused batch job `instance_type` support instances from both Amazon Web Services (AWS) and Google Cloud Platform (GCP).
 
-  - **AWS instance types:**
+#### AWS instance types
+
+  | Instance Type  | vCPUs | Memory (GB) |
+  |--------------- |-------|-------------|
+  | `m5.large`       | 2     | 8           |
+  | `m5.xlarge`      | 4     | 16          |
+  | `m5.2xlarge`     | 8     | 32          |
+  | `m5.4xlarge`     | 16    | 64          |
+  | `m5.8xlarge`     | 32    | 128         |
+  | `m5.12xlarge`    | 48    | 192         |
+  | `m5.16xlarge`    | 64    | 256         |
+  | `r5.large`       | 2     | 16          |
+  | `r5.xlarge`      | 4     | 32          |
+  | `r5.2xlarge`     | 8     | 64          |
+  | `r5.4xlarge`     | 16    | 128         |
+  | `r5.8xlarge`     | 32    | 256         |
+  | `r5.12xlarge`    | 48    | 384         |
+  | `r5.16xlarge`    | 64    | 512         |
+  | `t3.small`       | 2     | 2           |
+  | `t3.medium`      | 2     | 4           |
+  | `t3.large`       | 2     | 8           |
+  | `t3.xlarge`      | 4     | 16          |
+  | `t3.2xlarge`     | 8     | 32          |
+
+  More details on the AWS instance types page.
+
+  - **Standard aliases:** For those who don't know which instance type to use, we provide convenient aliases that map to AWS instance types.
   ```python showLineNumbers
-  aws_instance_types = [
-    # General purpose - M5 family
-    "m5.large",
-    "m5.xlarge",
-    "m5.2xlarge",
-    "m5.4xlarge",
-    "m5.8xlarge",
-    "m5.12xlarge",
-    "m5.16xlarge",
-    # Memory optimized - R5 family
-    "r5.large",
-    "r5.xlarge",
-    "r5.2xlarge",
-    "r5.4xlarge",
-    "r5.8xlarge",
-    "r5.12xlarge",
-    "r5.16xlarge",
-    # Burstable performance - T3 family
-    "t3.small",
-    "t3.medium",
-    "t3.large",
-    "t3.xlarge",
-    "t3.2xlarge",
-  ]
+  alias_instance_types = 
   ```
 
-  - **GCP instance types:**
-  | `name`              | vCPUs | Memory (GB) |
+#### GCP instance types
+
+  | Instance Type       | vCPUs | Memory (GB) |
   |---------------------|-------|-------------|
   | `c2-standard-4`     | 4     | 16          |
   | `c2-standard-8`     | 8     | 32          |
   | `c2-standard-16`    | 16    | 64          |
   | `c2-standard-30`    | 30    | 120         |
   | `c2-standard-60`    | 60    | 240         |
-  | `m3-ultramem-32`    | 32    | 896         |
-  | `m3-ultramem-64`    | 64    | 1792        |
+  | `m3-ultramem-32`    | 32    | 976         |
+  | `m3-ultramem-64`    | 64    | 1,952        |
 
-  - **Standard aliases:** For those who don't know which instance type to use, we provide convenient aliases that map to AWS instance types.
-  ```python showLineNumbers
-  alias_instance_types = 
-  ```
+  More details on the GCP instance types page.
 
 ## Running a job from workbench
 
@@ -3555,50 +3556,160 @@ URL: https://docs.fused.io/tutorials/Geospatial%20with%20Fused/h3-tiling/ingesti
 
 # Ingesting Dataset to H3
 
-## Vector to Hex
+## Raster to H3
 
-Example of ingesting a release of the Overture Building dataset to H3 hexagons:
+The `fused` package includes functionality to automate the ingestion of raster data
+to an H3 dataset, through `fused.h3.run_ingest_raster_to_h3()`.
 
-```python showLineNumbers
-release = '2025-01-22-0'
-```
+In the following example, we will illustrate the usage of this function by
+ingesting a small Digital Elevation Model (DEM) file for the New York City
+region, available at `"s3://fused-asset/data/nyc_dem.tif"` (see in File
+Explorer).
 
-```python showLineNumbers
-args = [/theme=buildings/type=building/',
-         'output_path': f's3://fused-users/fused/max/overture_overview//', # <-- replace this with your own S3 bucket 
-         'hex_res': 11}]
-```
-
-In this example we'll be simply counting the number of buildings per hexagon.
+The basic ingestion can be triggered from Workbench by running the following UDF:
 
 ```python showLineNumbers
-Overture_Hexify = fused.load("https://github.com/fusedlabs/fusedudfs/tree/main/Overture_Hexify/")
-j = Overture_Hexify(arg_list=args)
-
-j.run_remote(instance_type='r5.16xlarge', disk_size_gb=999)
-```
-
-Reading the ingested data becomes a lot simpler & faster:
-
-```python showLineNumbers
-common = fused.load("https://github.com/fusedio/udfs/blob/main/public/common/")
 @fused.udf
-def udf(bounds: fused.types.Bounds = [-122.71963771127753,36.53196328805067,-120.70395948802646,38.082911654639275]):
-    res = bounds_to_res(bounds)
-    print(res)
-    releases = ['2024-02-15-alpha-0', '2024-03-12-alpha-0', '2024-08-20-0', '2024-09-18-0', '2024-10-23-0', '2024-11-13-0', '2024-12-18-0', '2025-01-22-0', '2025-03-19-1', '2025-04-23-0', '2025-05-21-0']
-    release1 = releases[-1]
-    df1 = common.read_hexfile(bounds, f"s3://fused-users/fused/sina/overture_overview//hex.parquet", clip=True)
+def udf():
+    src_path = "s3://fused-asset/data/nyc_dem.tif"
+    output_path = "s3://fused-users/fused/joris/nyc_dem_h3/"  # <-- update this path
 
-    return df1
+    # run the ingestion process
+    result_extract, result_partition = fused.h3.run_ingest_raster_to_h3(
+        src_path, 
+        output_path, 
+        metrics=["avg"],
+    )
 
-@fused.cache
-def bounds_to_res(bounds, res_offset=0, max_res=14, min_res=3):
-    z = common.estimate_zoom(bounds)
-    return max(min(int(3 + max(0, z - 3) / 1.7 + res_offset), max_res), min_res)
+    # verify that the ingestion finished succesfully,
+    # and if not, print the error to help debugging
+    if not result_extract.all_succeeded():
+        print(result_extract.errors())
+    if result_partition is not None and not result_partition.all_succeeded():
+        print(result_partition.errors())
 ```
 
-## Specifying the metrics
+What is required to run this:
+- `src_path`: A raster file path or list of file paths on S3 (e.g. a
+  TIFF file, any raster format readable by GDAL)
+- `output_path`: Specify a writeble location on S3 as the output directory
+- `metrics`: Specify the metrics to compute per H3 cell: typically, multiple multiple pixel
+  values from the input raster data will be used to calculate the value for a
+  certain H3 cell. In this case of a DEM, we want the average pixel value
+  (`metrics=["avg"]`).
+
+Important to understand is that the `run_ingest_raster_to_h3` function will run
+multiple UDFs under the hood to perform the separate steps of the ingestion
+process in parallel. Therefore, the above UDF itself does not need much
+resources (the heavy lifting is done in the UDF runs it spawns) but can take
+longer than the 2-min limit of realtime UDF runs.
+
+For this small example, it runs fine on realtime. But for larger data, we will
+typically run this main UDF using a "small" batch
+instance.
+
+```python showLineNumbers
+# highlight-start
+@fused.udf(instance_type="small")
+# highlight-end
+def udf():
+    src_path = "s3://fused-asset/data/nyc_dem.tif"
+    ...
+```
+
+### What data did it create?
+
+The `run_ingest_raster_to_h3` function will write a set of files to the specified
+output directory:
+
+- A number of Parquet files with the actual ingested data
+  (`577234808489377791.parquet` in the example, but typically this will be
+  multiple files)
+- A single `_sample` metadata file, with information about the files and chunks
+  that can help speed up reading a subset of the data.
+- Overview files in the `/overview` sub-directory, such as `hex3.parquet` for
+  the overview at H3 resolution 3.
+
+For the NYC DEM example, this looks like:
+
+[Image: Files created by the ingestion process]
+
+See an example of the ingested elevation data in File
+Explorer.
+
+### Reading and visualizing the H3 dataset
+
+Both the data and overview files are Parquet files that can be read individually
+by any tool supporting the Parquet format. To make this easier, the example below
+uses the `read_h3_dataset` utility, that will automatically choose between reading
+a subset of actual data files vs overview files based on the viewport (`bounds`).
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],  # Default to full NYC
+    res: int = None,
+):
+    path = "s3://fused-users/fused/joris/nyc_dem_h3/"
+
+    # highlight-start
+    utils = fused.load("https://github.com/fusedio/udfs/tree/7a33f4b/community/joris/Read_H3_dataset/")
+    df = utils.read_h3_dataset(path, bounds, res=res)
+    # highlight-end
+
+    print(df.head())
+    return df
+```
+
+Default files (using res 14 - example file):
+```
+                   hex   data_avg                                         source_url  res
+0  634151330858880447  71.528941  s3://fused-asset/dem/3dep_tmn/georgia/USGS_1M...   14
+1  634151330858880448  71.412385  [s3://fused-asset/dem/3dep_tmn/georgia/USGS_1M...   14
+2  634151330858880449  71.334829  [s3://fused-asset/dem/3dep_tmn/georgia/USGS_1M...   14
+3  634151330858880450  71.250196  [s3://fused-asset/dem/3dep_tmn/georgia/USGS_1M...   14
+4  634151330858880451  71.195883  [s3://fused-asset/dem/3dep_tmn/georgia/USGS_1M...   14
+```
+
+[Overview files (using res 9 - example file):
+```
+                   hex   data_avg        lat        lng
+0  618202600000000000  71.259480  32.562230 -83.554810
+1  618202600000000001  81.583760  32.550860 -83.554850
+2  618202600000000002  75.432100  32.489230 -83.612340
+3  618202600000000003  89.048190  31.786910 -84.338880
+4  618202600000000004  89.011300  31.787690 -84.335540
+```
+
+The data includes a `"hex"` column with the H3 cell ids at a specific
+resolution, and one or more columns derived from the raster data. In this case
+we have `"data_avg"` (average height in the H3 cell), `"source_url"` (source raster files), and `"res"` (H3 resolution).
+
+We can visualize the data with DeckGL using the `map_utils` helper:
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],  # Default to full NYC
+    res: int = 9,
+):
+    path = "s3://fused-users/fused/joris/nyc_dem_h3/"
+
+    utils = fused.load("https://github.com/fusedio/udfs/tree/7a33f4b/community/joris/Read_H3_dataset/")
+    df = utils.read_h3_dataset(path, bounds, res=res)
+
+    map_utils = fused.load("https://github.com/fusedio/udfs/tree/7a33f4b/community/milind/map_utils")
+
+    config = 
+        }
+    }
+    return map_utils.deckgl_hex(
+        df, 
+        config=config
+    )
+```
+
+#### Specifying the metrics
 
 In the basic DEM example above, we specified `metrics=["avg"]` to get the average
 height for each H3 cell.
@@ -3633,7 +3744,7 @@ possible), but note that those aggregations are also used for creating the
 overview files when aggregating the higher resolution H3 cells to lower
 resolution data.
 
-### Counting raster values
+### Counting raster values (metrics=`cnt`)
 
 For raster with discrete or categorical pixel values, e.g. as land use data, the
 `"cnt"` metric will count the number of occurences per catgory for each H3 cell.
@@ -3679,171 +3790,25 @@ def udf(
     print(df.head())
     return df
 ```
-</details>
-
-```
-                  hex   data_avg
-0  617733122581069823  78.822576
-1  617733122610954239  78.225562
-2  617733123866886143  47.372763
-3  617733123867410431  55.030614
-4  617733123871080447  74.679518
-```
-
-In this case, we have always one row per H3 cell id (in contrast to ingested
-data using the "cnt" metric).
-
-## H3 resolution levels
-
-The `run_ingest_raster_to_h3`
-function allows to specify the H3 resolution for different aspects of the
-ingested data through the `res`, `file_res`, `chunk_res`, `overview_res`, and
-`overview_chunk_res`.
-
-### Resolution of the data (`res`)
-
-The main H3 resolution to specify is the resolution of the H3 cells in "hex"
-column in the output data. The raster data are converted to a grid of H3 cells
-at this resolution.
-
-By default (if left unspecified), the resolution is inferred from the raster
-data. Using the resolution of the raster input, it chooses an H3 resolution with
-a cell size that is as close as possible to but larger than the pixel size (at
-the center of the raster). For example, this inference gives a resolution of 11
-for a raster with pixel size of 30x30m, and a resolution of 10 for a raster with
-pixel size of 90x90m.
-
-### Dataset partitioning (`file_res` and `chunk_res`)
-
-The ingested data as Parquet dataset is spatially partitioned. In this case,
-this means that the data is sorted by the "hex" column (the H3 cells at
-resolution `res`), and further splitted into multiple files and chunks.
-
-To determine how to split the dataset in multiple files, a lower H3 resolution
-is used (`file_res`). By default, this is inferred based on the resolution `res`
-of the data, targetting to have individual files of around 100MB up to 1GB in
-size (approximately, and assuming there is one row per H3 cell).
-
-Each Parquet file is further chunked into "row groups", and by default another
-H3 resolution is used to determine this level of splitting (`chunk_res`). By
-default, this is again inferred from the data resolution, targetting chunks of
-around 1 million rows (assuming one row per H3 cell and full coverage).
-
-**Example:** for a data resolution of 10, by default a file resolution of 0 and
-chunk resolution of 3 will be used. The file resolution of 0 results in a
-maximum of 122 files for a global dataset. The chunk resolution of 3 gives a
-maximum of 343 (`7^3`) row groups, and for a dataset with full coverage and one
-row per H3 cell at the data resolution, approximately 820,000 rows (`7^(10-3)`)
-in a single file.
-
-The optimal values for those resolutions will of course depend on the
-characteristics of the input data and ingestion (raster resolution, extent,
-cardinality of the categories, which metrics are used, etc), and the desired
-trade off for file and chunk sizes (in general, smaller chunks improve the speed
-of selective queries (i.e. reading a small (spatial) subset) but slow down
-queries that have to scan the whole file). It is therefore always possible to
-override the defaults by specifying the keywords in the
-`run_ingest_raster_to_h3()`
-call.
-
-Two special cases to mention:
-
-- If you have a smaller dataset, it might not be worth splitting into multiple
-  files. In that case, specify `file_res=-1` to request a single output file.
-- The chunks can also be determined by specifying an exact size (number of
-  rows), instead of specifying an H3 resolution (`chunk_res`), using the
-  `max_rows_per_chunk` keyword instead.
-
-### Overview resolutions (`overview_res`)
-
-In addition to the actual data files at resolution `res`, the ingestion process
-also produces "overview" files in the `/overview/` sub-directory. Those files
-each have an aggregated version of the full dataset at a lower overview
-resolution (aggregated using the same metric as the actual data).
-
-The files use the naming pattern of `hex<res>.parquet`, e.g.
-`/overview/res3.parquet` for the overview file at resolution 3.
-
-By default, overviews are created for H3 resolutions 3 to 7 (or capped at `res -
-1` if data resolution is lower than 8). But you can specify a list of
-resolutions for which to create overview files by specifying the `overview_res`
-keyword.
-
-Also the overview files are chunked in row groups. By default it uses a chunk
-resolution of `overview_res - 5`, but this default can be overriden with the
-`overview_chunk_res` keyword, or by specifying a `max_rows_per_chunk`.
-
-## Ingesting multiple files
-
-The `run_ingest_raster_to_h3`
-function takes a path to a single file, a path to a directory, or a list of file
-paths as input (`src_path`). It can thus ingest a single raster file, or
-multiple raster files at once.
-
-When ingesting multiple files, each file is processed separately in the first
-step of extracting the raster values and assigning to H3 cells. And then all
-data is combined when calculating the metrics and repartitioning the data,
-before writing to Parquet. Thus, this assumes that the raster files have no overlap.
-
-For example, ingesting a subset of the Copernicus Digital Elevation Model (DEM) tiles:
 
 ```python showLineNumbers
+common = fused.load("https://github.com/fusedio/udfs/blob/main/public/common/")
 @fused.udf
-def udf():
-    # ingesting Copernicus Digital Elevation Model (DEM) data
-    # from https://copernicus-dem-90m.s3.amazonaws.com/readme.html
-    # this dataset consists of 26k tiles, listing 4 here as example
-    dem_listing = [
-        "s3://copernicus-dem-90m/Copernicus_DSM_COG_30_N51_00_E004_00_DEM/Copernicus_DSM_COG_30_N51_00_E004_00_DEM.tif",
-        "s3://copernicus-dem-90m/Copernicus_DSM_COG_30_N51_00_E005_00_DEM/Copernicus_DSM_COG_30_N51_00_E005_00_DEM.tif",
-        "s3://copernicus-dem-90m/Copernicus_DSM_COG_30_N52_00_E004_00_DEM/Copernicus_DSM_COG_30_N52_00_E004_00_DEM.tif",
-        "s3://copernicus-dem-90m/Copernicus_DSM_COG_30_N52_00_E005_00_DEM/Copernicus_DSM_COG_30_N52_00_E005_00_DEM.tif",
-    ]
-    output_path = "s3://fused-users/fused/joris/copernicus-dem-90m/"  # <-- update this path
+def udf(bounds: fused.types.Bounds = [-122.71963771127753,36.53196328805067,-120.70395948802646,38.082911654639275]):
+    res = bounds_to_res(bounds)
+    print(res)
+    releases = ['2024-02-15-alpha-0', '2024-03-12-alpha-0', '2024-08-20-0', '2024-09-18-0', '2024-10-23-0', '2024-11-13-0', '2024-12-18-0', '2025-01-22-0', '2025-03-19-1', '2025-04-23-0', '2025-05-21-0']
+    release1 = releases[-1]
+    df1 = common.read_hexfile(bounds, f"s3://fused-users/fused/sina/overture_overview//hex.parquet", clip=True)
 
-    # run the ingestion process
-    result_extract, result_partition = fused.h3.run_ingest_raster_to_h3(
-        # highlight-start
-        dem_listing,
-        # highlight-end
-        output_path,
-        metrics=["avg"],
-    )
-    ...
+    return df1
+
+@fused.cache
+def bounds_to_res(bounds, res_offset=0, max_res=14, min_res=3):
+    z = common.estimate_zoom(bounds)
+    return max(min(int(3 + max(0, z - 3) / 1.7 + res_offset), max_res), min_res)
 ```
-
-For ingesting the full dataset, you can create the list of input paths by
-listing the online S3 bucket and filtering for the desired TIFF files.
-
-## Controlling the ingestion execution
-
-The `run_ingest_raster_to_h3()` function will run
-multiple UDFs under the hood to perform the separate steps of the ingestion
-process in parallel. 
-
-The different steps:
-
-- "extract": extract the pixels values and assign to H3 cells in chunks
-- "partition": combine the chunked, extracted data per partition (file), and
-  prepare metadata and overview files
-- create the metadata `_sample` file (with information about the file and chunk
-  bounding boxes)
-- "overview": create the combined overview files
-
-The extract, partition and overview steps are each run in parallel using
-`fused.submit()`.
-
-By default, each of those steps are first tried as realtime UDF runs,
-and retry any failed runs using "large" batch instances
-(e.g. the realtime run can fail because the chunk takes too much time to process or the
-data is too big to fit in a small realtime instance).
-
-You can override this default behavior by specifying the `engine` and/or `instance_type`
-keyword to specify the exact instance you want to use for the steps.
-
-Further keywords of `fused.submit()`
-can be specified to tweak the exact execution of the steps. For example, 
-specify `max_workers` to indicate a larger number of parallel workers to use.
+</details>
 
 ================================================================================
 
@@ -14025,5 +13990,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2025-12-08
+Generated automatically from Fused documentation. Last updated: 2025-12-11
 Total sections: 3
