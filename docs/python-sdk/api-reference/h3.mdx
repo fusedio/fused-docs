@@ -20,14 +20,17 @@ run_ingest_raster_to_h3(
     overview_res: list[int] | None = None,
     overview_chunk_res: int | list[int] | None = None,
     max_rows_per_chunk: int = 0,
+    include_source_url: bool = True,
     target_chunk_size: int | None = None,
     debug_mode: bool = False,
     remove_tmp_files: bool = True,
+    tmp_path: str | None = None,
     overwrite: bool = False,
-    extract_kwargs: bool = {},
-    partition_kwargs: bool = {},
-    overview_kwargs: bool = {},
-    **kwargs: bool
+    steps: list[str] | None = None,
+    extract_kwargs: list[str] | None = {},
+    partition_kwargs: list[str] | None = {},
+    overview_kwargs: list[str] | None = {},
+    **kwargs: list[str] | None
 )
 ```
 
@@ -48,7 +51,8 @@ This process involves multiple steps:
 - **output_path** (<code>str</code>) – Path for the resulting Parquet dataset.
 - **metrics** (<code>str or list of str</code>) – The metrics to compute per H3 cell.
   Supported metrics are either "cnt" or a list containing any of
-  "avg", "min", "max", "stddev", and "sum".
+  "avg", "min", "max", "stddev", "mode" (i.e. most common value),
+  and "sum".
 - **res** (<code>int</code>) – The resolution of the H3 cells in the output data.
   The pixel values are assigned to H3 cells at resolution
   `res + res_offset` and then aggregated to `res`.
@@ -80,6 +84,10 @@ This process involves multiple steps:
 - **max_rows_per_chunk** (<code>int</code>) – The maximum number of rows per chunk in the
   resulting data and overview files. If 0 (the default), `chunk_res`
   and `overview_chunk_res` are used to determine the chunking.
+- **include_source_url** (<code>bool</code>) – If True, include a `"source_url"` column in
+  the output dataset that contains a list of source URLs that
+  contributed data to each H3 cell. Defaults to True, set to False
+  to omit this column.
 - **target_chunk_size** (<code>int</code>) – The approximate number of pixel values to
   process per chunk in the first "extract" step. Defaults to
   10,000,000 for ingesting a single file or a few files. If ingesting
@@ -91,10 +99,16 @@ This process involves multiple steps:
   debugging purposes. Defaults to False.
 - **remove_tmp_files** (<code>bool</code>) – If True, remove the temporary files after
   ingestion is complete. Defaults to True.
+- **tmp_path** (<code>str</code>) – Optional path to use for the temporary files.
+  If specified, the extract step is skipped and it is assumed that
+  the temporary files are already present at this path.
 - **overwrite** (<code>bool</code>) – If True, overwrite the output path if it already
   exists, by first removing the existing content before writing the
   new files. Defaults to False, in which case an error is raised if
   the `output_path` is not empty.
+- **steps** (<code>list of str</code>) – The processing steps to run. Can include
+  "extract", "partition", "metadata", and "overview". By default, all
+  steps are run.
 - **extract_kwargs** (<code>dict</code>) – Additional keyword arguments to pass to
   `fused.submit` for the extract step.
 - **partition_kwargs** (<code>dict</code>) – Additional keyword arguments to pass to
@@ -126,6 +140,11 @@ run_ingest_raster_to_h3(...,
     partition_kwargs={"instance_type": "medium", "max_workers": 5, "n_processes_per_worker": 2},
 )
 ```
+
+In contrast to `fused.submit` itself, the ingestion sets `n_processes_per_worker=1`
+by default to avoid out-of-memory issues on batch instances. You can
+increase this if you know the instance has enough memory to process multiple
+chunks in parallel.
 
 ---
 
