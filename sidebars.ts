@@ -23,6 +23,7 @@ const sidebars: SidebarsConfig = {
           link: { type: "doc", id: "tutorials/Analytics & Dashboard/analytics-dashboard" },
           items: [
             "tutorials/Analytics & Dashboard/standalone-maps",
+            "tutorials/Analytics & Dashboard/create-interactive-dashboards",
             "tutorials/Analytics & Dashboard/realtime-data-processing",
             "tutorials/Analytics & Dashboard/interactive-graphs-for-your-data",
             "tutorials/Analytics & Dashboard/let-anyone-talk-to-your-data",
@@ -95,6 +96,7 @@ const sidebars: SidebarsConfig = {
               },
             "tutorials/Geospatial with Fused/processing-statistics",
             "tutorials/Geospatial with Fused/visualization",
+            "tutorials/Geospatial with Fused/quality-assurance",
             {
               type: "category",
               label: "Use Cases",
