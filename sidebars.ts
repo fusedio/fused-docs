@@ -42,7 +42,16 @@ const sidebars: SidebarsConfig = {
             "tutorials/Data Science & AI/competitor_analysis",
           ],
         },
-        "tutorials/engineering-etl",
+        {
+          type: "category",
+          label: "Engineering & ETL",
+          collapsed: true,
+          link: { type: "doc", id: "tutorials/Engineering & ETL/engineering-etl" },
+          items: [
+            "tutorials/Engineering & ETL/turn-your-data-into-an-api",
+            "tutorials/Engineering & ETL/connect-your-data-to-fused",
+          ],
+        },
         // "tutorials/advanced-fused", // Remove this page once I'm done moving things back in.
         {
           type: "category",

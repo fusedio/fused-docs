@@ -537,7 +537,7 @@ If things feel a bit off, for example your UDF output looks suspicious here are 
 - Manually rerun the UDF with `Shift + Enter`
 - Check how much RAM your tab is using (in Chrome can easily do so by hovering the tab). Sometimes too much data is brought in to your browser and while we do our best to manage it properly it can get out of hand. A good old tab refresh goes a long way
 
-<ReactPlayer className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench/walkthrough-videos/docs_rewrite/refresh_edit4.mp4" width="100%" />
+<ReactPlayer className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench/walkthrough-videos/docs_rewrite/refresh_edit5.mp4" width="100%" />
 
 ================================================================================
 
@@ -7962,14 +7962,17 @@ run_ingest_raster_to_h3(
     overview_res: list[int] | None = None,
     overview_chunk_res: int | list[int] | None = None,
     max_rows_per_chunk: int = 0,
+    include_source_url: bool = True,
     target_chunk_size: int | None = None,
     debug_mode: bool = False,
     remove_tmp_files: bool = True,
+    tmp_path: str | None = None,
     overwrite: bool = False,
-    extract_kwargs: bool = ,
-    partition_kwargs: bool = ,
-    overview_kwargs: bool = ,
-    **kwargs: bool
+    steps: list[str] | None = None,
+    extract_kwargs: list[str] | None = ,
+    partition_kwargs: list[str] | None = ,
+    overview_kwargs: list[str] | None = ,
+    **kwargs: list[str] | None
 )
 ```
 
@@ -7990,7 +7993,8 @@ This process involves multiple steps:
 - **output_path** (<code>str</code>) – Path for the resulting Parquet dataset.
 - **metrics** (<code>str or list of str</code>) – The metrics to compute per H3 cell.
   Supported metrics are either "cnt" or a list containing any of
-  "avg", "min", "max", "stddev", and "sum".
+  "avg", "min", "max", "stddev", "mode" (i.e. most common value),
+  and "sum".
 - **res** (<code>int</code>) – The resolution of the H3 cells in the output data.
   The pixel values are assigned to H3 cells at resolution
   `res + res_offset` and then aggregated to `res`.
@@ -8022,6 +8026,10 @@ This process involves multiple steps:
 - **max_rows_per_chunk** (<code>int</code>) – The maximum number of rows per chunk in the
   resulting data and overview files. If 0 (the default), `chunk_res`
   and `overview_chunk_res` are used to determine the chunking.
+- **include_source_url** (<code>bool</code>) – If True, include a `"source_url"` column in
+  the output dataset that contains a list of source URLs that
+  contributed data to each H3 cell. Defaults to True, set to False
+  to omit this column.
 - **target_chunk_size** (<code>int</code>) – The approximate number of pixel values to
   process per chunk in the first "extract" step. Defaults to
   10,000,000 for ingesting a single file or a few files. If ingesting
@@ -8033,10 +8041,16 @@ This process involves multiple steps:
   debugging purposes. Defaults to False.
 - **remove_tmp_files** (<code>bool</code>) – If True, remove the temporary files after
   ingestion is complete. Defaults to True.
+- **tmp_path** (<code>str</code>) – Optional path to use for the temporary files.
+  If specified, the extract step is skipped and it is assumed that
+  the temporary files are already present at this path.
 - **overwrite** (<code>bool</code>) – If True, overwrite the output path if it already
   exists, by first removing the existing content before writing the
   new files. Defaults to False, in which case an error is raised if
   the `output_path` is not empty.
+- **steps** (<code>list of str</code>) – The processing steps to run. Can include
+  "extract", "partition", "metadata", and "overview". By default, all
+  steps are run.
 - **extract_kwargs** (<code>dict</code>) – Additional keyword arguments to pass to
   `fused.submit` for the extract step.
 - **partition_kwargs** (<code>dict</code>) – Additional keyword arguments to pass to
@@ -8068,6 +8082,11 @@ run_ingest_raster_to_h3(...,
     partition_kwargs=,
 )
 ```
+
+In contrast to `fused.submit` itself, the ingestion sets `n_processes_per_worker=1`
+by default to avoid out-of-memory issues on batch instances. You can
+increase this if you know the instance has enough memory to process multiple
+chunks in parallel.
 
 ---
 
@@ -8690,6 +8709,15 @@ Request timeout for the Fused service
 
 May be set to a tuple of connection timeout and read timeout
 
+### metadata_request_timeout
+
+```python
+metadata_request_timeout: float = 60.0
+```
+
+Request timeout for file metadata requests (e.g., /file-metadata endpoint).
+These requests may involve processing large parquet files and can take longer.
+
 ### request_max_retries
 
 ```python
@@ -8918,6 +8946,27 @@ cache_storage: StorageStr = 'auto'
 ```
 
 Specify the default cache storage type
+
+### use_process_pool_for_local_submit
+
+```python
+use_process_pool_for_local_submit: StrictBool = False
+```
+
+Use ProcessPoolExecutor instead of ThreadPoolExecutor for local engine submit.
+This avoids GDAL thread-safety issues and Python GIL limitations, but has higher
+memory overhead and slower startup time.
+
+### row_group_batch_size
+
+```python
+row_group_batch_size: int = 32768
+```
+
+Target size in bytes for combining adjacent row group downloads.
+Adjacent row groups from the same file will be combined into single downloads
+until this threshold is reached. Default is 32KB (32768 bytes), which is
+optimized for S3 performance.
 
 ### base_web_url
 
@@ -9167,6 +9216,34 @@ Path: python-sdk/changelog.mdx
 URL: https://docs.fused.io/python-sdk/changelog
 
 # Changelog
+
+## v1.29.0 (2025-12-18)
+
+**New Features:**
+- Winter holiday decorations are now added at the top of the Workbench page (this can be disabled in
+  the preferences page.)
+- `fused.submit` supports `n_processes_per_worker` to batch work together when calling realtime
+  instances.
+- Experimental: A passcode can be set on a shared canvas.
+
+**Improvements:**
+- Canvas UDF list has been redesigned to keep the UI more consistent and discoverable.
+- Canvas catalog will be cached locally.
+- Workbench Tokens and Preferences pages now show as modals above your currently opened page.
+- Upgraded DuckDB to v1.4.3.
+- Batch jobs page shows run time, shows exact memory and disk usage, and Fused will keep track
+  of additional status information about batch jobs.
+- "Fix" prompts for AI now quickly show a few options.
+- Various AI and canvas interface improvements.
+- `fused.ingest` accepts a job name, which will be shown on the batch jobs page.
+
+**Bug Fixes:**
+- Fixed a bug where 0 byte and unusually nanmed objects could not be deleted through the file explorer
+- Optimized memory usage when ingesting raster data.
+- Batch jobs page is more accurate about errors in logs.
+- Fixed a bug with using arrow keys to navigate on the canvas page.
+- Fixed a bug with passing some numpy types in `fused.submit`.
+- File Explorer will always show the file preview, even when the canvas or map builder is paused.
 
 ## v1.28.0 (2025-12-08)
 
@@ -10893,8 +10970,10 @@ See `fused.run` for more details on the UDF execution.
   the realtime engine (with a maximum of 1024), and 1 for other batch
   instances (with a maximum of 5).
 - **n_processes_per_worker** (<code>int | None</code>) – The number of processes to use per worker.
-  Always 1 for the realtime engine, but defaults to the number of cores
-  for batch engines. Specify this keyword to reduce the number of processes.
+  For realtime instances, defaults to 1 (each arg processes in its own lambda).
+  Set to >1 to chunk the arg_list and process multiple items in parallel within
+  each realtime lambda instance, reducing the total number of lambda invocations.
+  For batch instances, defaults to the number of cores.
 - **max_retry** (<code>int</code>) – The maximum number of retries for failed jobs. Defaults to 2.
 - **debug_mode** (<code>bool</code>) – If True, executes only the first item in arg_list directly using
   `fused.run()`, useful for debugging UDF execution. Default is False.
@@ -14016,5 +14095,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2025-12-11
+Generated automatically from Fused documentation. Last updated: 2025-12-29
 Total sections: 3
