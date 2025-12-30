@@ -198,6 +198,18 @@ toc_max_heading_level: 5
 sidebar_position: 2
 ---
 
+## Module Functions
+
+The following functions can be called directly from the `fused.api` module:
+
+```python
+import fused.api
+
+fused.api.function_name()
+```
+
+---
+
 """
 
 mod_api = mod["api"]
@@ -216,7 +228,7 @@ for obj in api_listing:
 methods = [
     "create_udf_access_token",
     "upload",
-    "start_job",
+    "start_job", 
     "get_jobs",
     "get_status",
     "get_logs",
@@ -231,7 +243,21 @@ config["filters"] = ["__init__"]
 # config["members_order"] = "source"
 config["summary"] = False
 docstring = render_object_docs(mod_api["FusedAPI"], config)
-result += docstring + "\n---\n\n"
+
+# Add usage note for FusedAPI instance methods directly into the class documentation
+fusedapi_note = """\
+## FusedAPI Class Methods
+
+The following methods require creating a `FusedAPI` instance first:
+
+```python
+from fused.api import FusedAPI
+api = FusedAPI()
+api.method_name()
+```
+
+"""
+result += fusedapi_note + docstring + "\n---\n\n"
 
 # `default_config["show_root_members_full_path"] = False` does not seem to work for the
 # FusedAPI methods, so add them manually with root_full_path set to False
