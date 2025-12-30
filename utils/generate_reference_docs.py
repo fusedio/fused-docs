@@ -147,6 +147,9 @@ for details.
 """
 
 for obj in api_listing:
+    if obj not in mod.members:
+        print(f"Warning: {obj} not found in fused module, skipping")
+        continue
     docstring = render_object_docs(mod[obj], default_config)
     result += docstring + "\n---\n\n"
     if obj == "ingest":
@@ -184,6 +187,7 @@ api_listing = [
     "job_cancel",
     "job_get_exec_time",
     "job_wait_for_job",
+    # Note: Functions that no longer exist will be automatically skipped with a warning
 ]
 
 result = """\
@@ -194,6 +198,18 @@ toc_max_heading_level: 5
 sidebar_position: 2
 ---
 
+## Module Functions
+
+The following functions can be called directly from the `fused.api` module:
+
+```python
+import fused.api
+
+fused.api.function_name()
+```
+
+---
+
 """
 
 mod_api = mod["api"]
@@ -201,6 +217,9 @@ mod_api = mod["api"]
 # fused.api functions
 
 for obj in api_listing:
+    if obj not in mod_api.members:
+        print(f"Warning: {obj} not found in fused.api module, skipping")
+        continue
     docstring = render_object_docs(mod_api[obj], default_config)
     result += docstring + "\n---\n\n"
 
@@ -209,7 +228,7 @@ for obj in api_listing:
 methods = [
     "create_udf_access_token",
     "upload",
-    "start_job",
+    "start_job", 
     "get_jobs",
     "get_status",
     "get_logs",
@@ -224,7 +243,21 @@ config["filters"] = ["__init__"]
 # config["members_order"] = "source"
 config["summary"] = False
 docstring = render_object_docs(mod_api["FusedAPI"], config)
-result += docstring + "\n---\n\n"
+
+# Add usage note for FusedAPI instance methods directly into the class documentation
+fusedapi_note = """\
+## FusedAPI Class Methods
+
+The following methods require creating a `FusedAPI` instance first:
+
+```python
+from fused.api import FusedAPI
+api = FusedAPI()
+api.method_name()
+```
+
+"""
+result += fusedapi_note + docstring + "\n---\n\n"
 
 # `default_config["show_root_members_full_path"] = False` does not seem to work for the
 # FusedAPI methods, so add them manually with root_full_path set to False
@@ -232,8 +265,17 @@ config["heading_level"] = default_config["heading_level"] + 1
 config["show_root_full_path"] = False
 
 for meth in methods:
+    if meth not in mod_api["FusedAPI"].members:
+        print(f"Warning: {meth} not found in FusedAPI class, skipping")
+        continue
     docstring = render_object_docs(mod_api["FusedAPI"][meth], config)
-    result += docstring + "\n---\n\n"
+    
+    # Add explicit usage instructions after each method
+    # Use inline format so it survives the ultra-compact formatting in llms.txt
+    usage_note = f"""
+**Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.{meth}()`
+"""
+    result += docstring + "\n" + usage_note + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w") as f:
     f.write(result)
@@ -306,6 +348,9 @@ config["heading_level"] = default_config["heading_level"] + 1
 config["show_root_full_path"] = False
 
 for meth in methods:
+    if meth not in mod["_submit"]["JobPool"].members:
+        print(f"Warning: {meth} not found in JobPool class, skipping")
+        continue
     docstring = render_object_docs(mod["_submit"]["JobPool"][meth], config)
     result += docstring + "\n---\n\n"
 
@@ -352,6 +397,9 @@ config["heading_level"] = default_config["heading_level"] + 1
 config["show_root_full_path"] = False
 
 for meth in methods:
+    if meth not in mod["models"]["Udf"].members:
+        print(f"Warning: {meth} not found in Udf class, skipping")
+        continue
     docstring = render_object_docs(mod["models"]["Udf"][meth], config)
     result += docstring + "\n---\n\n"
 
@@ -378,6 +426,9 @@ sidebar_position: 3
 mod_api = mod["h3"]
 
 for obj in api_listing:
+    if obj not in mod_api.members:
+        print(f"Warning: {obj} not found in fused.h3 module, skipping")
+        continue
     docstring = render_object_docs(mod_api[obj], default_config)
     result += docstring + "\n---\n\n"
 

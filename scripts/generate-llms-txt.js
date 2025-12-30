@@ -142,13 +142,32 @@ function filterHiddenParameters(content) {
 function ultraCompactFormat(content) {
   // Ultra-compact format: `func()` -> Description\nParams:\n- param (type)\nReturns: type
 
+  // Whitelist of important section headers to preserve
+  const PRESERVED_HEADERS = [
+    "Module Functions",
+    "FusedAPI Class Methods",
+  ];
+  
+  const debugPreserved = content.includes("## FusedAPI Class Methods");
+
   // First remove all the verbose markup
   content = content
     .replace(/<code>([^<]+)<\/code>/g, "$1")
     .replace(/\*\*/g, "")
     .replace(/:::note\n[\s\S]*?:::/g, "")
     .replace(/:::warning\n[\s\S]*?:::/g, "")
-    .replace(/^## [a-zA-Z_][a-zA-Z0-9_.]*\n\n/gm, "");
+    // Remove ## headers that look like function names, but preserve whitelisted ones
+    .replace(/^## ([a-zA-Z_][a-zA-Z0-9_. ]*)\n+/gm, (match, headerText) => {
+      const shouldPreserve = PRESERVED_HEADERS.some(h => headerText.includes(h));
+      if (debugPreserved && headerText.includes("FusedAPI")) {
+        console.log(`  Header match: "${headerText}" - Preserve: ${shouldPreserve}`);
+      }
+      return shouldPreserve ? match : "";
+    });
+  
+  if (debugPreserved && !content.includes("## FusedAPI Class Methods")) {
+    console.log("  ⚠ Header removed after initial replace");
+  }
 
   // Simplify Returns sections - extract just the type (do this early)
   content = content.replace(/Returns:\n\n- ([^–\n]+) –[^\n]*/g, "Returns: $1");
@@ -166,14 +185,49 @@ function ultraCompactFormat(content) {
     "`$1` - $2",
   );
 
+  // Preserve code blocks after whitelisted headers by marking them
+  // This preserves the usage examples in these specific sections
+  PRESERVED_HEADERS.forEach(header => {
+    // Match the header, any text after it, and the first code block
+    const headerPattern = new RegExp(`(## ${header}[\\s\\S]*?)(\`\`\`[\\s\\S]*?\`\`\`)`, "g");
+    content = content.replace(headerPattern, (match, beforeCode, codeBlock) => {
+      // Mark this code block as preserved by putting markers INSIDE it
+      const markedCodeBlock = codeBlock.replace(/```/g, (m, offset) => {
+        if (offset === 0) {
+          return "```___PRESERVE___";
+        }
+        return m;
+      });
+      return beforeCode + markedCodeBlock;
+    });
+  });
+
   // NOW remove Examples sections (after preserving function signatures)
   content = content.replace(/Examples:\n\n```\n[^`]*\n```\n\n/g, "");
   content = content.replace(/Examples:\n\n[^\n]*\n\n/g, "");
   content = content.replace(/Examples:\n\n/g, "");
 
+  if (debugPreserved && content.includes("## FusedAPI Class Methods")) {
+    console.log("  ✓ Still present before removing code blocks");
+  }
+  
   // Remove ALL remaining multi-line code blocks (examples, verbose signatures, etc.)
   // This catches ```python showLineNumbers and other variants
-  content = content.replace(/```[\s\S]*?```\n*/g, "");
+  // But skip blocks marked as preserved
+  content = content.replace(/```[\s\S]*?```\n*/g, (match) => {
+    // If this block was marked as preserved, keep it
+    if (match.includes("___PRESERVE___")) {
+      return match;
+    }
+    return "";
+  });
+  
+  // Clean up preservation markers
+  content = content.replace(/```___PRESERVE___/g, "```");
+  
+  if (debugPreserved && !content.includes("## FusedAPI Class Methods")) {
+    console.log("  ⚠ Header removed after removing code blocks");
+  }
 
   // Remove standalone code block markers that might remain
   content = content.replace(/```[a-z ]*\n/g, "");
@@ -187,6 +241,10 @@ function ultraCompactFormat(content) {
       return `- ${name} (${type})\n`;
     },
   );
+  
+  if (debugPreserved && !content.includes("## FusedAPI Class Methods")) {
+    console.log("  ⚠ Header removed after simplifying parameters");
+  }
 
   // Change "Parameters:" and "Arguments:" to "Params:"
   content = content.replace(/Parameters:/g, "Params:");
@@ -197,6 +255,10 @@ function ultraCompactFormat(content) {
 
   // Remove ## function headers (with backticks like ## `run_file`)
   content = content.replace(/^## `[a-zA-Z_][a-zA-Z0-9_]*`\n\n/gm, "");
+  
+  if (debugPreserved && !content.includes("## FusedAPI Class Methods")) {
+    console.log("  ⚠ Header removed after removing backtick headers");
+  }
 
   // Remove verbose parameter format: - `param` _type_ - description
   content = content.replace(
@@ -208,11 +270,24 @@ function ultraCompactFormat(content) {
   content = content.replace(/Returns:\n\n  [^\n]+\n\n/g, "");
 
   // Remove Raises sections
-  content = content.replace(/Raises:\n[\s\S]*?(?=\n\n`|\n\n###|$)/g, "");
+  // Make sure to stop before ## headers to preserve whitelisted section headers
+  content = content.replace(/Raises:\n[\s\S]*?(?=\n\n`|\n\n###|\n\n##|$)/g, "");
+  
+  if (debugPreserved && !content.includes("## FusedAPI Class Methods")) {
+    console.log("  ⚠ Header removed after removing Raises sections");
+  }
 
+  if (debugPreserved && content.includes("## FusedAPI Class Methods")) {
+    console.log("  ✓ Still present before removing --- lines");
+  }
+  
   // Remove any leftover --- lines
   content = content.replace(/\n---\n\n/g, "\n\n");
   content = content.replace(/`[^`]+` - ---/g, "");
+  
+  if (debugPreserved && !content.includes("## FusedAPI Class Methods")) {
+    console.log("  ⚠ Header removed after removing --- lines");
+  }
 
   // Filter out hidden parameters based on HIDDEN_PARAMS config
   content = filterHiddenParameters(content);
@@ -538,8 +613,30 @@ function generatePythonSdkTxt() {
       let cleanedContent = cleanMarkdownForFullText(item.fullContent);
       // Simplify Python function signatures to reduce verbosity
       cleanedContent = simplifyPythonSignatures(cleanedContent);
+      
+      // Debug: Check if headers exist before compacting
+      if (item.title === "fused.api") {
+        const hasFusedAPIHeader = cleanedContent.includes("## FusedAPI Class Methods");
+        if (hasFusedAPIHeader) {
+          console.log("✓ Found 'FusedAPI Class Methods' header before compacting");
+        } else {
+          console.log("✗ Missing 'FusedAPI Class Methods' header before compacting");
+        }
+      }
+      
       // Apply ultra-compact formatting to minimize tokens
       cleanedContent = ultraCompactFormat(cleanedContent);
+      
+      // Debug: Check if headers exist after compacting
+      if (item.title === "fused.api") {
+        const hasFusedAPIHeader = cleanedContent.includes("## FusedAPI Class Methods");
+        if (hasFusedAPIHeader) {
+          console.log("✓ Found 'FusedAPI Class Methods' header after compacting");
+        } else {
+          console.log("✗ Missing 'FusedAPI Class Methods' header after compacting");
+        }
+      }
+      
       if (cleanedContent.length > 50) {
         content += `${cleanedContent}\n\n`;
       }
