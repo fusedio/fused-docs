@@ -269,7 +269,13 @@ for meth in methods:
         print(f"Warning: {meth} not found in FusedAPI class, skipping")
         continue
     docstring = render_object_docs(mod_api["FusedAPI"][meth], config)
-    result += docstring + "\n---\n\n"
+    
+    # Add explicit usage instructions after each method
+    # Use inline format so it survives the ultra-compact formatting in llms.txt
+    usage_note = f"""
+**Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.{meth}()`
+"""
+    result += docstring + "\n" + usage_note + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w") as f:
     f.write(result)
