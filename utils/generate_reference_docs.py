@@ -147,6 +147,9 @@ for details.
 """
 
 for obj in api_listing:
+    if obj not in mod.members:
+        print(f"Warning: {obj} not found in fused module, skipping")
+        continue
     docstring = render_object_docs(mod[obj], default_config)
     result += docstring + "\n---\n\n"
     if obj == "ingest":
@@ -184,6 +187,7 @@ api_listing = [
     "job_cancel",
     "job_get_exec_time",
     "job_wait_for_job",
+    # Note: Functions that no longer exist will be automatically skipped with a warning
 ]
 
 result = """\
@@ -201,6 +205,9 @@ mod_api = mod["api"]
 # fused.api functions
 
 for obj in api_listing:
+    if obj not in mod_api.members:
+        print(f"Warning: {obj} not found in fused.api module, skipping")
+        continue
     docstring = render_object_docs(mod_api[obj], default_config)
     result += docstring + "\n---\n\n"
 
@@ -232,6 +239,9 @@ config["heading_level"] = default_config["heading_level"] + 1
 config["show_root_full_path"] = False
 
 for meth in methods:
+    if meth not in mod_api["FusedAPI"].members:
+        print(f"Warning: {meth} not found in FusedAPI class, skipping")
+        continue
     docstring = render_object_docs(mod_api["FusedAPI"][meth], config)
     result += docstring + "\n---\n\n"
 
@@ -306,6 +316,9 @@ config["heading_level"] = default_config["heading_level"] + 1
 config["show_root_full_path"] = False
 
 for meth in methods:
+    if meth not in mod["_submit"]["JobPool"].members:
+        print(f"Warning: {meth} not found in JobPool class, skipping")
+        continue
     docstring = render_object_docs(mod["_submit"]["JobPool"][meth], config)
     result += docstring + "\n---\n\n"
 
@@ -352,6 +365,9 @@ config["heading_level"] = default_config["heading_level"] + 1
 config["show_root_full_path"] = False
 
 for meth in methods:
+    if meth not in mod["models"]["Udf"].members:
+        print(f"Warning: {meth} not found in Udf class, skipping")
+        continue
     docstring = render_object_docs(mod["models"]["Udf"][meth], config)
     result += docstring + "\n---\n\n"
 
@@ -378,6 +394,9 @@ sidebar_position: 3
 mod_api = mod["h3"]
 
 for obj in api_listing:
+    if obj not in mod_api.members:
+        print(f"Warning: {obj} not found in fused.h3 module, skipping")
+        continue
     docstring = render_object_docs(mod_api[obj], default_config)
     result += docstring + "\n---\n\n"
 
