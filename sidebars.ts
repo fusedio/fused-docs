@@ -82,16 +82,16 @@ const sidebars: SidebarsConfig = {
                   "tutorials/Geospatial with Fused/h3-tiling/file-to-h3",
                   "tutorials/Geospatial with Fused/h3-tiling/dynamic-tile-to-h3",
                   "tutorials/Geospatial with Fused/h3-tiling/ingesting-dataset-to-h3",
-                  // {
-                  //   type: "category",
-                  //   label: "Analysis with H3",
-                  //   link: { type: "doc", id: "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3" },
-                  //   items: [
-                  //     "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/aggregating-h3-data",
-                  //     "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/joining-h3-datasets",
-                  //     "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/h3-zonal-stats",
-                  //   ],
-                  // },
+                  {
+                    type: "category",
+                    label: "Analysis with H3",
+                    link: { type: "doc", id: "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3" },
+                    items: [
+                      "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/aggregating-h3-data",
+                      "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/joining-h3-datasets",
+                      "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/h3-zonal-stats",
+                    ],
+                  },
                 ],
               },
             "tutorials/Geospatial with Fused/processing-statistics",
