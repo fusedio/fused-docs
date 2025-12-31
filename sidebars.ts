@@ -23,7 +23,7 @@ const sidebars: SidebarsConfig = {
           link: { type: "doc", id: "tutorials/Analytics & Dashboard/analytics-dashboard" },
           items: [
             "tutorials/Analytics & Dashboard/standalone-maps",
-            "tutorials/Analytics & Dashboard/create-interactive-dashboards",
+            // "tutorials/Analytics & Dashboard/create-interactive-dashboards",
             "tutorials/Analytics & Dashboard/realtime-data-processing",
             "tutorials/Analytics & Dashboard/interactive-graphs-for-your-data",
             "tutorials/Analytics & Dashboard/let-anyone-talk-to-your-data",
@@ -38,7 +38,7 @@ const sidebars: SidebarsConfig = {
           link: { type: "doc", id: "tutorials/Data Science & AI/data-science-ai" },
           items: [
             "tutorials/Data Science & AI/discover_data",
-            "tutorials/Data Science & AI/workflows",
+            // "tutorials/Data Science & AI/workflows",
             "tutorials/Data Science & AI/scraping",
             "tutorials/Data Science & AI/pdf_scraping",
             "tutorials/Data Science & AI/competitor_analysis",
@@ -82,21 +82,21 @@ const sidebars: SidebarsConfig = {
                   "tutorials/Geospatial with Fused/h3-tiling/file-to-h3",
                   "tutorials/Geospatial with Fused/h3-tiling/dynamic-tile-to-h3",
                   "tutorials/Geospatial with Fused/h3-tiling/ingesting-dataset-to-h3",
-                  {
-                    type: "category",
-                    label: "Analysis with H3",
-                    link: { type: "doc", id: "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3" },
-                    items: [
-                      "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/aggregating-h3-data",
-                      "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/joining-h3-datasets",
-                      "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/h3-zonal-stats",
-                    ],
-                  },
+                  // {
+                  //   type: "category",
+                  //   label: "Analysis with H3",
+                  //   link: { type: "doc", id: "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3" },
+                  //   items: [
+                  //     "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/aggregating-h3-data",
+                  //     "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/joining-h3-datasets",
+                  //     "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/h3-zonal-stats",
+                  //   ],
+                  // },
                 ],
               },
             "tutorials/Geospatial with Fused/processing-statistics",
-            "tutorials/Geospatial with Fused/visualization",
-            "tutorials/Geospatial with Fused/quality-assurance",
+            // "tutorials/Geospatial with Fused/visualization",
+            // "tutorials/Geospatial with Fused/quality-assurance",
             {
               type: "category",
               label: "Use Cases",
