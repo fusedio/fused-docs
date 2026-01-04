@@ -40,7 +40,7 @@ Aggregating means:
 - Summing values (i.e. how many people live in a H3 cell in total)
 - Taking mean / max / min / stddev (i.e. what is the average temperature in a H3 cell)
 
-Implementation:
+Example: Aggregating elevation across the US at different H3 levels
 
 You can already use the [h3_reader.read_h3_dataset](https://github.com/fusedio/udfs/tree/dd40354/community/joris/Read_H3_dataset/) and specify:
 - `res` at a specific resolutions
@@ -71,6 +71,75 @@ Example categorical data:
 Aggregating means:
 - Counting values (i.e. how many different crop types are there in a H3 cell)
 - Taking mode (i.e. what is the most common crop type in a H3 cell)
+
+Example: Aggregating Corn yields across the US at different H3 levels
+
+import LazyReactPlayer from '@site/src/components/LazyReactPlayer'
+
+<iframe 
+    style={{
+        width: "100%",
+        maxWidth: "800px", 
+        aspectRatio: "16/9",
+        height: "auto",
+        margin: "0 auto 2rem auto",
+        display: "block"
+    }}
+    src="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/geospatial/h3_aggregate_different_res_compressed.mp4" 
+    title="Video: Aggregating H3 hex data at different resolutions in Workbench"
+    frameBorder="0" 
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+    referrerPolicy="strict-origin-when-cross-origin" 
+    allowFullScreen>
+</iframe>
+
+<details>
+<summary>Expand for code</summary>
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-127.54220803198237,10.667151173068717,-66.93703570835524,55.22298640160706],
+    res: int = None,  # if left to None, hex_reader will determine resolution itself
+    data_value: int = 1,  # 1=Corn in CDL for this example
+    year: int = 2024,
+):
+    import h3.api.basic_int as h3
+    path = f"s3://fused-asset/hex/cdls_v8/year={year}/"
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/6dd2c4e/public/common/")
+    hex_reader = fused.load("https://github.com/fusedio/udfs/tree/f2b3909/community/joris/Read_H3_dataset/")
+
+    # Read all hexagons where the CDL value matches the requested data class (e.g. Corn)
+    df = hex_reader.read_h3_dataset(path, bounds, res=res, value=data_value)
+    print(df.T)
+    
+    if 'pct' not in df.columns:
+        # Dynamically compute the % of each hex covered by the specified crop type
+        data_res = h3.get_resolution(df["hex"].iloc[0])
+        print(f"{data_res=}")
+
+        con = common.duckdb_connect()
+        df = con.query(f"""
+            SELECT 
+                hex,
+                SUM(area) as total_area,
+                ANY_VALUE(data) as data,
+                h3_get_hexagon_area_avg({data_res}, 'm^2') as hex_area,
+                (SUM(area) / h3_get_hexagon_area_avg({data_res}, 'm^2')) * 100 as pct
+            FROM df 
+            WHERE data == {data_value}
+            GROUP BY hex
+        """).to_df()
+
+    print(df.shape)
+    if df.shape[0] > 0:
+        return df
+    else:
+        return None
+```
+
+</details>
 
 ## Derivative layers 
 
