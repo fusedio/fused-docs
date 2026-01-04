@@ -88,8 +88,8 @@ const sidebars: SidebarsConfig = {
                     link: { type: "doc", id: "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3" },
                     items: [
                       "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/aggregating-h3-data",
-                      "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/joining-h3-datasets",
-                      "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/h3-zonal-stats",
+                      // "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/joining-h3-datasets",
+                      // "tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/h3-zonal-stats",
                     ],
                   },
                 ],
