@@ -145,5 +145,89 @@ def udf(
 
 You can also write your own logic after reading ingested hex data. 
 
-Ex:
-- Elevation -> Calculating slope
+Example: Calculating slope from elevation
+
+<iframe 
+    style={{
+        width: "100%",
+        maxWidth: "800px", 
+        aspectRatio: "16/9",
+        height: "auto",
+        margin: "0 auto 2rem auto",
+        display: "block"
+    }}
+    src="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/geospatial/elevation_to_slope_compressed.mp4" 
+    title="Video: Calculating slope from elevation with H3 hexagons in Workbench"
+    frameBorder="0" 
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+    referrerPolicy="strict-origin-when-cross-origin" 
+    allowFullScreen>
+</iframe>
+
+<details>
+<summary>Expand for code</summary>
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],  # Default to full NYC
+):
+    path = "s3://fused-asset/hex/copernicus-dem-90m/"
+    
+    hex_reader = fused.load("https://github.com/fusedio/udfs/tree/8024b5c/community/joris/Read_H3_dataset/")
+    df = hex_reader.read_h3_dataset(path, bounds, res=None)
+
+    # return df
+
+    # Slope calculation using h3_grid_ring
+    common = fused.load("https://github.com/fusedio/udfs/tree/5b11e17/public/common/")
+    con = common.duckdb_connect()
+    qr = f"""
+    WITH hex_neighbors AS (
+        SELECT 
+            h1.hex AS hex,
+            h1.data_avg AS elevation,
+            UNNEST(h3_grid_ring(h1.hex, 1)) AS neighbor_hex
+        FROM df h1
+    ),
+    neighbor_data AS (
+        SELECT
+            n.hex,
+            n.elevation,
+            n.neighbor_hex,
+            df2.data_avg AS neighbor_elevation,
+            h3_get_hexagon_edge_length_avg(h3_get_resolution(n.hex), 'm') AS edge_length_m
+        FROM hex_neighbors n
+        JOIN df df2 ON n.neighbor_hex = df2.hex
+    ),
+    calculations AS (
+        SELECT
+            hex,
+            elevation,
+            DEGREES(ATAN(ABS(elevation - neighbor_elevation) / edge_length_m)) AS slope_deg
+        FROM neighbor_data
+    ),
+    slope_aggregated AS (
+        SELECT
+            hex,
+            elevation,
+            AVG(slope_deg) * 100 AS avg_slope_deg,
+            MAX(slope_deg) * 100 AS max_slope_deg
+        FROM calculations
+        GROUP BY hex, elevation
+    )
+    SELECT
+        s.hex,
+        ROUND(s.elevation, 2) AS elevation,
+        ROUND(s.avg_slope_deg, 2) AS avg_slope_deg,
+        ROUND(s.max_slope_deg, 2) AS max_slope_deg
+    FROM slope_aggregated s;
+    """
+    processed_df = con.execute(qr).df()
+
+    print(processed_df.describe())
+
+    return processed_df
+```
+
+</details>
