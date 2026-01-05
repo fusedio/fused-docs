@@ -18,7 +18,133 @@ This page shows the basics of performing zonal statistics on a H3 dataset
 
 ### On H3 datasets
 
+Here's a simple example, building on top of [Joining H3 datasets](/tutorials/Geospatial%20with%20Fused/h3-tiling/analysis-with-h3/joining-h3-datasets):
+1. Loading Elevation data as H3
+2. Loading Census data as H3 (from Source Coop. Read more about it in [this blogpost](/blog/cdl-census-hex/))
+3. Joining the two datasets together
+4. Calculating the zonal statistics: elevation average per census block
 
+Since the Census data is available at hex 8, we'll do this example at hex 8
+
+<details>
+<summary>Loading Elevation Hex Data (`copdem_elevation_hex8`)</summary>
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],  # Default to full NYC
+    res: int = 8,
+):
+    path = "s3://fused-asset/hex/copernicus-dem-90m/"
+    
+    hex_reader = fused.load("https://github.com/fusedio/udfs/tree/8024b5c/community/joris/Read_H3_dataset/")
+    df = hex_reader.read_h3_dataset(path, bounds, res=res)
+
+    return df
+```
+</details>
+
+<details>
+<summary>Loading Census Data as H3 (`census_h8_within_bounds`)</summary>
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    res: int = 8,
+    bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],  # Default to full NYC
+):
+    common = fused.load("https://github.com/fusedio/udfs/tree/9a3aae2/public/common/")
+
+    # Bounds to hex (to keep only hex within the current viewport)
+    hex_gdf = common.bounds_to_hex(
+        bounds,
+        res=res,
+        hex_col="hex",
+    )
+    hex_list = hex_gdf["hex"].tolist()
+
+    con = common.duckdb_connect()
+
+    qr = """
+        SELECT
+            state,
+            county,
+            POP20,
+            HOUSING20,
+            hex
+        FROM
+            's3://us-west-2.opendata.source.coop/fused/hex/release_2025_04_beta/census/2020_partitioned_h8.parquet'
+        WHERE
+            hex = ANY(?)
+    """
+
+    # Execute the parameterized query with hex_list directly
+    df = con.execute(qr, [hex_list]).df()
+
+    # Debug: show the resulting schema
+    print(df.T)
+
+    return df
+```
+</details>
+
+<details>
+<summary>Joining the two datasets (`elev_pop_merge`)</summary>
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds=[-74.556, 40.4, -73.374, 41.029], res: int=8):
+    
+    elevation = fused.run('copdem_elevation_hex8', bounds=bounds, res=res)
+    print(f"{elevation.T=}")
+
+    population = fused.run('census_h8_within_bounds', bounds=bounds, res=res)
+    print(f'{population.T=}')
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/9a3aae2/public/common/")
+    con = common.duckdb_connect()
+
+    # Joining both datasets
+    qr = f"""
+    SELECT 
+        e.hex,
+        e.data_avg as avg_elevation,
+        p.POP20 as POP20,
+        p.HOUSING20 as HOUSING20,
+        p.county as county
+    FROM elevation as e
+    LEFT JOIN population as p
+    ON e.hex = p.hex
+    """
+    join_df = con.execute(qr).df()
+    
+    return join_df
+```
+</details>
+
+Aggregating the elevation per census block:
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds=[-74.556, 40.4, -73.374, 41.029], res: int=8):
+    joined = fused.run('elev_pop_merge', bounds=bounds, res=res)
+
+    print(joined.T)
+
+    # Aggregate per county
+    county_agg = joined.groupby(['county']).agg({
+        'POP20': 'sum',
+        'HOUSING20': 'sum',
+        'avg_elevation': 'mean',
+        'hex': 'nunique'
+    }).reset_index()
+    
+    # Calculate population density and housing units per person
+    county_agg['pop_density'] = county_agg['POP20'] / county_agg['hex']
+    county_agg['housing_per_person'] = county_agg['HOUSING20'] / county_agg['POP20']
+    
+    return county_agg
+```
 
 ### What about vector data?
 
