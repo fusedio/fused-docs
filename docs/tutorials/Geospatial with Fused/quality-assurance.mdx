@@ -1,21 +1,135 @@
 ---
 id: quality-assurance
-title: Quality Assurance
-sidebar_label: 🚧 Quality Assurance
+title: Quality Assurance Tips
+sidebar_label: Quality Assurance Tips
 sidebar_position: 3
-unlisted: true
 ---
 
-# QA your Analysis
+# QA your Analysis: Tips & Best Practices
+
+This page covers some best practices to verify your work within Fused.
 
 ## Creating Visualizations in Canvas
 
-- Use canvas to create [standalone maps](/tutorials/Geospatial%20with%20Fused/visualization/#standalone-maps) of datasets
-- Create simple charts to explore data directly in canvas
+Fused Canvas allows you to create dependencies between UDFs. You can leverage this to your benefit by creating a simple chain of UDFs that visualizes a dataset for you
+
+import LazyReactPlayer from '@site/src/components/LazyReactPlayer'
+
+<LazyReactPlayer 
+    url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/geospatial/qa_with_map.mp4"
+    playing={true}
+    muted={true}
+    loop={true}
+    controls={true}
+    width="100%"
+    height="auto"
+    style={{
+        maxWidth: "800px",
+        margin: "0 auto 2rem auto",
+        display: "block",
+        aspectRatio: "16/9"
+    }}
+/>
+
+- Each time you rerun AND save the UDF, the downstream map will be re-rendered (be sure to set `cache_max_age=0` in the downstream UDF to avoid caching the result)
+
+<details>
+<summary>Example: Visualizing a dataset in Canvas</summary>
+
+Data UDF (here called `copdem_elevation_hex6`):
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],  # Default to full NYC
+    res: int = 6,
+):
+    path = "s3://fused-asset/hex/copernicus-dem-90m/"
+    
+    hex_reader = fused.load("https://github.com/fusedio/udfs/tree/8024b5c/community/joris/Read_H3_dataset/")
+    df = hex_reader.read_h3_dataset(path, bounds, res=res)
+
+    return df
+```
+
+Map UDF:
+
+```python showLineNumbers {1}
+@fused.udf(cache_max_age=0) # Be sure to set cache_max_age to 0 to avoid caching the result
+def udf(
+    bounds: fused.types.Bounds = [-74.556, 40.4, -73.374, 41.029],
+    res: int = 6,
+):
+    map_utils = fused.load(
+        "https://github.com/fusedio/udfs/tree/6fc554d/community/milind/map_utils/"
+    )
+    df = fused.run("copdem_elevation_hex6", bounds=bounds, res=res)
+
+    config = {
+        "hexLayer": {
+            "@@type": "H3HexagonLayer",
+            "stroked": True,
+            "filled": True,
+            "pickable": True,
+            "getLineColor": [100, 100, 100, 200],
+            "getLineWidth": 2,
+            "getFillColor": {
+                "@@function": "colorContinuous", 
+                "attr": "data_avg", 
+                "domain": [0, 100], 
+                "colors": "Earth"
+            },
+            "tooltipColumns": ["data_avg"]
+        }
+    }
+
+    return map_utils.deckgl_hex(df, config=config, layers=[{"type": "hex", "data": df, "config": config, "name": "Elevation"}])
+```
+</details>
+
+Helpful when:
+- You want to always have an up-to-date visualization of your data directly in Canvas
+- You want to share a visualization with someone else without having to export it to a file (every UDF is standalone in Canvas)
+
+Related docs:
+- Use Canvas to create [standalone maps](/tutorials/Geospatial%20with%20Fused/visualization/#standalone-maps) of datasets
+- [Canvas Catalog](/tutorials/Geospatial%20with%20Fused/canvas-catalog): Example of Fused Canvases using standalone maps
 
 ## Compare Results in UDF Builder view
 
-- QA proper hex ingestion
-    - Go to UDF builder to visualize multiple layers
-    - Layer 1: raster
-    - Layer 2: hex tiles
+The [UDF Builder view](/workbench/udf-builder/) allows you to visualize multiple layers of data at once. This is a great way to QA your data.
+
+<LazyReactPlayer 
+    url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/geospatial/qa_udf_viewer_multi_layer.mp4"
+    playing={true}
+    muted={true}
+    loop={true}
+    controls={true}
+    width="100%"
+    height="auto"
+    style={{
+        maxWidth: "800px",
+        margin: "0 auto 2rem auto",
+        display: "block",
+        aspectRatio: "16/9"
+    }}
+/>
+
+Helpful when:
+- Working with different geospatial data sources covering the same area. For example:
+    - Comparing the original raster dataset to the ingested H3 version
+    - Working with different time periods of the same dataset (e.g. comparing 2024 vs 2025)
+- You want to get a quick look at the data at scale by leveraging the [Tile mode](/tutorials/Geospatial%20with%20Fused/filetile/#tile-udf)
+- You don't need a sharable visualization but simply want to visually inspect your data as part of your QA process
+
+Related docs:
+- [UDF Builder view](/workbench/udf-builder/)
+- [Single / Tile UDFs](/tutorials/Geospatial%20with%20Fused/filetile)
+
+## More Tips & Best Practices
+- [UDF Best Practices](/core-concepts/best-practices/udf-best-practices)
+    - Use print statements
+    - Type your inputs
+- [Workbench Best Practices](/core-concepts/best-practices/workbench-best-practices)
+    - [Use `return` to quickly explore data](/core-concepts/best-practices/workbench-best-practices#use-return-to-quickly-explore-data)
+    - [Visualization tips](/core-concepts/best-practices/workbench-best-practices#%EF%B8%8F-visualizing-results)

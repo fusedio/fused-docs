@@ -96,7 +96,7 @@ const sidebars: SidebarsConfig = {
               },
             "tutorials/Geospatial with Fused/processing-statistics",
             "tutorials/Geospatial with Fused/visualization",
-            // "tutorials/Geospatial with Fused/quality-assurance",
+            "tutorials/Geospatial with Fused/quality-assurance",
             {
               type: "category",
               label: "Use Cases",
