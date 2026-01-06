@@ -229,6 +229,10 @@ const config: Config = {
           //   from: ["/basics/user-guide/"],
           // },
           {
+            to: "/workbench/udf-explorer",
+            from: ["/workbench/udf-catalog"],
+          },
+          {
             to: "/workbench/udf-builder/code-editor/",
             from: ["/workbench/udf-editor/"],
           },
