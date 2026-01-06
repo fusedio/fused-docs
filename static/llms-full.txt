@@ -3314,6 +3314,10 @@ After ingesting a dataset to H3 hexagons it's possible to visualize it in Fused 
 
 This page shows how to aggregate data at different resolutions or create derivative layers.
 
+[Image: Aggregating H3 Data]
+
+Example aggregating elevation data across the US at different H3 resolutions:
+
 ```python showLineNumbers
 @fused.udf
 def udf(
@@ -3322,7 +3326,7 @@ def udf(
     path = "s3://fused-asset/hex/copernicus-dem-90m/"
     hex_reader = fused.load("https://github.com/fusedio/udfs/tree/8024b5c/community/joris/Read_H3_dataset/")
 
-    df = hex_reader.read_h3_dataset(path, bounds, res=None)
+    df = hex_reader.read_h3_dataset(path, bounds, res=None) # res=None lets the hex_reader determine the resolution based on the current bounds
 
     return df
 ```
@@ -3488,23 +3492,266 @@ def udf(
 
 ================================================================================
 
-## H3 Zonal Stats
+## H3 Zonal Statistics
 Path: tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/h3-zonal-stats.mdx
-Status: UNLISTED
 URL: https://docs.fused.io/tutorials/Geospatial%20with%20Fused/h3-tiling/analysis-with-h3/h3-zonal-stats
 
-# Zonal Stats
+# Zonal Statistics
 
-## Zonal Stats on another H3 dataset
+Zonal statistics across raster & vector data can be quite computationally expensive. H3 hexagons allow performing all operations as tabular data which can be done more efficiently. 
 
-## Zonal Stats on vector data
+This page shows the basics of performing zonal statistics on an H3 dataset.
+
+[Image: Zonal Statistics using H3]
+
+### On H3 datasets
+
+Here's a simple example, building on top of the previous Joining H3 datasets section:
+1. Loading Elevation data as H3
+2. Loading Census data as H3 (from Source Coop. Read more about it in this blogpost)
+3. Joining the two datasets together
+4. Calculating the zonal statistics: elevation average per census block
+
+Since the Census data is available at H3 resolution 8, we'll use that resolution for this example
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],  # Default to full NYC
+    res: int = 8,
+):
+    path = "s3://fused-asset/hex/copernicus-dem-90m/"
+    
+    hex_reader = fused.load("https://github.com/fusedio/udfs/tree/8024b5c/community/joris/Read_H3_dataset/")
+    df = hex_reader.read_h3_dataset(path, bounds, res=res)
+
+    return df
+```
+
+Returns:
+| hex               | data_avg    |
+|-------------------|-------------|
+| 613229565577683967 |     0.00    |
+| 613229565577949183 |     0.00    |
+|        ...        |     ...     |
+| 613229775390183935 |    39.12    |
+| 613229775390449151 |     0.00    |
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    res: int = 8,
+    bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],  # Default to full NYC
+):
+    common = fused.load("https://github.com/fusedio/udfs/tree/9a3aae2/public/common/")
+
+    # Bounds to hex (to keep only hex within the current viewport)
+    hex_gdf = common.bounds_to_hex(
+        bounds,
+        res=res,
+        hex_col="hex",
+    )
+    hex_list = hex_gdf["hex"].tolist()
+
+    con = common.duckdb_connect()
+
+    qr = """
+        SELECT
+            state,
+            county,
+            POP20,
+            HOUSING20,
+            hex
+        FROM
+            's3://us-west-2.opendata.source.coop/fused/hex/release_2025_04_beta/census/2020_partitioned_h8.parquet'
+        WHERE
+            hex = ANY(?)
+    """
+
+    # Execute the parameterized query with hex_list directly
+    df = con.execute(qr, [hex_list]).df()
+
+    # Debug: show the resulting schema
+    print(df.T)
+
+    return df
+```
+
+Returns:
+|   state   |  county |  POP20  | HOUSING20 |        hex         |
+|-----------|---------|---------|-----------|--------------------|
+|    36     |  36005  |   0     |     0     | 613229520649977855 |
+|    34     |  34023  |  675    |   225     | 613229784635277311 |
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds=[-74.556, 40.4, -73.374, 41.029], res: int=8):
+    
+    elevation = fused.run('copdem_elevation_hex8', bounds=bounds, res=res)
+    print(f"")
+
+    population = fused.run('census_h8_within_bounds', bounds=bounds, res=res)
+    print(f'')
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/9a3aae2/public/common/")
+    con = common.duckdb_connect()
+
+    # Joining both datasets
+    qr = f"""
+    SELECT 
+        e.hex,
+        e.data_avg as avg_elevation,
+        p.POP20 as POP20,
+        p.HOUSING20 as HOUSING20,
+        p.county as county
+    FROM elevation as e
+    LEFT JOIN population as p
+    ON e.hex = p.hex
+    """
+    join_df = con.execute(qr).df()
+    
+    return join_df
+```
+
+Returns:
+
+|        hex         | avg_elevation |  POP20  | HOUSING20 | county  |
+|--------------------|---------------|---------|-----------|---------|
+| 613229520649977855 |   0.215818    |    0    |     0     | 36005   |
+| 613229784635277311 |   8.421718    |   675   |   225     | 34023   |
+| 613229531395784703 |     0.0       |   NA    |    NA     |  None   |
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds=[-74.556, 40.4, -73.374, 41.029], res: int=8):
+
+    # Load data
+    zonal_stats = fused.run('county_pop_housing', bounds=bounds, res=res)
+    print(zonal_stats.T)
+    # Prepare data for chart
+    df_plot = zonal_stats[['county', 'avg_elevation']].copy()
+    # Ensure county is string for axis
+    df_plot['county'] = df_plot['county'].astype(str)
+    chart = alt.Chart(df_plot).mark_bar().encode(
+        x=alt.X('county:N', sort='-y', title='County'),
+        y=alt.Y('avg_elevation:Q', title='Avg Elevation'),
+        tooltip=['county', 'avg_elevation']
+    ).properties(
+        width=800,
+        height=400,
+        title='Average Elevation per County'
+    )
+    # Return as HTML
+    return chart.to_html()
+```
+
+</details>
+
+[Image: Average Elevation per County]
+
+### What about vector data?
+
+In most cases, the data we want to analyze is in vector format (building footprints, census blocks, zip codes, etc.). The steps are simply:
+
+- Transform the vector data into an H3 dataset (more info in this section)
+- Follow the same steps as in the previous section
 
 ================================================================================
 
 ## Join
 Path: tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/joining-h3-datasets.mdx
-Status: UNLISTED
 URL: https://docs.fused.io/tutorials/Geospatial%20with%20Fused/h3-tiling/analysis-with-h3/joining-h3-datasets
+
+# Join
+
+This page shows how to join two H3 hexagon datasets. This allows merging different datasets together to simplify analysis as each cell contains all the data. 
+
+This is particularly helpful when working with:
+- Datasets in different spatial projections
+- Sparse datasets like location data
+- Datasets of different resolutions or types
+
+[Image: Joining H3 Datasets]
+
+### Assumptions
+
+We assume both datasets:
+- Use `hex` as the H3 hexagon column name (as would be the case for any ingested H3 dataset through Fused)
+- Are accessible at the same hex resolutions
+
+### Joining logic
+
+We use DuckDB to join the datasets together. 
+
+Using the example from the previous "Aggregate" section, we can join the elevation & crop data layer together.
+
+Elevation dataset (UDF catalog link):
+
+|         hex         |   data_avg   |
+|---------------------|--------------|
+| 599718693687615487  | 14.60947     |
+| 599718693687877631  | 31.12178     |
+| ...                 | ...          |
+| 599718693688401919  | 23.30812     |
+| 599718693688664063  | 45.28209     |
+
+Crop Data Layer dataset (filtering to only show corn, i.e. `data_value=1` UDF Catalog Link):
+
+| hex               | data | area      |
+|-------------------|------|-----------|
+| 600179630763671551| 1    | 507124    |
+| 600179630763671551| 1    | 3537      |
+| ...               | ...  | ...       |
+| 600181356234760191| 1    | 172089    |
+| 600191310987132927| 1    | 801       |
+
+We can join both tables together on the `hex` column:
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds=[-74.556, 40.4, -73.374, 41.029],
+    res: int = 5,
+):
+    # These are the two datasets coming from the previous "Aggregate" section
+    elevation = fused.run('copdem_elevation', bounds=bounds, res=res)
+    cdl = fused.run("reading_cdl_2024_hex_simplified", bounds=bounds, res=res, data_value=1)
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/9a3aae2/public/common/")
+    con = common.duckdb_connect()
+
+    qr = f"""
+    SELECT 
+        e.hex,
+        e.data_avg as elevation_data,
+        c.data as cdl_data,
+        c.total_area as cdl_total_area
+    FROM elevation as e
+    LEFT JOIN cdl as c
+    ON e.hex = c.hex
+    """
+
+    return con.execute(qr).df()
+```
+
+Returns the following table:
+
+| hex                 | elevation_data | cdl_data | cdl_total_area |
+|---------------------|---------------|----------|---------------|
+| 599650080954204159  | 289.9432      | 1.0      | 74533290      |
+| 599650080954466303  | 257.9233      | 1.0      | 90340230      |
+| ...                 | ...           | ...      | ...           |
+| 599671053654220799  | 203.5272      | 1.0      | 97844060      |
+| 599671261723484159  | 306.1185      | 1.0      | 121949200     |
+
+### Example
+
+- Environmental Variable Exploration canvas merging all these variables into a single dataset:
+    - Crop Data Layer
+    - Land Irrigation
+    - Soil Type
+    - Temperature
+    - Precipitation
 
 ================================================================================
 
@@ -4376,24 +4623,95 @@ def udf(n_points: int=1000, buffer: float=0.0025):
 
 ================================================================================
 
-## Quality Assurance
+## Quality Assurance Tips
 Path: tutorials/Geospatial with Fused/quality-assurance.mdx
-Status: UNLISTED
 URL: https://docs.fused.io/tutorials/Geospatial%20with%20Fused/quality-assurance
 
-# QA your Analysis
+# QA your Analysis: Tips & Best Practices
+
+This page covers some best practices to verify your work within Fused.
 
 ## Creating Visualizations in Canvas
 
-- Use canvas to create standalone maps of datasets
-- Create simple charts to explore data directly in canvas
+Fused Canvas allows you to create dependencies between UDFs. You can leverage this to your benefit by creating a simple chain of UDFs that visualizes a dataset for you
+
+Data UDF (here called `copdem_elevation_hex6`):
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],  # Default to full NYC
+    res: int = 6,
+):
+    path = "s3://fused-asset/hex/copernicus-dem-90m/"
+    
+    hex_reader = fused.load("https://github.com/fusedio/udfs/tree/8024b5c/community/joris/Read_H3_dataset/")
+    df = hex_reader.read_h3_dataset(path, bounds, res=res)
+
+    return df
+```
+
+Map UDF:
+
+```python showLineNumbers 
+@fused.udf(cache_max_age=0) # Be sure to set cache_max_age to 0 to avoid caching the result
+def udf(
+    bounds: fused.types.Bounds = [-74.556, 40.4, -73.374, 41.029],
+    res: int = 6,
+):
+    map_utils = fused.load(
+        "https://github.com/fusedio/udfs/tree/6fc554d/community/milind/map_utils/"
+    )
+    df = fused.run("copdem_elevation_hex6", bounds=bounds, res=res)
+
+    config = ,
+            "tooltipColumns": ["data_avg"]
+        }
+    }
+
+    return map_utils.deckgl_hex(df, config=config, layers=[])
+```
+</details>
+
+Helpful when:
+- You want to always have an up-to-date visualization of your data directly in Canvas
+- You want to share a visualization with someone else without having to Related docs:
+- Use Canvas to create standalone maps of datasets
+- Canvas Catalog: Example of Fused Canvases using standalone maps
 
 ## Compare Results in UDF Builder view
 
-- QA proper hex ingestion
-    - Go to UDF builder to visualize multiple layers
-    - Layer 1: raster
-    - Layer 2: hex tiles
+The UDF Builder view allows you to visualize multiple layers of data at once. This is a great way to QA your data.
+
+<LazyReactPlayer 
+    url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/geospatial/qa_udf_viewer_multi_layer.mp4"
+    playing=
+    muted=
+    loop=
+    controls=
+    width="100%"
+    height="auto"
+    style=}
+/>
+
+Helpful when:
+- Working with different geospatial data sources covering the same area. For example:
+    - Comparing the original raster dataset to the ingested H3 version
+    - Working with different time periods of the same dataset (e.g. comparing 2024 vs 2025)
+- You want to get a quick look at the data at scale by leveraging the Tile mode
+- You don't need a shareable visualization but simply want to visually inspect your data as part of your QA process
+
+Related docs:
+- UDF Builder view
+- Single / Tile UDFs
+
+## More Tips & Best Practices
+- UDF Best Practices
+    - Use print statements
+    - Type your inputs
+- Workbench Best Practices
+    - Use `return` to quickly explore data
+    - Visualization tips
 
 ================================================================================
 
@@ -14324,5 +14642,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-01-05
+Generated automatically from Fused documentation. Last updated: 2026-01-06
 Total sections: 3

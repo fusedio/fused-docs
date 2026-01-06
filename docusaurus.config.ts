@@ -12,7 +12,7 @@ const config: Config = {
     fusedPyVersion: '1.20.1',
   },
 
-  trailingSlash: undefined,
+  trailingSlash: false,
   
   // Production URL configuration
   url: process.env.DEPLOYMENT_URL || "https://docs.fused.io",
@@ -228,6 +228,10 @@ const config: Config = {
           //   to: "/user-guide/",
           //   from: ["/basics/user-guide/"],
           // },
+          {
+            to: "/workbench/udf-explorer",
+            from: ["/workbench/udf-catalog"],
+          },
           {
             to: "/workbench/udf-builder/code-editor/",
             from: ["/workbench/udf-editor/"],
