@@ -1,0 +1,150 @@
+---
+sidebar_label: fused.h3
+title: fused.h3
+toc_max_heading_level: 5
+sidebar_position: 3
+---
+
+## fused.h3.run_ingest_raster_to_h3
+
+```python
+run_ingest_raster_to_h3(
+    src_path: str | list[str],
+    output_path: str,
+    metrics: str | list[str] = "cnt",
+    res: int | None = None,
+    k_ring: int = 1,
+    res_offset: int = 1,
+    chunk_res: int | None = None,
+    file_res: int | None = None,
+    overview_res: list[int] | None = None,
+    overview_chunk_res: int | list[int] | None = None,
+    max_rows_per_chunk: int = 0,
+    include_source_url: bool = True,
+    target_chunk_size: int | None = None,
+    debug_mode: bool = False,
+    remove_tmp_files: bool = True,
+    tmp_path: str | None = None,
+    overwrite: bool = False,
+    steps: list[str] | None = None,
+    extract_kwargs: list[str] | None = {},
+    partition_kwargs: list[str] | None = {},
+    overview_kwargs: list[str] | None = {},
+    **kwargs: list[str] | None
+)
+```
+
+Run the raster to H3 ingestion process.
+
+This process involves multiple steps:
+
+- extract pixels values and assign to H3 cells in chunks (extract step)
+- combine the chunks per partition (file) and prepare metadata (partition step)
+- create the metadata `_sample` file and overviews files
+
+**Parameters:**
+
+- **src_path** (<code>str, list</code>) – Path(s) to the input raster data.
+  When this is a single path, the file is chunked up for processing
+  based on `target_chunk_size`. When this is a list of paths, each
+  file is processed as one chunk.
+- **output_path** (<code>str</code>) – Path for the resulting Parquet dataset.
+- **metrics** (<code>str or list of str</code>) – The metrics to compute per H3 cell.
+  Supported metrics are either "cnt" or a list containing any of
+  "avg", "min", "max", "stddev", "mode" (i.e. most common value),
+  and "sum".
+- **res** (<code>int</code>) – The resolution of the H3 cells in the output data.
+  The pixel values are assigned to H3 cells at resolution
+  `res + res_offset` and then aggregated to `res`.
+  By default, this is inferred based on the resolution of the
+  input data ensuring the H3 cell size is close to the pixel size
+  (e.g. for a raster with pixel size of 30x30m, a resolution of 11
+  is inferred).
+- **k_ring** (<code>int</code>) – The k-ring distance at resolution `res + res_offset`
+  to which the pixel value is assigned (in addition to the center
+  cell). Defaults to 1.
+- **res_offset** (<code>int</code>) – Offset to child resolution (relative to `res`) at
+  which to assign the raw pixel values to H3 cells.
+- **file_res** (<code>int</code>) – The H3 resolution to chunk the resulting files of the
+  Parquet dataset. By default will be inferred based on the target
+  resolution `res`. You can specify `file_res=-1` to have a single
+  output file.
+- **chunk_res** (<code>int</code>) – The H3 resolution to chunk the row groups within
+  each file of the Parquet dataset (ignored when `max_rows_per_chunk`
+  is specified). By default will be inferred based on the target
+  resolution `res`.
+- **overview_res** (<code>list of int</code>) – The H3 resolutions for which to create
+  overview files. By default, overviews are created for resolutions 3
+  to 7 (or capped at a lower value if the `res` of the output dataset
+  is lower).
+- **overview_chunk_res** (<code>int or list of int</code>) – The H3 resolution(s) to chunk
+  the row groups within each overview file of the Parquet dataset. By
+  default, each overview file is chunked at the overview resolution
+  minus 5 (clamped between 0 and the `res` of the output dataset).
+- **max_rows_per_chunk** (<code>int</code>) – The maximum number of rows per chunk in the
+  resulting data and overview files. If 0 (the default), `chunk_res`
+  and `overview_chunk_res` are used to determine the chunking.
+- **include_source_url** (<code>bool</code>) – If True, include a `"source_url"` column in
+  the output dataset that contains a list of source URLs that
+  contributed data to each H3 cell. Defaults to True, set to False
+  to omit this column.
+- **target_chunk_size** (<code>int</code>) – The approximate number of pixel values to
+  process per chunk in the first "extract" step. Defaults to
+  10,000,000 for ingesting a single file or a few files. If ingesting
+  more than 20 files, each file is processed as a single chunk by
+  default, but you can override this by specifying a specific
+  `target_chunk_size` value, or by specifying `target_chunk_size=0` to
+  always process each file as a single chunk.
+- **debug_mode** (<code>bool</code>) – If True, run only the first two chunks for
+  debugging purposes. Defaults to False.
+- **remove_tmp_files** (<code>bool</code>) – If True, remove the temporary files after
+  ingestion is complete. Defaults to True.
+- **tmp_path** (<code>str</code>) – Optional path to use for the temporary files.
+  If specified, the extract step is skipped and it is assumed that
+  the temporary files are already present at this path.
+- **overwrite** (<code>bool</code>) – If True, overwrite the output path if it already
+  exists, by first removing the existing content before writing the
+  new files. Defaults to False, in which case an error is raised if
+  the `output_path` is not empty.
+- **steps** (<code>list of str</code>) – The processing steps to run. Can include
+  "extract", "partition", "metadata", and "overview". By default, all
+  steps are run.
+- **extract_kwargs** (<code>dict</code>) – Additional keyword arguments to pass to
+  `fused.submit` for the extract step.
+- **partition_kwargs** (<code>dict</code>) – Additional keyword arguments to pass to
+  `fused.submit` for the partition step.
+- **overview_kwargs** (<code>dict</code>) – Additional keyword arguments to pass to
+  `fused.submit` for the overview step.
+
+The extract, partition and overview steps are run in parallel using
+[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit). By default, the function will first attempt to run this using
+"realtime" instances, and retry any failed runs using "large" instances.
+
+You can override this behavior by specifying the `engine`, `instance_type`,
+`max_workers`, `n_processes_per_worker`, etc parameters as additional
+keyword arguments to this function (`**kwargs`). If you want to specify
+those per step, use `extract_kwargs`, `partition_kwargs`, and `overview_kwargs`.
+For example, to run everything locally on the same machine where this
+function runs, use:
+
+```
+run_ingest_raster_to_h3(..., engine="local")
+```
+
+To run the extract step on realtime and the partition step on medium
+instance, you could do:
+
+```
+run_ingest_raster_to_h3(...,
+    extract_kwargs={"instance_type": "realtime", "max_workers": 256, "max_retry": 1},
+    partition_kwargs={"instance_type": "medium", "max_workers": 5, "n_processes_per_worker": 2},
+)
+```
+
+In contrast to `fused.submit` itself, the ingestion sets `n_processes_per_worker=1`
+by default to avoid out-of-memory issues on batch instances. You can
+increase this if you know the instance has enough memory to process multiple
+chunks in parallel.
+
+---
+
