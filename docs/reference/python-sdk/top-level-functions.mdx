@@ -1,0 +1,297 @@
+---
+sidebar_label: Top-Level Functions
+title: Top-Level Functions
+toc_max_heading_level: 4
+sidebar_position: 2
+---
+
+## @fused.udf
+
+```python
+udf(
+    fn: Optional[Callable] = None,
+    *,
+    name: Optional[str] = None,
+    cache_max_age: Optional[str] = None,
+    instance_type: Optional[str] = None,
+    disk_size_gb: Optional[int] = None,
+    region: Optional[str] = None,
+    default_parameters: Optional[Dict[str, Any]] = None,
+    headers: Optional[Sequence[Union[str, Header]]] = None,
+    **kwargs: dict[str, Any]
+) -> Callable[..., Udf]
+```
+
+A decorator that transforms a function into a Fused UDF.
+
+**Parameters:**
+
+- **name** (<code>Optional[str]</code>) – The name of the UDF object. Defaults to the name of the function.
+
+- **cache_max_age** (<code>Optional[str]</code>) – The maximum age when returning a result from the cache.
+
+- **instance_type** (<code>Optional[str]</code>) – The type of instance to use for remote execution ('realtime',
+  or 'small', 'medium', 'large' or one of the whitelisted instance types).
+  If not specified (and also not specified in `fused.run()`, defaults
+  to 'realtime'.
+
+- **disk_size_gb** (<code>Optional[int]</code>) – The size of the disk in GB to use for remote execution
+  (only supported for a batch instance type).
+
+- **default_parameters** (<code>Optional\[Dict[str, Any]\]</code>) – Parameters to embed in the UDF object, separately from the arguments
+  list of the function. Defaults to None for empty parameters.
+
+- **headers** (<code>Optional\[Sequence\[Union[str, Header]\]\]</code>) – A list of files to include as modules when running the UDF. For example,
+  when specifying `headers=['my_header.py']`, inside the UDF function it may be
+  referenced as:
+
+  ```py
+  import my_header
+  my_header.my_function()
+  ```
+
+  Defaults to None for no headers.
+
+**Returns:**
+
+- <code>Callable[..., Udf]</code> – A callable that represents the transformed UDF.
+
+**Examples:**
+
+```py
+@fused.udf
+def udf(bbox, table_path="s3://fused-asset/infra/building_msft_us"):
+    gdf = table_to_tile(bbox, table=table_path)
+    return gdf
+```
+
+---
+
+## @fused.cache
+
+```python
+cache(
+    func: Callable[..., Any] | None = None,
+    cache_max_age: str | int = DEFAULT_CACHE_MAX_AGE,
+    cache_folder_path: str = "tmp",
+    concurrent_lock_timeout: str | int = 120,
+    cache_reset: bool | None = None,
+    cache_storage: StorageStr | None = None,
+    cache_key_exclude: Iterable[str] = None,
+    cache_verbose: bool | None = None,
+    **kwargs: Any
+) -> Callable[..., Any]
+```
+
+Decorator to cache the return value of a function.
+
+**Parameters:**
+
+- **func** (<code>Callable</code>) – The function to be decorated.
+- **cache_max_age** (<code>str | int</code>) – Supported units: seconds (s), minutes (m), hours (h), days (d). E.g. "48h", "10s".
+- **cache_folder_path** (<code>str</code>) – Folder to append to the configured cache directory.
+- **cache_reset** (<code>bool | None</code>) – Ignore `cache_max_age` and overwrite cached result.
+- **cache_storage** (<code>StorageStr | None</code>) – "auto", "mount" or "local".
+- **cache_key_exclude** (<code>Iterable[str]</code>) – Parameter names to exclude from the cache key.
+- **cache_verbose** (<code>bool | None</code>) – Print a message when a cached result is returned.
+
+**Examples:**
+
+```py
+@fused.cache(cache_max_age="24h")
+def load_data(path):
+    return pd.read_parquet(path)
+```
+
+> 📖 **Guide:** See [Caching Guide](/core-concepts/cache/) for best practices.
+
+---
+
+## fused.load
+
+```python
+load(
+    url_or_udf: Union[str, Path],
+    /,
+    *,
+    cache_key: Any = None,
+    import_globals: bool = True,
+) -> AnyBaseUdf
+```
+
+Loads a UDF from GitHub URLs, Fused identifiers, or local paths.
+
+**Parameters:**
+
+- **url_or_udf** (<code>Union[str, Path]</code>) – GitHub URL, "email/udf_name", or local file path.
+- **cache_key** (<code>Any</code>) – Optional caching key.
+- **import_globals** (<code>bool</code>) – Expose globals as UDF attributes (default True).
+
+**Examples:**
+
+```py
+# From GitHub
+udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/REM_with_HyRiver/")
+
+# From Fused
+udf = fused.load("username@fused.io/REM_with_HyRiver")
+```
+
+---
+
+## fused.run
+
+```python
+run(
+    udf: Union[str, None, UdfJobStepConfig, Udf, UdfAccessToken] = None,
+    *,
+    x: Optional[int] = None,
+    y: Optional[int] = None,
+    z: Optional[int] = None,
+    sync: bool = True,
+    engine: Optional[Literal["remote", "local"]] = None,
+    instance_type: Optional[InstanceType] = None,
+    type: Optional[Literal["tile", "file"]] = None,
+    max_retry: int = 0,
+    cache_max_age: Optional[str] = None,
+    cache: bool = True,
+    parameters: Optional[Dict[str, Any]] = None,
+    **kw_parameters
+) -> ResultType
+```
+
+Executes a UDF locally or remotely.
+
+**Parameters:**
+
+- **udf** – UDF name, token, object, or config.
+- **engine** – `"remote"` (default) or `"local"`.
+- **instance_type** – `"realtime"`, `"small"`, `"medium"`, `"large"`.
+- **cache_max_age** – Cache duration (e.g. "48h", "10s").
+- **cache** – Set to `False` to disable caching.
+
+**Examples:**
+
+```py
+# Run by name
+fused.run("username@fused.io/my_udf_name")
+
+# Run locally
+fused.run(my_udf, engine="local")
+
+# Run with parameters
+fused.run(my_udf, my_param="value")
+```
+
+---
+
+## fused.submit
+
+```python
+submit(
+    udf: AnyBaseUdf | FunctionType | str,
+    arg_list: list | pd.DataFrame,
+    *,
+    engine: Literal["remote", "local"] | None = "remote",
+    max_workers: int | None = None,
+    max_retry: int = 2,
+    debug_mode: bool = False,
+    collect: bool = True,
+    cache_max_age: str | None = None,
+    **kwargs
+) -> JobPool | pd.DataFrame
+```
+
+Run a UDF multiple times in parallel over a list of inputs.
+
+**Parameters:**
+
+- **udf** – The UDF to execute.
+- **arg_list** – List of values or dicts for parametrization.
+- **max_workers** – Maximum parallel workers (default 32).
+- **debug_mode** – Run only first item for testing.
+- **collect** – If True, wait and return DataFrame.
+
+**Examples:**
+
+```py
+# Run over list of values
+df = fused.submit(udf, range(10))
+
+# Run with named parameters
+df = fused.submit(udf, [{"date": d} for d in dates])
+
+# Debug mode
+result = fused.submit(udf, inputs, debug_mode=True)
+```
+
+---
+
+## fused.ingest
+
+```python
+ingest(
+    input: str | Path | Sequence[str | Path] | gpd.GeoDataFrame,
+    output: str | None = None,
+    *,
+    output_metadata: str | None = None,
+    partitioning_method: Literal["area", "length", "coords", "rows"] = "rows",
+    target_num_chunks: int = 500,
+    overwrite: bool = False,
+    ...
+) -> GeospatialPartitionJobStepConfig
+```
+
+Ingest a dataset into the Fused partitioned format.
+
+**Parameters:**
+
+- **input** – GeoDataFrame or path(s) to files on S3.
+- **output** – S3 location for output.
+- **partitioning_method** – `"area"`, `"length"`, `"coords"`, or `"rows"`.
+- **target_num_chunks** – Target number of output files.
+
+**Examples:**
+
+```py
+job = fused.ingest(
+    input="s3://bucket/data.parquet",
+    output="s3://bucket/output/",
+    partitioning_maximum_per_file=2000,
+).run_batch()
+```
+
+> 📖 **Guide:** See [Data Ingestion](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/) for details.
+
+---
+
+## fused.download
+
+```python
+download(url: str, file_path: str, storage: StorageStr = 'auto') -> str
+```
+
+Download a file, caching it for subsequent calls.
+
+**Examples:**
+
+```py
+path = fused.download("https://example.com/file.zip", "tmp/file.zip")
+```
+
+---
+
+## fused.file_path
+
+```python
+file_path(file_path: str, mkdir: bool = True, storage: StorageStr = "auto") -> str
+```
+
+Create a directory path for temporary files. Kept for 12h.
+
+**Examples:**
+
+```py
+output_path = fused.file_path("my_output/results.parquet")
+```
+

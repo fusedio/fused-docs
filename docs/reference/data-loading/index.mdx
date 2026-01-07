@@ -1,0 +1,207 @@
+---
+title: Data Loading Reference
+sidebar_label: Overview
+sidebar_position: 0
+description: Quick reference for loading all file formats in Fused
+---
+
+# Data Loading Reference
+
+Copy-paste snippets for loading different file formats. For detailed guides, see [Loading Data Guide](/guide/loading-data/).
+
+## Vector Formats
+
+### GeoJSON
+
+```python
+import geopandas as gpd
+gdf = gpd.read_file("s3://bucket/file.geojson")
+```
+
+### Shapefile
+
+```python
+import geopandas as gpd
+gdf = gpd.read_file("s3://bucket/file.shp")
+```
+
+### GeoPackage
+
+```python
+import geopandas as gpd
+gdf = gpd.read_file("s3://bucket/file.gpkg")
+```
+
+### Parquet (GeoParquet)
+
+```python
+import geopandas as gpd
+gdf = gpd.read_parquet("s3://bucket/file.parquet")
+```
+
+### KML/KMZ
+
+```python
+import geopandas as gpd
+gdf = gpd.read_file("s3://bucket/file.kml")
+```
+
+---
+
+## Tabular Formats
+
+### CSV
+
+```python
+import pandas as pd
+df = pd.read_csv("s3://bucket/file.csv")
+```
+
+### CSV with Coordinates → GeoDataFrame
+
+```python
+import pandas as pd
+import geopandas as gpd
+
+df = pd.read_csv("s3://bucket/file.csv")
+gdf = gpd.GeoDataFrame(
+    df, 
+    geometry=gpd.points_from_xy(df.longitude, df.latitude),
+    crs=4326
+)
+```
+
+### Excel
+
+```python
+import pandas as pd
+df = pd.read_excel("s3://bucket/file.xlsx")
+```
+
+### Parquet
+
+```python
+import pandas as pd
+df = pd.read_parquet("s3://bucket/file.parquet")
+```
+
+---
+
+## Raster Formats
+
+### GeoTIFF
+
+```python
+import rasterio
+
+with rasterio.open("s3://bucket/file.tif") as src:
+    data = src.read()
+    bounds = src.bounds
+```
+
+### NetCDF
+
+```python
+import xarray as xr
+
+# Download first for NetCDF
+path = fused.download("s3://bucket/file.nc", "file.nc")
+ds = xr.open_dataset(path)
+```
+
+### COG (Cloud Optimized GeoTIFF)
+
+```python
+common = fused.load("https://github.com/fusedio/udfs/tree/main/public/common/")
+
+# Read subset based on bounds
+arr, color_map = common.read_tiff(bounds, "s3://bucket/file.tif")
+```
+
+---
+
+## DuckDB Queries
+
+### Parquet
+
+```python
+import duckdb
+conn = duckdb.connect()
+df = conn.execute("SELECT * FROM 's3://bucket/file.parquet' LIMIT 100").df()
+```
+
+### CSV
+
+```python
+import duckdb
+conn = duckdb.connect()
+df = conn.execute("SELECT * FROM 's3://bucket/file.csv' LIMIT 100").df()
+```
+
+### With Spatial Extension
+
+```python
+common = fused.load("https://github.com/fusedio/udfs/tree/main/public/common/")
+conn = common.duckdb_connect()  # Loads H3 + spatial extensions
+
+df = conn.execute("""
+    SELECT h3_latlng_to_cell(lat, lng, 9) as hex, count(*) as cnt 
+    FROM 's3://bucket/points.parquet' 
+    GROUP BY 1
+""").df()
+```
+
+---
+
+## STAC Catalogs
+
+### Earth Search (AWS)
+
+```python
+import odc.stac
+import pystac_client
+
+odc.stac.configure_s3_access(aws_unsigned=True)
+catalog = pystac_client.Client.open("https://earth-search.aws.element84.com/v1")
+
+items = catalog.search(collections=["sentinel-2-l2a"], bbox=bounds).item_collection()
+ds = odc.stac.load(items, bands=["red", "green", "blue"], resolution=10)
+```
+
+### Planetary Computer
+
+```python
+import odc.stac
+import planetary_computer
+import pystac_client
+
+catalog = pystac_client.Client.open(
+    "https://planetarycomputer.microsoft.com/api/stac/v1",
+    modifier=planetary_computer.sign_inplace,
+)
+items = catalog.search(collections=["sentinel-2-l2a"], bbox=bounds).item_collection()
+```
+
+---
+
+## From UDFs
+
+### Load from GitHub
+
+```python
+udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example/")
+result = fused.run(udf, bounds=bounds)
+```
+
+### Load from Workbench
+
+```python
+udf = fused.load("My_UDF_Name")
+result = fused.run(udf, param="value")
+```
+
+### Load by Shared Token
+
+```python
+result = fused.run("fsh_abc123...")
+```

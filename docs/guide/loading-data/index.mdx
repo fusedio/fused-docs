@@ -1,0 +1,243 @@
+---
+title: Loading Data
+sidebar_label: Overview
+sidebar_position: 0
+description: Load data from various sources into Fused UDFs
+---
+
+# Loading Data
+
+Load data from S3, cloud storage, databases, or other UDFs.
+
+<iframe 
+    style={{
+        width: "100%",
+        maxWidth: "800px", 
+        aspectRatio: "16/9",
+        height: "auto",
+        margin: "0 auto",
+        display: "block"
+    }}
+    src="https://www.youtube.com/embed/E1j-V84_11k" 
+    title="YouTube video player" 
+    frameBorder="0" 
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+    referrerPolicy="strict-origin-when-cross-origin" 
+    allowFullScreen>
+</iframe>
+
+## Quick Start
+
+### Tabular Data
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/housing_2024.csv"):
+    import pandas as pd
+    return pd.read_csv(path)
+```
+
+### Vector (Geospatial)
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/subway_stations.geojson"):
+    import geopandas as gpd
+    return gpd.read_file(path)
+```
+
+### Raster (Imagery)
+
+```python
+@fused.udf
+def udf(path: str = 's3://fused-sample/demo_data/satellite_imagery/wildfires.tiff'):
+    import rasterio
+    with rasterio.open(path) as src:
+        data = src.read()
+        bounds = src.bounds
+    return data, bounds
+```
+
+## Loading by Source
+
+| Source | Example |
+|--------|---------|
+| [S3 / Cloud Storage](#s3--cloud-storage) | `pd.read_csv("s3://bucket/file.csv")` |
+| [HTTP/HTTPS](#httphttps) | `pd.read_csv("https://example.com/data.csv")` |
+| [Other UDFs](#from-other-udfs) | `fused.run(other_udf, bounds=bounds)` |
+| [Databases](#databases) | Snowflake, BigQuery, etc. |
+| [STAC Catalogs](#stac-catalogs) | Planetary Computer, Earth Search |
+
+---
+
+## S3 / Cloud Storage
+
+Fused has native S3 access. Just use the `s3://` prefix:
+
+```python
+import pandas as pd
+df = pd.read_csv("s3://bucket/file.csv")
+```
+
+```python
+import geopandas as gpd
+gdf = gpd.read_file("s3://bucket/file.geojson")
+```
+
+For private buckets, configure credentials in [Preferences](/workbench/preferences/).
+
+---
+
+## HTTP/HTTPS
+
+Download files from URLs:
+
+```python
+# Direct read
+df = pd.read_csv("https://example.com/data.csv")
+
+# Or download to mount disk for caching
+path = fused.download(url="https://example.com/large_file.zip", file_path="out.zip")
+```
+
+Files downloaded with `fused.download()` are cached at `/mnt/cache/` and persist across UDF runs.
+
+---
+
+## From Other UDFs
+
+Load and run other UDFs:
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds):
+    # Load from GitHub
+    overture_udf = fused.load('https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example/')
+    
+    # Run with parameters
+    buildings = fused.run(overture_udf, bounds=bounds, theme='buildings')
+    return buildings
+```
+
+```python
+# Or load by name from Workbench
+my_udf = fused.load("My_UDF_Name")
+result = fused.run(my_udf, param1="value")
+```
+
+---
+
+## Databases
+
+### Snowflake
+
+Set credentials in [Secrets Management](/workbench/preferences/#secrets-management):
+
+```python
+@fused.udf
+def udf(query: str = 'SELECT * FROM my_table LIMIT 10'):
+    import snowflake.connector
+    
+    conn = snowflake.connector.connect(
+        user=fused.secret('SNOWFLAKE_USER'),
+        password=fused.secret('SNOWFLAKE_PASSWORD'), 
+        account='your_account',
+        warehouse='your_warehouse',
+        database='your_database',
+    )
+    
+    cursor = conn.cursor()
+    cursor.execute(query)
+    df = cursor.fetch_pandas_all()
+    
+    return df
+```
+
+### BigQuery
+
+```python
+@fused.udf
+def udf():
+    from google.cloud import bigquery
+    
+    client = bigquery.Client()
+    query = "SELECT * FROM `project.dataset.table` LIMIT 10"
+    df = client.query(query).to_dataframe()
+    
+    return df
+```
+
+---
+
+## DuckDB
+
+Query files directly with SQL:
+
+```python
+@fused.udf
+def udf(path: str = "s3://bucket/data.parquet"):
+    import duckdb
+    
+    conn = duckdb.connect()
+    result = conn.execute(f"""
+        SELECT * 
+        FROM '{path}'
+        WHERE column > 100
+        LIMIT 1000
+    """).df()
+    
+    return result
+```
+
+---
+
+## STAC Catalogs
+
+### Earth Search (AWS)
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    import odc.stac
+    import pystac_client
+
+    odc.stac.configure_s3_access(aws_unsigned=True)
+    catalog = pystac_client.Client.open("https://earth-search.aws.element84.com/v1")
+
+    items = catalog.search(
+        collections=["cop-dem-glo-30"], 
+        bbox=bounds
+    ).item_collection()
+
+    ds = odc.stac.load(items, crs="EPSG:3857", bands=["data"], resolution=150, bbox=bounds)
+    return ds["data"], bounds
+```
+
+### Planetary Computer
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    import odc.stac
+    import planetary_computer
+    import pystac_client
+    
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        modifier=planetary_computer.sign_inplace,
+    )
+
+    items = catalog.search(collections=["cop-dem-glo-30"], bbox=bounds).item_collection()
+    ds = odc.stac.load(items, crs="EPSG:3857", bands=["data"], resolution=150, bbox=bounds)
+    
+    return ds["data"], bounds
+```
+
+---
+
+## Next Steps
+
+- [Writing Data](/guide/writing-data/) - Export data to S3, Parquet, etc.
+- [Caching](/core-concepts/cache/) - Speed up repeated data loading
+
+> 📚 **Reference:** See [Data Loading Reference](/reference/data-loading/) for all file format examples.

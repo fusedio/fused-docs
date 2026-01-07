@@ -1,0 +1,165 @@
+---
+title: Writing Data
+sidebar_label: Overview
+sidebar_position: 0
+description: Export and save data from Fused UDFs
+---
+
+# Writing Data
+
+Save processed data to S3, cloud storage, or mount disk.
+
+## Recommended Formats
+
+| Data Type | Format | Why |
+|-----------|--------|-----|
+| Tabular/Vector | Parquet | Columnar, compressed, fast reads |
+| Raster | Cloud Optimized GeoTIFF (COG) | Efficient partial reads |
+
+See [Geospatial File Formats](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/geospatial-file-formats) for details.
+
+---
+
+## Quick Examples
+
+### To S3
+
+```python
+@fused.udf
+def udf():
+    df = process_data()
+    
+    username = fused.api.whoami()['handle']
+    df.to_parquet(f"s3://fused-users/fused/{username}/output.parquet")
+    
+    return "Saved!"
+```
+
+### To Fused Storage (`fd://`)
+
+```python
+df.to_parquet("fd://my-dataset/data.parquet")
+```
+
+### To Mount Disk
+
+```python
+df.to_parquet("/mnt/cache/data.parquet")
+```
+
+Files at `/mnt/cache/` are accessible by all UDFs in your organization.
+
+---
+
+## Save Tabular Data
+
+### Parquet
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/housing/housing_2024.csv"):
+    import pandas as pd
+    
+    df = pd.read_csv(path)
+    df['price_per_sqft'] = round(df['price'] / df['area'], 2)
+    
+    username = fused.api.whoami()['handle']
+    output_path = f"s3://fused-users/fused/{username}/housing_processed.parquet"
+    df.to_parquet(output_path)
+
+    return f"Saved to {output_path}"
+```
+
+### CSV
+
+```python
+df.to_csv("s3://bucket/output.csv", index=False)
+```
+
+### GeoParquet
+
+```python
+gdf.to_parquet("s3://bucket/output.parquet")
+```
+
+---
+
+## Save Raster Data
+
+### Cloud Optimized GeoTIFF
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/satellite_imagery/wildfires.tiff"):
+    import rasterio
+    import numpy as np
+    
+    with rasterio.open(path) as src:
+        data = src.read()
+        profile = src.profile
+    
+    # Process
+    processed = np.where(data > np.percentile(data, 80), 255, 0).astype(np.uint8)
+    
+    profile.update({'driver': 'GTiff', 'compress': 'lzw', 'dtype': 'uint8'})
+    
+    output_path = "/mnt/cache/processed.tif"
+    with rasterio.open(output_path, 'w', **profile) as dst:
+        dst.write(processed)
+    
+    return f"Saved to {output_path}"
+```
+
+---
+
+## Large Dataset Ingestion
+
+For large geospatial datasets (>100MB), use `fused.ingest()` for optimized partitioning:
+
+```python
+username = fused.api.whoami()['handle']
+
+job = fused.ingest(
+    input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
+    output=f"fd://{username}/census_partitioned/",
+)
+
+job.run_batch()
+```
+
+Monitor the job:
+
+```python
+job.tail_logs()
+```
+
+See [Data Ingestion](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/) for details.
+
+---
+
+## Use as API (No Saving Required)
+
+Export data directly via UDF endpoints:
+
+```
+https://fused.io/.../run/file?format=parquet
+https://fused.io/.../run/file?format=csv
+https://fused.io/.../run/file?format=geojson
+```
+
+No file saving needed—just call the endpoint.
+
+---
+
+## Storage Locations
+
+| Location | Description | Persistence |
+|----------|-------------|-------------|
+| `s3://bucket/` | Your S3 bucket | Permanent |
+| `fd://path` | Fused managed S3 | Permanent |
+| `/mnt/cache/` | Shared mount disk | 12 hours |
+
+## Next Steps
+
+- [Data Ingestion](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/) - Partition big files
+- [File System](/core-concepts/content-management/file-system/) - Learn about `fd://` and `/mnt/cache`

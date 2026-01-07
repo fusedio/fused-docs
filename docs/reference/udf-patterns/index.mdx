@@ -1,0 +1,184 @@
+---
+title: UDF Patterns Reference
+sidebar_label: Overview
+sidebar_position: 0
+description: Common UDF patterns and templates
+---
+
+# UDF Patterns Reference
+
+Copy-paste templates for common UDF patterns.
+
+## Basic Patterns
+
+### Simple UDF
+
+```python
+@fused.udf
+def udf(param: str = "default"):
+    return {"result": param}
+```
+
+### Return DataFrame
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+    return pd.DataFrame({"x": [1, 2, 3]})
+```
+
+### Return GeoDataFrame
+
+```python
+@fused.udf
+def udf():
+    import geopandas as gpd
+    return gpd.read_file("s3://bucket/file.geojson")
+```
+
+### Return Image
+
+```python
+@fused.udf
+def udf():
+    import numpy as np
+    arr = np.random.randint(0, 255, (256, 256, 3), dtype=np.uint8)
+    return arr
+```
+
+---
+
+## Map-Based UDFs
+
+### Viewport Filtering
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    import geopandas as gpd
+    from shapely.geometry import box
+    
+    gdf = gpd.read_file("s3://bucket/data.parquet")
+    
+    if bounds:
+        gdf = gdf[gdf.intersects(box(*bounds))]
+    
+    return gdf
+```
+
+### Dynamic Tile Loading
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    common = fused.load("https://github.com/fusedio/udfs/tree/main/public/common/")
+    return common.read_table(bounds, "s3://bucket/partitioned_data/")
+```
+
+---
+
+## Caching Patterns
+
+### Cache Data Loading
+
+```python
+@fused.cache
+def load_data(path):
+    import pandas as pd
+    return pd.read_parquet(path)
+
+@fused.udf
+def udf(path: str = "s3://bucket/data.parquet"):
+    df = load_data(path)
+    return df
+```
+
+### Cache with Expiry
+
+```python
+@fused.cache(cache_max_age="24h")
+def fetch_api_data(endpoint):
+    import requests
+    return requests.get(endpoint).json()
+```
+
+---
+
+## Composition Patterns
+
+### Call Another UDF
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    other_udf = fused.load("My_Other_UDF")
+    result = fused.run(other_udf, bounds=bounds)
+    return result
+```
+
+### Load from GitHub
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    overture = fused.load("https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example/")
+    return fused.run(overture, bounds=bounds, theme="buildings")
+```
+
+---
+
+## Parallel Patterns
+
+### Process List
+
+```python
+@fused.udf
+def process(item: str):
+    # Process single item
+    return {"item": item, "processed": True}
+
+# Run in parallel
+results = fused.submit(process, ["a", "b", "c", "d"])
+```
+
+### Process with Named Params
+
+```python
+results = fused.submit(
+    my_udf,
+    [{"date": d, "region": r} for d in dates for r in regions]
+)
+```
+
+---
+
+## Output Patterns
+
+### Multiple Return Types
+
+```python
+@fused.udf
+def udf(output_type: str = "dataframe"):
+    import pandas as pd
+    
+    data = pd.DataFrame({"x": [1, 2, 3]})
+    
+    if output_type == "json":
+        return data.to_dict(orient="records")
+    elif output_type == "html":
+        return data.to_html()
+    else:
+        return data
+```
+
+### Raster with Bounds
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    import numpy as np
+    
+    arr = np.random.randint(0, 255, (256, 256, 3), dtype=np.uint8)
+    return arr, bounds
+```
