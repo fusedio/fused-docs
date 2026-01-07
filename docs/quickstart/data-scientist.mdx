@@ -7,7 +7,7 @@ description: Get started with Fused for data science workflows
 
 # Quickstart for Data Scientists
 
-Build analysis workflows with Jupyter, visualize on maps, and share results.
+Build analysis workflows with Jupyter, run experiments, and share results.
 
 ## Setup
 
@@ -25,18 +25,17 @@ credentials = NotebookCredentials()
 
 ```python
 @fused.udf
-def udf(bounds: fused.types.Bounds = None):
-    import geopandas as gpd
+def udf(threshold: float = 0.5):
+    import pandas as pd
     
-    # Load data
-    gdf = gpd.read_file("s3://fused-sample/demo_data/subway_stations.geojson")
+    # Load sample data
+    df = pd.read_csv("s3://fused-sample/demo_data/housing_2024.csv")
     
-    # Filter to viewport
-    if bounds:
-        from shapely.geometry import box
-        gdf = gdf[gdf.intersects(box(*bounds))]
+    # Process
+    df['price_per_sqft'] = df['price'] / df['area']
+    df['above_threshold'] = df['price_per_sqft'] > threshold
     
-    return gdf
+    return df
 ```
 
 ## Run Locally
@@ -57,7 +56,7 @@ result = fused.run(udf)  # Runs on Fused cloud
 1. Open [Workbench](https://www.fused.io/workbench)
 2. Create a new UDF
 3. Paste your code
-4. See it on the map!
+4. See results in the data table
 
 ## Key Patterns
 
@@ -65,26 +64,43 @@ result = fused.run(udf)  # Runs on Fused cloud
 
 ```python
 @fused.cache
-def load_data(path):
-    return gpd.read_file(path)
+def load_model():
+    import joblib
+    return joblib.load("s3://bucket/model.pkl")
+
+@fused.udf
+def udf(data_path: str):
+    model = load_model()
+    df = pd.read_parquet(data_path)
+    df['prediction'] = model.predict(df[features])
+    return df
 ```
 
 ### Process in Parallel
 
 ```python
-results = fused.submit(udf, [{"param": v} for v in range(10)])
+# Run same UDF over many parameter values
+results = fused.submit(my_udf, [{"param": v} for v in range(100)])
 ```
 
-### Use H3 for Aggregation
+### Experiment Tracking
 
 ```python
-import h3
-df['hex'] = df.apply(lambda r: h3.latlng_to_cell(r['lat'], r['lon'], 9), axis=1)
-df.groupby('hex')['value'].sum()
+@fused.udf
+def experiment(learning_rate: float = 0.01, epochs: int = 100):
+    # Train model with parameters
+    model = train(lr=learning_rate, epochs=epochs)
+    return {"accuracy": model.accuracy, "loss": model.loss}
+
+# Grid search
+params = [{"learning_rate": lr, "epochs": e} 
+          for lr in [0.01, 0.1] 
+          for e in [50, 100]]
+results = fused.submit(experiment, params)
 ```
 
 ## Next Steps
 
 - [Loading Data](/guide/loading-data/) - Read from S3, databases
-- [H3 Hexagons](/guide/h3-hexagons/) - Spatial aggregation
 - [Caching](/core-concepts/cache/) - Speed up analysis
+- [Scaling Up](/guide/scaling-up/) - Parallel processing

@@ -25,12 +25,13 @@ credentials = NotebookCredentials()
 
 ```python
 @fused.udf
-def udf(table: str = "users", limit: int = 100):
+def udf(table: str = "sales", limit: int = 100, start_date: str = "2024-01-01"):
     import duckdb
     
     conn = duckdb.connect()
     df = conn.execute(f"""
         SELECT * FROM 's3://bucket/{table}.parquet' 
+        WHERE date >= '{start_date}'
         LIMIT {limit}
     """).df()
     
@@ -40,23 +41,25 @@ def udf(table: str = "users", limit: int = 100):
 Save in Workbench → Get HTTP endpoint:
 
 ```
-https://fused.io/.../run/file?table=orders&limit=50
+https://fused.io/.../run/file?table=orders&limit=50&start_date=2024-06-01
 ```
 
 ## Run Batch Jobs
 
 ```python
-# Define processing UDF
 @fused.udf
-def process(file_path: str):
+def process_file(file_path: str):
     import pandas as pd
+    
     df = pd.read_parquet(file_path)
-    # Process...
-    return df
+    df['processed_at'] = pd.Timestamp.now()
+    df.to_parquet(file_path.replace('raw', 'processed'))
+    
+    return {"status": "success", "rows": len(df)}
 
 # Run over many files in parallel
-files = ["s3://bucket/file1.parquet", "s3://bucket/file2.parquet", ...]
-results = fused.submit(process, [{"file_path": f} for f in files])
+files = ["s3://bucket/raw/file1.parquet", "s3://bucket/raw/file2.parquet"]
+results = fused.submit(process_file, [{"file_path": f} for f in files])
 ```
 
 ## Ingest Large Datasets
@@ -79,10 +82,15 @@ job.run_batch(instance_type="m5.4xlarge")
 def udf(
     start_date: str = "2024-01-01",
     end_date: str = "2024-12-31",
-    region: str = "US"
+    region: str = "US",
+    format: str = "summary"
 ):
     # Query based on parameters
-    ...
+    df = query_data(start_date, end_date, region)
+    
+    if format == "summary":
+        return df.groupby('category').sum()
+    return df
 ```
 
 ### Scheduled Runs
@@ -90,7 +98,8 @@ def udf(
 Call your UDF endpoint from any scheduler (Airflow, cron, etc.):
 
 ```bash
-curl "https://fused.io/.../run/file?format=parquet" > output.parquet
+# In Airflow DAG or cron job
+curl "https://fused.io/.../run/file?format=parquet" > daily_export.parquet
 ```
 
 ### Output Formats
@@ -99,7 +108,21 @@ curl "https://fused.io/.../run/file?format=parquet" > output.parquet
 ?format=parquet  # Parquet file
 ?format=csv      # CSV file
 ?format=json     # JSON
-?format=geojson  # GeoJSON
+```
+
+### Connect to Data Warehouses
+
+```python
+@fused.udf
+def sync_to_snowflake():
+    import snowflake.connector
+    
+    conn = snowflake.connector.connect(
+        user=fused.secret('SNOWFLAKE_USER'),
+        password=fused.secret('SNOWFLAKE_PASSWORD'),
+        account='your_account'
+    )
+    # Load and sync data...
 ```
 
 ## Next Steps
