@@ -66,6 +66,19 @@ const sidebars: SidebarsConfig = {
             "guide/writing-data/turn-your-data-into-an-api",
           ],
         },
+        // Running UDFs - execution modes
+        {
+          type: "category",
+          label: "Running UDFs",
+          collapsed: true,
+          link: { type: "doc", id: "guide/running-udfs/index" },
+          items: [
+            "guide/running-udfs/realtime",
+            "guide/running-udfs/batch-jobs",
+            "guide/running-udfs/parallel-processing",
+            "guide/running-udfs/http-endpoints",
+          ],
+        },
         // H3 Hexagons - flattened structure
         {
           type: "category",
@@ -185,6 +198,7 @@ const sidebars: SidebarsConfig = {
           items: [
             "reference/python-sdk/top-level-functions",
             "reference/python-sdk/authentication",
+            "reference/python-sdk/dependencies",
             "reference/python-sdk/batch",
             "reference/python-sdk/changelog",
             {
@@ -229,18 +243,6 @@ const sidebars: SidebarsConfig = {
         },
         // Data Writing Reference
         "reference/data-writing/index",
-        // Run UDFs - has sub-pages
-        {
-          type: "category",
-          label: "Run UDFs",
-          collapsed: true,
-          link: { type: "doc", id: "reference/run-udfs/index" },
-          items: [
-            "reference/run-udfs/run",
-            "reference/run-udfs/dependencies",
-            "reference/run-udfs/large_jobs",
-          ],
-        },
         // Workbench - has sub-pages
         {
           type: "category",
