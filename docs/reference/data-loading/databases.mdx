@@ -1,0 +1,135 @@
+---
+title: Databases
+sidebar_label: Databases
+sidebar_position: 4
+description: Code snippets for Snowflake, BigQuery, PostgreSQL
+---
+
+# Database Snippets
+
+Copy-paste code for connecting to databases.
+
+## Snowflake
+
+### Read
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+    from snowflake.connector import connect
+    
+    conn = connect(
+        user=fused.secrets["SNOWFLAKE_USER"],
+        password=fused.secrets["SNOWFLAKE_PASSWORD"],
+        account=fused.secrets["SNOWFLAKE_ACCOUNT"],
+        warehouse="COMPUTE_WH",
+        database="MY_DB",
+        schema="PUBLIC"
+    )
+    
+    return pd.read_sql("SELECT * FROM my_table LIMIT 1000", conn)
+```
+
+### Write
+
+```python
+from snowflake.connector.pandas_tools import write_pandas
+
+write_pandas(conn, df, "MY_TABLE")
+```
+
+---
+
+## BigQuery
+
+### Read
+
+```python
+@fused.udf
+def udf():
+    from google.cloud import bigquery
+    
+    client = bigquery.Client()
+    query = """
+        SELECT *
+        FROM `project.dataset.table`
+        LIMIT 1000
+    """
+    return client.query(query).to_dataframe()
+```
+
+### Write
+
+```python
+from google.cloud import bigquery
+
+client = bigquery.Client()
+table_id = "project.dataset.table"
+
+job = client.load_table_from_dataframe(df, table_id)
+job.result()  # Wait for completion
+```
+
+---
+
+## PostgreSQL / PostGIS
+
+### Read
+
+```python
+@fused.udf
+def udf():
+    import geopandas as gpd
+    from sqlalchemy import create_engine
+    
+    engine = create_engine(fused.secrets["POSTGRES_URL"])
+    
+    return gpd.read_postgis(
+        "SELECT * FROM my_table WHERE ST_Intersects(geom, ST_MakeEnvelope(-74, 40, -73, 41, 4326))",
+        engine,
+        geom_col="geom"
+    )
+```
+
+### Write
+
+```python
+from sqlalchemy import create_engine
+
+engine = create_engine(fused.secrets["POSTGRES_URL"])
+
+# Regular DataFrame
+df.to_sql("table_name", engine, if_exists="replace", index=False)
+
+# GeoDataFrame
+gdf.to_postgis("table_name", engine, if_exists="replace")
+```
+
+---
+
+## DuckDB (In-Memory)
+
+```python
+import duckdb
+
+conn = duckdb.connect()
+df = conn.execute("""
+    SELECT * FROM 's3://bucket/file.parquet'
+    WHERE value > 100
+""").df()
+```
+
+### With Extensions
+
+```python
+common = fused.load("https://github.com/fusedio/udfs/tree/main/public/common/")
+conn = common.duckdb_connect()  # Loads H3 + spatial
+
+df = conn.execute("""
+    SELECT h3_latlng_to_cell(lat, lng, 9) as hex, count(*) 
+    FROM 's3://bucket/points.parquet' 
+    GROUP BY 1
+""").df()
+```
+

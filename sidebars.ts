@@ -35,6 +35,7 @@ const sidebars: SidebarsConfig = {
           items: [
             "guide/getting-started/your-first-udf",
             "guide/getting-started/two_min_with_fused",
+            "guide/getting-started/writing-udfs",
           ],
         },
         // Loading Data - has sub-pages
@@ -44,10 +45,12 @@ const sidebars: SidebarsConfig = {
           collapsed: true,
           link: { type: "doc", id: "guide/loading-data/index" },
           items: [
-            "guide/loading-data/load_and_save_data",
-            "guide/loading-data/read-data",
-            "guide/loading-data/generic-data-ingestion",
-            "guide/loading-data/handling-large-remote-files",
+            "guide/loading-data/local-files",
+            "guide/loading-data/cloud-storage",
+            "guide/loading-data/databases",
+            "guide/loading-data/apis",
+            "guide/loading-data/gee",
+            "guide/loading-data/file-formats",
           ],
         },
         // Writing Data - has sub-pages
@@ -57,12 +60,13 @@ const sidebars: SidebarsConfig = {
           collapsed: true,
           link: { type: "doc", id: "guide/writing-data/index" },
           items: [
-            "guide/writing-data/write",
-            "guide/writing-data/write-data",
+            "guide/writing-data/to-cloud-storage",
+            "guide/writing-data/to-databases",
+            "guide/writing-data/ingesting-large-datasets",
             "guide/writing-data/turn-your-data-into-an-api",
           ],
         },
-        // H3 Hexagons - has sub-pages
+        // H3 Hexagons - flattened structure
         {
           type: "category",
           label: "H3 Hexagons",
@@ -71,22 +75,12 @@ const sidebars: SidebarsConfig = {
           items: [
             "guide/h3-hexagons/when-to-use-h3",
             "guide/h3-hexagons/h3-resolution-guide",
-            "guide/h3-hexagons/convert-data-to-h3",
             "guide/h3-hexagons/file-to-h3",
             "guide/h3-hexagons/dynamic-tile-to-h3",
             "guide/h3-hexagons/ingesting-dataset-to-h3",
-            "guide/h3-hexagons/h3-aggregation",
-            {
-              type: "category",
-              label: "Analysis with H3",
-              collapsed: true,
-              link: { type: "doc", id: "guide/h3-hexagons/analysis-with-h3" },
-              items: [
-                "guide/h3-hexagons/analysis-with-h3/aggregating-h3-data",
-                "guide/h3-hexagons/analysis-with-h3/joining-h3-datasets",
-                "guide/h3-hexagons/analysis-with-h3/h3-zonal-stats",
-              ],
-            },
+            "guide/h3-hexagons/aggregating-h3-data",
+            "guide/h3-hexagons/joining-h3-datasets",
+            "guide/h3-hexagons/h3-zonal-stats",
           ],
         },
         // Scaling Up - has sub-pages
@@ -96,7 +90,6 @@ const sidebars: SidebarsConfig = {
           collapsed: true,
           link: { type: "doc", id: "guide/scaling-up/index" },
           items: [
-            "guide/scaling-up/caching",
             "guide/scaling-up/cache",
             "guide/scaling-up/async",
             "guide/scaling-up/fused-advanced",
@@ -110,7 +103,7 @@ const sidebars: SidebarsConfig = {
           collapsed: true,
           link: { type: "doc", id: "guide/building-apps/index" },
           items: [
-            "guide/building-apps/create-interactive-dashboards",
+            // "guide/building-apps/create-interactive-dashboards",
             "guide/building-apps/interactive-graphs-for-your-data",
             "guide/building-apps/standalone-maps",
             "guide/building-apps/visualization",
@@ -145,6 +138,19 @@ const sidebars: SidebarsConfig = {
                 "guide/use-cases/Crop Exploration with H3/interactive_visualization",
               ],
             },
+          ],
+        },
+        // Content Management - has sub-pages
+        {
+          type: "category",
+          label: "Content Management",
+          collapsed: true,
+          link: { type: "doc", id: "guide/content-management/index" },
+          items: [
+            "guide/content-management/file-system",
+            "guide/content-management/git",
+            "guide/content-management/download",
+            "guide/content-management/environment-variables",
           ],
         },
         // Best Practices - has sub-pages
@@ -208,6 +214,21 @@ const sidebars: SidebarsConfig = {
             "reference/h3/operations",
           ],
         },
+        // Data Loading Reference - has sub-pages
+        {
+          type: "category",
+          label: "Data Loading",
+          collapsed: true,
+          link: { type: "doc", id: "reference/data-loading/index" },
+          items: [
+            "reference/data-loading/files",
+            "reference/data-loading/cloud",
+            "reference/data-loading/databases",
+            "reference/data-loading/specialized",
+          ],
+        },
+        // Data Writing Reference
+        "reference/data-writing/index",
         // Run UDFs - has sub-pages
         {
           type: "category",
@@ -218,18 +239,6 @@ const sidebars: SidebarsConfig = {
             "reference/run-udfs/run",
             "reference/run-udfs/dependencies",
             "reference/run-udfs/large_jobs",
-          ],
-        },
-        // Content Management - has sub-pages
-        {
-          type: "category",
-          label: "Content Management",
-          collapsed: true,
-          items: [
-            "reference/content-management/file-system",
-            "reference/content-management/git",
-            "reference/content-management/environment-variables",
-            "reference/content-management/download",
           ],
         },
         // Workbench - has sub-pages

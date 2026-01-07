@@ -1,0 +1,157 @@
+---
+title: Specialized Sources
+sidebar_label: Specialized
+sidebar_position: 5
+description: Code snippets for STAC, Google Earth Engine, Overture Maps
+---
+
+# Specialized Data Sources
+
+Copy-paste code for STAC catalogs, GEE, and Overture Maps.
+
+## STAC Catalogs
+
+### Earth Search (AWS)
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    import odc.stac
+    import pystac_client
+    
+    odc.stac.configure_s3_access(aws_unsigned=True)
+    catalog = pystac_client.Client.open("https://earth-search.aws.element84.com/v1")
+    
+    items = catalog.search(
+        collections=["sentinel-2-l2a"], 
+        bbox=bounds
+    ).item_collection()
+    
+    ds = odc.stac.load(items, bands=["red", "green", "blue"], resolution=10)
+    return ds
+```
+
+### Planetary Computer
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    import odc.stac
+    import planetary_computer
+    import pystac_client
+    
+    catalog = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        modifier=planetary_computer.sign_inplace,
+    )
+    
+    items = catalog.search(
+        collections=["sentinel-2-l2a"], 
+        bbox=bounds
+    ).item_collection()
+    
+    return odc.stac.load(items, bands=["red"], resolution=10)
+```
+
+---
+
+## Google Earth Engine
+
+### Basic Setup
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    import ee
+    
+    # Service account auth
+    credentials = ee.ServiceAccountCredentials(
+        fused.secrets["GEE_SERVICE_ACCOUNT"],
+        key_data=fused.secrets["GEE_PRIVATE_KEY"]
+    )
+    ee.Initialize(credentials)
+    
+    # Access data
+    collection = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED") \
+        .filterBounds(ee.Geometry.BBox(*bounds)) \
+        .first()
+    
+    return collection
+```
+
+### NDVI Example
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    import ee
+    
+    ee.Initialize()
+    
+    s2 = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED") \
+        .filterBounds(ee.Geometry.BBox(*bounds)) \
+        .filterDate("2023-06-01", "2023-08-31") \
+        .median()
+    
+    ndvi = s2.normalizedDifference(["B8", "B4"]).rename("NDVI")
+    return ndvi
+```
+
+---
+
+## Overture Maps
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    overture = fused.load("https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example/")
+    return fused.run(overture, bounds=bounds, theme='buildings')
+```
+
+---
+
+## From Other UDFs
+
+### Load from GitHub
+
+```python
+udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example/")
+result = fused.run(udf, bounds=bounds)
+```
+
+### Load from Workbench
+
+```python
+udf = fused.load("My_UDF_Name")
+result = fused.run(udf, param="value")
+```
+
+### Load by Shared Token
+
+```python
+result = fused.run("fsh_abc123...")
+```
+
+---
+
+## REST APIs
+
+### Basic GET
+
+```python
+import requests
+import pandas as pd
+
+response = requests.get("https://api.example.com/data")
+df = pd.DataFrame(response.json())
+```
+
+### With Authentication
+
+```python
+import requests
+
+headers = {"Authorization": f"Bearer {fused.secrets['API_KEY']}"}
+response = requests.get("https://api.example.com/data", headers=headers)
+```
+
