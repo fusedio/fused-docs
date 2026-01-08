@@ -1,0 +1,108 @@
+---
+title: Bounds and Tiles
+sidebar_label: Bounds & Tiles
+sidebar_position: 1
+description: Working with bounds and tiles in UDFs
+---
+
+# Bounds and Tiles
+
+UDFs can receive viewport bounds to filter data to the visible map area.
+
+---
+
+## Basic Bounds Pattern
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    import geopandas as gpd
+    from shapely.geometry import box
+    
+    gdf = gpd.read_parquet("s3://bucket/data.parquet")
+    
+    if bounds:
+        gdf = gdf[gdf.intersects(box(*bounds))]
+    
+    return gdf
+```
+
+---
+
+## Convert Bounds to GeoDataFrame
+
+Use the `common` utilities:
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    common = fused.load("https://github.com/fusedio/udfs/tree/main/public/common/").utils
+    
+    # Get tiles from bounds
+    tile = common.get_tiles(bounds)
+    
+    # Read data for tile
+    return common.table_to_tile(bounds, "s3://bucket/ingested_data/")
+```
+
+---
+
+## Tile Parameters
+
+When using `common.get_tiles()`:
+
+| Parameter | Description |
+|-----------|-------------|
+| `bounds` | The bounding box coordinates |
+| `target_num_tiles` | Split into sub-tiles |
+| `clip` | Clip to exact bounds extent |
+
+```python
+# Create 4 sub-tiles clipped to bounds
+tiles = common.get_tiles(bounds, target_num_tiles=4, clip=True)
+```
+
+---
+
+## Tile vs File Mode
+
+UDFs can run in two modes:
+
+| Mode | Use Case | Metadata |
+|------|----------|----------|
+| **Tile** | Pan around map, load data dynamically | `'fused:udfType': 'vector_tile'` |
+| **File** | Load static dataset once | `'fused:udfType': 'vector_single'` |
+
+Set mode in metadata:
+```python
+udf.metadata = {'fused:udfType': 'vector_tile'}
+```
+
+---
+
+## Reading Ingested Data
+
+For Fused-ingested tables:
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    common = fused.load("https://github.com/fusedio/udfs/tree/main/public/common/").utils
+    return common.table_to_tile(bounds, table="s3://bucket/ingested/")
+```
+
+---
+
+## Raster with Bounds
+
+Return raster array with its bounds:
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    import numpy as np
+    
+    arr = np.random.randint(0, 255, (256, 256, 3), dtype=np.uint8)
+    return arr, bounds
+```
+

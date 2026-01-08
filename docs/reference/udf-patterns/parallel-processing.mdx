@@ -1,0 +1,127 @@
+---
+title: Parallel Processing Patterns
+sidebar_label: Parallel Processing
+sidebar_position: 2
+description: Patterns for running UDFs in parallel
+---
+
+# Parallel Processing Patterns
+
+Use `fused.submit()` to run a UDF over many inputs concurrently.
+
+---
+
+## Basic Pattern
+
+```python
+@fused.udf
+def udf(val):
+    import pandas as pd
+    return pd.DataFrame({'result': [val * 2]})
+
+# Run over 100 inputs in parallel
+results = fused.submit(udf, range(100))
+```
+
+---
+
+## Process List of Files
+
+```python
+@fused.udf
+def process_file(path: str = ""):
+    import pandas as pd
+    df = pd.read_parquet(path)
+    # Process...
+    return df
+
+files = ["s3://bucket/file1.parquet", "s3://bucket/file2.parquet"]
+results = fused.submit(process_file, files)
+```
+
+---
+
+## Named Parameters
+
+Pass dictionaries for multiple inputs:
+
+```python
+results = fused.submit(
+    my_udf,
+    [{"date": d, "region": r} for d in dates for r in regions]
+)
+```
+
+---
+
+## Non-Blocking Execution
+
+```python
+results = fused.submit(udf, inputs, collect=False)
+
+# Check progress
+results.wait()
+
+# Get timing
+print(results.total_time())
+print(results.times())
+
+# Collect when ready
+df = results.collect()
+```
+
+---
+
+## Debug Mode
+
+Test with one input first:
+
+```python
+single = fused.submit(udf, inputs, debug_mode=True)
+```
+
+---
+
+## Execution Options
+
+| Parameter | Description |
+|-----------|-------------|
+| `max_workers` | Number of parallel workers |
+| `engine` | `"remote"` (default) or `"local"` |
+| `max_retry` | Retry count for failed jobs |
+| `debug_mode` | Run single input for testing |
+
+---
+
+## Best Practices
+
+1. **Test first** - Use `debug_mode=True` before large runs
+2. **Target 30-45s per task** - Leaves safety margin before 120s timeout
+3. **Start small** - Run 5-10 inputs before scaling up
+4. **Check timing** - Use `results.times()` to identify slow tasks
+
+---
+
+## Example: Process Monthly Data
+
+```python
+@fused.udf
+def process_month(month: str = "2024-01"):
+    import pandas as pd
+    
+    df = pd.read_parquet(f"s3://bucket/data/{month}.parquet")
+    df.to_parquet(f"/mnt/cache/processed/{month}.parquet")
+    
+    return pd.DataFrame({"month": [month], "rows": [len(df)]})
+
+months = [f"2024-{str(m).zfill(2)}" for m in range(1, 13)]
+results = fused.submit(process_month, months)
+```
+
+---
+
+## See Also
+
+- [fused.submit() Reference](/reference/python-sdk/top-level-functions#fusedsubmit)
+- [Batch Jobs](/guide/running-udfs/batch-jobs) - For single heavy jobs
+

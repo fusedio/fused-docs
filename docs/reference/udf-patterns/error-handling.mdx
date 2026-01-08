@@ -1,0 +1,191 @@
+---
+title: Error Handling Patterns
+sidebar_label: Error Handling
+sidebar_position: 6
+description: Patterns for handling errors in UDFs
+---
+
+# Error Handling Patterns
+
+Handle errors gracefully in your UDFs.
+
+---
+
+## Basic Try-Except
+
+```python
+@fused.udf
+def udf(path: str = "s3://bucket/file.parquet"):
+    import pandas as pd
+    
+    try:
+        df = pd.read_parquet(path)
+        return df
+    except Exception as e:
+        print(f"Error reading file: {e}")
+        return pd.DataFrame()
+```
+
+---
+
+## Return Status
+
+```python
+@fused.udf
+def udf(path: str = ""):
+    import pandas as pd
+    
+    try:
+        df = pd.read_parquet(path)
+        return pd.DataFrame({"status": ["success"], "rows": [len(df)]})
+    except FileNotFoundError:
+        return pd.DataFrame({"status": ["file_not_found"], "rows": [0]})
+    except Exception as e:
+        return pd.DataFrame({"status": [f"error: {str(e)}"], "rows": [0]})
+```
+
+---
+
+## Validate Geometry
+
+```python
+@fused.udf
+def udf():
+    import geopandas as gpd
+    
+    gdf = gpd.read_file("s3://bucket/data.geojson")
+    
+    # Check validity
+    invalid = ~gdf.geometry.is_valid
+    if invalid.any():
+        # Fix invalid geometries
+        gdf.loc[invalid, 'geometry'] = gdf.loc[invalid, 'geometry'].buffer(0)
+    
+    return gdf
+```
+
+---
+
+## Handle Empty Results
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    import geopandas as gpd
+    from shapely.geometry import box
+    
+    gdf = gpd.read_parquet("s3://bucket/data.parquet")
+    gdf = gdf[gdf.intersects(box(*bounds))]
+    
+    if gdf.empty:
+        # Return empty GeoDataFrame with correct schema
+        return gpd.GeoDataFrame(
+            columns=['id', 'name', 'geometry'],
+            geometry='geometry',
+            crs="EPSG:4326"
+        )
+    
+    return gdf
+```
+
+---
+
+## Retry Pattern
+
+```python
+@fused.cache
+def fetch_with_retry(url, max_retries=3):
+    import requests
+    import time
+    
+    for i in range(max_retries):
+        try:
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            if i == max_retries - 1:
+                raise
+            time.sleep(2 ** i)  # Exponential backoff
+```
+
+---
+
+## Validate Inputs
+
+```python
+@fused.udf
+def udf(lat: float = 0, lon: float = 0):
+    import pandas as pd
+    
+    # Validate coordinates
+    if not (-90 <= lat <= 90):
+        raise ValueError(f"Invalid latitude: {lat}")
+    if not (-180 <= lon <= 180):
+        raise ValueError(f"Invalid longitude: {lon}")
+    
+    return pd.DataFrame({"lat": [lat], "lon": [lon]})
+```
+
+---
+
+## Logging
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+    
+    print("Starting UDF...")  # Appears in logs
+    
+    df = pd.read_parquet("s3://bucket/data.parquet")
+    print(f"Loaded {len(df)} rows")
+    
+    return df
+```
+
+---
+
+## Handle Missing Data
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    import geopandas as gpd
+    
+    gdf = load_data(bounds)
+    
+    # Fill missing values
+    gdf['value'] = gdf['value'].fillna(0)
+    
+    # Drop rows with missing geometry
+    gdf = gdf[gdf.geometry.notna()]
+    
+    return gdf
+```
+
+---
+
+## Batch Job Error Handling
+
+For `fused.submit()`, check for errors:
+
+```python
+results = fused.submit(udf, inputs, collect=False)
+
+# Check first error
+error = results.first_error()
+if error:
+    print(f"Error occurred: {error}")
+
+# Collect successful results
+df = results.collect()
+```
+
+---
+
+## See Also
+
+- [UDF Best Practices](/guide/best-practices/udf-best-practices)
+- [Batch Jobs](/guide/running-udfs/batch-jobs)
+

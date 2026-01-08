@@ -1,123 +1,258 @@
 ---
+id: parallel-processing
 title: Parallel Processing
 sidebar_label: Parallel Processing
-sidebar_position: 3
+tags: [write, parallel, submit]
+sidebar_position: 4
 description: Run many UDF tasks concurrently with fused.submit()
+toc_min_heading_level: 2
+toc_max_heading_level: 4
 ---
 
-# Parallel Processing
+# Running jobs in parallel: [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)
 
-Use `fused.submit()` to run a UDF over many inputs concurrently.
+Sometimes you want to run a UDF over a list of inputs (for example running a [UDF that unzips a file over a list of files](/tutorials/Geospatial%20with%20Fused/use-cases/dark-vessel-detection/#33---run-this-udf-over-a-month-of-ais-data)). If each run itself is quite small, then you can run a batch of UDFs over a list of inputs.
 
-**When to use:**
-- Processing many files
-- Running same logic over date ranges
-- Embarrassingly parallel workloads
+Let's use a simple UDF to demonstrate:
 
----
-
-## Quick Start
-
-```python
+```python showLineNumbers
 @fused.udf
 def udf(val):
     import pandas as pd
-    return pd.DataFrame({'result': [val * 2]})
-
-# Run over 100 inputs in parallel
-results = fused.submit(udf, range(100))
+    return pd.DataFrame({'val':[val]})
 ```
 
----
+Say we wanted to run this `udf` 10 times over:
 
-## How It Works
-
-`fused.submit()` runs all inputs in parallel on Fused servers:
-
-```python
-inputs = ["file1.parquet", "file2.parquet", "file3.parquet"]
-
-# All 3 run simultaneously
-results = fused.submit(my_udf, inputs)
+```python showLineNumbers
+inputs = [0,1,2,3,4,5,6,7,8,9]
 ```
 
-Results return as a single DataFrame.
+## [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)
 
----
+Fused is built to help you scale your processing to huge datasets and the core of this ability is [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit). You can run 1 UDF over a large number of arguments:
 
-## Debug Mode
-
-Test with one input first:
-
-```python
-# Run just the first input
-single = fused.submit(udf, inputs, debug_mode=True)
+```python showLineNumbers
+results = fused.submit(udf, inputs)
 ```
 
----
+```bash
+>>> 100%|██████████| 10/10 
+```
 
-## Non-Blocking Execution
+Note that you will only see the progress bar if you are running the code in a notebook, Workbench does not yet currently stream the progress to the console.
 
-For long jobs, use `collect=False`:
+[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) runs all these jobs in parallel and defaults to directly returning the results back to you as a dataframe:
 
-```python
-results = fused.submit(udf, inputs, collect=False)
+```python showLineNumbers
+print(results)
+```
 
-# Check progress
-results.wait()
+```
+>>>
+ 		val
+val
+0	0	0
+1	0	1
+...
+```
 
-# Get timing
-print(results.total_time())
+## Tips for using [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)
+
+- Check that your parameters are correctly setup with `debug_mode=True` (more detail [below](/guide/running-udfs/parallel-processing/#debug-mode))
+
+```python showLineNumbers
+single_run = fused.submit(udf, inputs, debug_mode=True)
+```
+
+- Start with a small number of jobs, then scale up
+
+```python showLineNumbers   
+# Only running the first 5 inputs to make sure the UDF is working as expected
+results = fused.submit(udf, inputs[:5])
+```
+
+- Check the runtime of each job:
+
+```python showLineNumbers
+# Run only 10 jobs and see how long each one took
+results = fused.submit(udf, inputs[:5], collect=False)
 print(results.times())
-
-# Collect when ready
-df = results.collect()
 ```
 
----
+:::tip Job length rule of thumb: 30-45s
+Aim for a single UDF that takes 30-45s. This gives you a "safety" margin as UDFs will [timeout after 120s](/guide/running-udfs/realtime). So they can still take a bit longer and not time out.
+:::
 
-## Execution Options
+- Read the [Best Practices](/guide/best-practices/udf-best-practices/#writing-efficient-udfs) page for more tips on writing efficient UDFs
 
-| Parameter | Description |
-|-----------|-------------|
-| `max_workers` | Number of parallel workers |
-| `engine` | `"remote"` (default) or `"local"` |
-| `max_retry` | Retry count for failed jobs |
-| `debug_mode` | Run single input for testing |
 
----
+## Advanced [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) options
 
-## Best Practices
+### Blocking vs non-blocking calls
 
-1. **Test first** - Use `debug_mode=True` before large runs
-2. **Target 30-45s per task** - Leaves safety margin before 120s timeout
-3. **Start small** - Run 5-10 inputs before scaling up
-4. **Check timing** - Use `results.times()` to identify slow tasks
+By default we've set up [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) to be blocking, meaning it will wait for all the jobs to finish before returning the results.
 
----
+However, you can set `collect=False` and then track the progress of jobs as they run:
 
-## Example: Process Monthly Files
-
-```python
-@fused.udf
-def process_month(month: str = "2024-01"):
-    import pandas as pd
-    
-    df = pd.read_parquet(f"s3://bucket/data/{month}.parquet")
-    # Process...
-    df.to_parquet(f"/mnt/cache/processed/{month}.parquet")
-    
-    return pd.DataFrame({"month": [month], "rows": [len(df)]})
-
-# Process all of 2024
-months = [f"2024-{str(m).zfill(2)}" for m in range(1, 13)]
-results = fused.submit(process_month, months)
+```python showLineNumbers
+results = fused.submit(udf, inputs, collect=False)
 ```
 
----
+### Real time logs
 
-## Next Steps
+- Show a progress bar of number of jobs completed:
 
-- [Batch Jobs](/guide/running-udfs/batch-jobs) - For single heavy jobs
-- [Reference: fused.submit()](/reference/python-sdk/top-level-functions#fusedsubmit) - Full API details
+```python showLineNumbers
+print(results.wait())
+```
+
+```
+100%|██████████| 10/10 [00:01<00:00, 9.31it/s]
+```
+
+- Show total time it took to run all the jobs:
+
+```python showLineNumbers
+print(results.total_time())
+```
+
+```
+>>> datetime.timedelta(seconds=1, microseconds=96764)
+```
+
+- Check the first error that occurred:
+
+```python showLineNumbers
+print(results.first_error())
+```
+
+```
+>>> fused.types.UdfRuntimeError("[Run #0 {'val': 3'}] my error message here...")
+```
+
+
+- Get your data back as a dataframe:
+
+```python showLineNumbers
+print(results.collect())
+```
+
+```python showLineNumbers
+>>>
+ 		val
+val
+0	0	0
+1	0	1
+...
+```
+
+### Debug mode
+
+Sometimes you might just want to make sure your code is running correctly before kicking off a large number of jobs. That's what Debug Mode allows you to do:
+
+```python showLineNumbers
+results = fused.submit(udf, inputs, debug_mode=True)
+```
+
+This will run the first item in `inputs` directly using `fused.run()` (equivalent to `fused.run(udf, inputs[0])`) and then return the results:
+
+```python showLineNumbers
+>>>
+	val
+0	0
+```
+
+You can then set `debug_mode` back to False and be more confident that your UDF is working as expected!
+
+### Execution parameters
+
+[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) also have parameters giving you more control over the execution. See the Python SDK [docs page](/python-sdk/top-level-functions/#fusedsubmit) for more details:
+
+- `max_workers`: The number of workers to use for the job pool.
+- `engine`: `local` or `remote` (default is `remote`).
+    Just like `fused.run()`, by default `fused.submit()` will run the UDF in the Fused server (`engine='remote'`). You can set `engine='local'` to run `udf` locally either on your machine or inside a large machine that you spin up.
+- `max_retry`: The maximum number of retries for a job.
+
+ ### Benchmarking
+
+<details>
+  <summary>Simple [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) Benchmark</summary>
+
+    `fused.submit(udf)` runs all the UDF calls in parallel, making it a helpful tool to run multiple UDFs all at once.
+
+    We can demonstrate this by adding a simple `time.sleep(1)` in our original UDF:
+    ```python {4-5} showLineNumbers
+    @fused.udf
+    def udf(val):
+        import pandas as pd
+        import time
+        time.sleep(1)
+        return pd.DataFrame({'val':[val]})
+    ```
+
+    In a notebook, we can time how long each cell takes to execute with the [`%%time` magic command](https://ipython.readthedocs.io/en/stable/interactive/magics.html#magic-time)
+
+    ```python showLineNumbers
+    # In a jupyter notebook
+    %%time
+    fused.run(udf, val=1)
+    ```
+
+    ![Singe run](/img/core-concepts/run-udfs/fused_run_single_job.png)
+
+    This takes 2s: A few ms of overhead to send the UDF to Fused server & run + 1s of `time.sleep(1)`
+
+    Now using `fused.submit()` to run this over 50 UDFs:
+
+    ![30 runs](/img/core-concepts/run-udfs/submit_50jobs.png)
+
+    This takes a few more seconds, but not 100s. `fused.submit()` is a helpful way to scale a single UDF to many inputs in a timely manner.
+
+
+</details>
+
+## Wall time vs CPU time
+
+There are 2 different runtime calculations for `fused.submit()` jobs:
+
+**Wall time**: Total actual time taken to run the jobs:
+
+```python showLineNumbers
+print(results.total_time())
+```
+
+The exact calculation is:
+```python showLineNumbers
+round(results.total_time().seconds + results.total_time().microseconds / 10e6, 2)
+```
+
+```bash
+# Total time you had to wait
+>>> 11.05
+```
+
+**CPU time**: Sum of all the CPU time taken by the jobs
+
+This is the time that counts towards your bill.
+
+```python showLineNumbers
+round(sum([t.seconds for t in results.times()]) + sum([t.microseconds for t in results.times()]) / 10e6, 2)
+```
+
+```bash
+# Total CPU time
+>>> 21.78
+```
+
+
+## Example use cases
+
+[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) is used in many places across our docs, here are some examples:
+
+- 📈 Processing 20Tb of data in minutes: [Making a Climate Dashboard](/guide/use-cases/climate-dashboard/) of 20 years of data
+- ⛴️ [Retrieving 30 days](/guide/use-cases/dark-vessel-detection/#33---run-this-udf-over-a-month-of-ais-data) of AIS boat transponder data around the United States to detect illegal fishing
+- 🛰️ [Retrieving all of Maxar's Open Data STAC Catalogs](/guide/use-cases/exploring_maxar_data/#preparing-fusedsubmit-to-run-in-parallel) across every events they have imagery for.
+
+💡 Check the [Best Practices](/guide/best-practices/udf-best-practices/#run-tasks-in-parallel) for more on when to use `submit()` and when to use other methods.
 

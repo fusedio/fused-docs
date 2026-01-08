@@ -65,6 +65,18 @@ const sidebars: SidebarsConfig = {
             "guide/writing-data/turn-your-data-into-an-api",
           ],
         },
+        // Geospatial Ingestion - has sub-pages
+        {
+          type: "category",
+          label: "Geospatial Ingestion",
+          collapsed: true,
+          link: { type: "doc", id: "guide/geospatial-ingestion/index" },
+          items: [
+            "guide/geospatial-ingestion/why-ingestion",
+            "guide/geospatial-ingestion/ingest-your-data",
+            "guide/geospatial-ingestion/geospatial-file-formats",
+          ],
+        },
         // Running UDFs - execution modes
         {
           type: "category",
@@ -226,6 +238,21 @@ const sidebars: SidebarsConfig = {
           items: [
             "reference/h3/conversions",
             "reference/h3/operations",
+          ],
+        },
+        // UDF Patterns - has sub-pages
+        {
+          type: "category",
+          label: "UDF Patterns",
+          collapsed: true,
+          link: { type: "doc", id: "reference/udf-patterns/index" },
+          items: [
+            "reference/udf-patterns/bounds-and-tiles",
+            "reference/udf-patterns/parallel-processing",
+            "reference/udf-patterns/caching",
+            "reference/udf-patterns/http-endpoints",
+            "reference/udf-patterns/visualization",
+            "reference/udf-patterns/error-handling",
           ],
         },
         // Data Loading Reference - has sub-pages
