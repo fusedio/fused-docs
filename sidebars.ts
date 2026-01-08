@@ -89,6 +89,7 @@ const sidebars: SidebarsConfig = {
             "guide/running-udfs/batch-jobs",
             "guide/running-udfs/parallel-processing",
             "guide/running-udfs/http-endpoints",
+            "guide/running-udfs/quality-assurance",
           ],
         },
         // H3 Hexagons - flattened structure
@@ -164,6 +165,7 @@ const sidebars: SidebarsConfig = {
               ],
             },
             "guide/use-cases/canvas-catalog",
+            "guide/use-cases/realtime-data-processing",
           ],
         },
         // Content Management - has sub-pages
@@ -177,6 +179,7 @@ const sidebars: SidebarsConfig = {
             "guide/content-management/git",
             "guide/content-management/download",
             "guide/content-management/environment-variables",
+            "guide/content-management/onprem",
           ],
         },
         // Best Practices - has sub-pages
