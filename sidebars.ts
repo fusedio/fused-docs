@@ -46,6 +46,7 @@ const sidebars: SidebarsConfig = {
           items: [
             "guide/loading-data/local-files",
             "guide/loading-data/cloud-storage",
+            "guide/loading-data/handling-large-remote-files",
             "guide/loading-data/databases",
             "guide/loading-data/apis",
             "guide/loading-data/gee",
