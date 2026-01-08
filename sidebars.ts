@@ -91,6 +91,17 @@ const sidebars: SidebarsConfig = {
             "guide/running-udfs/parallel-processing",
             "guide/running-udfs/http-endpoints",
             "guide/running-udfs/quality-assurance",
+            {
+              type: "category",
+              label: "Best Practices",
+              collapsed: true,
+              link: { type: "doc", id: "guide/running-udfs/best-practices/index" },
+              items: [
+                "guide/running-udfs/best-practices/udf-best-practices",
+                "guide/running-udfs/best-practices/workbench-best-practices",
+                "guide/running-udfs/best-practices/build_with_llms",
+              ],
+            },
           ],
         },
         // H3 Hexagons - flattened structure
@@ -183,19 +194,7 @@ const sidebars: SidebarsConfig = {
             "guide/content-management/onprem",
           ],
         },
-        // Best Practices - has sub-pages
-        {
-          type: "category",
-          label: "Best Practices",
-          collapsed: true,
-          link: { type: "doc", id: "guide/best-practices/index" },
-          items: [
-            "guide/best-practices/udf-best-practices",
-            "guide/best-practices/workbench-best-practices",
-            "guide/best-practices/build_with_llms",
-          ],
-        },
-      ],
+        ],
     },
     // ============================================
     // NEW STRUCTURE - Reference
