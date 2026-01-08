@@ -9,7 +9,7 @@ sidebar_position: 0
 
 _An opinionated guide to making the most out of Fused UDFs_
 
-[Fused UDFs](/core-concepts/write/) are Python functions that run on serverless compute and can be called from anywhere with [`fused.run(udf)`](/core-concepts/run-udfs/run-small-udfs/#fusedrun). This guide is a resource meant to help you on your way to making the most out of UDFs.
+[Fused UDFs](/guide/running-udfs/writing-udfs) are Python functions that run on serverless compute and can be called from anywhere with [`fused.run(udf)`](/reference/python-sdk/top-level-functions#fusedrun). This guide is a resource meant to help you on your way to making the most out of UDFs.
 
 ## A short reminder: The anatomy of a UDF
 
@@ -22,27 +22,27 @@ def udf(my_awesome_input: int = 1):
 ```
 
 Each UDF has a few specific elements:
-- The [`@fused.udf` decorator](/core-concepts/write/#fusedudf-decorator)
+- The [`@fused.udf` decorator](/guide/running-udfs/writing-udfs#the-fusedudf-decorator)
 - Arguments -ideally typed-
 - Imports _inside_ the function
 - Some logic
-- A [supported `return` object](/core-concepts/write/#return-object)
+- A [supported `return` object](/guide/running-udfs/writing-udfs#return-types)
 
 :::note
-All of this is explained in the ["Write UDF"](/core-concepts/write/) section in much more details.
+All of this is explained in the ["Write UDF"](/guide/running-udfs/writing-udfs) section in much more details.
 :::
 
-You can then run UDFs from _anywhere_ with [`fused.run(udf)`](/core-concepts/run-udfs/run-small-udfs/#fusedrun). These are still Python functions, giving you a lot of flexibility on what you can do, but we have some recommendations for keeping them fast & efficient.
+You can then run UDFs from _anywhere_ with [`fused.run(udf)`](/reference/python-sdk/top-level-functions#fusedrun). These are still Python functions, giving you a lot of flexibility on what you can do, but we have some recommendations for keeping them fast & efficient.
 
 ## Writing efficient UDFs
 
 ### Keep things small
 
-The main benefit of Fused UDFs is how responsive they are. They achieve this by running on Python serverless compute. They can [time out](/core-concepts/run-udfs/run-small-udfs/#defining-small-job), so the best way to keep workflows fast is to keep them small:
+The main benefit of Fused UDFs is how responsive they are. They achieve this by running on Python serverless compute. They can [time out](/guide/running-udfs/realtime#timeout-errors), so the best way to keep workflows fast is to keep them small:
 
 - Break pipelines into single-task UDFs
-- Leverage [`fused.run()`](/core-concepts/run-udfs/run-small-udfs/#fusedrun) to chain UDFs together
-- Or [run small tasks in parallel](/core-concepts/best-practices/udf-best-practices/#run-tasks-in-parallel)
+- Leverage [`fused.run()`](/reference/python-sdk/top-level-functions#fusedrun) to chain UDFs together
+- Or [run small tasks in parallel](#run-tasks-in-parallel-fusedsubmit)
 
 <details>
     <summary>Example: Breaking down a complex pipeline into smaller UDFs</summary>
@@ -99,7 +99,7 @@ Just like writing short cells when developing in a Jupyter Notebook, we recommen
 
 ⚡️ Aim for **UDFs that take up to 30-45s to run**
 
-UDFs run with [`fused.run()`](/core-concepts/run-udfs/run-small-udfs/#fusedrun) [time out after 120s](/core-concepts/run-udfs/run-small-udfs/#defining-small-job) so we recommend you keep a buffer in case your UDF takes a bit longer to execute
+UDFs run with [`fused.run()`](/reference/python-sdk/top-level-functions#fusedrun) [time out after 120s](/guide/running-udfs/realtime#timeout-errors) so we recommend you keep a buffer in case your UDF takes a bit longer to execute
 
 <details>
     <summary>Visual: UDF timing guideline</summary>
@@ -110,18 +110,18 @@ UDFs run with [`fused.run()`](/core-concepts/run-udfs/run-small-udfs/#fusedrun) 
 
 </details>
 
-### Run tasks in parallel: [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit)
+### Run tasks in parallel: [`fused.submit()`](/guide/running-udfs/parallel-processing)
 
-[`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit) lets you run a UDF over a set of inputs in parallel. This is helpful when wanting to scale a small operation over a large number of inputs for example: 
+[`fused.submit()`](/guide/running-udfs/parallel-processing) lets you run a UDF over a set of inputs in parallel. This is helpful when wanting to scale a small operation over a large number of inputs for example: 
 - converting a list of files from 1 format to another
 - computing a simple operation over a large time series
 
-Best Practices for using [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit):
+Best Practices for using [`fused.submit()`](/guide/running-udfs/parallel-processing):
 - Run UDFs that take between 30-45s to run (leaving overhead for any UDF in the chain to take a bit longer)
 - Return small dataframes (a few rows / columns) OR save to a file and return a file path. This makes it easier to aggregate all the data together in a small dataframe
 
 <details>
-    <summary>Example: Parallelizing a UDF with [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit)</summary>
+    <summary>Example: Parallelizing a UDF with [`fused.submit()`](/guide/running-udfs/parallel-processing)</summary>
 
     Let's imagine we have a `fetch_single_data` that loads data from an API for a large amount of inputs `input_data=[0,1,2,3,4,5,7,8,9]`:
 
@@ -152,7 +152,7 @@ Best Practices for using [`fused.submit()`](/core-concepts/run-udfs/run-small-ud
 
         return pd.DataFrame({"data": fetched_data})
     ```
-    However, running this UDF with `fused.run(fetch_data, inputs=input_data)` will take longer as we add inputs, we could even quickly go over [the 120s limit](/core-concepts/run-udfs/run-small-udfs/#defining-small-job). We still do want to fetch data across all our inputs which is where [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit) comes in:
+    However, running this UDF with `fused.run(fetch_data, inputs=input_data)` will take longer as we add inputs, we could even quickly go over [the 120s limit](/guide/running-udfs/realtime#timeout-errors). We still do want to fetch data across all our inputs which is where [`fused.submit()`](/guide/running-udfs/parallel-processing) comes in:
 
     Going back to our original UDF, we can now run it with `fused.submit()` to run it in parallel:
 
@@ -188,17 +188,17 @@ Best Practices for using [`fused.submit()`](/core-concepts/run-udfs/run-small-ud
 
 </details>
 
-### Use [offline instances](/core-concepts/run-udfs/run_large/) for your large jobs
+### Use [offline instances](/guide/running-udfs/batch-jobs) for your large jobs
 
-You might not be able to run your UDF within the 120s limit of the default [`fused.run(udf)`](/core-concepts/run-udfs/run-small-udfs/#fusedrun) call or break it down into smaller UDFs and parallelize it with [`fused.submit()`](/core-concepts/run-udfs/run-small-udfs/#fusedsubmit). In that case you can [use offline instances](/core-concepts/run-udfs/run_large/). These also allow you to:
-- [Choose instances](/core-concepts/run-udfs/run_large/#run_batch-instance-arguments) with more memory & CPU
-- Run your UDF for longer than 120s (at the expense of slower startup time and [requiring to save your data to storage](/core-concepts/run-udfs/run_large/#getting-results) to retrieve it)
+You might not be able to run your UDF within the 120s limit of the default [`fused.run(udf)`](/reference/python-sdk/top-level-functions#fusedrun) call or break it down into smaller UDFs and parallelize it with [`fused.submit()`](/guide/running-udfs/parallel-processing). In that case you can [use offline instances](/guide/running-udfs/batch-jobs). These also allow you to:
+- [Choose instances](/guide/running-udfs/batch-jobs#run_batch-instance-arguments) with more memory & CPU
+- Run your UDF for longer than 120s (at the expense of slower startup time and [requiring to save your data to storage](/guide/running-udfs/batch-jobs#getting-results) to retrieve it)
 
 You can find an example of using offline instances in [one of our end to end examples](/tutorials/Geospatial%20with%20Fused/use-cases/dark-vessel-detection/#34---ingest-1-month-of-ais-data-into-a-geo-partitioned-format) when ingesting data into portioned cloud native formats
 
 ### Cache as much as you can
 
-Fused relies heavily on [caching](/core-concepts/cache/) repetitive tasks to make recurring calls much faster (and more compute efficient)
+Fused relies heavily on [caching](/guide/scaling-up/cache) repetitive tasks to make recurring calls much faster (and more compute efficient)
 
 ✅ You want to use caching for functions with inputs that are recurring:
 - Loading a dataset
@@ -212,7 +212,7 @@ Fused relies heavily on [caching](/core-concepts/cache/) repetitive tasks to mak
 <details>
     <summary>Example: Caching a repetitive task</summary>
 
-    Re-using the example from [keeping things small](/core-concepts/best-practices/udf-best-practices/#keep-things-small):
+    Re-using the example from [keeping things small](#keep-things-small):
 
     ❌ Not recommended:
 
@@ -269,15 +269,15 @@ Fused relies heavily on [caching](/core-concepts/cache/) repetitive tasks to mak
 
 :::tip
 Read more about the caching details:
-- [in the dedicated section](/core-concepts/cache/)
-- How you can use cache to [speed up exploration of slow to read datasets](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/why-ingestion/#using-cache-as-a-single-use-ingester)
+- [in the dedicated section](/guide/scaling-up/cache)
+- How you can use cache to [speed up exploration of slow to read datasets](/guide/geospatial-ingestion/why-ingestion/#using-cache-as-a-single-use-ingester)
 :::
 
 ### Prepare your large datasets
 
-Fused works at its best with data that is fast to read and can be read in tiles or chunks. We know that most of the data out there isn't in the most [efficient file formats](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/geospatial-file-formats) which is why we provide tools to [ingest your own data](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/ingest-your-data) into cloud-optimized, partitioned formats.
+Fused works at its best with data that is fast to read and can be read in tiles or chunks. We know that most of the data out there isn't in the most [efficient file formats](/guide/geospatial-ingestion/geospatial-file-formats) which is why we provide tools to [ingest your own data](/guide/geospatial-ingestion/ingest-your-data) into cloud-optimized, partitioned formats.
 
-We have a [dedicated page](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/why-ingestion/#when-is-ingestion-needed) for when you should consider ingesting your own data. As a rule of thumb you want to consider ingesting your data when:
+We have a [dedicated page](/guide/geospatial-ingestion/why-ingestion/#when-is-ingestion-needed) for when you should consider ingesting your own data. As a rule of thumb you want to consider ingesting your data when:
 - Files are read multiple times and >100MB
 - Files that are slow or require some processing to open (`.zip` for example)
 
@@ -343,7 +343,7 @@ def udf(
 
 This has 2 effects:
 - It makes your code more readable to others
-- Fused only supports a [few types](/core-concepts/write/#supported-types) at the moment. Any non-typed or unsupported types will be passed as `str`
+- Fused only supports a [few types](/guide/running-udfs/writing-udfs#parameter-types) at the moment. Any non-typed or unsupported types will be passed as `str`
 
 ### Use the line by line execution debugger
 
@@ -418,7 +418,7 @@ job = fused.submit(udf, inputs, debug_mode=True)
 This runs `fused.run(udf, inputs[0])` and returns the results. It allows you to quickly test out `udf` before running it on a large number of inputs.
 
 :::tip
-Since [UDFs are cached by default](/core-concepts/cache/#caching-a-udf), using `fused.submit(udf, inputs, debug_mode=True)` means Fused won't run the 1st input again, as you'll have just run it! (unless `udf` is set with `cache_max_age=0`)
+Since [UDFs are cached by default](/guide/scaling-up/cache#caching-a-udf), using `fused.submit(udf, inputs, debug_mode=True)` means Fused won't run the 1st input again, as you'll have just run it! (unless `udf` is set with `cache_max_age=0`)
 :::
 
 

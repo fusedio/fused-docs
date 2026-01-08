@@ -163,6 +163,7 @@ const sidebars: SidebarsConfig = {
                 "guide/use-cases/Crop Exploration with H3/interactive_visualization",
               ],
             },
+            "guide/use-cases/canvas-catalog",
           ],
         },
         // Content Management - has sub-pages

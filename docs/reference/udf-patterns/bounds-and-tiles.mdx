@@ -1,108 +1,213 @@
 ---
-title: Bounds and Tiles
+title: Single / Tile Map UDFs
 sidebar_label: Bounds & Tiles
+tags: [write, endpoints, api, http, file, single, tile]
 sidebar_position: 1
-description: Working with bounds and tiles in UDFs
+description: Understanding Single vs Tile UDF execution modes
 ---
 
-# Bounds and Tiles
+# Working with Spatial Data: Single vs Tile
 
-UDFs can receive viewport bounds to filter data to the visible map area.
+There are 2 main ways to work with spatial data in Fused:
 
----
+## Single UDF
 
-## Basic Bounds Pattern
+Single UDFs are the default behavior in Fused. The UDF is run 1 time with the current viewport bounds.
 
-```python
+![Single UDF Mode](/img/tutorials/single_udf_mode.png)
+
+Characteristics:
+- 1 Single UDF is called on the entire Map Viewport
+- Panning Map does NOT re-run the UDF
+- "Results" Tab shows the output of the unique UDF called
+
+### Single HTTPS Call
+
+A Single UDF is called like any other UDF via a [HTTPS request](/guide/running-udfs/http-endpoints):
+
+```bash
+https://www.fused.io/.../run/file?format=csv
+```
+
+Or via the [Fused Python SDK](/reference/python-sdk/):
+
+```python showLineNumbers
+fused.run("single_udf")
+```
+
+There are 2 types of Spatial Single UDFs:
+
+### Single (Viewport)
+
+Will prioritize the current MAP VIEWPORT bounds, regardless of the [`bounds`](#bounds) parameter.
+
+```python showLineNumbers
 @fused.udf
-def udf(bounds: fused.types.Bounds = None):
-    import geopandas as gpd
-    from shapely.geometry import box
-    
-    gdf = gpd.read_parquet("s3://bucket/data.parquet")
-    
-    if bounds:
-        gdf = gdf[gdf.intersects(box(*bounds))]
-    
-    return gdf
+def udf(bounds: fused.types.Bounds = [-74.38,40.32,-73.31,41.29]):
+    print(bounds) # This will be the current MAP VIEWPORT bounds, regardless of the `bounds` parameter
+    return bounds
 ```
 
----
+### Single (Parameter)
 
-## Convert Bounds to GeoDataFrame
+Will use the [`bounds`](#bounds) parameter, regardless of the current MAP VIEWPORT bounds.
 
-Use the `common` utilities:
-
-```python
+```python showLineNumbers
 @fused.udf
-def udf(bounds: fused.types.Bounds = None):
-    common = fused.load("https://github.com/fusedio/udfs/tree/main/public/common/").utils
-    
-    # Get tiles from bounds
-    tile = common.get_tiles(bounds)
-    
-    # Read data for tile
-    return common.table_to_tile(bounds, "s3://bucket/ingested_data/")
+def udf(bounds: fused.types.Bounds = [-74.38,40.32,-73.31,41.29]):
+    print(bounds) # This will be the `bounds` parameter, regardless of the current MAP VIEWPORT bounds
+    return bounds
 ```
 
----
+### Example UDF
 
-## Tile Parameters
+- [Get Isochrone](https://www.fused.io/workbench/udf/catalog/Get_Isochrone-15dcecd8-c401-42a8-b9f0-a9dac3d7ddc3)
+    - Returns an isochrone (how far a person cal walk / drive) polygon for a given point
 
-When using `common.get_tiles()`:
+## Tile UDF
 
-| Parameter | Description |
-|-----------|-------------|
-| `bounds` | The bounding box coordinates |
-| `target_num_tiles` | Split into sub-tiles |
-| `clip` | Clip to exact bounds extent |
+Tile UDFs tile the users viewport into a grid of smaller tiles and running a UDF for each.
 
-```python
-# Create 4 sub-tiles clipped to bounds
-tiles = common.get_tiles(bounds, target_num_tiles=4, clip=True)
+![Tile UDF Mode](/img/tutorials/tile_udf_mode.png)
+
+Characteristics:
+- Multiple Tile UDFs are called to cover the current Map Viewport
+- Panning Map re-runs the UDF for each tile
+- "Results" Tab shows the output of the _latest_ tile called
+
+### Tile HTTPS Call
+
+A Tile UDF is called by passing [Web mercator XYZ tiles](https://en.wikipedia.org/wiki/Tiled_web_map) through the [HTTPS request](/guide/running-udfs/http-endpoints)
+
+**Two ways to call the HTTPS endpoint:**
+
+**1. Dynamic tile server (for map applications)**
+
+```bash
+https://www.fused.io/.../run/tiles/{z}/{x}/{y}?format=png
+```
+Use this template URL in mapping libraries `{z}/{x}/{y}` gets automatically replaced with tile coordinates as users pan and zoom.
+
+Example use cases:
+- [QGIS](/reference/udf-patterns/integrations#qgis)
+- [Felt](/reference/udf-patterns/integrations#felt)
+- [DeckGL](/reference/udf-patterns/integrations#deckgl)
+- [Mapbox](/reference/udf-patterns/integrations#mapbox)
+
+**2. Specific tile call**
+```bash
+# Calls a single tile - San Francisco center at zoom 13
+https://www.fused.io/.../run/tiles/13/1316/3169?format=png
+```
+Use this to fetch data for one specific tile location.
+
+Or via the [Fused Python SDK](/reference/python-sdk/):
+
+```python showLineNumbers
+# With bounds parameter
+fused.run("tile_udf", bounds=bounds)
 ```
 
----
-
-## Tile vs File Mode
-
-UDFs can run in two modes:
-
-| Mode | Use Case | Metadata |
-|------|----------|----------|
-| **Tile** | Pan around map, load data dynamically | `'fused:udfType': 'vector_tile'` |
-| **File** | Load static dataset once | `'fused:udfType': 'vector_single'` |
-
-Set mode in metadata:
-```python
-udf.metadata = {'fused:udfType': 'vector_tile'}
+```python showLineNumbers
+# With x, y, z parameters
+fused.run("tile_udf", x=1, y=2, z=3)
 ```
 
----
+### Example UDF
 
-## Reading Ingested Data
+- [Overture Maps Example](https://www.fused.io/workbench/udf/catalog/Overture_Maps_Example-64071fb8-2c96-4015-adb9-596c3bac6787)
+    - Manipulate _all_ the buildings from the Overture Maps dataset by leveraging [Fused ingestion](/guide/geospatial-ingestion/)
+- [Landsat Tile Example](https://www.fused.io/workbench/udf/catalog/Landsat_Tile_Example-942a9608-77cb-4d2b-8627-ea5f2747d96d)
+    - Returns NDVI tile computed on the fly from Landsat data
 
-For Fused-ingested tables:
+## Comparing Single and Tile UDFs
 
-```python
+| Feature | Single UDF | Tile UDF |
+|---------|------------|-----------|
+| UDF Calls | 1 | Multiple |
+| Parameters | [`bounds`](#bounds) (Optional) | [`bounds`](#bounds) or `x`, `y`, `z` |
+| Map rendering | Static | Dynamic |
+| HTTP Call | Single Call | Tile Server calls or Single Call (specific tile) |
+| [Results Tab](/reference/workbench/udf-builder/results) display | Unique output of the UDF called | Output of the _latest_ tile called |
+| Use Case | Small static data | Calling large dataset through tile server |
+
+## `bounds`
+
+`bounds` is simply a list of 4 coordinates representing the bounds of a geometry. The 4 coordinates represent `[xmin, ymin, xmax, ymax]` of the bounds.
+
+In Fused it is defined with the `fused.types.Bounds` type:
+
+```python showLineNumbers
 @fused.udf
-def udf(bounds: fused.types.Bounds = None):
-    common = fused.load("https://github.com/fusedio/udfs/tree/main/public/common/").utils
-    return common.table_to_tile(bounds, table="s3://bucket/ingested/")
+def udf(bounds: fused.types.Bounds=None):
+    print(bounds)
+
+>>> [-1.52244399, 48.62747869, -1.50004107, 48.64359255]
 ```
 
----
+### `bounds` to `GeoDataFrame`
 
-## Raster with Bounds
+Converting `bounds` (list of 4 coordinates) to a `GeoDataFrame`:
 
-Return raster array with its bounds:
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
-```python
+<Tabs className="unique-tabs">
+  <TabItem value="fused" label="Fused common function" default>
+    ```python showLineNumbers
+    @fused.udf
+    def udf(bounds: fused.types.Bounds=None):
+        common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
+        return common.bounds_to_gdf(bounds)
+    ```
+</TabItem>
+  <TabItem value="Python Libraries" label="shapely & geopandas">
+        ```python showLineNumbers
+        @fused.udf
+        def udf(bounds: fused.types.Bounds=None):
+            import shapely
+            import geopandas as gpd
+            box = shapely.box(*bounds)
+            return gpd.GeoDataFrame(geometry=[box], crs=4326)
+        ```
+</TabItem>
+</Tabs>
+
+
+### Legacy types
+
+Legacy types that might still appear in older UDFs.
+
+#### [Legacy] `fused.types.Tile`
+
+This is a [geopandas.GeoDataFrame](https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.html) with `x`, `y`, `z`, and `geometry` columns.
+
+```python showLineNumbers
 @fused.udf
-def udf(bounds: fused.types.Bounds = None):
-    import numpy as np
-    
-    arr = np.random.randint(0, 255, (256, 256, 3), dtype=np.uint8)
-    return arr, bounds
+def udf(bounds: fused.types.Tile=None):
+    print(bounds)
+
+>>>      x    y   z                                           geometry
+>>> 0  327  790  11  POLYGON ((-122.0 37.0, -122.0 37.1, -122.1 37.1, -122.1 37.0, -122.0 37.0))
 ```
 
+#### [Legacy] `fused.types.TileGDF`
+
+This behaves the same as [`fused.types.Tile`](#legacy-fusedtypestile).
+
+#### [Legacy] `fused.types.ViewportGDF`
+
+This is a [geopandas.geodataframe.GeoDataFrame](https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.html) with a `geometry` column corresponding to the Polygon geometry of the current viewport in the Map.
+```python showLineNumbers
+@fused.udf
+def udf(bbox: fused.types.ViewportGDF=None):
+    print(bbox)
+    return bbox
+
+>>>  geometry
+>>>  POLYGON ((-122.0 37.0, -122.0 37.1, -122.1 37.1, -122.1 37.0, -122.0 37.0))
+```
+
+#### [Legacy] `bbox` object
+
+UDFs defined using the legacy keyword `bbox` are automatically now mapped to `bounds`. Please update your code to use `bounds` directly as this alias will be removed in a future release.
