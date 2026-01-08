@@ -253,6 +253,7 @@ const sidebars: SidebarsConfig = {
             "reference/udf-patterns/http-endpoints",
             "reference/udf-patterns/visualization",
             "reference/udf-patterns/error-handling",
+            "reference/udf-patterns/integrations",
           ],
         },
         // Data Loading Reference - has sub-pages
