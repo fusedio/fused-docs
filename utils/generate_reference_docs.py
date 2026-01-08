@@ -163,7 +163,7 @@ result = result.replace("## fused.cache", "## @fused.cache")
 # griffe cannot handl the x, y, z multiple parameters on one line
 result = result.replace("**x,** (<code>y, z</code>)", "**x, y, z** (<code>int</code>)")
 
-with open(ROOT / "docs" / "python-sdk" / "top-level-functions.mdx", "w") as f:
+with open(ROOT / "docs" / "reference" / "python-sdk" / "top-level-functions.mdx", "w") as f:
     f.write(result)
 
 
@@ -277,7 +277,7 @@ for meth in methods:
 """
     result += docstring + "\n" + usage_note + "\n---\n\n"
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w") as f:
+with open(ROOT / "docs" / "reference" / "python-sdk" / "api-reference" / "api.mdx", "w") as f:
     f.write(result)
 
 
@@ -314,7 +314,7 @@ config["filters"] = ["!model_config"]
 docstring = render_object_docs(mod["_options"]["Options"], config)
 result += docstring
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "options.mdx", "w") as f:
+with open(ROOT / "docs" / "reference" / "python-sdk" / "api-reference" / "options.mdx", "w") as f:
     f.write(result)
 
 
@@ -334,7 +334,7 @@ result += """\
 ## JobPool
 
 The `JobPool` class is used to manage, inspect and retrieve results from
-submitted jobs from [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit).
+submitted jobs from [`fused.submit()`](/reference/python-sdk/top-level-functions#fusedsubmit).
 
 """
 
@@ -354,7 +354,7 @@ for meth in methods:
     docstring = render_object_docs(mod["_submit"]["JobPool"][meth], config)
     result += docstring + "\n---\n\n"
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "jobpool.mdx", "w") as f:
+with open(ROOT / "docs" / "reference" / "python-sdk" / "api-reference" / "jobpool.mdx", "w") as f:
     f.write(result)
 
 
@@ -374,8 +374,8 @@ result += """\
 ## Udf
 
 The `Udf` class is the object you get when defining a UDF with the
-[`@fused.udf`](/python-sdk/top-level-functions/#fusedudf) decorator, or when loading
-a saved UDF with [`fused.load()`](/python-sdk/top-level-functions/#fusedload).
+[`@fused.udf`](/reference/python-sdk/top-level-functions#fusedudf) decorator, or when loading
+a saved UDF with [`fused.load()`](/reference/python-sdk/top-level-functions#fusedload).
 
 """
 
@@ -403,7 +403,7 @@ for meth in methods:
     docstring = render_object_docs(mod["models"]["Udf"][meth], config)
     result += docstring + "\n---\n\n"
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w") as f:
+with open(ROOT / "docs" / "reference" / "python-sdk" / "api-reference" / "udf.mdx", "w") as f:
     f.write(result)
 
 
@@ -432,7 +432,7 @@ for obj in api_listing:
     docstring = render_object_docs(mod_api[obj], default_config)
     result += docstring + "\n---\n\n"
 
-result = result.replace("`fused.submit()`", "[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)")
+result = result.replace("`fused.submit()`", "[`fused.submit()`](/reference/python-sdk/top-level-functions#fusedsubmit)")
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "h3.mdx", "w") as f:
+with open(ROOT / "docs" / "reference" / "python-sdk" / "api-reference" / "h3.mdx", "w") as f:
     f.write(result)

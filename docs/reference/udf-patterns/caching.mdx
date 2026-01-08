@@ -1,0 +1,131 @@
+---
+title: Caching Patterns
+sidebar_label: Caching
+sidebar_position: 3
+description: Patterns for caching in UDFs
+---
+
+# Caching Patterns
+
+Use `@fused.cache` to cache expensive operations within UDFs.
+
+---
+
+## Basic Cache Pattern
+
+```python
+@fused.cache
+def load_data(path):
+    import pandas as pd
+    return pd.read_parquet(path)
+
+@fused.udf
+def udf(path: str = "s3://bucket/data.parquet"):
+    df = load_data(path)
+    return df
+```
+
+---
+
+## Cache with Expiry
+
+```python
+@fused.cache(cache_max_age="24h")
+def fetch_api_data(endpoint):
+    import requests
+    return requests.get(endpoint).json()
+```
+
+---
+
+## Cache Time Options
+
+| Value | Duration |
+|-------|----------|
+| `"1h"` | 1 hour |
+| `"24h"` | 24 hours |
+| `"7d"` | 7 days |
+| `"30d"` | 30 days |
+
+---
+
+## Cache Slow File Formats
+
+Queries on slow formats (CSV, GeoJSON) benefit from caching:
+
+```python
+@fused.cache
+def get_data(path):
+    import geopandas as gpd
+    return gpd.read_file(path)
+
+@fused.udf
+def udf():
+    return get_data("https://example.com/data.geojson")
+```
+
+---
+
+## Cache API Calls
+
+Prevent rate limiting by caching API responses:
+
+```python
+@fused.cache(cache_max_age="1h")
+def call_api(endpoint, params):
+    import requests
+    return requests.get(endpoint, params=params).json()
+```
+
+---
+
+## Cache Within UDF
+
+Cache intermediate results that don't depend on bounds:
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = None, source: str = "default"):
+    @fused.cache
+    def load_reference_data(source):
+        import pandas as pd
+        return pd.read_parquet(f"s3://bucket/{source}.parquet")
+    
+    # This is cached regardless of bounds
+    ref_data = load_reference_data(source)
+    
+    # Filter by bounds
+    return ref_data[ref_data.intersects(box(*bounds))]
+```
+
+---
+
+## Cache Invalidation
+
+Cache is invalidated when:
+- Function code changes
+- Function inputs change
+- `cache_max_age` expires
+
+---
+
+## When to Cache
+
+**Good candidates:**
+- Large file reads
+- API calls
+- Expensive computations
+- Data that doesn't change often
+
+**Avoid caching:**
+- Bounds-dependent data loading
+- Fast operations
+- Frequently changing data
+
+---
+
+## See Also
+
+- [Caching Guide](/guide/scaling-up/cache)
+- [fused.cache Reference](/reference/python-sdk/top-level-functions#fusedcache)
+

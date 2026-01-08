@@ -1,0 +1,76 @@
+---
+title: Quickstart for Data Scientists
+sidebar_label: Data Scientist
+sidebar_position: 1
+description: Get started with Fused for data science workflows
+---
+
+## Your First Analysis UDF
+
+1. Open [Workbench](https://www.fused.io/workbench)
+2. Create a new UDF
+3. Paste the example below
+
+```python
+@fused.udf
+def udf(threshold: float = 0.5):
+    import pandas as pd
+    
+    # Load sample data
+    df = pd.read_csv("s3://fused-sample/demo_data/housing_2024.csv")
+    
+    # Process
+    df['price_per_sqft'] = df['price'] / df['area']
+    df['above_threshold'] = df['price_per_sqft'] > threshold
+    
+    return df
+```
+
+## Key Patterns
+
+### Cache Expensive Operations
+
+```python
+@fused.udf
+def udf():
+
+    @fused.cache
+    def load_data():
+        import pandas as pd
+        return pd.read_csv("s3://bucket/data.csv")
+    
+    df = load_data()  # Next time you call this UDF, loading will be much faster as this function is cached
+    df['new_col'] = df['some_col'] * 2
+    return df
+```
+
+### Parallel Time Series Processing
+
+Fused allows you to run UDFs in parallel with [`fused.submit()`](/reference/python-sdk/top-level-functions#fusedsubmit).
+
+```python
+@fused.udf
+def udf():
+    months = [f"2024-{m:02d}" for m in range(1, 6)]
+
+    # Run 6 months in parallel
+    results = fused.submit(process_month, months)
+
+    return results
+
+@fused.udf
+def process_month(month: str = "2024-01"):
+    import duckdb
+    return duckdb.sql(f"""
+        SELECT '{month}' as month, ROUND(AVG(daily_mean), 2) as avg_temp
+        FROM 's3://fused-asset/data/era5/t2m/datestr={month}-*/*.parquet'
+    """).df()
+```
+
+This processes a year of global temperature data in seconds. See the full [Climate Dashboard tutorial](/guide/use-cases/climate-dashboard) for more.
+
+## Next Steps
+
+- [Loading Data](/guide/loading-data/) - Read from S3, databases
+- [Caching](/core-concepts/cache/) - Speed up analysis
+- [Scaling Up](/guide/scaling-up/) - Parallel processing

@@ -1,0 +1,743 @@
+---
+title: Realtime data processing with DuckDB WASM
+sidebar_label: Realtime Data with DuckDB
+description: Build real-time filtering visualizations using DuckDB WASM in the browser
+---
+
+# Realtime data filtering with DuckDB WASM
+
+This tutorial will show you how to build a real time filtering visualization using DuckDB WASM:
+
+<iframe
+  src="https://www.fused.io/server/v1/realtime-shared/UDF_WASM_Filtering_CDL/run/file"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+></iframe>
+
+[Open map in a new tab](https://www.fused.io/server/v1/realtime-shared/UDF_WASM_Filtering_CDL/run/file)
+
+This map:
+- Fetches data from a [Fused UDF](https://www.fused.io/server/v1/realtime-shared/UDF_CDL_Data_Filtering/run/file?dtype_out_vector=html) (which aggregates & cleans data into hex5), uses DuckDB WASM to filter it and renders the output on a map
+- Data comes from [Source Cooperative](https://source.coop/fused/hex/release_2025_04_beta/cdl) based on 2024 USDA Crop Data Layer
+
+This is how to build this step by step:
+
+## 1. Querying data with DuckDB WASM
+
+The simplest way to use DuckDB in the browser is to use DuckDB WASM to query a hosted file. 
+
+You can directly edit the SQL query directly here:
+
+<iframe 
+    style={{
+        width: "100%",
+        height: "200px",
+        minHeight: "400px", 
+        margin: "0 auto",
+        display: "block",
+        border: "1px solid #e1e5e9",
+        borderRadius: "8px"
+    }}
+    src="https://www.fused.io/server/v1/realtime-shared/UDF_Duckdb_Table_loading_from_s3/run/file"
+    title="DuckDB WASM Data Loading Demo"
+    frameBorder="0"
+    allowFullScreen
+    allow="fullscreen">
+</iframe>
+
+This UDF:
+- Signs S3 once so browser can fetch it
+- Loads parquet as view `df`
+- Auto-runs query as you type (small debounce)
+- 'Run' button stays disabled until data is ready and becomes optional
+
+
+<details>
+<summary>Expand to see implementations details</summary>
+
+1. Imports, signing the S3 URL and HTML template start
+
+```python
+common = fused.load("https://github.com/fusedio/udfs/tree/6b98ee5/public/common/")
+@fused.udf(cache_max_age = 0)
+def udf(
+    data_url: str = "s3://fused-sample/demo_data/airbnb_listings_nyc.parquet",
+    initial_sql: str = """ SELECT * from df """
+):
+    """
+    DuckDB-WASM SQL viewer with VIRTUALIZED table:
+    - Loads parquet as view `df`
+    - Auto-runs query as you type
+    - Table renders only visible rows for performance
+    """
+    signed_url = fused.api.sign_url(data_url)
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>DuckDB SQL Viewer (Virtualized)</title>
+  <style>
+    body {{ margin:16px; font-family: monospace; background:#fff; color:#000; }}
+    textarea {{ width:100%; height:120px; }}
+    .status {{ margin:8px 0; }}
+    .grid {{ margin-top: 10px; border:1px solid #000; border-radius:4px; }}
+    .grid-header {{ position: sticky; top: 0; background:#f8f8f8; z-index: 1; }}
+    .grid-header table {{ width:100%; border-collapse: collapse; }}
+    .grid-header th {{ border-bottom:1px solid #000; padding:4px 6px; text-align:left; }}
+    .grid-body {{ height: 60vh; overflow: auto; }}
+    .grid-body table {{ width:100%; border-collapse: collapse; }}
+    .grid-body td {{ border-bottom:1px solid #eee; padding:4px 6px; }}
+    .muted {{ color:#555; }}
+    code {{ background:#f3f3f3; padding:2px 4px; border-radius:3px; }}
+  </style>
+</head>
+<body>
+  <h3>DuckDB SQL Viewer</h3>
+  <div>Dataset: <code>{signed_url}</code></div>
+```
+
+Key points:
+
+– `fused.api.sign_url` gives a temporary public link; the HTML string is built with an f-string so the signed URL can be interpolated.
+
+2. UI elements (textarea, button, status, result container)
+
+```python
+  <textarea id="queryInput">{initial_sql}</textarea><br/>
+  <button id="runBtn" disabled>Run</button>
+  <div class="status" id="status">Loading DuckDB and dataset…</div>
+
+  <div id="results" class="grid" style="display:none;">
+    <div class="grid-header">
+      <table><thead><tr id="theadRow"></tr></thead></table>
+    </div>
+    <div class="grid-body" id="gridBody">
+      <div id="topPad"></div>
+      <table>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div id="bottomPad"></div>
+    </div>
+    <div class="muted" style="padding:6px 8px;" id="rowCount"></div>
+  </div>
+```
+
+
+Key points 
+
+– The "Run" button is initially disabled until DuckDB and the data are ready.
+The #results div holds a virtualized table: a sticky header (#theadRow) and a scrollable body (#gridBody) with top/bottom padding elements that create the illusion of a full table while only a window of rows is actually rendered.
+
+3. JavaScript bootstrap – load DuckDB-WASM and register the parquet file
+
+```javascript
+<script type="module">
+  const signed_url = {signed_url!r};
+  let conn = null;
+  let typingTimer = 0;
+  const DEBOUNCE_MS = 250;
+
+  async function init() {
+    try {
+      const duckdb = await import('https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.1-dev132.0/+esm');
+      const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+      const workerCode = await (await fetch(bundle.mainWorker)).text();
+      const worker = new Worker(URL.createObjectURL(new Blob([workerCode], { type:'application/javascript' })));
+      const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(), worker);
+      await db.instantiate(bundle.mainModule);
+      conn = await db.connect();
+
+      // ---- fetch parquet & register as in-memory file ----
+      const resp = await fetch(signed_url);
+      if (!resp.ok) throw new Error("HTTP " + resp.status + " " + resp.statusText);
+      const buf = new Uint8Array(await resp.arrayBuffer());
+      await db.registerFileBuffer('data.parquet', buf);
+      await conn.query("CREATE OR REPLACE VIEW df AS SELECT * FROM read_parquet('data.parquet')");
+
+      setStatus("Data ready");
+      document.getElementById('runBtn').disabled = false;
+
+      // auto-run the initial query
+      runQuery();
+    } catch (e) {
+      setStatus("Error: " + (e?.message || e));
+    }
+  }
+```
+
+Key points 
+
+– DuckDB-WASM is loaded via CDN, a Web-Worker is created, and the Parquet file is fetched from the signed URL, stored in an in-memory buffer, then exposed as a view df. Once the view exists the UI is enabled.
+
+4. Helper: status updates
+
+```javascript
+function setStatus(t) {
+  const s = document.getElementById('status');
+  if (s) s.textContent = t;
+}
+```
+
+A tiny utility to show "Loading…", "Running…", "Done", or any error message.
+
+5. Virtualized rendering of the query result
+
+```javascript
+// ---------- VIRTUALIZED RENDERER ----------
+function renderVirtual(result) {
+  const rows = result.toArray();                     // array of plain objects
+  const cols = result.schema.fields.map(f => f.name);
+  V_STATE.rows = rows;
+  V_STATE.cols = cols;
+  V_STATE.total = rows.length;
+
+  const resEl = document.getElementById('results');
+  const theadRow = document.getElementById('theadRow');
+  const gridBody = document.getElementById('gridBody');
+  const topPad = document.getElementById('topPad');
+  const bottomPad = document.getElementById('bottomPad');
+  const tbody = document.getElementById('tbody');
+  const rowCount = document.getElementById('rowCount');
+
+  if (!rows.length) {
+    resEl.style.display = 'none';
+    document.getElementById('results')
+            .insertAdjacentHTML('afterend', '<div>No results</div>');
+    return;
+  } else {
+    resEl.style.display = 'block';
+  }
+
+  // ----- header -----
+  theadRow.innerHTML = '';
+  for (const c of cols) {
+    const th = document.createElement('th');
+    th.textContent = c;
+    theadRow.appendChild(th);
+  }
+
+  // ----- body pads -----
+  tbody.innerHTML = '';
+  topPad.style.height = '0px';
+  bottomPad.style.height = Math.max(0, V_STATE.total * V_STATE.rowHeight) + 'px';
+  rowCount.textContent = `${V_STATE.total} rows`;
+
+  // scroll handler (also called on resize / initial paint)
+  gridBody.onscroll = onScroll;
+  window.onresize = onScroll;
+  onScroll();
+
+  function onScroll() {
+    const viewH = gridBody.clientHeight;
+    const scrollTop = gridBody.scrollTop;
+
+    const first = Math.max(0,
+        Math.floor(scrollTop / V_STATE.rowHeight) - V_STATE.buffer);
+    const visibleCount = Math.ceil(viewH / V_STATE.rowHeight) + 2 * V_STATE.buffer;
+    const last = Math.min(V_STATE.total, first + visibleCount);
+
+    const padTop = first * V_STATE.rowHeight;
+    const padBottom = (V_STATE.total - last) * V_STATE.rowHeight;
+
+    topPad.style.height = padTop + 'px';
+    bottomPad.style.height = padBottom + 'px';
+
+    const frag = document.createDocumentFragment();
+    for (let i = first; i < last; i++) {
+      const tr = document.createElement('tr');
+      const r = rows[i];
+      for (const c of cols) {
+        const td = document.createElement('td');
+        const v = r[c];
+        td.textContent = (v === null || v === undefined) ? 'NULL' : String(v);
+        tr.appendChild(td);
+      }
+      frag.appendChild(tr);
+    }
+    tbody.innerHTML = '';
+    tbody.appendChild(frag);
+  }
+}
+```
+
+Key points
+
+- V_STATE stores the full result set and rendering parameters (row height, buffer).
+- Only the rows that intersect the viewport plus a small buffer are inserted into the DOM.
+
+
+6. Running a query
+
+```javascript
+async function runQuery() {
+  if (!conn) return;
+  const sql = document.getElementById('queryInput').value || "";
+  try {
+    setStatus("Running…");
+    const res = await conn.query(sql);
+    renderVirtual(res);
+    setStatus("Done");
+  } catch (e) {
+    document.getElementById('results').style.display = 'none';
+    document.getElementById('results')
+            .insertAdjacentHTML('afterend',
+                "<pre>" + (e?.message || e) + "</pre>");
+    setStatus("Error");
+  }
+}
+```
+
+The supplied SQL is sent to DuckDB-WASM, and the returned Arrow result is handed to renderVirtual.
+
+7. UI event wiring (debounce, button, shortcut)
+
+```javascript
+// debounce while typing
+const q = document.getElementById('queryInput');
+q.addEventListener('input', () => {
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(runQuery, DEBOUNCE_MS);
+});
+
+// manual run button
+document.getElementById('runBtn').addEventListener('click', runQuery);
+
+// Ctrl/⌘ + Enter shortcut
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') runQuery();
+});
+
+// start everything
+init();
+</script>
+```
+
+Key points 
+
+– The query is auto-executed after a short pause (250 ms) once the user stops typing, but a manual "Run" button and a keyboard shortcut are also provided.
+
+
+</details>
+
+
+See the code in [Fused Catalog](https://www.fused.io/workbench/catalog/Duckdb_Table_loading_from_s3-f34e72ff-592b-443d-b987-0bc667980463)
+
+## 2. Calling data from a UDF
+
+Instead of loading data directly into DuckDB WASM we can write a Fused UDF that:
+- Creates a new features
+- Only keeps a subset of data
+
+<iframe 
+    style={{
+        width: "100%",
+        height: "200px",
+        minHeight: "400px", 
+        margin: "0 auto",
+        display: "block",
+        border: "1px solid #e1e5e9",
+        borderRadius: "8px"
+    }}
+    src="https://www.fused.io/server/v1/realtime-shared/UDF_Airbnb_listings_nyc_parquet/run/file?dtype_out_vector=html"
+    title="DuckDB WASM Data Loading Demo"
+    frameBorder="0"
+    allowFullScreen
+    allow="fullscreen">
+</iframe>
+
+[Link to code](https://www.fused.io/workbench/catalog/Airbnb_listings_nyc_parquet-6a406e93-b3cd-4428-8979-93c1e1e065b3)
+
+Then call this UDF directly in DuckDB WASM:
+
+<iframe 
+    style={{
+        width: "100%",
+        height: "200px",
+        minHeight: "400px", 
+        margin: "0 auto",
+        display: "block",
+        border: "1px solid #e1e5e9",
+        borderRadius: "8px"
+    }}
+    src="https://www.fused.io/server/v1/realtime-shared/UDF_Duckdb_Table_from_UDF/run/file"
+    title="DuckDB WASM Data Loading Demo"
+    frameBorder="0"
+    allowFullScreen
+    allow="fullscreen">
+</iframe>
+
+[Link to code](https://www.fused.io/workbench/udf/catalog/Duckdb_Table_from_UDF-a47a9853-afbc-406e-9d6a-5a0646c0afbd)
+
+<details>
+<summary>Expand to see implementation details</summary>
+
+**1️⃣ Load the shared helper library**
+
+```python
+common = fused.load("https://github.com/fusedio/udfs/tree/6b98ee5/public/common/")
+```
+
+**2️⃣ UDF definition & parameters**
+
+```python
+@fused.udf
+def udf(
+    data_url: str = "https://www.fused.io/server/v1/realtime-shared/UDF_Airbnb_listings_nyc_parquet/run/file?dtype_out_raster=png&dtype_out_vector=parquet",
+    initial_sql: str = """\
+    SELECT 
+      room_type,
+      ROUND(AVG(price_in_dollar), 2) AS avg_price,
+      COUNT(*) AS listings
+    FROM df
+    WHERE price_in_dollar IS NOT NULL AND room_type IS NOT NULL
+    GROUP BY room_type
+    ORDER BY avg_price DESC;"""
+):
+```
+- `data_url` – where DuckDB will read the Parquet file from.
+- `initial_sql` – the starter query placed in the textarea.
+
+
+**3️⃣ Docstring (high-level description)**
+
+```python
+    """
+    DuckDB-WASM SQL viewer :
+    - Loads parquet from a public/accessible URL as view `df`
+    - Auto-runs query as you type (small debounce)
+    - Run button disabled until data is ready
+    """
+```
+
+**4️⃣ HTML skeleton (head, style & body)**
+
+```python
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>DuckDB SQL Viewer</title>
+  <style>
+    body {{ margin:16px; font-family: monospace; background:#fff; color:#000; }}
+    textarea {{ width:100%; height:120px; }}
+    table {{ border-collapse: collapse; margin-top:10px; }}
+    th, td {{ border:1px solid #000; padding:4px 6px; }}
+    #status {{ margin:8px 0; }}
+  </style>
+</head>
+<body>
+  <h3>DuckDB SQL Viewer</h3>
+  <div>Dataset: <code>{data_url}</code></div>
+
+  <textarea id="queryInput">{initial_sql}</textarea><br/>
+  <button id="runBtn" disabled>Run</button>
+  <div id="status">Loading DuckDB and dataset…</div>
+
+  <div id="results"></div>
+```
+The HTML places the UI elements on the page and injects the `data_url` and `initial_sql` values.
+
+
+**5️⃣ JavaScript – DuckDB-WASM loading & data registration**
+
+```javascript
+  <script type="module">
+    const DATA_URL = {data_url!r};
+    let conn = null;
+    let typingTimer = 0;
+    const DEBOUNCE_MS = 250;
+
+    async function init() {{
+      try {{
+        const duckdb = await import('https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.1-dev132.0/+esm');
+        const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+        const workerCode = await (await fetch(bundle.mainWorker)).text();
+        const worker = new Worker(URL.createObjectURL(new Blob([workerCode], {{ type:'application/javascript' }})));
+        const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(), worker);
+        await db.instantiate(bundle.mainModule);
+        conn = await db.connect();
+
+        // Fetch parquet and register
+        const resp = await fetch(DATA_URL);
+        if (!resp.ok) throw new Error("HTTP " + resp.status + " " + resp.statusText);
+        const buf = new Uint8Array(await resp.arrayBuffer());
+        await db.registerFileBuffer('data.parquet', buf);
+        await conn.query("CREATE OR REPLACE VIEW df AS SELECT * FROM read_parquet('data.parquet')");
+
+        document.getElementById('status').textContent = "Data ready";
+        document.getElementById('runBtn').disabled = false;
+
+        // Auto-run the initial query
+        runQuery();
+      }} catch (e) {{
+        document.getElementById('status').textContent = "Error: " + (e?.message || e);
+      }}
+    }}
+```
+Key steps: import the DuckDB WASM module, create a WebWorker, instantiate the DB, fetch the remote Parquet file, register it as a virtual file, and expose it as view `df`.
+
+
+**6️⃣ JavaScript – Query execution & result rendering**
+
+```javascript
+    async function runQuery() {{
+      if (!conn) return;
+      const sql = document.getElementById('queryInput').value || "";
+      try {{
+        document.getElementById('status').textContent = "Running…";
+        const res = await conn.query(sql);
+        render(res);
+        document.getElementById('status').textContent = "Done";
+      }} catch (e) {{
+        document.getElementById('results').innerHTML = "<pre>" + (e?.message || e) + "</pre>";
+        document.getElementById('status').textContent = "Error";
+      }}
+    }}
+
+    function render(result) {{
+      const rows = result.toArray();
+      if (!rows.length) {{
+        document.getElementById('results').innerHTML = "<div>No results</div>";
+        return;
+      }}
+      const cols = result.schema.fields.map(f => f.name);
+      let html = "<table><thead><tr>";
+      for (const c of cols) html += "<th>"+c+"</th>";
+      html += "</tr></thead><tbody>";
+      for (const r of rows) {{
+        html += "<tr>";
+        for (const c of cols) {{
+          const v = r[c];
+          html += "<td>"+(v===null?"NULL":String(v))+"</td>";
+        }}
+        html += "</tr>";
+      }}
+      html += "</tbody></table>";
+      document.getElementById('results').innerHTML = html;
+    }}
+```
+`runQuery` sends the current SQL to DuckDB, while `render` builds an HTML table from the returned Arrow result.
+
+**7️⃣ JavaScript – UI interaction (debounce & shortcuts)**
+
+```javascript
+    // Auto-run with small debounce as you type
+    const q = document.getElementById('queryInput');
+    q.addEventListener('input', () => {{
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(runQuery, DEBOUNCE_MS);
+    }});
+
+    // Optional manual run
+    document.getElementById('runBtn').addEventListener('click', runQuery);
+
+    // Ctrl/⌘ + Enter runs immediately
+    document.addEventListener('keydown', (e) => {{
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') runQuery();
+    }});
+
+    init();
+  </script>
+</body>
+</html>"""
+```
+Provides a small debounce so the query isn't executed on every keystroke, a manual "Run" button, and a keyboard shortcut (Ctrl-Enter / ⌘-Enter).
+
+**8️⃣ Return the HTML object**
+
+```python
+    return common.html_to_obj(html)
+```
+
+</details>
+
+
+## 3. Rendering output on a map 
+
+After filtering the data with DuckDB WASM you can also directly pass it to a map component:
+
+<iframe 
+    style={{
+        width: "100%",
+        height: "200px",
+        minHeight: "500px", 
+        margin: "0 auto",
+        display: "block",
+        border: "1px solid #e1e5e9",
+        borderRadius: "8px"
+    }}
+    src="https://www.fused.io/server/v1/realtime-shared/UDF_Simple_Map_Duckdb_WASM_with_input/run/file"
+    title="DuckDB WASM Data Loading Demo"
+    frameBorder="0"
+    allowFullScreen
+    allow="fullscreen">
+</iframe>
+
+[Link to code](https://www.fused.io/workbench/catalog/Simple_Map_Duckdb_WASM_with_input-214a4c1d-4046-48e3-a12a-ad62a0ddfbed)
+
+<details>
+<summary>Expand to see implementations details</summary>
+
+1️⃣ Imports & UDF signature
+
+```python
+common = fused.load(
+    "https://github.com/fusedio/udfs/tree/abf9c87/public/common/"
+)
+
+@fused.udf
+def udf(
+    data_url: str = "https://www.fused.io/server/v1/realtime-shared/…/run/file?dtype_out_raster=png&dtype_out_vector=parquet",
+    mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMi…",
+    center_lng: float = -73.9857,
+    center_lat: float = 40.7484,
+    zoom: int = 9,
+    initial_sql: str = "SELECT * FROM df LIMIT 100;",
+):
+    import json
+```
+
+
+common = fused.load(...) – loads a small helper library that provides html_to_obj, which later converts the raw HTML string into an object that the Workbench can render.
+The UDF parameters let the user change the data source, Mapbox token, map centre, zoom level and the default SQL query without editing the code.
+
+2️⃣ The HTML template (client-side UI)
+
+```python
+html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Points Map (DuckDB-WASM + Mapbox)</title>
+  …
+  <style>
+    html, body, #map {{ margin:0; padding:0; height:100%; }}
+    #map {{ position:fixed; inset:0; }}
+    .note {{ … }}
+    .legend {{ … }}
+    .bottombar {{ … }}
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="note" id="note">Initializing…</div>
+
+  <div class="legend" id="legend" style="display:none;">
+    <div>price per person</div>
+    <div class="legend-bar"></div>
+    <div class="legend-row"><span id="legMin">low</span>
+                               <span id="legMid">mid</span>
+                               <span id="legMax">high</span></div>
+  </div>
+
+  <div class="bottombar">
+    <textarea id="queryInput"
+              placeholder="SELECT * FROM df LIMIT 100;">{initial_sql}</textarea>
+  </div>
+
+  <script type="module">
+    const MAPBOX_TOKEN = {json.dumps(mapbox_token)};
+    const DATA_URL     = {json.dumps(data_url)};
+    …
+  </script>
+</body>
+</html>"""
+return common.html_to_obj(html)
+```
+
+The HTML builds a full-screen Mapbox map, a status note, a price-legend (hidden until data exists), and a bottom textarea for the user-editable SQL query.
+The values MAPBOX_TOKEN, DATA_URL, and the default query are injected via a Python f-string.
+common.html_to_obj(html) converts the string to an object that the Fused Workbench displays as a map widget.
+
+</details>
+
+## Real world example: Visualizing Crops in the USA
+
+Data: USDA Crop Data Layer (2024)
+From: [Source Cooperative](https://source.coop/fused/hex)
+Format: Fused [repartitioned this into H3 hexagons](/blog/cdl-census-hex) as hex7
+
+```bash
+https://source.coop/fused/hex/release_2025_04_beta/cdl/hex7_2024.parquet
+```
+
+### Processing Data with DuckDB
+
+Before we display the data we want to:
+- Remove any nodata (`0`) in CDL
+- Calculate the percentage that each crop type makes up of the total area of each hex8 cell 
+- Return `lat / lon` coordinates for each hex8 cell to be able to display the data on a map
+
+We can write a simple UDF to do this for us:
+
+<iframe 
+    style={{
+        width: "100%",
+        height: "200px",
+        minHeight: "400px", 
+        margin: "0 auto",
+        display: "block",
+        border: "1px solid #e1e5e9",
+        borderRadius: "8px"
+    }}
+    src="https://www.fused.io/server/v1/realtime-shared/UDF_CDL_Data_Filtering/run/file?dtype_out_vector=html"
+    title="CDL processing to hex 5"
+    frameBorder="0"
+    allowFullScreen
+    allow="fullscreen">
+</iframe>
+
+[Link to code](https://www.fused.io/workbench/catalog/CDL_Data_Filtering-b9fff8ac-3e4e-4241-a25c-b25ea6dd3754)
+
+This returns a dataframe directly. We can then pass this data to another UDF to render it on a map.
+
+## Live filtering on Map
+
+<iframe
+  src="https://www.fused.io/server/v1/realtime-shared/UDF_WASM_Filtering_CDL/run/file?dtype_out_raster=png&dtype_out_vector=html"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+></iframe>
+
+[Link to code](https://www.fused.io/workbench/catalog/WASM_Filtering_CDL-8256b64a-df26-4717-979a-0dc27b377560)
+
+Here's how the map is built:
+
+1. Data Source: Fetches Parquet from previous UDF
+2. Browser Database: Loads into DuckDB WASM with H3/spatial extensions
+3. Real-time Filtering: Applies SQL WHERE conditions on user input
+4. Geometry Generation: Converts H3 cells to hexagon boundaries
+5. Map Visualization: Renders colored hexagons with tooltips
+6. Live Statistics: Shows count, area, and averages for filtered data
+
+
+### Explore on canvas
+
+You can see this tutorial as a Fused Canvas:
+
+<iframe 
+    style={{
+        width: "100%",
+        height: "600px",
+        minHeight: "500px",
+        margin: "0 auto",
+        display: "block",
+        border: "1px solid #e1e5e9",
+        borderRadius: "8px"
+    }}
+    src="https://www.fused.io/canvas/fc_31dKPa7L1ormNstj6z3geY" 
+    title="Fused Canvas - Realtime Data Processing Dashboard" 
+    frameBorder="0" 
+    allowFullScreen
+    allow="fullscreen">
+</iframe>
+
+[Open in a new tab](https://www.fused.io/canvas/fc_31dKPa7L1ormNstj6z3geY)
+
+## Want to try it yourself?
+
+Sign up for a [free Fused account](https://www.fused.io/workbench) and build on top of any of the [User Defined Functions](https://www.fused.io/workbench/udf/catalog?tab=community&tags=wasm) directly in Fused!
+

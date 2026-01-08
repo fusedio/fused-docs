@@ -1,0 +1,159 @@
+---
+title: H3 Conversions
+sidebar_label: Conversions
+sidebar_position: 2
+description: Quick reference for converting data to and from H3
+---
+
+# H3 Conversions
+
+Quick reference for converting between geometries and H3 cells.
+
+## Points → H3
+
+### Single Point
+
+```python
+import h3
+
+hex_id = h3.latlng_to_cell(lat, lon, resolution=9)
+```
+
+### Pandas DataFrame
+
+```python
+import h3
+
+df['hex'] = df.apply(
+    lambda row: h3.latlng_to_cell(row['lat'], row['lon'], 9), 
+    axis=1
+)
+```
+
+### GeoPandas (Point Geometry)
+
+```python
+import h3
+
+gdf['hex'] = gdf.geometry.apply(
+    lambda g: h3.latlng_to_cell(g.y, g.x, 9)
+)
+```
+
+---
+
+## Polygons → H3
+
+### Single Polygon
+
+```python
+import h3
+import shapely
+
+polygon = shapely.geometry.shape(geojson_polygon)
+hexes = h3.geo_to_cells(polygon, resolution=9)
+```
+
+### GeoDataFrame Polygons
+
+```python
+import h3
+
+def polygon_to_hexes(geom, res=9):
+    return list(h3.geo_to_cells(geom, res))
+
+gdf['hexes'] = gdf.geometry.apply(lambda g: polygon_to_hexes(g, 9))
+gdf = gdf.explode('hexes').rename(columns={'hexes': 'hex'})
+```
+
+### Using Fused Common Utils
+
+```python
+common = fused.load("https://github.com/fusedio/udfs/tree/main/public/common/")
+hex_gdf = common.gdf_to_hex(gdf, res=9)
+```
+
+---
+
+## H3 → Geometries
+
+### H3 to Polygon
+
+```python
+import h3
+from shapely.geometry import Polygon
+
+boundary = h3.cell_to_boundary(hex_id)
+polygon = Polygon(boundary)
+```
+
+### H3 Column to GeoDataFrame
+
+```python
+import h3
+import geopandas as gpd
+from shapely.geometry import Polygon
+
+df['geometry'] = df['hex'].apply(
+    lambda h: Polygon(h3.cell_to_boundary(h))
+)
+gdf = gpd.GeoDataFrame(df, geometry='geometry', crs='EPSG:4326')
+```
+
+### H3 to Center Point
+
+```python
+import h3
+
+lat, lon = h3.cell_to_latlng(hex_id)
+```
+
+---
+
+## Resolution Changes
+
+### To Parent (Coarser)
+
+```python
+import h3
+
+parent = h3.cell_to_parent(hex_id, res=6)
+
+# DataFrame
+df['hex_coarse'] = df['hex'].apply(lambda x: h3.cell_to_parent(x, 6))
+```
+
+### To Children (Finer)
+
+```python
+import h3
+
+children = h3.cell_to_children(hex_id, res=10)
+```
+
+### Get Current Resolution
+
+```python
+import h3
+
+res = h3.get_resolution(hex_id)
+```
+
+---
+
+## Raster → H3
+
+Use `fused.h3.run_ingest_raster_to_h3()` for converting raster data:
+
+```python
+@fused.udf
+def udf():
+    result = fused.h3.run_ingest_raster_to_h3(
+        src_path="s3://bucket/raster.tif",
+        output_path="s3://bucket/output/",
+        metrics=["avg"],  # or "sum", "cnt", "min", "max"
+    )
+```
+
+See [Ingesting Dataset to H3](/tutorials/Geospatial%20with%20Fused/h3-tiling/ingesting-dataset-to-h3) for details.
+
