@@ -13,10 +13,6 @@ import ExecutionEnvironment from "@docusaurus/ExecutionEnvironment";
 // Modify checkIfPathContainsIframe function for additional iframes
 
 const PATHS_WITH_ONE_IFRAME = [
-  "/user-guide/transform/geospatial/buffer/",
-  "/user-guide/transform/geospatial/point-in-polygon/",
-  "/user-guide/transform/geospatial/raster-h3/",
-  "/user-guide/transform/geospatial/zonal_stats/",
   "workbench/app-builder/",
   "/quickstart/",
   "/blog/global-vegetation-segmentation/",
