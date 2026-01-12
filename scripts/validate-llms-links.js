@@ -88,10 +88,9 @@ function buildUrlToFileMapping(dir, basePath = '') {
             if (isLastPart) {
               // Use frontmatter ID if available, otherwise use filename
               if (frontmatter.id) {
-                return frontmatter.id;
+                return encodeURIComponent(frontmatter.id).replace(/%20/g, '%20');
               }
-              return part
-                .replace(/\.mdx?$/, ''); // Remove extension only, keep underscores and case
+              return encodeURIComponent(part.replace(/\.mdx?$/, '')).replace(/%20/g, '%20'); // Remove extension, encode spaces
             } else {
               // Directory names preserve case, URL encode spaces
               return encodeURIComponent(part).replace(/%20/g, '%20');
