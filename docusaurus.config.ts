@@ -224,19 +224,75 @@ const config: Config = {
       "@docusaurus/plugin-client-redirects",
       {
         redirects: [
-          // TODO: Re-enable these redirects after v6 migration is complete
-          // and target pages exist
-          // { to: "/basics/core-concepts/faq/", from: ["/basics/faq/"] },
-          // { to: "/user-guide/", from: ["/basics/user-guide/"] },
-          // { to: "/workbench/udf-explorer", from: ["/workbench/udf-catalog"] },
-          // { to: "/workbench/udf-builder/code-editor/", from: ["/workbench/udf-editor/"] },
-          // { to: "/workbench/udf-builder/navigation/", from: ["/workbench/navigation/"] },
-          // { to: "/workbench/udf-builder/map/", from: ["/workbench/map/"] },
-          // { to: "/workbench/udf-builder/runtime/", from: ["/workbench/runtime/"] },
-          // { to: "/workbench/udf-builder/styling/", from: ["/workbench/viz-styling/"] },
-          // { to: "/core-concepts/generic-data-ingestion", from: ["/core-concepts/data_ingestion/"] },
-          // { to: "/core-concepts/onprem", from: ["/core-concepts/setup-profile/"] },
-          // { to: "/tutorials/Geospatial%20with%20Fused/geospatial-use-cases/", from: ["/use-cases/"] },
+          // V7 Migration Redirects - Tutorials to new locations
+          { to: "/guide/working-with-udfs/building-outputs/standalone-maps", from: ["/tutorials/Analytics%20&%20Dashboard/standalone-maps", "/tutorials/Analytics & Dashboard/standalone-maps"] },
+          { to: "/examples/realtime-processing", from: ["/tutorials/Analytics%20&%20Dashboard/realtime-data-processing-with-duckdb-wasm", "/tutorials/Analytics & Dashboard/realtime-data-processing-with-duckdb-wasm"] },
+          { to: "/guide/working-with-udfs/building-outputs/charts", from: ["/tutorials/Analytics%20&%20Dashboard/interactive-graphs", "/tutorials/Analytics & Dashboard/interactive-graphs"] },
+          { to: "/guide/data-input-outputs/export-api/mcp-servers", from: ["/tutorials/Analytics%20&%20Dashboard/let-anyone-talk-to-your-data", "/tutorials/Analytics & Dashboard/let-anyone-talk-to-your-data"] },
+          { to: "/examples/vibe-chart-building", from: ["/tutorials/Analytics%20&%20Dashboard/stack-overflow-surveys", "/tutorials/Analytics & Dashboard/stack-overflow-surveys"] },
+          { to: "/examples/currency-prediction", from: ["/tutorials/Analytics%20&%20Dashboard/currency-trading", "/tutorials/Analytics & Dashboard/currency-trading"] },
+          
+          // Data Science & AI tutorials
+          { to: "/examples/data-exploration", from: ["/tutorials/Data%20Science%20&%20AI/discover_data", "/tutorials/Data Science & AI/discover_data"] },
+          { to: "/examples/web-scraping", from: ["/tutorials/Data%20Science%20&%20AI/scraping", "/tutorials/Data Science & AI/scraping"] },
+          { to: "/examples/pdf-scraping", from: ["/tutorials/Data%20Science%20&%20AI/pdf_scraping", "/tutorials/Data Science & AI/pdf_scraping"] },
+          { to: "/examples/competitor-analysis", from: ["/tutorials/Data%20Science%20&%20AI/competitor_analysis", "/tutorials/Data Science & AI/competitor_analysis"] },
+          
+          // Engineering & ETL tutorials
+          { to: "/guide/data-input-outputs/import-connection/cloud-storage", from: ["/tutorials/Engineering%20&%20ETL/connect-your-data-to-fused", "/tutorials/Engineering & ETL/connect-your-data-to-fused"] },
+          { to: "/guide/data-input-outputs/import-connection/cloud-storage", from: ["/tutorials/Engineering%20&%20ETL/handling-large-remote-files", "/tutorials/Engineering & ETL/handling-large-remote-files"] },
+          { to: "/guide/data-input-outputs/export-api/tokens-endpoints", from: ["/tutorials/Engineering%20&%20ETL/turn-your-data-into-an-api", "/tutorials/Engineering & ETL/turn-your-data-into-an-api"] },
+          
+          // Geospatial tutorials - H3
+          { to: "/guide/h3-analytics/aggregations", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling", "/tutorials/Geospatial with Fused/h3-tiling"] },
+          { to: "/guide/h3-analytics/aggregations", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling/when-to-use-h3", "/tutorials/Geospatial with Fused/h3-tiling/when-to-use-h3"] },
+          { to: "/guide/h3-analytics/converting", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling/file-to-h3", "/tutorials/Geospatial with Fused/h3-tiling/file-to-h3"] },
+          { to: "/guide/h3-analytics/converting", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling/dynamic-tile-to-h3", "/tutorials/Geospatial with Fused/h3-tiling/dynamic-tile-to-h3"] },
+          { to: "/guide/h3-analytics/converting", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling/ingesting-dataset-to-h3", "/tutorials/Geospatial with Fused/h3-tiling/ingesting-dataset-to-h3"] },
+          { to: "/guide/h3-analytics/aggregations", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling/analysis-with-h3/aggregating-h3-data", "/tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/aggregating-h3-data"] },
+          { to: "/guide/h3-analytics/joining", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling/analysis-with-h3/joining-h3-data", "/tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/joining-h3-data"] },
+          { to: "/examples/zonal-stats", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling/analysis-with-h3/zonal-statistics", "/tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/zonal-statistics"] },
+          
+          // Geospatial tutorials - Read/Write/Ingestion
+          { to: "/guide/data-input-outputs/read-write/geospatial/geospatial-reading", from: ["/tutorials/Geospatial%20with%20Fused/read-data", "/tutorials/Geospatial with Fused/read-data"] },
+          { to: "/guide/data-input-outputs/read-write/geospatial/geospatial-writing", from: ["/tutorials/Geospatial%20with%20Fused/write-data", "/tutorials/Geospatial with Fused/write-data"] },
+          { to: "/guide/data-input-outputs/read-write/geospatial/ingestion", from: ["/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion", "/tutorials/Geospatial with Fused/geospatial-data-ingestion"] },
+          { to: "/guide/data-input-outputs/read-write/geospatial/ingestion", from: ["/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/why-ingestion", "/tutorials/Geospatial with Fused/geospatial-data-ingestion/why-ingestion"] },
+          { to: "/guide/data-input-outputs/read-write/geospatial/ingestion", from: ["/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/ingest-your-data", "/tutorials/Geospatial with Fused/geospatial-data-ingestion/ingest-your-data"] },
+          { to: "/guide/data-input-outputs/read-write/geospatial/ingestion", from: ["/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/geospatial-file-formats", "/tutorials/Geospatial with Fused/geospatial-data-ingestion/geospatial-file-formats"] },
+          
+          // Geospatial tutorials - Other
+          { to: "/guide/working-with-udfs/geospatial/single-vs-tile", from: ["/tutorials/Geospatial%20with%20Fused/filetile", "/tutorials/Geospatial with Fused/filetile"] },
+          { to: "/guide/data-input-outputs/export-api/geospatial-export", from: ["/tutorials/Geospatial%20with%20Fused/other-integrations", "/tutorials/Geospatial with Fused/other-integrations"] },
+          { to: "/guide/data-input-outputs/import-connection/geospatial/gee", from: ["/tutorials/Geospatial%20with%20Fused/gee_bigquery", "/tutorials/Geospatial with Fused/gee_bigquery"] },
+          { to: "/examples/canvas-examples", from: ["/tutorials/Geospatial%20with%20Fused/canvas-catalog", "/tutorials/Geospatial with Fused/canvas-catalog"] },
+          
+          // Geospatial use cases
+          { to: "/examples/dark-vessel-detection", from: ["/tutorials/Geospatial%20with%20Fused/use-cases/dark-vessel-detection", "/tutorials/Geospatial with Fused/use-cases/dark-vessel-detection"] },
+          { to: "/examples/climate-dashboard", from: ["/tutorials/Geospatial%20with%20Fused/use-cases/Climate%20Dashboard", "/tutorials/Geospatial with Fused/use-cases/Climate Dashboard"] },
+          { to: "/examples/satellite-imagery", from: ["/tutorials/Geospatial%20with%20Fused/use-cases/exploring_maxar_data", "/tutorials/Geospatial with Fused/use-cases/exploring_maxar_data"] },
+          { to: "/examples/zonal-stats", from: ["/tutorials/Geospatial%20with%20Fused/use-cases/zonal-stats", "/tutorials/Geospatial with Fused/use-cases/zonal-stats"] },
+          { to: "/examples/vibe-chart-building", from: ["/tutorials/Geospatial%20with%20Fused/use-cases/vibe-coded-timeseries", "/tutorials/Geospatial with Fused/use-cases/vibe-coded-timeseries"] },
+          
+          // 2min with Fused / Quickstart
+          { to: "/guide/getting-started/first-udf-basics", from: ["/tutorials/2min-with-fused", "/quickstart"] },
+          { to: "/guide/getting-started/first-udf-basics", from: ["/tutorials/load-and-export-data", "/tutorials/load_and_save_data"] },
+          
+          // Core concepts redirects
+          { to: "/guide/working-with-udfs/execution/realtime", from: ["/core-concepts/run-udfs/run-small-udfs", "/core-concepts/run-udfs"] },
+          { to: "/guide/working-with-udfs/execution/batch-jobs", from: ["/core-concepts/run-udfs/run_large", "/core-concepts/run-udfs/run-large"] },
+          { to: "/guide/working-with-udfs/writing-udfs", from: ["/core-concepts/write", "/core-concepts/best-practices/udf-best-practices"] },
+          { to: "/guide/working-with-udfs/caching", from: ["/core-concepts/cache"] },
+          { to: "/guide/advanced-setup/file-system", from: ["/core-concepts/content-management/file-system"] },
+          { to: "/guide/advanced-setup/git-integration", from: ["/core-concepts/content-management/git"] },
+          { to: "/guide/advanced-setup/dependencies", from: ["/core-concepts/run-udfs/dependencies"] },
+          { to: "/guide/getting-started/workbench-intro", from: ["/core-concepts/best-practices/workbench-best-practices"] },
+          { to: "/guide/getting-started/first-udf-basics", from: ["/core-concepts/why"] },
+          { to: "/guide/working-with-udfs/execution/realtime", from: ["/core-concepts/async"] },
+          
+          // Old workbench paths
+          { to: "/workbench/udf-explorer", from: ["/workbench/udf-catalog"] },
+          { to: "/workbench/udf-builder/code-editor", from: ["/workbench/udf-editor"] },
         ],
         // createRedirects(existingPath) {
         //   if (existingPath.includes("/user-guide/out")) {
