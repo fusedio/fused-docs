@@ -86,6 +86,106 @@ def udf():
     return df
 ```
 
+## Compressed Files (ZIP/RAR)
+
+### ZIP Files
+
+**List files in archive:**
+
+```python
+@fused.cache
+def get_zip_file_info(url):
+    import pandas as pd
+    import zipfile
+    import s3fs
+    
+    s3 = s3fs.S3FileSystem()
+    with s3.open(url, "rb") as f:
+        with zipfile.ZipFile(f) as zip_ref:
+            file_info = []
+            for filename in zip_ref.namelist():
+                info = zip_ref.getinfo(filename)
+                file_info.append({
+                    "filename": filename,
+                    "compressed_size_mb": round(info.compress_size / (1024 * 1024), 2),
+                    "uncompressed_size_mb": round(info.file_size / (1024 * 1024), 2),
+                })
+    return pd.DataFrame(file_info)
+```
+
+**Extract specific files:**
+
+```python
+@fused.cache
+def extract_file_from_zip(url, filename, output_path):
+    import zipfile, tempfile, os
+    import s3fs
+
+    s3 = s3fs.S3FileSystem()
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=os.path.splitext(filename)[1]) as output_file:
+        temp_path = output_file.name
+        CHUNK_SIZE = 100 * 1024 * 1024  # 100MB chunks
+        
+        with s3.open(url, "rb") as f:
+            with zipfile.ZipFile(f) as zip_ref:
+                with zip_ref.open(filename) as file:
+                    while chunk := file.read(CHUNK_SIZE):
+                        output_file.write(chunk)
+    
+    s3.put(temp_path, output_path)
+    return output_path
+```
+
+### RAR Files
+
+**List files in archive:**
+
+```python
+@fused.cache
+def get_rar_file_info(url):
+    import pandas as pd
+    import rarfile
+    import s3fs
+    
+    s3 = s3fs.S3FileSystem()
+    with s3.open(url, "rb") as f:
+        with rarfile.RarFile(f) as rar_ref:
+            file_info = []
+            for filename in rar_ref.namelist():
+                info = rar_ref.getinfo(filename)
+                file_info.append({
+                    "filename": filename,
+                    "compressed_size_mb": round(info.compress_size / (1024 * 1024), 2),
+                    "uncompressed_size_mb": round(info.file_size / (1024 * 1024), 2),
+                })
+    return pd.DataFrame(file_info)
+```
+
+**Extract specific files:**
+
+```python
+@fused.cache
+def extract_file_from_rar(url, filename, output_path):
+    import rarfile, tempfile, os
+    import s3fs
+
+    s3 = s3fs.S3FileSystem()
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=os.path.splitext(filename)[1]) as output_file:
+        temp_path = output_file.name
+        CHUNK_SIZE = 100 * 1024 * 1024  # 100MB chunks
+        
+        with s3.open(url, "rb") as f:
+            with rarfile.RarFile(f) as rar_ref:
+                with rar_ref.open(filename) as file:
+                    while chunk := file.read(CHUNK_SIZE):
+                        output_file.write(chunk)
+    
+    s3.put(temp_path, output_path)
+    return output_path
+```
+
+Use [`fused.submit()`](/guide/working-with-udfs/execution/parallel) to extract multiple files in parallel.
+
 ## Recommended Formats
 
 | Data Type | Recommended Format | Why |

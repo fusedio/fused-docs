@@ -214,15 +214,9 @@ def udf(url='https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_C
 
 Files will be written to `/mnt/cache/`, where any other UDF can then access them.
 
-## Working with Compressed Files
+## Downloading Large Remote Files
 
-For datasets that aren't cloud-native (e.g., from [Zenodo](https://zenodo.org/), [Humanitarian Data Exchange](https://data.humdata.org/)), you may need to download and extract compressed archives.
-
-<img src="/img/tutorials/engineering-etl/download_uncompress_rar.png" alt="Download and uncompress RAR" style={{maxWidth: 600, width: "100%", borderRadius: 8, marginBottom: 16}} />
-
-### Download Large Files
-
-For files that take longer than 120s to download, run as a [batch job](/guide/working-with-udfs/execution/batch-jobs):
+For datasets from external sources like [Zenodo](https://zenodo.org/) or [Humanitarian Data Exchange](https://data.humdata.org/) that take longer than 120s to download, run as a [batch job](/guide/working-with-udfs/execution/batch-jobs):
 
 ```python showLineNumbers
 @fused.udf(
@@ -234,96 +228,25 @@ def udf():
     import requests
     import os, tempfile
     
-    url = "https://zenodo.org/records/4395621/files/Correlation_Merged1998_nc2.rar?download=1"
+    url = "https://zenodo.org/records/4395621/files/my_large_file.zip"
     s3_path = f"s3://fused-asset/data/my-files/{url.split('/')[-1]}"
+    
+    # Skip if already downloaded
     if s3fs.S3FileSystem().exists(s3_path):
         return f'File exists: {s3_path}'
 
-    temp_path = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(url.split('/')[-1])[1]).name
+    # Download with progress
+    temp_path = tempfile.NamedTemporaryFile(delete=False).name
     resp = requests.get(url, stream=True)
-    resp.raise_for_status() 
-    total_size = int(resp.headers.get('Content-Length', 0))
-    size_mb = total_size / (1024 * 1024)
-
+    resp.raise_for_status()
+    
     with open(temp_path, 'wb') as f:
-        for i, chunk in enumerate(resp.iter_content(chunk_size=total_size//100)):
-            print(f'{i}% | {round(size_mb*i/100,1)}/{round(size_mb)} MB')
+        for chunk in resp.iter_content(chunk_size=8192):
             f.write(chunk)
 
-    s3 = s3fs.S3FileSystem()
-    s3.put(temp_path, s3_path)
-    print(f"Uploaded to: {s3_path}")
+    # Upload to S3
+    s3fs.S3FileSystem().put(temp_path, s3_path)
+    return f"Uploaded to: {s3_path}"
 ```
 
-### Extract ZIP Files
-
-**List files in archive:**
-
-```python showLineNumbers
-@fused.cache
-def get_zip_file_info(url):
-    import pandas as pd
-    import zipfile
-    import s3fs
-    
-    s3 = s3fs.S3FileSystem()
-    with s3.open(url, "rb") as f:
-        with zipfile.ZipFile(f) as zip_ref:
-            file_info = []
-            for filename in zip_ref.namelist():
-                info = zip_ref.getinfo(filename)
-                file_info.append({
-                    "filename": filename,
-                    "compressed_size_mb": round(info.compress_size / (1024 * 1024), 2),
-                    "uncompressed_size_mb": round(info.file_size / (1024 * 1024), 2),
-                })
-    return pd.DataFrame(file_info)
-```
-
-**Extract specific files:**
-
-```python showLineNumbers
-@fused.cache
-def extract_file_from_zip(url, filename, output_path):
-    import zipfile, tempfile, os
-    import s3fs
-
-    s3 = s3fs.S3FileSystem()
-    with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=os.path.splitext(filename)[1]) as output_file:
-        temp_path = output_file.name
-        CHUNK_SIZE = 100 * 1024 * 1024  # 100MB chunks
-        
-        with s3.open(url, "rb") as f:
-            with zipfile.ZipFile(f) as zip_ref:
-                with zip_ref.open(filename) as file:
-                    while chunk := file.read(CHUNK_SIZE):
-                        output_file.write(chunk)
-    
-    s3.put(temp_path, output_path)
-    return output_path
-```
-
-### Extract RAR Files
-
-```python showLineNumbers
-@fused.cache
-def get_rar_file_info(url):
-    import pandas as pd
-    import rarfile
-    import s3fs
-    
-    s3 = s3fs.S3FileSystem()
-    with s3.open(url, "rb") as f:
-        with rarfile.RarFile(f) as rar_ref:
-            file_info = []
-            for filename in rar_ref.namelist():
-                info = rar_ref.getinfo(filename)
-                file_info.append({
-                    "filename": filename,
-                    "compressed_size_mb": round(info.compress_size / (1024 * 1024), 2),
-                    "uncompressed_size_mb": round(info.file_size / (1024 * 1024), 2),
-                })
-    return pd.DataFrame(file_info)
-```
-
-Use [`fused.submit()`](/guide/working-with-udfs/execution/realtime#running-jobs-in-parallel-fusedsubmit) to extract multiple files in parallel.
+Once downloaded, use the [Reading Data](/guide/data-input-outputs/read-write/reading) guide for extracting compressed files (ZIP/RAR).
