@@ -5,85 +5,69 @@ sidebar_label: Writing
 sidebar_position: 2
 ---
 
-# Write Data
+# Writing Data
 
-When working with Fused we recommend you save your files in 2 formats: Parquet & Cloud Optimized GeoTIFF (COG).
+Common examples for writing tabular data in Fused.
 
-Read more about [why we recommend those formats](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/geospatial-file-formats).
+:::tip Geospatial data?
+For geospatial formats (GeoParquet, GeoTIFF, etc.), see [Writing Geospatial Data](/guide/data-input-outputs/read-write/geospatial/geospatial-writing).
+:::
 
-### Table: to parquet
+## CSV
 
 ```python
 @fused.udf
-def udf(path: str = "s3://fused-sample/demo_data/housing/housing_2024.csv"):
+def udf():
     import pandas as pd
-    housing = pd.read_csv(path)
-    housing['price_per_area'] = round(housing['price'] / housing['area'], 2)
     
-    processed_data = housing[['price', 'price_per_area']]
+    df = pd.DataFrame({'col1': [1, 2], 'col2': [3, 4]})
+    
+    # Write to Fused managed storage
+    df.to_csv("fd://my-data/output.csv", index=False)
+    
+    return "Saved!"
+```
 
-    # Saving to user specific location
+## Parquet
+
+Parquet is the recommended format for tabular data - it's columnar, compressed, and fast.
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/housing_2024.csv"):
+    import pandas as pd
+    
+    df = pd.read_csv(path)
+    df['price_per_area'] = round(df['price'] / df['area'], 2)
+    
+    # Save to your Fused bucket
     username = fused.api.whoami()['handle']
-    output_path = f"s3://fused-users/fused/{username}/housing_2024_processed.parquet"
-    processed_data.to_parquet(output_path)
+    output_path = f"fd://{username}/housing_processed.parquet"
+    df.to_parquet(output_path)
 
     return f"File saved to {output_path}"
 ```
 
-### Array: to Cloud Optimized GeoTIFF (COG)
+## JSON
 
 ```python
 @fused.udf
-def udf(path: str = "s3://fused-sample/demo_data/satellite_imagery/wildfires.tiff"):
-    import rasterio
-    import numpy as np
+def udf():
+    import pandas as pd
     
-    # Read the raster data
-    with rasterio.open(path) as src:
-        data = src.read()
-        profile = src.profile
+    df = pd.DataFrame({'col1': [1, 2], 'col2': [3, 4]})
     
-    # Process the data
-    processed_data = np.where(data > np.percentile(data, 80), 255, 0).astype(np.uint8)
+    df.to_json("fd://my-data/output.json")
     
-    # Update profile for writing
-    profile.update({
-        'driver': 'GTiff',
-        'compress': 'lzw',
-        'dtype': 'uint8'
-    })
-    
-    # Write to Fused's shared disk (accessible to all UDFs in org)
-    username = fused.api.whoami()['handle']
-    output_path = f"/mnt/cache/wildfires_processed_{username}.tif"
-    
-    with rasterio.open(output_path, 'w', **profile) as dst:
-        dst.write(processed_data)
-    
-    return f"File saved to shared disk at {output_path}"
+    return "Saved!"
 ```
 
-### Geo-partitioning large datasets: `fused.ingest()`
+## Where to Save Files
 
-Large geospatial data might not be optimally formatted or partitioned. Fused offers a simple way to [ingest your data](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/ingest-your-data) at scale.
+| Storage | Path Format | Best For |
+|---------|-------------|----------|
+| Fused S3 bucket | `fd://path/file.parquet` | Persistent storage, sharing |
+| Mounted disk | `/mnt/cache/file.parquet` | Temporary files, caching |
+| Your own S3 | `s3://bucket/file.parquet` | Enterprise integration |
 
-```python
-# Get your user handle 
-user = fused.api.whoami()['handle']
-
-# Ingest Washington DC Census data
-job = fused.ingest(
-    input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
-    output=f"fd://{user}/data/census/partitioned/", # Saving to your Fused bucket
-)
-
-job.run_batch()
-```
-
-You can tail logs to see how the job is progressing:
-
-```python
-fused.api.job_tail_logs("your-job-id")
-```
-
-Learn more about [Fused data ingestion](/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/ingest-your-data)
+See [Cloud Storage](/guide/data-input-outputs/import-connection/cloud-storage) for details on connecting your own buckets.
