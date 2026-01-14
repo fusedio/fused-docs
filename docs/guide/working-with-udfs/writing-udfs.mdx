@@ -5,128 +5,203 @@ sidebar_label: Writing UDFs
 sidebar_position: 1
 ---
 
-# Best Practices
+![udf anatomy](/img/udfanatomy.png)
 
-### Explore data in "Map View"
+Follow these steps to write a User Defined Function (UDF).
 
-import ReactPlayer from 'react-player';
+- Decorate a function with [`@fused.udf`](#fusedudf-decorator)
+- [Declare the function](#function-declaration) logic
+- Optionally [cache](#fusedcache-decorator) parts of the function
+- Set [typed parameters](#typed-parameters) to dynamically run based on inputs
+- [Return](#return-object) a vector table or raster
+- [Save](#save-udfs) the UDF
 
+## `@fused.udf` decorator
 
-While you might be tempted to explore a specific row of a `GeoDataFrame` by filtering it and printing it, sometimes it is faster to just click on it in [Map View](/workbench/udf-builder/map/). Once selected, use the tooltip copy icon to copy the object as JSON, which you can then inspect elsewhere.
+First decorate a Python function with `@fused.udf` to tell Fused to treat it as a UDF.
 
-<ReactPlayer className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/eiffel_tower_edit5.mp4" width="100%" />
+## Function declaration
 
-### Changing map base layer
+Next, structure the UDF's code. Declare import statements within the function body, express operations to load and transform data, and define a return statement. This UDF is called `udf` and returns a `pd.DataFrame` object.
 
-Map View supports [multiple base maps](/workbench/udf-builder/map/#map-controls) that might be better suited for different uses cases.
-
-- ⧉ Sometimes you just want a neutral basemap to focus on your data -> "Light" or "Dark" or even "Blank" basemaps are best
-- 🌍 Other times you might want some context, in which case using the "Satellite" basemap will suit your need best
-
-![Changing Map View](/img/user-guide/best-practices/eiffel_tower.png)
-
-### Using the Visualization
-
-You can easily change the styling of your data in the [Visualization](/workbench/udf-builder/styling/):
-- [Changing the color of your data](/workbench/udf-builder/styling/#color-styling) (especially for vector files)
-- Using Visualize presets under "Preset"
-- [Creating your own custom `loadingLayer`](/workbench/udf-builder/styling/#custom-loadinglayer-and-errorlayer)
-
-<ReactPlayer className="video__player" playing={false} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench/walkthrough-videos/docs_rewrite/visualization_new_edit5.mp4" width="100%" />
-
-
-### Adjusting Opacity for Better Insights (Advanced Tips)
-
-Opacity control is essential for analyzing layered or dense data:
-
-- **Detecting data density**: Lower opacity (20-50%) helps identify areas where multiple points or features overlap, appearing as darker regions
-- **Visualizing through layers**: Set opacity between 30-70% to see underlying basemaps or other data layers
-- **Highlighting confidence levels**: Use opacity to represent confidence or importance of different features
-
-##### Example: Vegetation Segmentation with Semi-Transparent Overlay
-
-The [Vegetation Segmentation UDF](https://github.com/fusedio/udfs/tree/b87a6638603d96f0eb13a1d259474817227b9245/public/Vegetation_Segmentation) demonstrates how reducing opacity helps visualize segmentation results while still seeing the underlying imagery:
-
-```json
-"rasterLayer": {
-  "@@type": "BitmapLayer",
-  "opacity": 0.3,
-  "pickable": true
-}
+```python showLineNumbers
+@fused.udf # <- Fused decorator
+# highlight-start
+def udf(name: str = "Fused"): # <- Function declaration
+    import pandas as pd
+    return pd.DataFrame({'message': [f'Hello {name}!']})
+# highlight-end
 ```
-
-This visualization uses:
-- 30% opacity to show the vegetation segmentation results as a semi-transparent overlay
-- The underlying satellite imagery remains visible for context
-- The pickable property allows users to hover over areas to see detailed values
-
-![Vegetation segmentation with opacity](/img/user-guide/best-practices/veg_segmentation.png)
-
-#### Detecting Feature Overlaps
-
-Finding overlapping features is crucial for data validation and analysis:
-
-- **Fill vs. stroke emphasis**: For overlap detection, use filled polygons with 40-60% opacity and thin strokes
-- **Contrasting colors**: Use complementary colors when you need to distinguish overlapping features
-- **Using H3 hexagons**: Convert irregular polygons to H3 hexagons for a regularized comparison
-- **Color-coding categories**: Assign different colors to intersection vs. difference areas
-
-##### Example: Advanced Overlap Analysis with H3 Hexagons
-
-The [Overture East Asian Buildings IOU UDF](https://github.com/fusedio/udfs/tree/b87a6638603d96f0eb13a1d259474817227b9245/public/Overture_East_Asian_Buildings_IOU) compares 2 datasets together. Here's the visualisation we used:
-
-```json
-{
-  "tileLayer": {
-    "@@type": "TileLayer",
-    "minZoom": 0,
-    "maxZoom": 14,
-    "tileSize": 256,
-    "extrude": true,
-    "pickable": true
-  },
-  "hexLayer": {
-    "opacity": 0.5,
-    "@@type": "H3HexagonLayer",
-    "stroked": true,
-    "filled": true,
-    "pickable": true,
-    "extruded": true,
-    "getFillColor": {
-      "@@function": "colorCategories",
-      "attr": "how",
-      "domain": [
-        "intersection",
-        "symmetric_difference"
-      ],
-      "colors": "TealRose"
-    },
-    "getHexagon": "@@=properties.hex",
-    "getElevation": "@@=properties.ratio",
-    "elevationScale": 50
-  }
-}
-```
-
-This visualization uses:
-- H3 hexagons to normalize irregular polygon shapes
-- Different colors to show where datasets overlap vs. differ
-- Elevation to represent the overlap ratio
-- 50% opacity to see through overlapping features
-
-<div style={{ textAlign: 'center' }}>
-<img src="https://fused-magic.s3.us-west-2.amazonaws.com/thumbnails/udfs-staging/overture_iou.png" alt="H3 hexagon overlap analysis" style={{ width: '80%'}} />
-</div>
-
-### Tilt Map view to explore 3D datasets
-
-Map View gives you a top-level view of the world by default. But hold `Cmd` (or `Ctrl` on Windows / Mac) to tilt the view!
-
-![Tilted View](/img/user-guide/best-practices/3dmap.png)
-
-🏘️ This can be really helpful to explore 3D datasets like in this [DSM Zonal Stats UDF](https://www.fused.io/workbench/catalog/DSM_Zonal_Stats-0c801e56-d0c4-47e8-a5ce-90d37703bdb7).
-
-{/* NOTE: No mention of actual keyboard shortcut because at time of writing it's `Shift + Home` but home isn't a proper shortcut and conflicts */}
-:::tip
-You can reset the view by running the "Reset 3D view to top-down" shortcut from [Command Palette](/core-concepts/best-practices/workbench-best-practices/#using-keyboard-shortcuts-command-palette)
+:::info
+The UDF Builder in Workbench imports the `fused` module automatically. To write UDFs outside of Workbench, install the [Fused Python SDK](/python-sdk/) with `pip install fused` and import it with `import fused`.
 :::
+
+:::note
+Placing import statements within a UDF function body (known as "local imports") is not a common Python practice, but there are specific reasons to do this when constructing UDFs. UDFs are distributed to servers as a self-contained units, and each unit needs to import all modules it needs for its execution. UDFs may be executed across many servers (10s, 100s, 1000s), and any time lost to importing unused modules will be multiplied.
+
+An exception to this convention is for modules used for function annotation, which need to be imported outside of the function being annotated.
+:::
+
+## `@fused.cache` decorator
+
+Use the [@fused.cache](/core-concepts/cache/) decorator to persist a function's output across runs so UDFs run faster.
+
+
+```python showLineNumbers
+@fused.udf # <- Fused decorator
+def udf(bounds: fused.types.Bounds = None, name: str = "Fused"):
+    import pandas as pd
+
+    # highlight-start
+    @fused.cache # <- Cache decorator
+    def structure_output(name):
+        return pd.DataFrame({'message': [f'Hello {name}!']})
+    # highlight-end
+
+    df = structure_output(name)
+    return df
+```
+
+
+
+
+## Typed parameters
+
+UDFs resolve input parameters to the types specified in their function annotations.
+This example shows the [`bounds` parameter](/tutorials/Geospatial%20with%20Fused/filetile/#bounds) typed as `fused.types.Bounds`
+and `name` as a string.
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = None, # <- Typed parameters
+    name: str = "Fused"
+):
+```
+
+:::tip
+
+To write UDFs that run successfully as both [`File` and `Tile`](/tutorials/Geospatial%20with%20Fused/filetile/), set `bounds` as the first parameter, with `None` as its default value. This enables the UDF to be invoked successfully both as `File` (when `bounds` isn't passed) and as `Tile`. For example:
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds = None):
+    ...
+    return ...
+```
+
+:::
+
+### Supported types
+
+Fused supports the native Python types `int`, `float`, `bool`, `list`, `dict`, and `list`. Parameters without a specified type are handled as strings by default.
+
+The UDF Builder runs the UDF as a [Map Tile](/tutorials/Geospatial%20with%20Fused/filetile/) if the [first parameter](/tutorials/Geospatial%20with%20Fused/filetile/#the-bounds-object) is typed as `fused.types.Bounds`.
+
+### `pd.DataFrame` as JSON
+
+Pass tables and geometries as serialized UDF parameters in HTTPS calls. Serialized JSON and GeoJSON parameters can be casted as a `pd.DataFrame` or `gpd.GeoDataFrame`. Note that while Fused requires import statements to be declared within the UDF signature, libraries used for typing must be imported at the top of the file.
+
+```python showLineNumbers
+import geopandas as gpd
+import pandas as pd
+
+@fused.udf
+def udf(
+    gdf: gpd.GeoDataFrame = None,
+    df: pd.DataFrame = None
+):
+```
+
+## Reserved parameters
+
+When running a UDF with `fused.run`, it's possible to specify the [map tile](/tutorials/Geospatial%20with%20Fused/filetile/#tile) Fused will use to structure the `bounds` object by using the following reserved parameters.
+
+### With `x`, `y`, `z` parameters
+
+```python showLineNumbers
+fused.run("UDF_Overture_Maps_Example", x=5241, y=12662, z=15)
+```
+
+### Passing a `GeoDataFrame`
+```python showLineNumbers
+import geopandas as gpd
+bounds = gpd.GeoDataFrame.from_features({"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"coordinates":[[[-122.41152460661726,37.80695951427788],[-122.41152460661726,37.80386837460925],[-122.40744576928229,37.80386837460925],[-122.40744576928229,37.80695951427788],[-122.41152460661726,37.80695951427788]]],"type":"Polygon"},"id":1}]})
+fused.run("UDF_Overture_Maps_Example", bounds=bounds)
+```
+
+### Passing a bounding box list
+
+You can also pass a list of 4 points representing `[min_x, min_y, max_x, max_y]`
+
+```python showLineNumbers
+fused.run('UDF_Overture_Maps_Example', bounds=[-122.349, 37.781, -122.341, 37.818])
+```
+
+### Import functions from other UDFs
+
+UDFs can import functions from other UDFs with `fused.load` in the [UDFs GitHub repo](https://github.com/fusedio/udfs/tree/main) or [private GitHub repos](/core-concepts/content-management/git/). Here the commit SHA `05ba2ab` pins the UDF to specific commit [for version control](/core-concepts/run-udfs/run-small-udfs/#git-commit-hash-recommended-for-most-stable-use-cases).
+
+```python showLineNumbers
+common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
+```
+
+## `return` object
+
+UDFs can return the following objects:
+
+- Tables: `pd.DataFrame`, `pd.Series`, `gpd.GeoDataFrame`,  `gpd.GeoSeries`, and `shapely geometry`.
+- Arrays: `numpy.ndarray`, `xarray.Dataset`, `xarray.DataArray`, and `io.BytesIO`. Fused Workbench only supports the rendering of `uint8` arrays. Rasters without spatial metadata should indicate their [tile bounds](/tutorials/Geospatial%20with%20Fused/filetile/#tile).
+- Simple Python objects: `str`, `int`, `float`, `bool`.
+- Dictionaries: `dict`. Useful to return dictionaries of raster numpy array for example.
+
+## Save UDFs
+
+UDFs exported from the [UDF Builder](/workbench/udf-builder/) or saved locally are formatted as a `.zip` file containing associated files with the UDFs code, `utils` Module, metadata, and `README.md`.
+
+```
+└── Sample_UDF
+    ├── README.MD       # Description and metadata
+    ├── Sample_UDF.py   # UDF code
+    ├── meta.json       # Fused metadata
+    └── utils.py        # `utils` Module
+```
+
+### In Python: `.to_fused()`
+
+When outside of Workbench, save UDF to your local filesystem with `my_udf.to_directory('Sample_UDF')` and to the Fused cloud with `my_udf.to_fused()`.
+
+This will allow you to access your UDF using a [token](/core-concepts/run-udfs/run-small-udfs/#token), from a [Github commit](/core-concepts/run-udfs/run-small-udfs/#git-commit-hash-recommended-for-most-stable-use-cases) or directly importing it in [Workbench from the Github URL](/workbench/udf-explorer/#add-from-github-url)
+
+### In Workbench: Saving through Github
+
+You can also save your UDFs directly through GitHub as personal, team or community UDF. Check out the [Contribute to Fused](/workbench/udf-explorer/#contribute-to-fused) to see more.
+
+
+## Update tags and metadata
+
+Modify the UDF's metadata to manage custom tags that persist across the local filesystem, the Fused Cloud, and your team's GitHub repo.
+
+
+```python showLineNumbers
+# Assumging my_udf was loaded or created above
+my_udf.metadata['my_company:tags']=['tag_1', 'tag_2']
+
+# Push to Fused
+my_udf.to_fused()
+
+# You can reload your UDF and see the updated metadata
+fused.load('my_udf').metadata
+```
+
+## Debug UDFs
+
+#### UDF builder
+
+A common approach to debug UDFs is to show intermediate results in the [UDF Builder](/workbench/udf-builder) [runtime panel](/workbench/udf-builder/runtime/) with `print` statements.
+
+#### HTTPS requests
+
+When using HTTPS requests, any error messages are included in the `X-Fused-Metadata` response header. These messages can be used to debug. To inspect the header on a browser, open the [Developer Tools](https://developer.chrome.com/docs/devtools/network) network tab.
+
+![network](/img/network.png)
