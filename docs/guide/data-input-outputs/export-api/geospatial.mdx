@@ -1,0 +1,403 @@
+---
+id: geospatial-export
+title: Geospatial Export
+sidebar_label: Geospatial
+sidebar_position: 5
+---
+
+# Other Integrations
+
+This section shows how to integrate Fused UDFs with popular mapping and visualization tools.
+
+## DeckGL
+
+[DeckGL](https://deck.gl/) is a highly performant framework to create interactive map visualizations that handle large datasets.
+
+This guide shows how to load data from Fused into DeckGL maps created from a single standalone HTML page.
+### Setup
+
+1. First create a UDF and [generate an HTTPS endpoint](/core-concepts/run-udfs/run-small-udfs/#https-requests).
+
+2. Create an `.html` file following this template. This code creates a DeckGL map then introduces a layer that renders data from the specified Fused endpoint.
+
+```html
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Fused DeckGL</title>
+    <meta
+      name="viewport"
+      content="initial-scale=1,maximum-scale=1,user-scalable=no"
+    />
+
+    <script src="https://unpkg.com/@deck.gl/core@^9.0.0/dist.min.js"></script>
+    <script src="https://unpkg.com/@deck.gl/layers@^9.0.0/dist.min.js"></script>
+    <script src="https://unpkg.com/@deck.gl/geo-layers@^9.0.0/dist.min.js"></script>
+    <script src="https://unpkg.com/@deck.gl/carto@^9.0.0/dist.min.js"></script>
+    <script src="https://unpkg.com/h3-js"></script>
+    <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.js"></script>
+    <link
+      href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        width: 100vw;
+        height: 100vh;
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script>
+      const { DeckGL, H3HexagonLayer, GeoJsonLayer, BitmapLayer, TileLayer } = deck;
+
+      new DeckGL({
+        mapboxApiAccessToken:
+          "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
+        mapStyle: "mapbox://styles/mapbox/dark-v10",
+        initialViewState: {
+          longitude: -122.417759,
+          latitude: 37.776452,
+          zoom: 12,
+        },
+        controller: true,
+        layers: [
+          new H3HexagonLayer({
+            id: "H3HexagonLayer",
+            data: "https://www.fused.io/server/v1/realtime-shared/f393efed9c75425365f2f00254d37cb15166e22fc5defabcc7ee6fd9e2d7a3b4/run/file?format=json",
+            extruded: true,
+            getElevation: (d) => d.count,
+            elevationScale: 20,
+            filled: true,
+            stroked: true,
+            getFillColor: (d) => [255, (1 - d.count / 500) * 255, 0],
+            getHexagon: (d) => d.hex,
+            getLineColor: [255, 255, 255],
+            getLineWidth: 2,
+            lineWidthUnits: "pixels",
+          }),
+        ],
+      });
+    </script>
+  </body>
+</html>
+```
+
+### H3HexagonLayer
+
+Create an [`H3HexagonLayer`](https://deck.gl/docs/api-reference/geo-layers/h3-hexagon-layer).
+
+<iframe src="/img/deckgl_h3.html"  height="400px" width="100%" scrolling="no"></iframe>
+
+```js
+new H3HexagonLayer({
+    id: "H3HexagonLayer",
+    data: "https://www.fused.io/server/v1/realtime-shared/f393efed9c75425365f2f00254d37cb15166e22fc5defabcc7ee6fd9e2d7a3b4/run/file?format=json",
+    extruded: true,
+    getElevation: (d) => d.count,
+    elevationScale: 20,
+    filled: true,
+    stroked: true,
+    getFillColor: (d) => [255, (1 - d.count / 500) * 255, 0],
+    getHexagon: (d) => d.hex,
+    getLineColor: [255, 255, 255],
+    getLineWidth: 2,
+    lineWidthUnits: "pixels",
+}),
+```
+
+### Vector Tile Layer
+
+Vector Tile layers are created by placing a [`GeoJsonLayer`](https://deck.gl/docs/api-reference/layers/geojson-layer) sublayer within a [`TileLayer`](https://deck.gl/docs/api-reference/geo-layers/tile-layer). Use the following snippet to introduce a vector layer.
+
+The layer in the sample map comes from [Overture Buildings UDF](https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example).
+
+<iframe src="/img/deckgl_vector.html"  height="400px" width="100%" scrolling="no"></iframe>
+
+```js
+new TileLayer({
+  // Use geojsonlayer inside of tilelayer. This is instead of MVT Layer, which has optimizations that can cause clipping when polygon extends beyond Tile area.
+  id: "VectorTileLayer",
+  data: "https://www.fused.io/server/v1/realtime-shared/UDF_Overture_Maps_Example/run/tiles/{z}/{x}/{y}?format=geojson",
+  maxZoom: 19,
+  minZoom: 0,
+
+  renderSubLayers: (props) => {
+    const { boundingBox } = props.tile;
+
+    return new GeoJsonLayer(props, {
+      data: props.data,
+      stroked: true,
+      getLineColor: [0, 255, 10],
+      getLineWidth: 10,
+      getFillColor: [0, 40, 0, 0.5],
+      getPointRadius: 4,
+      getLineWidth: 5,
+      pointRadiusUnits: "pixels",
+      bounds: [
+        boundingBox[0][0],
+        boundingBox[0][1],
+        boundingBox[1][0],
+        boundingBox[1][1],
+      ],
+    });
+  },
+});
+```
+
+### Raster Tile Layer
+
+Raster Tile layers are created by placing a [`BitmapLayer`](https://deck.gl/docs/api-reference/layers/bitmap-layer) sublayer within a [`TileLayer`](https://deck.gl/docs/api-reference/geo-layers/tile-layer). Use the following snippet to introduce a raster layer. The sample layer below was created from the [NAIP Tile UDF](https://github.com/fusedio/udfs/tree/main/public/NAIP_Tile_Example).
+
+<iframe src="/img/deckgl_raster.html"  height="300px" width="100%" scrolling="no"></iframe>
+
+```js
+new TileLayer({
+  id: "RasterTileLayer",
+  data: `https://www.fused.io/server/v1/realtime-shared/UDF_Arcgis_Rgb/run/tiles/{z}/{x}/{y}?format=png`,
+  maxZoom: 19,
+  minZoom: 0,
+
+  renderSubLayers: (props) => {
+    const { boundingBox } = props.tile;
+
+    return new BitmapLayer(props, {
+      data: null,
+      image: props.data,
+      bounds: [
+        boundingBox[0][0],
+        boundingBox[0][1],
+        boundingBox[1][0],
+        boundingBox[1][1],
+      ],
+    });
+  },
+  pickable: true,
+});
+```
+
+
+[Learn more about DeckGL](https://deck.gl/docs)
+
+## Felt
+
+[Felt](https://felt.com/) is a collaborative mapping platform for creating interactive maps. Load Fused data directly via URLs.
+
+### Raster Tiles
+
+1. Create a UDF that returns raster tiles
+2. Generate a shared URL and modify it:
+   - Set `format=png`
+   - Replace path with `/{z}/{x}/{y}` template
+
+```bash
+https://www.fused.io/server/v1/realtime-shared/YOUR_UDF/run/tiles/{z}/{x}/{y}?format=png
+```
+
+3. In Felt, click "Upload from URL" and paste the modified URL
+
+### Vector Data
+
+1. Create a UDF that returns vector data
+2. Generate a shared URL and modify it:
+   - Set `format=csv` or `format=parquet`
+   - Add UDF parameters as needed
+
+```bash
+https://www.fused.io/server/v1/realtime-shared/YOUR_UDF/run/file?format=csv&param1=value1
+```
+
+3. In Felt, click "Upload from URL" and paste the URL
+
+[Learn more about Felt](https://felt.com/help)
+
+## Kepler
+
+[Kepler](https://kepler.gl/) is an open source tool for visualizing large geospatial datasets. The Fused UDF Builder provides direct integration with Kepler.
+
+### Usage
+
+1. Create a UDF that returns vector data
+2. In the UDF Builder, click "Open in Kepler.gl" on the top-right menu
+3. Wait for data transfer and click "Open in Kepler.gl" in the bottom-right
+
+This opens your data directly in Kepler for advanced visualization and analysis.
+
+[Learn more about Kepler](https://kepler.gl/docs)
+
+{/* ## Leaflet
+
+[Leaflet](https://leafletjs.com/) is a JavaScript library for interactive maps. Use with Python's [`ipyleaflet`](https://ipyleaflet.readthedocs.io/) for Jupyter notebooks.
+
+### Raster Tiles
+
+```python
+import ipyleaflet
+
+m = ipyleaflet.Map(
+    center=(37.316, -120.69),
+    zoom=10,
+    basemap=ipyleaflet.basemaps.CartoDB.PositronOnlyLabels,
+)
+
+# Add raster tile layer
+tile_layer = ipyleaflet.TileLayer(
+    url="https://www.fused.io/server/v1/realtime-shared/YOUR_UDF/run/tiles/{z}/{x}/{y}?format=png",
+    tile_size=512,
+    zoom_offset=-1,
+)
+m.add_layer(tile_layer)
+m
+```
+
+### Vector Tiles
+
+```python
+import ipyleaflet
+
+m = ipyleaflet.Map(center=(37.7749, -122.4194), zoom=17)
+
+# Add vector tile layer
+vector_layer = ipyleaflet.VectorTileLayer(
+    url="https://www.fused.io/server/v1/realtime-shared/YOUR_UDF/run/tiles/{z}/{x}/{y}?format=mvt"
+)
+m.add_layer(vector_layer)
+m
+```
+
+[Learn more about Leaflet](https://leafletjs.com/reference.html) */}
+
+## Mapbox
+
+[Mapbox GL JS](https://docs.mapbox.com/mapbox-gl-js/) creates interactive web maps. Load Fused data using tile sources.
+
+### Basic Setup
+
+- Generate a [Mapbox token](https://docs.mapbox.com/help/dive-deeper/access-tokens/)
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.js"></script>
+</head>
+<body>
+    <div id="map"></div>
+    <script>
+        mapboxgl.accessToken = 'YOUR_MAPBOX_TOKEN';
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/dark-v10',
+            center: [-122.447303, 37.753574],
+            zoom: 13
+        });
+    </script>
+</body>
+</html>
+```
+
+### Vector Tiles
+
+```html
+<script>
+map.on('load', () => {
+    map.addSource('fused-source', {
+        'type': 'vector',
+        'tiles': [
+            'https://www.fused.io/server/v1/realtime-shared/YOUR_UDF/run/tiles/{z}/{x}/{y}?format=mvt'
+        ],
+        'minzoom': 6,
+        'maxzoom': 14
+    });
+    
+    map.addLayer({
+        'id': 'fused-layer',
+        'type': 'line',
+        'source': 'fused-source',
+        'source-layer': 'udf', // Always 'udf' for Fused vector tiles
+        'paint': {
+            'line-color': 'rgb(53, 175, 109)',
+            'line-width': 2
+        }
+    });
+});
+</script>
+```
+
+### Raster Tiles
+
+```html
+<script>
+map.on('load', () => {
+    map.addSource('fused-raster-source', {
+        'type': 'raster',
+        'tiles': [
+            'https://www.fused.io/server/v1/realtime-shared/YOUR_UDF/run/tiles/{z}/{x}/{y}?format=png'
+        ],
+        'tileSize': 256
+    });
+    
+    map.addLayer({
+        'id': 'fused-raster-layer',
+        'type': 'raster',
+        'source': 'fused-raster-source'
+    });
+});
+</script>
+```
+
+[Learn more about Mapbox GL JS](https://docs.mapbox.com/mapbox-gl-js/api/)
+
+## QGIS
+
+[QGIS](https://www.qgis.org/) is an open source desktop GIS platform. Load Fused data as raster tiles, vector tiles, or vector files.
+
+### Raster Tiles
+
+1. Create a UDF that returns raster tiles
+2. Generate a shared URL and modify it:
+   - Set `format=png`
+   - Replace with `/{z}/{x}/{y}` template
+
+```bash
+https://www.fused.io/server/v1/realtime-shared/YOUR_UDF/run/tiles/{z}/{x}/{y}?format=png
+```
+
+3. In QGIS: Right-click "XYZ Tiles" → "New Connection"
+4. Paste the URL and configure the layer
+
+### Vector Tiles
+
+1. Create a UDF that returns vector tiles
+2. Generate a shared URL with `format=mvt`
+
+```bash
+https://www.fused.io/server/v1/realtime-shared/YOUR_UDF/run/tiles/{z}/{x}/{y}?format=mvt
+```
+
+3. In QGIS: Right-click "Vector Tiles" → "New Connection"
+4. Paste the URL and configure the layer
+
+### Vector Files
+
+1. Create a UDF that returns vector data
+2. Generate a shared URL with `format=geojson`
+
+```bash
+https://www.fused.io/server/v1/realtime-shared/YOUR_UDF/run/file?format=geojson
+```
+
+3. In QGIS: Layer → Add Layer → Add Vector Layer
+4. Paste the URL as the data source
+
+[Learn more about QGIS](https://docs.qgis.org/3.34/en/docs/user_manual/)
+
+## Related 
+
+- [Generate HTTPS endpoints](/core-concepts/run-udfs/run-small-udfs/#https-requests) for your UDFs
+- Check the [Fused catalog](https://www.fused.io/workbench/catalog/) for ready-to-use UDFs 
