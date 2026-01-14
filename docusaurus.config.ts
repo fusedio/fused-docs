@@ -224,7 +224,7 @@ const config: Config = {
       "@docusaurus/plugin-client-redirects",
       {
         redirects: [
-          // V7 Migration Redirects - Tutorials to new locations
+          // Revamped Jan 2026 Migration Redirects - Tutorials to new locations
           { to: "/guide/working-with-udfs/building-outputs/standalone-maps", from: ["/tutorials/Analytics%20&%20Dashboard/standalone-maps", "/tutorials/Analytics & Dashboard/standalone-maps"] },
           { to: "/examples/realtime-processing", from: ["/tutorials/Analytics%20&%20Dashboard/realtime-data-processing-with-duckdb-wasm", "/tutorials/Analytics & Dashboard/realtime-data-processing-with-duckdb-wasm"] },
           { to: "/guide/working-with-udfs/building-outputs/charts", from: ["/tutorials/Analytics%20&%20Dashboard/interactive-graphs", "/tutorials/Analytics & Dashboard/interactive-graphs"] },
