@@ -1213,26 +1213,6 @@ Fused supports multiple cloud storage options for reading and writing data.
 
 For details on using `fd://` paths and the `/mnt/cache` disk, see File System.
 
-## `/mnt/cache` Disk
-
-`/mnt/cache` is the path to a mounted disk to store files shared between UDFs. This is where `@fused.cache` and `fused.download` write data. It's ideal for files that UDFs need to read with low-latency, downloaded files, the output of cached functions, access keys, `.env`, and ML model weights.
-
-UDFs may interact with the disk as with a local file system:
-
-```python showLineNumbers
-# Write to mount
-df.to_parquet("/mnt/cache/data.parquet")
-
-# List files
-@fused.udf
-def udf():
-
-    for each in os.listdir('/mnt/cache/'):
-        print(each)
-```
-
-If you encounter `Error: No such file or directory: '/mnt/cache/'`, contact the Fused team to enable it for your environment.
-
 ## Connect Your Own Bucket
 
 Alternatively, use this Fused app to automatically structure the policy for you.
@@ -1357,6 +1337,26 @@ def udf():
 ```
 
 Once downloaded, use the Reading Data guide for extracting compressed files (ZIP/RAR).
+
+## `/mnt/cache` Disk
+
+`/mnt/cache` is the path to a mounted disk to store files shared between UDFs. This is where `@fused.cache` and `fused.download` write data. It's ideal for files that UDFs need to read with low-latency, downloaded files, the output of cached functions, access keys, `.env`, and ML model weights.
+
+UDFs may interact with the disk as with a local file system:
+
+```python showLineNumbers
+# Write to mount
+df.to_parquet("/mnt/cache/data.parquet")
+
+# List files
+@fused.udf
+def udf():
+
+    for each in os.listdir('/mnt/cache/'):
+        print(each)
+```
+
+If you encounter `Error: No such file or directory: '/mnt/cache/'`, contact the Fused team to enable it for your environment.
 
 ================================================================================
 
@@ -2064,62 +2064,7 @@ def udf():
     return ds.to_dataframe().reset_index().head(1000)
 ```
 
-### STAC Catalog
-
-#### Earth on AWS
-
-```python
-@fused.udf
-def udf(
-    bounds: fused.types.Bounds = [-77.083, 38.804, -76.969, 38.983],
-):
-
-    odc.stac.configure_s3_access(aws_unsigned=True)
-    catalog = pystac_client.Client.open("https://earth-search.aws.element84.com/v1")
-
-    # Loading Elevation model
-    items = catalog.search(
-        collections=["cop-dem-glo-30"], 
-        bbox=bounds
-    ).item_collection()
-
-    xarray_dataset = odc.stac.load(
-        items,
-        crs="EPSG:3857",
-        bands=["data"],
-        resolution=150,
-        bbox=bounds,
-    ).astype(int)
-
-    return xarray_dataset["data"], bounds
-```
-
-#### Microsoft Planetary Computer
-
-```python
-@fused.udf
-def udf(
-    bounds: fused.types.Bounds = [-122.463,37.755,-122.376,37.803],
-):
-
-    catalog = pystac_client.Client.open(
-        "https://planetarycomputer.microsoft.com/api/stac/v1",
-        modifier=planetary_computer.sign_inplace,
-    )
-
-    # Loading Elevation model
-    items = catalog.search(collections=["cop-dem-glo-30"],bbox=bounds).item_collection()
-    
-    xarray_dataset = odc.stac.load(
-        items,
-        crs="EPSG:3857",
-        bands=["data"],
-        resolution=150,
-        bbox=bounds,
-    ).astype(int)
-    
-    return xarray_dataset["data"], bounds
-```
+For working with STAC catalogs (Earth on AWS, Microsoft Planetary Computer), see STAC.
 
 ================================================================================
 
@@ -2836,7 +2781,7 @@ This reader uses DuckDB under the hood to read the data meaning you can write ad
 
 ## Aggregate at lower resolutions
 
-H3 hexagons allow for aggregation at different resolutions. The ingestion process already creates different overviews at different H3 resolutions. 
+H3 hexagons allow for aggregation at different resolutions. The ingestion process already creates overviews at different H3 resolutions - see Resolution Guide for details. 
 
 ### Numerical data
 
@@ -3275,6 +3220,61 @@ Returns the following table:
     - Soil Type
     - Temperature
     - Precipitation
+
+================================================================================
+
+## H3 Analytics Overview
+Path: guide/h3-analytics/overview.mdx
+URL: https://docs.fused.io/guide/h3-analytics/h3-overview
+
+# H3 Analytics Overview
+
+## When to use H3
+
+Consider using H3 tiling when:
+- Creating heatmaps of events (populations, counts, etc.)
+- Wanting to compare datasets across resolutions & scale
+- Working with sparse datasets
+
+Example of buildings heatmap based on the Overture Buildings dataset:
+
+```python showLineNumbers
+common = fused.load("https://github.com/fusedio/udfs/blob/main/public/common/")
+@fused.udf
+def udf(bounds: fused.types.Bounds = [-122.71963771127753,36.53196328805067,-120.70395948802646,38.082911654639275]):
+    res = bounds_to_res(bounds)
+    print(res)
+    releases = ['2024-02-15-alpha-0', '2024-03-12-alpha-0', '2024-08-20-0', '2024-09-18-0', '2024-10-23-0', '2024-11-13-0', '2024-12-18-0', '2025-01-22-0', '2025-03-19-1', '2025-04-23-0', '2025-05-21-0']
+    release1 = releases[-1]
+    df1 = common.read_hexfile(bounds, f"s3://fused-users/fused/sina/overture_overview//hex.parquet", clip=True)
+
+    return df1
+
+@fused.cache
+def bounds_to_res(bounds, res_offset=0, max_res=14, min_res=3):
+    z = common.estimate_zoom(bounds)
+    return max(min(int(3 + max(0, z - 3) / 1.7 + res_offset), max_res), min_res)
+```
+
+</details>
+
+## Converting Datasets to H3 tiles
+
+We've provided a few options for converting datasets to H3 tiles:
+
+| Type | Data Size | Hexagonification Type | H3 Output | Consideration |
+|------|-----------|----------------------|-----------|---------------|
+| File to H3 | Small (< 100MB) | On the fly | Static Resolution | Easy to adjust. Can easily change field to hexagonify |
+| Dynamic Tile to H3 | Small or Large | On the fly | Dynamic Resolution | Easy to adjust. Can easily change field to hexagonify |
+| Ingesting Dataset to H3 | Large (> 100MB) | Pre-computed | Dynamic Resolution | Requires deciding on which variable to hexagonify ahead of time |
+
+For choosing the right resolution, see Resolution Guide.
+
+## Example UDFs
+
+- Ookla Download Speed Heatmap: Visualize download speeds across the world.
+- US Crop Viewer: Explore crops around the US
+- Overture Release Difference Heatmap: Visually identify differences between 2 Overture Building dataset releases.
 
 ================================================================================
 
@@ -4906,6 +4906,71 @@ URL: https://docs.fused.io/guide/working-with-udfs/geospatial/tile-processing
 # Tile Processing
 
 Working with tiles, get_tiles, and mosaicing.
+
+================================================================================
+
+## Why UDFs
+Path: guide/working-with-udfs/why-fused.mdx
+URL: https://docs.fused.io/guide/working-with-udfs/why-fused
+
+# Why UDFs
+
+At Fused, our mission is to help get things done, fast. We want every team to be able to get from **Analytics to Action** as quickly as they can. 
+
+We also deeply believe AI is changing the way we work. So here's Notebook LLM telling you all about Fused in 5min:
+
+## Our core beliefs
+
+We believe every Analytics team should have the tools to:
+- 🌍 Answer the big picture problems first;
+- 💡 Iterate on their analysis when new data & algorithms becomes available;
+- 🏃 Ship a first version rather than getting it perfect;
+- 📊 Visualize & report their work to anyone in their team.
+
+## User Defined Functions
+
+A lot of the tools Analytics teams have today slow the process down:
+- Python dependency management gets in the way of getting work done.
+- A lot of the scientific Python tooling focused more on getting the result down to 10 decimal places rather than answering the big picture
+
+That's why we built Fused around User Defined Functions (UDFs). 
+
+[Image: udf pipeline]
+
+UDFs are the DNA of analytics. They are Python functions that can be called from anywhere:
+- 🐍 No environment setup: Just start writing Python immediately.
+- 🔗 Shareable as HTTPS endpoints in 2 clicks: Ship your work to the rest of the team
+- 🔄 Iterable: Edit your code, Save, and see the results downstream immediately.
+- 🚀 Scales with your hardware requirements: From running a subset of data to analyzing the entire world.
+
+## UDFs are the DNA of analytics
+
+Making every process of your Analytics a UDF makes it faster:
+
+- **Data needs to be ingested constantly**: UDFs can be edited as datasets change & evolve. They get updated when you save them. 
+- **New algorithms come and go**: UDFs allow you to iterate on existing data and swap out just what you need.
+- **Reporting & Visualization evolve**: UDFs can take your analysis and render it in dynamic ways.
+
+## From your laptop to the World
+
+Look, we know that many Analytics projects start in a notebook on a laptop. 
+
+- 💻 Start by running UDFs locally, then in 2 lines of code scale to datasets the size of the world
+- 🌍 UDFs can be called from anywhere: From a notebook, a frontend application or integration platforms
+- 🔀 Work locally or in Workbench, our browser based IDE interchangeably  
+
+## Efficiently Scaling
+
+Because Fused is built for scale:
+- ☁️ Serverless computing: Only pay for the processing you actually use
+- ⚡️ Caching makes recurring calls faster & cheaper
+
+## Get started using UDFs right now
+
+Check out:
+- ⚡️ The Getting Started guide: Learn how to use UDFs in 5 minutes
+- 📚 Writing UDFs: Everything you need to know about building UDFs
+- 🎓 Our Examples: Real world examples of how to use UDFs
 
 ================================================================================
 
@@ -16204,5 +16269,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-01-14
+Generated automatically from Fused documentation. Last updated: 2026-01-15
 Total sections: 5
