@@ -1,0 +1,89 @@
+---
+id: geospatial-writing
+title: Writing Geospatial Data
+sidebar_label: Writing
+sidebar_position: 2
+---
+
+# Writing Geospatial Data
+
+When working with geospatial data in Fused we recommend saving files in these formats:
+- **Vector data**: GeoParquet
+- **Raster data**: Cloud Optimized GeoTIFF (COG)
+
+## Vector: GeoParquet
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/subway_stations.geojson"):
+    import geopandas as gpd
+    
+    gdf = gpd.read_file(path)
+    
+    # Process data...
+    
+    # Save to your Fused bucket
+    username = fused.api.whoami()['handle']
+    output_path = f"fd://{username}/subway_stations.parquet"
+    gdf.to_parquet(output_path)
+
+    return f"File saved to {output_path}"
+```
+
+## Raster: Cloud Optimized GeoTIFF (COG)
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/satellite_imagery/wildfires.tiff"):
+    import rasterio
+    import numpy as np
+    
+    # Read the raster data
+    with rasterio.open(path) as src:
+        data = src.read()
+        profile = src.profile
+    
+    # Process the data
+    processed_data = np.where(data > np.percentile(data, 80), 255, 0).astype(np.uint8)
+    
+    # Update profile for writing
+    profile.update({
+        'driver': 'GTiff',
+        'compress': 'lzw',
+        'dtype': 'uint8'
+    })
+    
+    # Write to Fused's shared disk (accessible to all UDFs in org)
+    username = fused.api.whoami()['handle']
+    output_path = f"/mnt/cache/wildfires_processed_{username}.tif"
+    
+    with rasterio.open(output_path, 'w', **profile) as dst:
+        dst.write(processed_data)
+    
+    return f"File saved to shared disk at {output_path}"
+```
+
+## Large Datasets: `fused.ingest()`
+
+For large geospatial datasets, use `fused.ingest()` to create optimized, geo-partitioned files. This enables efficient spatial queries on datasets of any size.
+
+```python
+# Get your user handle 
+user = fused.api.whoami()['handle']
+
+# Ingest Washington DC Census data
+job = fused.ingest(
+    input="https://www2.census.gov/geo/tiger/TIGER_RD18/LAYER/TRACT/tl_rd22_11_tract.zip",
+    output=f"fd://{user}/data/census/partitioned/",
+)
+
+job.run_batch()
+```
+
+You can tail logs to see how the job is progressing:
+
+```python
+fused.api.job_tail_logs("your-job-id")
+```
+
+Learn more about [geospatial data ingestion](/guide/data-input-outputs/read-write/geospatial/ingestion/).
