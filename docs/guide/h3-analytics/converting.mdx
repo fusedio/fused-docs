@@ -189,11 +189,11 @@ Link to UDF in [Fused Catalog](https://www.fused.io/workbench/catalog/DEM_Tile_H
 
 ## Ingesting Dataset to H3
 
-For large datasets, pre-compute and ingest data to H3 format.
+For large datasets, pre-compute and ingest data to H3 format using [`fused.h3.run_ingest_raster_to_h3()`](/python-sdk/api-reference/h3/#fusedh3run_ingest_raster_to_h3).
 
 ### Raster to H3
 
-The `fused` package includes functionality to automate the ingestion of raster data to an H3 dataset, through [`fused.h3.run_ingest_raster_to_h3()`](/python-sdk/api-reference/h3/#fusedh3run_ingest_raster_to_h3).
+#### Basic Example
 
 ```python showLineNumbers
 @fused.udf
@@ -201,26 +201,249 @@ def udf():
     src_path = "s3://fused-asset/data/nyc_dem.tif"
     output_path = "s3://fused-users/fused/joris/nyc_dem_h3/"  # <-- update this path
 
-    # run the ingestion process
     result_extract, result_partition = fused.h3.run_ingest_raster_to_h3(
         src_path, 
         output_path, 
         metrics=["avg"],
     )
 
-    # verify that the ingestion finished succesfully
+    # verify ingestion succeeded
     if not result_extract.all_succeeded():
         print(result_extract.errors())
     if result_partition is not None and not result_partition.all_succeeded():
         print(result_partition.errors())
 ```
 
-What is required to run this:
-- `src_path`: A raster file path or list of file paths on S3
-- `output_path`: Specify a writeable location on S3 as the output directory
-- `metrics`: Specify the metrics to compute per H3 cell (e.g., `"avg"`, `"sum"`, `"cnt"`)
+**Required parameters:**
+- `src_path`: Raster file path(s) on S3 (TIFF or any GDAL-readable format)
+- `output_path`: Writable S3 location for output
+- `metrics`: Aggregation method per H3 cell (`"avg"`, `"sum"`, `"cnt"`, `"min"`, `"max"`, `"stddev"`)
 
-### Reading Ingested H3 Data
+#### How It Works
+
+The function runs multiple UDFs in parallel under the hood. The orchestrating UDF doesn't need much resources, but can exceed the 2-min realtime limit. For larger data, use a batch instance:
+
+```python showLineNumbers
+@fused.udf(instance_type="small")
+def udf():
+    src_path = "s3://fused-asset/data/nyc_dem.tif"
+    ...
+```
+
+#### Output Structure
+
+The ingestion creates:
+- **Parquet data files** (e.g., `577234808489377791.parquet`)
+- **`_sample` metadata file** with chunk/file bounding boxes for fast spatial queries
+- **`/overview/` directory** with aggregated files at lower resolutions (`hex3.parquet`, `hex4.parquet`, etc.)
+
+![Files created by the ingestion process](/img/tutorials/geospatial/raster_to_h3_nyc_dem.png)
+
+Each file contains:
+- `hex`: H3 cell IDs at the target resolution
+- `data_<metric>`: Computed values (e.g., `data_avg`)
+- `source_url`, `res`: Metadata columns
+
+<details>
+<summary>View data file structure</summary>
+
+<iframe 
+  src="https://www.fused.io/parquet-viewer?key=https%3A%2F%2Ffused-asset.s3.amazonaws.com%2Fhex%2Fnyc_dem%2F577234808489377791.parquet"
+  width="100%"
+  height="200px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+</details>
+
+<details>
+<summary>View overview file structure</summary>
+
+<iframe 
+  src="https://www.fused.io/parquet-viewer?key=https%3A%2F%2Ffused-asset.s3.amazonaws.com%2Fhex%2Fnyc_dem%2Foverview%2Fhex7.parquet"
+  width="100%"
+  height="200px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+</details>
+
+---
+
+### Metrics
+
+Choose metrics based on your raster data type:
+
+| Metric | Use Case | Output Columns |
+|--------|----------|----------------|
+| `"cnt"` | Categorical data (land use, crop types) | `data`, `cnt`, `cnt_total` |
+| `"avg"` | Continuous averages (temperature, elevation, density) | `data_avg` |
+| `"sum"` | Totals (population counts) | `data_sum` |
+| `"min"`, `"max"`, `"stddev"` | Additional statistics | `data_min`, `data_max`, `data_stddev` |
+
+:::note
+`"cnt"` cannot be combined with other metrics. Other metrics can be combined: `metrics=["avg", "min", "max"]`
+:::
+
+#### Counting (categorical data)
+
+For discrete/categorical rasters like land use, `"cnt"` counts occurrences per category:
+
+<details>
+<summary>CDL Example</summary>
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-73.983, 40.763, -73.969, 40.773],
+    res: int = None,
+):
+    # Cropland Data Layer ingested with "cnt" metric
+    path = "s3://fused-asset/hex/cdls_v8/year=2024/"
+    utils = fused.load("https://github.com/fusedio/udfs/tree/79f8203/community/joris/Read_H3_dataset")
+    df = utils.read_h3_dataset(path, bounds, res=res)
+    return df
+```
+
+```
+                  hex  data  cnt  cnt_total
+0  626740321835323391   122   12         14
+1  626740321835323391   123    1         14
+2  626740321835323391   121    1         14
+```
+
+Each H3 cell can have multiple rows (one per category).
+
+</details>
+
+#### Aggregating (continuous data)
+
+For continuous rasters, aggregation produces one value per H3 cell:
+
+<details>
+<summary>DEM Example</summary>
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-73.983, 40.763, -73.969, 40.773],
+    res: int = None,
+):
+    path = "s3://fused-asset/hex/nyc_dem/"
+    utils = fused.load("https://github.com/fusedio/udfs/tree/79f8203/community/joris/Read_H3_dataset")
+    df = utils.read_h3_dataset(path, bounds, res=res)
+    return df
+```
+
+```
+                  hex   data_avg
+0  617733122581069823  78.822576
+1  617733122610954239  78.225562
+```
+
+</details>
+
+---
+
+### Configuration
+
+#### Data Resolution (`res`)
+
+By default, resolution is inferred from raster pixel size. Override with `res` parameter.
+
+See [Resolution Guide](/guide/h3-analytics/resolution-guide) for the full resolution table.
+
+#### Partitioning (`file_res`, `chunk_res`)
+
+Data is spatially partitioned using H3:
+
+| Parameter | Purpose | Default |
+|-----------|---------|---------|
+| `file_res` | Split into multiple files | Inferred (~100MB-1GB per file) |
+| `chunk_res` | Row groups within files | Inferred (~1M rows per chunk) |
+| `max_rows_per_chunk` | Alternative to `chunk_res` | - |
+
+Special case: `file_res=-1` creates a single output file for smaller datasets.
+
+#### Overview Resolutions (`overview_res`)
+
+Overviews are pre-aggregated files for fast zoomed-out views. Default: resolutions 3-7.
+
+```python showLineNumbers
+result_extract, result_partition = fused.h3.run_ingest_raster_to_h3(
+    src_path, 
+    output_path, 
+    metrics=["avg"],
+    overview_res=[7,6,5,4,3],  # Custom overview resolutions
+)
+```
+
+| File Path | Size |
+|-----------|------|
+| `s3://.../overview/hex3.parquet` | 36.9 kB |
+| `s3://.../overview/hex4.parquet` | 36.9 kB |
+| `s3://.../overview/hex5.parquet` | 37.1 kB |
+
+---
+
+### Multiple Files
+
+**Single file:**
+```python
+src_path = "s3://fused-asset/data/nyc_dem.tif"
+```
+
+**Directory:**
+```python
+src_path = fused.api.list("s3://copernicus-dem-90m/")
+```
+
+**Multiple paths:**
+```python
+src_path = [
+    "s3://copernicus-dem-90m/.../file1.tif",
+    "s3://copernicus-dem-90m/.../file2.tif",
+]
+```
+
+:::info
+Ingestion works with any hosted raster data - your files don't need to be on Fused's S3.
+:::
+
+---
+
+### Execution Control
+
+The ingestion runs these steps in parallel via [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit):
+1. **extract**: Assign pixel values to H3 cells
+2. **partition**: Combine chunks per file, create metadata
+3. **overview**: Create aggregated overview files
+
+Override execution with:
+- `engine`: Specify execution engine
+- `instance_type`: Use specific instance type
+- `max_workers`: Control parallelism
+
+#### Running on GCP
+
+```python showLineNumbers
+@fused.udf(instance_type="c2-standard-4")  # Orchestrator
+def udf():
+    result_extract, result_partition = fused.h3.run_ingest_raster_to_h3(
+        src_path, 
+        output_path, 
+        metrics=["avg"],
+        instance_type="c2-standard-60",  # Compute workers
+    )
+```
+
+---
+
+### Reading Ingested Data
+
+Use `read_h3_dataset` to automatically select data vs overview files based on viewport:
 
 ```python showLineNumbers
 @fused.udf
@@ -229,44 +452,79 @@ def udf(
     res: int = None,
 ):
     path = "s3://fused-users/fused/joris/nyc_dem_h3/"
-
     utils = fused.load("https://github.com/fusedio/udfs/tree/dd40354/community/joris/Read_H3_dataset/")
     df = utils.read_h3_dataset(path, bounds, res=res)
-
-    print(df.head())
     return df
 ```
 
-### Vector to Hex
+For visualization options, see [H3 Visualization](/guide/h3-analytics/visualization).
 
-For vector data, use a similar approach with `fused.submit()` to parallelize hexagonification:
+---
+
+### Vector to H3
+
+For vector data, use `fused.submit()` to parallelize hexagonification:
+
+<img 
+  alt="Ingesting Vector Data to H3 Example"
+  src={require('/static/img/tutorials/geospatial/h3/vector_to_hex_ingestion.png').default}
+  style={{width: "100%", maxWidth: 700, margin: "2em auto", display: "block"}}
+/>
+
+:::note Limits
+This method is for datasets < 100k vectors. Run in Single (viewport) mode, not Tiled.
+:::
 
 ```python showLineNumbers
 @fused.udf
 def udf(
     bounds: fused.types.Bounds = [8.4452104984018,41.76046948393174,8.903258920921276,42.053137175457145]
 ):
-    """
-    On the fly vector to hex (counting the number of vectors in each hex at res 15)
-    """
     common = fused.load("https://github.com/fusedio/udfs/tree/208c30d/public/common/")
     res = common.bounds_to_res(bounds, offset=0)
     res = max(9, res)
-    print(f'{res=}')
      
-    gdf = get_data()  # Replace with your own data
+    gdf = get_data()
 
     if gdf.shape[0] > 100_000:
-        print("This method is meant for small areas. Reach out to Fused for scaling this up at info@fused.io")
+        print("Dataset too large. Contact info@fused.io for scaling.")
         return
 
-    # Tiling gdf into smaller chunks of equal size & hexagonifying
     vector_chunks = common.split_gdf(gdf[["geometry"]], n=32, return_type="file")
     df = fused.submit(hexagonify_udf, vector_chunks, res=res, engine="remote").reset_index(drop=True)
-    
     df = df.groupby('hex').sum(['cnt','area']).sort_values('hex').reset_index()[['hex', 'cnt', 'area']]
     df['area'] = df['area'].astype(int)
 
     return df 
+
+
+@fused.udf
+def hexagonify_udf(geometry, res: int = 12):
+    common = fused.load("https://github.com/fusedio/udfs/tree/208c30d/public/common/")
+    gdf = common.to_gdf(geometry)
+    gdf = common.gdf_to_hex(gdf[['geometry']], res=15)
+    con = common.duckdb_connect()
+    df = con.sql(f"""
+        SELECT h3_cell_to_parent(hex, {res}) AS hex, 
+               COUNT(1) AS cnt, 
+               SUM(h3_cell_area(hex, 'm^2')) AS area
+        FROM gdf
+        GROUP BY 1
+        ORDER BY 1
+    """).df()
+    return df
+
+
+@fused.cache
+def get_data():
+    gdf = fused.get_chunk_from_table(
+        "s3://us-west-2.opendata.source.coop/fused/overture/2025-12-17-0/theme=buildings/type=building/part=3", 10, 0
+    )
+    return gdf
 ```
 
+[Open in Catalog →](https://www.fused.io/workbench/catalog/vector_to_gdf_small-d2563bc5-a7af-4a32-8b1e-7a0968e3b49f)
+
+:::info Need help with larger datasets?
+Reach out to our team at info@fused.io
+:::
