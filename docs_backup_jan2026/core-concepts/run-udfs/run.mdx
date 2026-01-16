@@ -1,0 +1,645 @@
+---
+id: run-small-udfs
+title: Realtime
+tags: [write, endpoints, api, http, file, tile]
+sidebar_position: 1
+toc_min_heading_level: 2
+toc_max_heading_level: 4
+---
+
+UDFs really shine once you start calling them from anywhere. Realtime is the default way to run UDFs. You can run them in 2 main ways:
+1.  [`fused.run()`](/python-sdk/top-level-functions/#fusedrun) in Python. All you need is the [`fused` Python](/python-sdk/#python-install) package installed
+    - Useful when wanting to run a UDF as part of another pipeline, inside another UDF or anywhere in Python / code.
+2.  [**HTTPS call**](/core-concepts/run-udfs/run-small-udfs/#https-requests) from *anywhere*
+    - Useful when you want to call a UDF outside of Python. For example, receiving dataframes into Google Sheets or plotting points and images in a [Felt map](/tutorials/Geospatial%20with%20Fused/other-integrations/#felt)
+{/* TODO: Might want to mention `fused.submit()` here to be able to run multiple jobs? */}
+
+### Defining Realtime UDF runs
+
+Realtime UDF runs are defined as any job being:
+- Less than 120s to execute
+- Using less than a few Gb of RAM to run
+
+These run in "real-time" with no start-up time, so are quick to run, but with limited resources and time-out if taking too long.
+
+## [`fused.run()`](/python-sdk/top-level-functions/#fusedrun)
+
+[`fused.run()`](/python-sdk/top-level-functions/#fusedrun) is the simplest & most common way to execute a UDF from any Python script or notebook.
+
+The simplest way to call a public UDF is using a [public UDF name](/core-concepts/run-udfs/run-small-udfs/#public-udf-name) and calling it as: `UDF_` + name. Let's take this UDF that returns [the location of the Eiffel Tower](https://github.com/fusedio/udfs/tree/main/public/Single_point_Eiffel_Tower) in a `GeoDataFrame` as an example:
+
+```python showLineNumbers
+fused.run("UDF_Single_point_Eiffel_Tower")
+```
+
+
+![Simple UDF fused.run() returning a geodataframe](/img/core-concepts/run-udfs/running_simple_eiffel_tower_udf.png)
+
+There are a few other ways to run a UDF:
+
+- [By name from your account](/core-concepts/run-udfs/run-small-udfs/#name-from-your-account)
+- [By public UDF name](/core-concepts/run-udfs/run-small-udfs/#public-udf-name)
+- [Using a token](/core-concepts/run-udfs/run-small-udfs/#token)
+- [Using a `udf` object](/core-concepts/run-udfs/run-small-udfs/#udf-object)
+- [From Github URL](/core-concepts/run-udfs/run-small-udfs/#github-url)
+- [From git commit hash (most recommended for teams)](/core-concepts/run-udfs/run-small-udfs/#git-commit-hash-recommended-for-most-stable-use-cases)
+
+### _Name_ (from your account)
+
+_When to use: When calling a UDF you made, from your own account._
+
+You can call any UDFs you have made simply by referencing it by name (given when you [save a UDF](/core-concepts/write/#save-udfs)).
+
+(Note: This requires authentication)
+
+
+![Hello World UDF](/img/core-concepts/run-udfs/hello_world_bbox_udf.png)
+
+This UDF can then be run in a notebook locally (granted that you have authenticated):
+
+```python showLineNumbers
+fused.run("Hello_World_bbox")
+```
+
+
+![Running Hello World UDF](/img/core-concepts/run-udfs/running_hello_world_bbox_udf.png)
+
+### _Name_ (from your teammate's account)
+
+_When to use: When calling a UDF someone on your team made, from your own account._
+
+Similarly, you can reference by name and run any UDFs under your teammates' accounts. Simply prefix the UDF name with the person's email address, separated by a `/`.
+
+```python showLineNumbers
+fused.run("teammate@fused.io/Hello_World_bbox")
+```
+
+Note that both your and your teammate's accounts must belong to the same organization.
+
+### _Public UDF Name_
+
+_When to run: Whenever you want to run a public UDF for free from anywhere_
+
+Any UDF saved in the [public UDF repo](https://github.com/fusedio/udfs/tree/main) can be run for free.
+
+Reference them by prefixing their name with `UDF_`. For example, [the public UDF `Get_Isochrone`](https://github.com/fusedio/udfs/tree/main/public/Get_Isochrone) is run with `UDF_Get_Isochrone`:
+
+```python showLineNumbers
+fused.run('UDF_Get_Isochrone')
+```
+
+### _Token_
+
+_When to use: Whenever you want someone to be able to execute a UDF but might not want to share the code with them._
+
+You can get the token from a UDF either in [Workbench](/workbench/) (Save your UDF then click "Share") or by returning the token in Python.
+
+Here's a toy UDF that we want others to be able to run, but we don't want them to see the code:
+
+```python showLineNumbers
+# This example is from a notebook
+import fused
+
+@fused.udf()
+def my_super_duper_private_udf(my_udf_input):
+    import pandas as pd
+    # This code is so private I don't want anyone to be able to read it
+    return pd.DataFrame({"input": [my_udf_input]})
+```
+
+We then need to [save this UDF to Fused server](/core-concepts/write/#save-udfs) to make it accessible from anywhere.
+
+```python showLineNumbers
+# This example is from a notebook
+my_super_duper_private_udf.to_fused()
+```
+
+:::note
+`my_udf.to_fused()` saves your UDF to your personal user UDFs. These are private to you and your team. You can create a token that anyone (even outside your team) can use to run your UDF but by default these UDFs are private.
+:::
+
+We can create a token for this `my_super_duper_private_udf` and share it:
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import LazyReactPlayer from '@site/src/components/LazyReactPlayer'
+
+<Tabs className="unique-tabs">
+  <TabItem value="python" label="Python" default>
+
+    ```python showLineNumbers
+    token = my_super_duper_private_udf.create_access_token()
+    print(token)
+    ```
+
+    This would return something like: `'fsh_**********q6X'` (You can recognise this to be a shared token because it starts with `fsh_`)
+
+  </TabItem>
+  <TabItem value="workbench" label="Workbench">
+
+    You can create a Share Token directly from Workbench:
+
+    <LazyReactPlayer playsinline={true} className="video__player" playing={true} muted={true} controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/core-concepts/run-udfs/get_share_token.mp4" width="100%" />
+
+  </TabItem>
+</Tabs>
+
+Once you have your `'fsh_***'` token, you can use it to run your UDF:
+
+```python showLineNumbers
+fused.run(token, my_udf_input="I'm directly using the token object")
+```
+
+or directly:
+
+```python showLineNumbers
+fused.run('fsh_**********q6X', my_udf_input="I can't see your private UDF but can still run it")
+```
+
+### _UDF_ object
+
+_When to run: When you're writing your UDF in the same Python file / jupyter notebook and want to refer to the Python object directly. You might want to do this to test your UDF works locally for example_
+
+You may also pass a UDF Python object to `fused.run`:
+
+```python showLineNumbers
+@fused.udf
+def local_udf():
+    import pandas as pd
+    return pd.DataFrame({})
+
+# Note that by default fused.run() will run your UDF on the Fused serverless server so we pass engine='local' to run this as a normal Python function
+fused.run(local_udf, engine='local')
+```
+
+### _Git commit hash_ (recommended for most stable use cases)
+
+_When to use: Whenever you want to rely on a UDF such as in production or when using a UDF as a building block for another UDF._
+
+This is the safest way to call a UDF on Github, as you pin it to a specific hash version. 
+
+```python showLineNumbers
+commit_hash = "120a485"
+output = fused.run(f"https://github.com/fusedio/udfs/tree/{commit_hash}/public/Single_point_Eiffel_Tower/")
+```
+
+### _Team UDF Names_
+
+Team UDFs can be loaded or run by specifying the name "team", as in:
+
+```python showLineNumbers
+fused.load("team/udf_name")
+```
+
+This can be helpful when collaborating with team members as this does **not** require [making a shared token](/core-concepts/run-udfs/run-small-udfs/#token)
+
+## Execution engines
+
+{/* Need more details for this */}
+
+`fused.run` can run the UDF in various execution modes, as specified by the `engine` parameter either local or remote
+
+- `local`: Run in the current process.
+- `remote`: Run in the serverless Fused cloud engine (this is the default).
+{/*- `batch`: Run a long-running job in a Fused server. This must first be enabled for the account.*/}
+
+```python showLineNumbers
+# By default, fused.run will use the remote engine
+fused.run(my_udf)
+```
+
+```python showLineNumbers
+# To run locally, explicitly specify engine="local"
+fused.run(my_udf, engine="local")
+```
+
+:::warning
+> ⚠️ **Important change:** `fused.run()` now defaults to `engine="remote"` in all cases, even when users are not authenticated. Previously, it would default to `engine="local"` for unauthenticated users.
+> If you are not authenticated, you must explicitly specify `engine="local"` to run UDFs locally.
+:::
+
+Set `sync=False` to run a UDF [asynchronously](/core-concepts/async/).
+
+## Passing arguments in [`fused.run()`](/python-sdk/top-level-functions/#fusedrun)
+
+A typical [`fused.run()`](/python-sdk/top-level-functions/#fusedrun) call of a UDF looks like this:
+
+```python showLineNumbers
+@fused.udf
+def my_udf(inputs: str):
+    import pandas as pd
+    return pd.DataFrame({"output": [inputs]})
+
+fused.run(my_udf, inputs="hello world")
+```
+
+A [`fused.run()`](/python-sdk/top-level-functions/#fusedrun) call will require the following arguments:
+
+1. [Mandatory] The first argument needs to be the UDF to run (name, object, token, etc [as seen above](/core-concepts/run-udfs/run-small-udfs/#fusedrun))
+2. [Optional] Any arguments of the UDF itself (if it has any). In the example above that's `inputs` because `my_udf` takes `inputs` as an argument.
+3. [Optional] Any protected arguments as seen in the dedicated [API docs page](/python-sdk/top-level-functions/#fusedrun) (if applicable). These include for example:
+   - `bounds` -> A geographical bounding box (as a list of 4 points: `[min_x, min_y, max_x, max_y]`) defining the area of interest.
+   - `cache_max_age` -> The maximum [age of the UDF's cache](/core-concepts/cache/#defining-your-cache-lifetime-cache_max_age).
+
+#### Examples of using parameters
+
+Changing the default cache max age:
+```python showLineNumbers
+fused.run("UDF_CDLs_Tile_Example", cache_max_age='1d')
+```
+
+## Running jobs in parallel: [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)
+
+Sometimes you want to run a UDF over a list of inputs (for example running a [UDF that unzips a file over a list of files](/tutorials/Geospatial%20with%20Fused/use-cases/dark-vessel-detection/#33---run-this-udf-over-a-month-of-ais-data)). If each run itself is quite small, then you can run a batch of UDFs over a list of inputs.
+
+Let's use a simple UDF to demonstrate:
+
+```python showLineNumbers
+@fused.udf
+def udf(val):
+    import pandas as pd
+    return pd.DataFrame({'val':[val]})
+```
+
+Say we wanted to run this `udf` 10 times over:
+
+```python showLineNumbers
+inputs = [0,1,2,3,4,5,6,7,8,9]
+```
+
+### [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)
+
+Fused is built to help you scale your processing to huge datasets and the core of this ability is [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit). You can run 1 UDF over a large number of arguments:
+
+```python showLineNumbers
+results = fused.submit(udf, inputs)
+```
+
+```bash
+>>> 100%|██████████| 10/10 
+```
+
+Note that you will only see the progress bar if you are running the code in a notebook, Workbench does not yet currently stream the progress to the console.
+
+[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) runs all these jobs in parallel and defaults to directly returning the results back to you as a dataframe:
+
+```python showLineNumbers
+print(results)
+```
+
+```
+>>>
+ 		val
+val
+0	0	0
+1	0	1
+...
+```
+
+### Tips for using [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)
+
+- Check that your parameters are correctly setup with `debug_mode=True` (more detail [below](/core-concepts/run-udfs/run-small-udfs/#debug-mode))
+
+```python showLineNumbers
+single_run = fused.submit(udf, inputs, debug_mode=True)
+```
+
+- Start with a small number of jobs, then scale up
+
+```python showLineNumbers   
+# Only running the first 5 inputs to make sure the UDF is working as expected
+results = fused.submit(udf, inputs[:5])
+```
+
+- Check the runtime of each job:
+
+```python showLineNumbers
+# Run only 10 jobs and see how long each one took
+results = fused.submit(udf, inputs[:5], collect=False)
+print(results.times())
+```
+
+:::tip Job length rule of thumb: 30-45s
+Aim for a single UDF that takes 30-45s. This gives you a "safety" margin as UDFs will [timeout after 120s](/core-concepts/run-udfs/run-small-udfs/#running-udfs). So they can still take a bit longer and not time out.
+:::
+
+- Read the [Best Practices](/core-concepts/best-practices/udf-best-practices/#writing-efficient-udfs) page for more tips on writing efficient UDFs
+
+
+### Advanced [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) options
+
+#### Blocking vs non-blocking calls
+
+By default we've set up [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) to be blocking, meaning it will wait for all the jobs to finish before returning the results.
+
+However, you can set `collect=False` and then track the progress of jobs as they run:
+
+```python showLineNumbers
+results = fused.submit(udf, inputs, collect=False)
+```
+
+#### Real time logs
+
+- Show a progress bar of number of jobs completed:
+
+```python showLineNumbers
+print(results.wait())
+```
+
+```
+100%|██████████| 10/10 [00:01<00:00, 9.31it/s]
+```
+
+- Show total time it took to run all the jobs:
+
+```python showLineNumbers
+print(results.total_time())
+```
+
+```
+>>> datetime.timedelta(seconds=1, microseconds=96764)
+```
+
+- Check the first error that occurred:
+
+```python showLineNumbers
+print(results.first_error())
+```
+
+```
+>>> fused.types.UdfRuntimeError("[Run #0 {'val': 3'}] my error message here...")
+```
+
+
+- Get your data back as a dataframe:
+
+```python showLineNumbers
+print(results.collect())
+```
+
+```python showLineNumbers
+>>>
+ 		val
+val
+0	0	0
+1	0	1
+...
+```
+
+#### Debug mode
+
+Sometimes you might just want to make sure your code is running correctly before kicking off a large number of jobs. That's what Debug Mode allows you to do:
+
+```python showLineNumbers
+results = fused.submit(udf, inputs, debug_mode=True)
+```
+
+This will run the first item in `inputs` directly using `fused.run()` (equivalent to `fused.run(udf, inputs[0])`) and then return the results:
+
+```python showLineNumbers
+>>>
+	val
+0	0
+```
+
+You can then set `debug_mode` back to False and be more confident that your UDF is working as expected!
+
+#### Execution parameters
+
+[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) also have parameters giving you more control over the execution. See the Python SDK [docs page](/python-sdk/top-level-functions/#fusedsubmit) for more details:
+
+- `max_workers`: The number of workers to use for the job pool.
+- `engine`: `local` or `remote` (default is `remote`).
+    Just like `fused.run()`, by default `fused.submit()` will run the UDF in the Fused server (`engine='remote'`). You can set `engine='local'` to run `udf` locally either on your machine or inside a large machine that you spin up.
+- `max_retry`: The maximum number of retries for a job.
+
+ #### Benchmarking
+
+<details>
+  <summary>Simple [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) Benchmark</summary>
+
+    `fused.submit(udf)` runs all the UDF calls in parallel, making it a helpful tool to run multiple UDFs all at once.
+
+    We can demonstrate this by adding a simple `time.sleep(1)` in our original UDF:
+    ```python {4-5} showLineNumbers
+    @fused.udf
+    def udf(val):
+        import pandas as pd
+        import time
+        time.sleep(1)
+        return pd.DataFrame({'val':[val]})
+    ```
+
+    In a notebook, we can time how long each cell takes to execute with the [`%%time` magic command](https://ipython.readthedocs.io/en/stable/interactive/magics.html#magic-time)
+
+    ```python showLineNumbers
+    # In a jupyter notebook
+    %%time
+    fused.run(udf, val=1)
+    ```
+
+    ![Singe run](/img/core-concepts/run-udfs/fused_run_single_job.png)
+
+    This takes 2s: A few ms of overhead to send the UDF to Fused server & run + 1s of `time.sleep(1)`
+
+    Now using `fused.submit()` to run this over 50 UDFs:
+
+    ![30 runs](/img/core-concepts/run-udfs/submit_50jobs.png)
+
+    This takes a few more seconds, but not 100s. `fused.submit()` is a helpful way to scale a single UDF to many inputs in a timely manner.
+
+
+</details>
+
+### Wall time vs CPU time
+
+There are 2 different runtime calculations for `fused.submit()` jobs:
+
+**Wall time**: Total actual time taken to run the jobs:
+
+```python showLineNumbers
+print(results.total_time())
+```
+
+The exact calculation is:
+```python showLineNumbers
+round(results.total_time().seconds + results.total_time().microseconds / 10e6, 2)
+```
+
+```bash
+# Total time you had to wait
+>>> 11.05
+```
+
+**CPU time**: Sum of all the CPU time taken by the jobs
+
+This is the time that counts towards your bill.
+
+```python showLineNumbers
+round(sum([t.seconds for t in results.times()]) + sum([t.microseconds for t in results.times()]) / 10e6, 2)
+```
+
+```bash
+# Total CPU time
+>>> 21.78
+```
+
+
+### Example use cases
+
+[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) is used in many places across our docs, here are some examples:
+
+- 📈 Processing 20Tb of data in minutes: [Making a Climate Dashboard](/tutorials/Geospatial%20with%20Fused/use-cases/Climate%20Dashboard/) of 20 years of data
+- ⛴️ [Retrieving 30 days](/tutorials/Geospatial%20with%20Fused/use-cases/dark-vessel-detection/#33---run-this-udf-over-a-month-of-ais-data) of AIS boat transponder data around the United States to detect illegal fishing
+- 🛰️ [Retrieving all of Maxar's Open Data STAC Catalogs](/tutorials/Geospatial%20with%20Fused/use-cases/exploring_maxar_data/#preparing-fusedsubmit-to-run-in-parallel) across every events they have imagery for.
+
+💡 Check the [Best Practices](/core-concepts/best-practices/udf-best-practices/#run-tasks-in-parallel) for more on when to use `submit()` and when to use other methods.
+
+## HTTPS requests
+
+{/* Need to showcase this in video */}
+
+You can call Saved UDFs via HTTPs calls, effecitvaly turning your data in an API!
+
+The same can be done with the [Fused Python SDK](/python-sdk/).
+
+#### Shared token
+
+When you save a UDF for the first time, it by default creates a shared token for you, something like:
+
+```
+fsh_**********h4t
+```
+
+This is a unique token that is used to identify your UDF and call it via HTTPS requests
+
+Here is what a UDF endpoint looks like:
+
+```
+https://www.fused.io/server/v1/realtime-shared/******/run/file?format=png
+```
+
+Manage your account's shared tokens in [here](https://www.fused.io/workbench/tokens).
+
+### Passing parameters
+
+You can also pass parameters to your UDF via the URL by adding [query parameters](https://www.branch.io/glossary/query-parameters/) (`&param=value`) to the URL.
+
+For example a UDF that takes `lat` and `lon` as parameters:
+
+```python showLineNumbers
+@fused.udf
+def udf(lat, lon):
+    return pd.DataFrame({'lat': [lat], 'lon': [lon]})
+```
+
+Could be called with:
+
+```
+https://www.fused.io/...&lat=37.7749&lon=-121.4194
+```
+
+### Tiling 
+
+You can integrate your UDF as a vector or raster tile server y adding `tiles` path parameter, followed by templated `/{z}/{x}/{y}` path parameters.
+
+You need to make sure:
+- Your UDF is set to [Tile mode](/tutorials/Geospatial%20with%20Fused/filetile/#tile)
+- You properly pass `/{z}/{x}/{y}` instead of default value
+- Depending on your server type, you might need to add the `format` parameter. For example [QGIS](/tutorials/Geospatial%20with%20Fused/other-integrations/#qgis) requires you to use `format=mvt` for [vector tile servers](/tutorials/Geospatial%20with%20Fused/other-integrations/#vector-tiles-1)
+
+```
+https://www.fused.io/server/v1/realtime-shared/******/run/tiles/{z}/{x}/{y}?format=png
+```
+
+See our [integration guides](/tutorials/Geospatial%20with%20Fused/other-integrations/) for examples.
+
+### Private token
+
+Calling UDFs with [Bearer authentication](https://swagger.io/docs/specification/authentication/bearer-authentication/) requires an [account's private token](/python-sdk/authentication/#get-bearer-access-token). The URL structure to run UDFs with the private token varies slightly, as the URL specifies the UDF's name and the owner's user account.
+
+```bash
+curl -XGET "https://app.fused.io/server/v1/realtime/fused/api/v1/run/udf/saved/user@fused.io/caltrain_live_location?format=png" -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+:::warning Do not share your Bearer token
+
+Do not share your Bearer token with anyone. These allow to impersonate your account and should be treated as such.
+
+:::
+
+### Serialization format
+
+The `format` parameter defines the output data type for the serialized result of the UDF.
+
+- The supported types for vector tables are `parquet`, [`geojson`](/tutorials/Geospatial%20with%20Fused/other-integrations/#deckgl), [`json`](/tutorials/Geospatial%20with%20Fused/other-integrations/#deckgl), `feather`, `csv`, [`mvt`](/tutorials/Geospatial%20with%20Fused/other-integrations/#mapbox), `html`, `excel`, and `xml`.
+- For raster array: [`png`](/tutorials/Geospatial%20with%20Fused/other-integrations/#deckgl), `gif`, `jpg`, `jpeg`, `webp`, `tif`, and `tiff`.
+- For simple Python objects like strings: `json`, `html`
+
+```
+https://www.fused.io/server/v1/realtime-shared/****/run/file?format=png
+```
+
+Read how to structure HTTPS endpoints to call the UDF as a [Map Tile & File](/tutorials/Geospatial%20with%20Fused/filetile/#tile-https-call).
+
+
+### Calling UDFs without Python SDK 
+
+You can also run a whole UDF directly in the HTTP request without needing Python when making the call
+
+You first do need to retrieve your [bearer token](/python-sdk/authentication/#get-bearer-access-token) (this requires Python):
+```python showLineNumbers
+# Figure out your bearer token:
+from fused._auth import AUTHORIZATION
+AUTHORIZATION.credentials.access_token
+```
+
+This returns something like:
+```bash
+'eyJ4K9pL2Mx...'
+```
+
+Next we need to do a POST request to the Fused server endpoint: `'https://www.fused.io/server/v1/realtime/basic-tier/api/v1/run/udf'`
+
+You'll need the client_id:
+
+**Without an environment (Basic Tier)**
+
+Simply use `basic-tier` as your client_id name.
+
+**With environment**
+
+1. In [Workbench](/workbench/), go to "Preferences"
+2. Write down the "Kernel" name you see displayed, in this case `fused`:
+
+![Finding your kernel name in Workbench](/img/core-concepts/run-udfs/kernel_name_from_workbench.png)
+
+Here is an example call with a simple "Hello World" UDF using the `basic-tier` account:
+
+```bash
+curl -X 'POST' \
+  'https://www.fused.io/server/v1/realtime/basic-tier/api/v1/run/udf' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer <BEARER_TOKEN_GOES_HERE>' \
+  -H 'Content-Type: application/json' \
+  -d '{"step_config":"{\"type\":\"udf\",\"udf\":{\"type\":\"geopandas_v2\",\"name\":\"azure_lion\",\"entrypoint\":\"udf\",\"parameters\":{},\"metadata\":{\"fused:udfType\":\"auto\",\"fused:slug\":\"azure_lion\",\"fused:name\":\"azure_lion\"},\"code\":\"@fused.udf\\ndef udf(name: str = \\\"world\\\"):\\n    import pandas as pd\\n\\n    return pd.DataFrame({\\\"hello\\\": [name]})\\n\",\"headers\":[]}}","dtype_in":"json","format":"geojson,png","cache":true}'
+```
+
+This:
+- Runs the following UDF directly being passing it through the HTTP request:
+```python showLineNumbers
+@fused.udf
+def udf(name: str = "world"):
+    import pandas as pd
+    return pd.DataFrame({"hello": [name]})
+```
+- On the `basic-tier` account (or whatever account you are using)
+If you're using a subscribed account, you'll need to adjust the `basic-tier` to fit your environment:
+
+```bash
+https://www.fused.io/server/v1/realtime/<your-client-id>/api/v1/run/udf
+```
+
+## Caching responses
+
+If a UDF's [cache](/core-concepts/cache/) is enabled, its endpoints cache outputs for each combination of code and parameters. The first call runs and caches the UDF, and subsequent calls return cached data.
