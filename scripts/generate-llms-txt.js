@@ -8,11 +8,13 @@ const OUTPUT_FILE = "static/llms.txt";
 const FULL_OUTPUT_FILE = "static/llms-full.txt";
 const BASE_URL = "https://docs.fused.io";
 
-// Main sections to include
+// Main sections to include (updated for v7 structure)
 const SECTIONS = {
-  "Core Concepts": "core-concepts",
-  "Geospatial with Fused": "tutorials/Geospatial with Fused",
+  "Guide": "guide",
+  "Quickstart": "quickstart",
+  "Examples": "examples",
   "Python SDK": "python-sdk",
+  "Workbench": "workbench",
 };
 
 // Parameters to hide from LLM output (per function/decorator)
@@ -546,7 +548,7 @@ This comprehensive reference contains the complete text of all Fused documentati
     // Add quick start links
     content += `## Quick Start
 
-- [Installation & Setup](${BASE_URL}/quickstart) - Get started with Fused in minutes
+- [Installation & Setup](${BASE_URL}/guide/getting-started/first-udf-basics) - Get started with Fused in minutes
 
 ---
 

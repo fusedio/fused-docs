@@ -1,0 +1,252 @@
+---
+id: cloud-storage
+title: Cloud Storage
+sidebar_label: Cloud Storage
+sidebar_position: 2
+---
+
+import Tag from '@site/src/components/Tag'
+import Details from '@theme/MDXComponents/Details';
+
+# Cloud Storage
+
+Fused supports multiple cloud storage options for reading and writing data.
+
+## Supported Storage Paths
+
+| Provider | Format | Example |
+|----------|--------|---------|
+| Fused managed | `fd://` | `fd://my-data/file.parquet` |
+| AWS S3 | `s3://` | `s3://bucket-name/path/file.parquet` |
+| Google Cloud | `gs://` or `gcs://` | `gs://bucket-name/path/file.parquet` |
+| HTTP(S) | `https://` | `https://example.com/file.csv` |
+
+:::tip Fused-managed storage
+For details on using `fd://` paths and the `/mnt/cache` disk, see [File System](/guide/advanced-setup/file-system).
+:::
+
+## Connect Your Own Bucket
+
+<Tag color="#3399ff">Enterprise</Tag> _This feature is accessible to organizations with a Fused Enterprise subscription._
+
+Connect S3 or GCS buckets to access their files interactively from within the File Explorer UI and programmatically from within UDFs.
+
+Contact Fused to set an S3 or GCS bucket on the File Explorer for all users in your organization. Alternatively, set a bucket as a "favorite" so it appears in the File Explorer for your account only.
+
+### Amazon S3
+
+Set the policy below on your bucket, replacing `YOUR_BUCKET_NAME` with its name. Fused will provide `YOUR_ENV_NAME`.
+
+<Details open={false}>
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "Allow object access by Fused fused account",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": [
+                    "arn:aws:iam::926411091187:role/rt-production-YOUR_ENV_NAME",
+                    "arn:aws:iam::926411091187:role/ec2_job_task_role-v2-production-YOUR_ENV_NAME",
+                ]
+            },
+            "Action": [
+                "s3:ListBucket",
+                "s3:GetObjectAttributes",
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject"
+            ],
+            "Resource": [
+                "arn:aws:s3:::YOUR_BUCKET_NAME/*",
+                "arn:aws:s3:::YOUR_BUCKET_NAME"
+            ]
+        }
+    ]
+}
+```
+
+</Details>
+
+Alternatively, use this [Fused app](https://www.fused.io/workbench#app/s/i/fa_2yQFVcbSYR1vW4Aa8zL1HC) to automatically structure the policy for you.
+
+The bucket must enable the following CORS settings to allow uploading files from Fused:
+
+<Details open={false}>
+
+```json
+[
+    {
+        "AllowedHeaders": [
+            "range",
+            "content-type",
+            "content-length"
+        ],
+        "AllowedMethods": [
+            "GET",
+            "HEAD",
+            "PUT",
+            "POST"
+        ],
+        "AllowedOrigins": [
+            "*"
+        ],
+        "ExposeHeaders": [
+            "content-range"
+        ],
+        "MaxAgeSeconds": 0
+    }
+]
+```
+</Details>
+
+#### Encrypted S3 Buckets
+
+To connect an encrypted S3 bucket, access to both the bucket and the KMS key is required. The KMS key must be in the same region as the bucket.
+
+Configure KMS policy:
+
+```json
+{
+  "Sid": "AllowCrossAccountUseOfKMS",
+  "Effect": "Allow",
+  "Principal": {
+    "AWS": "arn:aws:iam::<FUSED_ACCOUNT>:role/<FUSED_ROLE_NAME>"
+  },
+  "Action": [
+    "kms:Decrypt",
+    "kms:Encrypt",
+    "kms:GenerateDataKey*",
+    "kms:DescribeKey"
+  ],
+  "Resource": "*"
+}
+```
+
+### Google Cloud Storage (GCS)
+
+To connect a Google Cloud Storage bucket to your Fused environment:
+
+**1. Create a Service Account in GCS**
+
+Set up a Google Cloud service account with permissions to read, write, and list from the GCS bucket. See the Google Cloud documentation for instructions to:
+- [Create a Service Account](https://cloud.google.com/iam/docs/service-accounts-create)
+- [Set permissions for the Service Account](https://cloud.google.com/iam/docs/manage-access-service-accounts)
+
+**2. Download the JSON Key File**
+
+Download the JSON Key file associated with the Service Account. This file contains credentials that Fused will use to access the GCS bucket.
+
+**3. Set the JSON Key as a Secret**
+
+Set the JSON Key as a secret in the [secrets management UI](/workbench/preferences#secrets-management). The secret must be named `gcs_fused`.
+
+You then need to write these credentials to a JSON file and pass them to Google:
+
+```python
+@fused.udf
+def udf():
+    from google.cloud import storage
+
+    # get GCP secrets
+    with open("/tmp/gcs_key.json", "w") as f:
+        f.write(fused.secrets["gcs_fused"])
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/tmp/gcs_key.json"
+
+    # your code here
+```
+
+## Read & Write Examples
+
+### Reading from S3
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/housing_2024.csv"):
+    import pandas as pd
+    return pd.read_csv(path)
+```
+
+### Writing to S3
+
+```python
+df.to_parquet("s3://my-bucket/data.parquet")
+```
+
+### Writing to GCS
+
+```python
+df.to_parquet("gcs://my-bucket/data.parquet")
+```
+
+### Download to Fused mount
+
+```python
+@fused.udf
+def udf(url='https://www2.census.gov/geo/tiger/TIGER_RD18/STATE/11_DISTRICT_OF_COLUMBIA/11/tl_rd22_11_bg.zip'):
+    out_path = fused.download(url=url, file_path='out.zip')
+    return str(out_path)
+```
+
+Files will be written to `/mnt/cache/`, where any other UDF can then access them.
+
+## Downloading Large Remote Files
+
+For datasets from external sources like [Zenodo](https://zenodo.org/) or [Humanitarian Data Exchange](https://data.humdata.org/) that take longer than 120s to download, run as a [batch job](/guide/working-with-udfs/execution/batch-jobs):
+
+```python showLineNumbers
+@fused.udf(
+    instance_type='c2-standard-4',  # Small instance - download uses little resources
+    disk_size_gb=999                # Large disk for the file
+)
+def udf():
+    import s3fs
+    import requests
+    import os, tempfile
+    
+    url = "https://zenodo.org/records/4395621/files/my_large_file.zip"
+    s3_path = f"s3://fused-asset/data/my-files/{url.split('/')[-1]}"
+    
+    # Skip if already downloaded
+    if s3fs.S3FileSystem().exists(s3_path):
+        return f'File exists: {s3_path}'
+
+    # Download with progress
+    temp_path = tempfile.NamedTemporaryFile(delete=False).name
+    resp = requests.get(url, stream=True)
+    resp.raise_for_status()
+    
+    with open(temp_path, 'wb') as f:
+        for chunk in resp.iter_content(chunk_size=8192):
+            f.write(chunk)
+
+    # Upload to S3
+    s3fs.S3FileSystem().put(temp_path, s3_path)
+    return f"Uploaded to: {s3_path}"
+```
+
+Once downloaded, use the [Reading Data](/guide/data-input-outputs/read-write/reading) guide for extracting compressed files (ZIP/RAR).
+
+## `/mnt/cache` Disk
+
+`/mnt/cache` is the path to a mounted disk to store files shared between UDFs. This is where `@fused.cache` and `fused.download` write data. It's ideal for files that UDFs need to read with low-latency, downloaded files, the output of cached functions, access keys, `.env`, and ML model weights.
+
+UDFs may interact with the disk as with a local file system:
+
+```python showLineNumbers
+# Write to mount
+df.to_parquet("/mnt/cache/data.parquet")
+
+# List files
+@fused.udf
+def udf():
+    import os
+    for each in os.listdir('/mnt/cache/'):
+        print(each)
+```
+
+:::note
+If you encounter `Error: No such file or directory: '/mnt/cache/'`, contact the Fused team to enable it for your environment.
+:::

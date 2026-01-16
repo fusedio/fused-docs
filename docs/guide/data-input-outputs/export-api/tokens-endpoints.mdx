@@ -1,0 +1,221 @@
+---
+id: tokens-endpoints
+title: Tokens & Endpoints
+sidebar_label: Tokens & Endpoints
+sidebar_position: 2
+---
+
+# Turn your data into an API
+
+<iframe 
+    style={{
+        width: "100%",
+        maxWidth: "800px", 
+        aspectRatio: "16/9",
+        height: "auto"
+    }}
+    src="https://www.youtube.com/embed/4R6b52KliTw" 
+    title="YouTube video player" 
+    frameBorder="0" 
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+    referrerPolicy="strict-origin-when-cross-origin" 
+    allowFullScreen>
+</iframe>
+
+1. In Workbench create a new UDF that returns data, for example:
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/housing/housing_2024.csv"):
+    import pandas as pd
+    housing = pd.read_csv(path)
+    housing['price_per_area'] = round(housing['price'] / housing['area'], 2)
+    
+    return housing[['price', 'price_per_area']]
+```
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+<Tabs className="unique-tabs">
+  <TabItem value="udf-editor" label="UDF Editor" default>
+
+    1. Click "Share" to open your UDF in a new Tab as a HTML Page
+    2. Optionally: Edit the URL to return the data in your preferred file format.
+    
+    For example changing the `format` from `parquet` to `json`:
+
+    ```bash
+    # Returning as JSON
+    https://fused.io/.../run/file?format=json
+
+    # Returning as CSV
+    https://fused.io/.../run/file?format=csv
+    ```
+
+
+  </TabItem>
+  <TabItem value="advanced-udf-editor" label="Advanced UDF Editor">
+
+    1. [Save your UDF](/workbench/udf-builder/code-editor/#save-a-udf) with `Cmd + S` (MacOS) / `Ctrl + S` (Win / Linux)
+    2. Click the 3 dots and open "Settings"
+    3. Click HTTPS URL to open the UDF in it's default file format
+
+    Optionally: Edit the URL to return the data in your preferred file format.
+    
+    For example changing the `format` from `parquet` to `json`:
+
+    ```bash
+    # Returning as JSON
+    https://fused.io/.../run/file?format=json
+
+    # Returning as CSV
+    https://fused.io/.../run/file?format=csv
+    ```
+
+  </TabItem>
+</Tabs>
+
+---
+
+## HTTPS Requests
+
+You can call saved UDFs via HTTPS calls, effectively turning your data into an API!
+
+### Shared Token
+
+When you save a UDF for the first time, it by default creates a shared token for you, something like:
+
+```
+fsh_**********h4t
+```
+
+This is a unique token that is used to identify your UDF and call it via HTTPS requests.
+
+Here is what a UDF endpoint looks like:
+
+```
+https://www.fused.io/server/v1/realtime-shared/******/run/file?format=png
+```
+
+Manage your account's shared tokens [here](https://www.fused.io/workbench/tokens).
+
+### Creating a Token in Python
+
+```python showLineNumbers
+token = my_udf.create_access_token()
+print(token)
+```
+
+This returns something like: `'fsh_**********q6X'` (You can recognise this to be a shared token because it starts with `fsh_`)
+
+### Passing Parameters
+
+You can pass parameters to your UDF via the URL by adding [query parameters](https://www.branch.io/glossary/query-parameters/) (`&param=value`) to the URL.
+
+For example a UDF that takes `lat` and `lon` as parameters:
+
+```python showLineNumbers
+@fused.udf
+def udf(lat, lon):
+    return pd.DataFrame({'lat': [lat], 'lon': [lon]})
+```
+
+Could be called with:
+
+```
+https://www.fused.io/...&lat=37.7749&lon=-121.4194
+```
+
+### Tiling 
+
+You can integrate your UDF as a vector or raster tile server by adding `tiles` path parameter, followed by templated `/{z}/{x}/{y}` path parameters.
+
+You need to make sure:
+- Your UDF is set to [Tile mode](/guide/working-with-udfs/geospatial/single-vs-tile#tile-udf)
+- You properly pass `/{z}/{x}/{y}` instead of default value
+- Depending on your server type, you might need to add the `format` parameter
+
+```
+https://www.fused.io/server/v1/realtime-shared/******/run/tiles/{z}/{x}/{y}?format=png
+```
+
+### Private Token
+
+Calling UDFs with [Bearer authentication](https://swagger.io/docs/specification/authentication/bearer-authentication/) requires an [account's private token](/python-sdk/authentication/#get-bearer-access-token). The URL structure varies slightly, as it specifies the UDF's name and the owner's user account.
+
+```bash
+curl -XGET "https://app.fused.io/server/v1/realtime/fused/api/v1/run/udf/saved/user@fused.io/caltrain_live_location?format=png" -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+:::warning Do not share your Bearer token
+Do not share your Bearer token with anyone. These allow to impersonate your account and should be treated as such.
+:::
+
+### Serialization Format
+
+The `format` parameter defines the output data type for the serialized result of the UDF.
+
+- **Vector tables:** `parquet`, `geojson`, `json`, `feather`, `csv`, `mvt`, `html`, `excel`, `xml`
+- **Raster array:** `png`, `gif`, `jpg`, `jpeg`, `webp`, `tif`, `tiff`
+- **Simple Python objects:** `json`, `html`
+
+```
+https://www.fused.io/server/v1/realtime-shared/****/run/file?format=png
+```
+
+---
+
+## Calling UDFs without Python SDK
+
+You can run a UDF directly via HTTP request without needing Python when making the call.
+
+### 1. Get your Bearer token
+
+First retrieve your [bearer token](/python-sdk/authentication/#get-bearer-access-token) (this requires Python once):
+
+```python showLineNumbers
+from fused._auth import AUTHORIZATION
+AUTHORIZATION.credentials.access_token
+```
+
+Returns something like: `'eyJ4K9pL2Mx...'`
+
+### 2. Find your client ID
+
+**Basic Tier (no environment):** Use `basic-tier` as your client_id.
+
+**With environment:** In [Workbench](/workbench/overview), go to "Preferences" and note the "Kernel" name displayed.
+
+![Finding your kernel name in Workbench](/img/core-concepts/run-udfs/kernel_name_from_workbench.png)
+
+### 3. Make the POST request
+
+```bash
+curl -X 'POST' \
+  'https://www.fused.io/server/v1/realtime/basic-tier/api/v1/run/udf' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer <BEARER_TOKEN_GOES_HERE>' \
+  -H 'Content-Type: application/json' \
+  -d '{"step_config":"{\"type\":\"udf\",\"udf\":{\"type\":\"geopandas_v2\",\"name\":\"my_udf\",\"entrypoint\":\"udf\",\"parameters\":{},\"metadata\":{},\"code\":\"@fused.udf\\ndef udf(name: str = \\\"world\\\"):\\n    import pandas as pd\\n    return pd.DataFrame({\\\"hello\\\": [name]})\\n\",\"headers\":[]}}","dtype_in":"json","format":"geojson,png","cache":true}'
+```
+
+For subscribed accounts, replace `basic-tier` with your environment name:
+
+```
+https://www.fused.io/server/v1/realtime/<your-client-id>/api/v1/run/udf
+```
+
+---
+
+## Caching Responses
+
+If a UDF's [cache](/guide/working-with-udfs/caching) is enabled, its endpoints cache outputs for each combination of code and parameters. The first call runs and caches the UDF, and subsequent calls return cached data.
+
+Control cache behavior with the `cache_max_age` parameter:
+
+```
+https://www.fused.io/server/v1/realtime-shared/****/run/file?format=json&cache_max_age=1d
+```
+
+See [Caching](/guide/working-with-udfs/caching) for more details.
