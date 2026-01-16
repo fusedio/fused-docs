@@ -3,6 +3,8 @@ id: converting
 title: Converting to H3
 sidebar_label: Converting
 sidebar_position: 2
+toc_min_heading_level: 2
+toc_max_heading_level: 4
 ---
 
 # Converting Data to H3
@@ -214,6 +216,16 @@ def udf():
         print(result_partition.errors())
 ```
 
+This produces H3 hexagon data like:
+
+<iframe 
+  src="https://www.fused.io/parquet-viewer?key=https%3A%2F%2Ffused-asset.s3.amazonaws.com%2Fhex%2Fnyc_dem%2F577234808489377791.parquet"
+  width="100%"
+  height="200px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
 **Required parameters:**
 - `src_path`: Raster file path(s) on S3 (TIFF or any GDAL-readable format)
 - `output_path`: Writable S3 location for output
@@ -233,42 +245,21 @@ def udf():
 #### Output Structure
 
 The ingestion creates:
-- **Parquet data files** (e.g., `577234808489377791.parquet`)
-- **`_sample` metadata file** with chunk/file bounding boxes for fast spatial queries
-- **`/overview/` directory** with aggregated files at lower resolutions (`hex3.parquet`, `hex4.parquet`, etc.)
+- **Parquet data files** (e.g., `577234808489377791.parquet`) - each row is an H3 cell with `hex` ID + computed values
+- **`_sample` metadata file** - chunk/file bounding boxes for fast spatial queries
+- **`/overview/` directory** - pre-aggregated files at lower resolutions (`hex3.parquet`, `hex4.parquet`, etc.)
 
 ![Files created by the ingestion process](/img/tutorials/geospatial/raster_to_h3_nyc_dem.png)
 
-Each file contains:
-- `hex`: H3 cell IDs at the target resolution
-- `data_<metric>`: Computed values (e.g., `data_avg`)
-- `source_url`, `res`: Metadata columns
-
-<details>
-<summary>View data file structure</summary>
-
-<iframe 
-  src="https://www.fused.io/parquet-viewer?key=https%3A%2F%2Ffused-asset.s3.amazonaws.com%2Fhex%2Fnyc_dem%2F577234808489377791.parquet"
-  width="100%"
-  height="200px"
-  frameBorder="0"
-  style={{borderRadius: '8px'}}
-></iframe>
-
-</details>
-
-<details>
-<summary>View overview file structure</summary>
+**Overview file** (`/overview/hex7.parquet`):
 
 <iframe 
   src="https://www.fused.io/parquet-viewer?key=https%3A%2F%2Ffused-asset.s3.amazonaws.com%2Fhex%2Fnyc_dem%2Foverview%2Fhex7.parquet"
   width="100%"
-  height="200px"
+  height="250px"
   frameBorder="0"
   style={{borderRadius: '8px'}}
 ></iframe>
-
-</details>
 
 ---
 
@@ -367,6 +358,10 @@ Data is spatially partitioned using H3:
 
 Special case: `file_res=-1` creates a single output file for smaller datasets.
 
+:::note Example
+For data resolution 10: default `file_res=0` (max 122 files globally) and `chunk_res=3` (max 343 row groups per file, ~820k rows each assuming full coverage).
+:::
+
 #### Overview Resolutions (`overview_res`)
 
 Overviews are pre-aggregated files for fast zoomed-out views. Default: resolutions 3-7.
@@ -385,6 +380,8 @@ result_extract, result_partition = fused.h3.run_ingest_raster_to_h3(
 | `s3://.../overview/hex3.parquet` | 36.9 kB |
 | `s3://.../overview/hex4.parquet` | 36.9 kB |
 | `s3://.../overview/hex5.parquet` | 37.1 kB |
+
+Overview files are also chunked. Default chunk resolution is `overview_res - 5`. Override with `overview_chunk_res` or `max_rows_per_chunk`.
 
 ---
 
@@ -457,7 +454,53 @@ def udf(
     return df
 ```
 
-For visualization options, see [H3 Visualization](/guide/h3-analytics/visualization).
+#### Visualizing Ingested Data
+
+<iframe 
+  src="https://udf.ai/fsh_4VEXYYkuD1wnNXLH1XapK7.html"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+<details>
+<summary>Standalone map code</summary>
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],
+    res: int = 9,
+):
+    path = "s3://fused-users/fused/joris/nyc_dem_h3/"
+    utils = fused.load("https://github.com/fusedio/udfs/tree/dd40354/community/joris/Read_H3_dataset/")
+    df = utils.read_h3_dataset(path, bounds, res=res)
+
+    map_utils = fused.load("https://github.com/fusedio/udfs/tree/dd40354/community/milind/map_utils")
+    config = {
+        "hexLayer": {
+            "@@type": "H3HexagonLayer",
+            "filled": True,
+            "pickable": True,
+            "extruded": False,
+            "opacity": 0.25,
+            "getHexagon": "@@=properties.hex",
+            "getFillColor": {
+                "@@function": "colorContinuous",
+                "attr": "data_avg",
+                "domain": [0, 400],
+                "steps": 20,
+                "colors": "BrwnYl"
+            }
+        }
+    }
+    return map_utils.deckgl_hex(df, config=config)
+```
+
+</details>
+
+For more on standalone maps, see [Standalone Maps](/guide/working-with-udfs/building-outputs/standalone-maps). For Workbench styling, see [H3 Visualization](/guide/h3-analytics/visualization).
 
 ---
 
