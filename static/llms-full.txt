@@ -706,11 +706,7 @@ URL: https://docs.fused.io/guide/data-input-outputs/export-api/dynamic-file-api
 
 Every UDF can be used as a file system:
 
-<img 
-  src="/img/core-concepts/dynamic_file_system.png" 
-  alt="Dynamic File System Overview" 
-  style=}
-/>
+[Image: Dynamic File System Overview]
 
 ## Output Formats
 
@@ -744,19 +740,19 @@ UDFs can return data in various formats via the `format` query parameter:
 ### Returning as JSON
 
 ```bash
-https://www.fused.io/server/v1/realtime-shared/YOUR_TOKEN/run/file?format=json
+https://udf.ai/YOUR_TOKEN.json
 ```
 
 ### Returning as CSV
 
 ```bash
-https://www.fused.io/server/v1/realtime-shared/YOUR_TOKEN/run/file?format=csv
+https://udf.ai/YOUR_TOKEN.csv
 ```
 
 ### Returning as HTML
 
 ```bash
-https://www.fused.io/server/v1/realtime-shared/YOUR_TOKEN/run/file?format=html
+https://udf.ai/YOUR_TOKEN.html
 ```
 
 ## Tile Endpoints
@@ -766,13 +762,13 @@ For map tile servers, use the `tiles` path with `//` template:
 ### Vector Tiles (MVT)
 
 ```bash
-https://www.fused.io/server/v1/realtime-shared/YOUR_TOKEN/run/tiles///?format=mvt
+https://udf.ai/YOUR_TOKEN/run/tiles///?=mvt
 ```
 
 ### Raster Tiles (PNG)
 
 ```bash
-https://www.fused.io/server/v1/realtime-shared/YOUR_TOKEN/run/tiles///?format=png
+https://udf.ai/YOUR_TOKEN/run/tiles///?=png
 ```
 
 ## Integrations
@@ -2958,7 +2954,7 @@ Turning a single small dataset into a grid of H3 hexagons.
 
 The following example uses a simple CSV of 311 calls in the New York City area, showing a heatmap of calls per hex 9 cell
 
-```python showLineNumbers
+```python showLineNumbers 
 @fused.udf
 def udf(
     noise_311_link: str = "https://gist.githubusercontent.com/kashuk/670a350ea1f9fc543c3f6916ab392f62/raw/4c5ced45cc94d5b00e3699dd211ad7125ee6c4d3/NYC311_noise.csv",
@@ -2990,7 +2986,7 @@ def udf(
 
 Link to UDF in Fused Catalog
 
-```python showLineNumbers
+```python showLineNumbers 
 @fused.udf
 def udf(
     bounds: fused.types.Bounds = [-125.0, 24.0, -66.9, 49.0],
@@ -3049,86 +3045,203 @@ Link to UDF in Fused Catalog
 
 ## Ingesting Dataset to H3
 
-For large datasets, pre-compute and ingest data to H3 format.
+For large datasets, pre-compute and ingest data to H3 format using `fused.h3.run_ingest_raster_to_h3()`.
 
 ### Raster to H3
 
-The `fused` package includes functionality to automate the ingestion of raster data to an H3 dataset, through `fused.h3.run_ingest_raster_to_h3()`.
+#### Basic Example
 
-```python showLineNumbers
+```python showLineNumbers 
 @fused.udf
 def udf():
     src_path = "s3://fused-asset/data/nyc_dem.tif"
     output_path = "s3://fused-users/fused/joris/nyc_dem_h3/"  # <-- update this path
 
-    # run the ingestion process
     result_extract, result_partition = fused.h3.run_ingest_raster_to_h3(
         src_path, 
         output_path, 
         metrics=["avg"],
     )
 
-    # verify that the ingestion finished succesfully
+    # verify ingestion succeeded
     if not result_extract.all_succeeded():
         print(result_extract.errors())
     if result_partition is not None and not result_partition.all_succeeded():
         print(result_partition.errors())
 ```
 
-What is required to run this:
-- `src_path`: A raster file path or list of file paths on S3
-- `output_path`: Specify a writeable location on S3 as the output directory
-- `metrics`: Specify the metrics to compute per H3 cell (e.g., `"avg"`, `"sum"`, `"cnt"`)
+This produces H3 hexagon data like:
 
-### Reading Ingested H3 Data
+**Required parameters:**
+- `src_path`: Raster file path(s) on S3 (TIFF or any GDAL-readable format)
+- `output_path`: Writable S3 location for output
+- `metrics`: Aggregation method per H3 cell (`"avg"`, `"sum"`, `"cnt"`, `"min"`, `"max"`, `"stddev"`)
+
+#### How It Works
+
+The function runs multiple UDFs in parallel under the hood. The orchestrating UDF doesn't need much resources, but can exceed the 2-min realtime limit. For larger data, use a batch instance:
+
+```python showLineNumbers 
+@fused.udf(instance_type="small")
+def udf():
+    src_path = "s3://fused-asset/data/nyc_dem.tif"
+    ...
+```
+
+#### Output Structure
+
+The ingestion creates:
+- **Parquet data files** (e.g., `577234808489377791.parquet`) - each row is an H3 cell with `hex` ID + computed values
+- **`_sample` metadata file** - chunk/file bounding boxes for fast spatial queries
+- **`/overview/` directory** - pre-aggregated files at lower resolutions (`hex3.parquet`, `hex4.parquet`, etc.)
+
+[Image: Files created by the ingestion process]
+
+**Overview file** (`/overview/hex7.parquet`):
+
+---
+
+### Metrics
+
+Choose metrics based on your raster data type:
+
+| Metric | Use Case | Output Columns |
+|--------|----------|----------------|
+| `"cnt"` | Categorical data (land use, crop types) | `data`, `cnt`, `cnt_total` |
+| `"avg"` | Continuous averages (temperature, elevation, density) | `data_avg` |
+| `"sum"` | Totals (population counts) | `data_sum` |
+| `"min"`, `"max"`, `"stddev"` | Additional statistics | `data_min`, `data_max`, `data_stddev` |
+
+`"cnt"` cannot be combined with other metrics. Other metrics can be combined: `metrics=["avg", "min", "max"]`
+
+#### Counting (categorical data)
+
+For discrete/categorical rasters like land use, `"cnt"` counts occurrences per category:
 
 ```python showLineNumbers
 @fused.udf
 def udf(
-    bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],
+    bounds: fused.types.Bounds = [-73.983, 40.763, -73.969, 40.773],
     res: int = None,
 ):
-    path = "s3://fused-users/fused/joris/nyc_dem_h3/"
-
-    utils = fused.load("https://github.com/fusedio/udfs/tree/dd40354/community/joris/Read_H3_dataset/")
+    # Cropland Data Layer ingested with "cnt" metric
+    path = "s3://fused-asset/hex/cdls_v8/year=2024/"
+    utils = fused.load("https://github.com/fusedio/udfs/tree/79f8203/community/joris/Read_H3_dataset")
     df = utils.read_h3_dataset(path, bounds, res=res)
-
-    print(df.head())
     return df
 ```
 
-### Vector to Hex
+```
+                  hex  data  cnt  cnt_total
+0  626740321835323391   122   12         14
+1  626740321835323391   123    1         14
+2  626740321835323391   121    1         14
+```
 
-For vector data, use a similar approach with `fused.submit()` to parallelize hexagonification:
+Each H3 cell can have multiple rows (one per category).
 
 ```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-73.983, 40.763, -73.969, 40.773],
+    res: int = None,
+):
+    path = "s3://fused-asset/hex/nyc_dem/"
+    utils = fused.load("https://github.com/fusedio/udfs/tree/79f8203/community/joris/Read_H3_dataset")
+    df = utils.read_h3_dataset(path, bounds, res=res)
+    return df
+```
+
+```
+                  hex   data_avg
+0  617733122581069823  78.822576
+1  617733122610954239  78.225562
+```
+
+```python showLineNumbers 
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],
+    res: int = 9,
+):
+    path = "s3://fused-users/fused/joris/nyc_dem_h3/"
+    utils = fused.load("https://github.com/fusedio/udfs/tree/dd40354/community/joris/Read_H3_dataset/")
+    df = utils.read_h3_dataset(path, bounds, res=res)
+
+    map_utils = fused.load("https://github.com/fusedio/udfs/tree/dd40354/community/milind/map_utils")
+    config = 
+        }
+    }
+    return map_utils.deckgl_hex(df, config=config)
+```
+
+</details>
+
+For more on standalone maps, see Standalone Maps. For Workbench styling, see H3 Visualization.
+
+---
+
+### Vector to H3
+
+For vector data, use `fused.submit()` to parallelize hexagonification:
+
+<img 
+  alt="Ingesting Vector Data to H3 Example"
+  src=
+  style=}
+/>
+
+This method is for datasets < 100k vectors. Run in Single (viewport) mode, not Tiled.
+
+```python showLineNumbers 
 @fused.udf
 def udf(
     bounds: fused.types.Bounds = [8.4452104984018,41.76046948393174,8.903258920921276,42.053137175457145]
 ):
-    """
-    On the fly vector to hex (counting the number of vectors in each hex at res 15)
-    """
     common = fused.load("https://github.com/fusedio/udfs/tree/208c30d/public/common/")
     res = common.bounds_to_res(bounds, offset=0)
     res = max(9, res)
-    print(f'')
      
-    gdf = get_data()  # Replace with your own data
+    gdf = get_data()
 
     if gdf.shape[0] > 100_000:
-        print("This method is meant for small areas. Reach out to Fused for scaling this up at info@fused.io")
+        print("Dataset too large. Contact info@fused.io for scaling.")
         return
 
-    # Tiling gdf into smaller chunks of equal size & hexagonifying
     vector_chunks = common.split_gdf(gdf[["geometry"]], n=32, return_type="file")
     df = fused.submit(hexagonify_udf, vector_chunks, res=res, engine="remote").reset_index(drop=True)
-    
     df = df.groupby('hex').sum(['cnt','area']).sort_values('hex').reset_index()[['hex', 'cnt', 'area']]
     df['area'] = df['area'].astype(int)
 
     return df 
+
+@fused.udf
+def hexagonify_udf(geometry, res: int = 12):
+    common = fused.load("https://github.com/fusedio/udfs/tree/208c30d/public/common/")
+    gdf = common.to_gdf(geometry)
+    gdf = common.gdf_to_hex(gdf[['geometry']], res=15)
+    con = common.duckdb_connect()
+    df = con.sql(f"""
+        SELECT h3_cell_to_parent(hex, ) AS hex, 
+               COUNT(1) AS cnt, 
+               SUM(h3_cell_area(hex, 'm^2')) AS area
+        FROM gdf
+        GROUP BY 1
+        ORDER BY 1
+    """).df()
+    return df
+
+@fused.cache
+def get_data():
+    gdf = fused.get_chunk_from_table(
+        "s3://us-west-2.opendata.source.coop/fused/overture/2025-12-17-0/theme=buildings/type=building/part=3", 10, 0
+    )
+    return gdf
 ```
+
+Open in Catalog →
+
+Reach out to our team at info@fused.io
 
 ================================================================================
 
@@ -9996,6 +10109,23 @@ URL: https://docs.fused.io/python-sdk/changelog
 
 # Changelog
 
+## v1.30.0 (2026-01-14)
+
+**New Features**
+- You can Command-click (Ctrl-click on Windows/Linux) on output from UDF to navigate to the line of code that produced that output.
+- Added an API to get the currently executing UDF.
+- `n_processes_per_worker` supports different return types.
+- AI settings have been overhauled. Old profile prompts can be retrieved from the Preferences page.
+- Job results will show timeline of starting the job in the Jobs Page
+- File explorer has a separate play/pause state.
+
+**Improvements**
+- Tile UDFs won't show multiple "Large data" warnings.
+- Fixes for ingesting large string columns.
+- `fused.submit` will not run the current UDF recursively.
+- Many bug fixes included in this release.
+- Many improvements to UDF connections (edges) and messaging in Canvas.
+
 ## v1.29.0 (2025-12-18)
 
 **New Features:**
@@ -12974,6 +13104,8 @@ URL: https://docs.fused.io/workbench/udf-builder/styling
 # Layer Styling: Visualization 
 
 The UDF builder displays data from your UDF on the map. You can customize the visual representation using the visualization icon located on the map.
+
+If you're using `map_utils` to build standalone maps in Canvas, see Standalone Maps instead. This page covers styling for UDF Builder layers.
 
 **Presets**
 
@@ -16275,5 +16407,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-01-16
+Generated automatically from Fused documentation. Last updated: 2026-01-19
 Total sections: 5
