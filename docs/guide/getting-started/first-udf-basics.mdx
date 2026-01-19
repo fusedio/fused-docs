@@ -11,20 +11,27 @@ sidebar_position: 1
 
 Fused makes it easy to run Python at scale. You write Python code, and Fused handles execution, scaling, and API generation automatically.
 
+If it runs locally, it runs on Fused — at scale.
+
 It decouples *what you write* from *how it runs* and *where it goes*.
 
 ## UDFs
 
-UDFs (User Defined Functions) are Python functions with a `@fused.udf` decorator that return data. Each UDF becomes its own API endpoint with a unique URL.
+UDFs (User Defined Functions) are Python functions with a [`@fused.udf`](/python-sdk/top-level-functions/#fusedudf) decorator that return data. Each UDF becomes its own API endpoint with a unique URL.
 
 ```python
 @fused.udf
-def udf():
+def udf(name: str = "Fused"):
     import pandas as pd
-    return pd.DataFrame({"greeting": ["Hello, World!"]})
+    return pd.DataFrame({'message': [f'Hello {name}!']})
 ```
 
-That's it. Save this in [Workbench](https://www.fused.io/workbench) and it's deployed.
+A UDF needs:
+- The [`@fused.udf`](/python-sdk/top-level-functions/#fusedudf) decorator
+- A function (called `udf`)
+- Parameters with **type hints** and **default values**
+
+UDFs can return tables (`DataFrame`, `GeoDataFrame`), arrays (`numpy`, `xarray`), or simple Python objects. Learn more about [writing UDFs](/guide/working-with-udfs/writing-udfs/).
 
 ## Data
 
@@ -43,6 +50,10 @@ def udf():
 
 ## Formats
 
+Every UDF is a dynamic file system:
+
+![Dynamic File System Overview](/img/core-concepts/dynamic_file_system.png)
+
 Same UDF, multiple output formats. Change the URL extension to get JSON, CSV, Parquet, PNG, TIFF, or MVT — no code changes needed.
 
 ```
@@ -54,27 +65,68 @@ https://udf.ai/YOUR_TOKEN.parquet
 Pass parameters via URL to change outputs dynamically:
 
 ```
-https://udf.ai/YOUR_TOKEN.json?my_param=value
+https://udf.ai/YOUR_TOKEN.json?name=World
 ```
 
 Learn more about the [Dynamic File API](/guide/data-input-outputs/export-api/dynamic-file-api).
 
 ## Caching
 
-First request runs your code. Subsequent requests (same code, same parameters) return cached results in under a second.
+First request runs your code. Subsequent requests (same code, same parameters) return cached results in under a second. UDFs are cached for 90 days by default.
 
-You control cache duration per UDF. Learn more about [caching](/guide/performance/caching/).
+Try it yourself:
+
+```python
+@fused.udf
+def udf():
+    import time
+    time.sleep(5)
+    return {"status": "done"}
+```
+
+Run once → 5 seconds. Run again → ~1 second (cached).
+
+Set any cache duration you need, including `0` to force a fresh run every time:
+
+```python
+@fused.udf(cache_max_age="0s")
+def udf():
+    import time
+    time.sleep(5)
+    return {"status": "done"}
+```
+
+Learn more about [caching](/guide/working-with-udfs/caching/).
 
 ## Pipelines
 
 UDFs can call other UDFs with `fused.run()` to build data pipelines. Each stays standalone with its own endpoint.
 
 ```python
+# UDF 1: load_cities
 @fused.udf
-def udf():
-    # Call another UDF by name
-    upstream_data = fused.run('my_other_udf')
-    return upstream_data.head(10)
+def udf(continent: str = "Europe"):
+    import pandas as pd
+    cities = pd.DataFrame({
+        "city": ["London", "Paris", "Berlin", "Tokyo", "Sydney"],
+        "population": [9, 2, 4, 14, 5],
+        "continent": ["Europe", "Europe", "Europe", "Asia", "Oceania"]
+    })
+    return cities[cities.continent == continent]
+```
+
+```python
+# UDF 2: big_cities
+@fused.udf
+def udf(continent: str = "Europe", min_pop: int = 3):
+    cities = fused.run('load_cities', continent=continent)
+    return cities[cities.population >= min_pop]
+```
+
+`big_cities` calls `load_cities` and passes through the `continent` param. Both UDFs have their own API endpoint — call either one directly:
+
+```
+https://udf.ai/YOUR_TOKEN.json?continent=Asia&min_pop=5
 ```
 
 Organise UDFs visually in [Canvas](/workbench/udf-builder/canvas/) — connect them, build workflows, create dashboards.
