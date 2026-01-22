@@ -1217,6 +1217,14 @@ For details on using `fd://` paths and the `/mnt/cache` disk, see File System.
 
 ## Connect Your Own Bucket
 
+Connect S3 or GCS buckets to access their files interactively from within the File Explorer UI and programmatically from within UDFs.
+
+Contact Fused to set an S3 or GCS bucket on the File Explorer for all users in your organization. Alternatively, set a bucket as a "favorite" so it appears in the File Explorer for your account only.
+
+### Amazon S3
+
+Set the policy below on your bucket, replacing `YOUR_BUCKET_NAME` with its name. Fused will provide `YOUR_ENV_NAME`.
+
 Alternatively, use this Fused app to automatically structure the policy for you.
 
 The bucket must enable the following CORS settings to allow uploading files from Fused:
@@ -2401,124 +2409,130 @@ URL: https://docs.fused.io/guide/getting-started/first-udf-basics
 
 # First UDF & Basics
 
-Quick ways to get started with Fused in Workbench.
+## Fused
 
-### Open a simple dataset
+Fused makes it easy to run Python at scale. You write Python code, and Fused handles execution, scaling, and API generation automatically.
+
+If it runs locally, it runs on Fused — at scale.
+
+It decouples *what you write* from *how it runs* and *where it goes*.
+
+## UDFs
+
+UDFs (User Defined Functions) are Python functions with a `@fused.udf` decorator that return data. Each UDF becomes its own API endpoint with a unique URL.
+
+Try it in Workbench:
 
 ```python
 @fused.udf
-def udf(path = "s3://fused-sample/demo_data/housing/housing_2024.csv"):
+def udf(name: str = "Fused"):
 
-    housing = pd.read_csv(path)
+    return pd.DataFrame(!']})
 ```
 
-### Convert data quickly
+A UDF needs:
+- The `@fused.udf` decorator
+- A function (called `udf`)
+- Parameters with **type hints** and **default values**
+
+UDFs can return tables (`DataFrame`, `GeoDataFrame`), arrays (`numpy`, `xarray`), or simple Python objects. Learn more about writing UDFs.
+
+## Data
+
+Bring your own data into Fused:
+
+- **Drag & drop** — Drop local files directly into Workbench
+- **Cloud storage** — Read from S3, GCS, or Azure (public or connect your own bucket)
+- **Databases** — Read from Snowflake, BigQuery, or other databases
+- **APIs** — Fetch from any HTTP endpoint
 
 ```python
 @fused.udf
 def udf():
 
-    df = pd.read_excel("s3://fused-sample/demo_data/housing_2024.xlsx")
-    df.to_parquet("s3://fused-sample/demo_data/housing_2024.parquet")
-    
-    return df
+    return pd.read_csv("s3://your-bucket/your-data.csv")
 ```
 
-### Preview datasets
+Need credentials for private data? See secrets management.
 
-Explore cloud storage directly in the File Explorer tab
+## Formats
 
-Simply ask AI to build something for you!
+Every UDF is a dynamic file system:
 
-Deploy your UDF:
-- Save (`Cmd + S` on MacOS or click the "Save" button)
-- Click "URL" button to see deployed dashboard!
+[Image: Dynamic File System Overview]
 
-Watch our playlist of Vibe Coding for more examples!
-
-#### Prompt Ideas
-
-If you already have some data:
+Same UDF, multiple output formats. Change the URL extension to get JSON, CSV, Parquet, PNG, TIFF, or MVT — no code changes needed.
 
 ```
-Make an interactive graph of this data
+https://udf.ai/YOUR_TOKEN.json
+https://udf.ai/YOUR_TOKEN.csv
+https://udf.ai/YOUR_TOKEN.parquet
 ```
 
-Make an up to date dashboard from scratch:
+Pass parameters via URL to change outputs dynamically:
 
 ```
-Build a very simple Wildfire tracking app in HTML using real world data
+https://udf.ai/YOUR_TOKEN.json?name=World
 ```
 
-Fun ideas:
+Learn more about the Dynamic File API.
 
-```
-I'm bored, make a simple game for me!
-```
-Learn more about using AI Assistant
+## Caching
 
-### Data First IDE: Table / Map view
+First request runs your code. Subsequent requests (same code, same parameters) return cached results in under a second. UDFs are cached for 90 days by default.
 
-Workbench is built for data teams. 
+Try it yourself:
 
-Toggle between Map/Table view based on your data!
-
-<ReactPlayer className="video__player" playing= muted= controls height="100%" width="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench/walkthrough-videos/docs_rewrite/Map_Table_alternating2.mp4" />
-
-### Create workflows in Fused Canvas
-
-[Image: Fused Canvas Example]
-
-Any UDF can be connected together in Fused Canvas to create a workflow using `fused.run()`
-
-Upstream UDF (let's call it `housing_price_ratio`):
-
-```python showLineNumbers
-@fused.udf
-def udf(path = "s3://fused-sample/demo_data/housing/housing_2024.csv"):
-
-    housing = pd.read_csv(path)
-    housing['price_per_area'] = round(housing['price'] / housing['area'], 2)
-
-    return housing
-```
-
-We can simply plot this data in a new downstream UDF (let's call it `housing_price_chart`):
-
-```python showLineNumbers
+```python
 @fused.udf
 def udf():
 
-    housing = fused.run('housing_price_ratio')
-
-    chart_html = alt.Chart(housing).mark_point().encode(
-        x='price',
-        y='price_per_area'
-    ).to_html()
-
-    return chart_html
+    time.sleep(5)
+    return 
 ```
 
-Any UDF calling another with `fused.run()` will be re-run automatically when the upstream UDF is saved & re-run.
+Run once → 5 seconds. Run again → ~1 second (cached).
 
-This will visually be shown by a line in Canvas conecting the 2 UDFs. 
+Set any cache duration you need, including `0` to force a fresh run every time:
 
-You can simply click the (+) button on the right of any UDF to create a new downstream UDF.
+```python
+@fused.udf(cache_max_age="0s")
+def udf():
 
-<LazyReactPlayer 
-  playsinline= 
-  className="video__player" 
-  playing= 
-  muted= 
-  controls 
-  height="100%" 
-  width="100%" 
-  url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/dashboards/Creating_map_with_AI_compressed.mp4" 
-/>
+    time.sleep(5)
+    return 
+```
 
-When changing the upstream UDF, save & rerun will automatically re-run the downstream UDF.
+Learn more about caching.
 
-:::
+## Pipelines
+
+UDFs can call other UDFs with `fused.run()` to build data pipelines. Each stays standalone with its own endpoint.
+
+```python
+# UDF 1: load_cities
+@fused.udf
+def udf(continent: str = "Europe"):
+
+    cities = pd.DataFrame()
+    return cities[cities.continent == continent]
+```
+
+```python
+# UDF 2: big_cities
+@fused.udf
+def udf(continent: str = "Europe", min_pop: int = 3):
+    cities = fused.run('load_cities', continent=continent)
+    return cities[cities.population >= min_pop]
+```
+
+`big_cities` calls `load_cities` and passes through the `continent` param. Both UDFs have their own API endpoint — call either one directly:
+
+```
+https://udf.ai/YOUR_TOKEN.json?continent=Asia&min_pop=5
+```
+
+Organise UDFs visually in Canvas — connect them, build workflows, create dashboards.
 
 ================================================================================
 
@@ -2648,103 +2662,11 @@ If you have any feedback, let us know on Discord!
 Path: guide/getting-started/workbench-intro.mdx
 URL: https://docs.fused.io/guide/getting-started/workbench-intro
 
-# Workbench Intro
+# Workbench Intro 
 
-_Tips & Tricks for making Fused Workbench work for you_
+Workbench is Fused's browser based IDE. 
 
-[Image: Workbench Overview]
-
-Workbench is a web-IDE built to make working with Fused UDFs even faster! 
-
-## Experimenting with UDFs, fast
-
-In UDF Builder you have access to a Code Editor that runs your UDFs and outputs results directly on the Map View for you. As soon as you make changes they show up in Map View! 
-
-### 💡 Leverage all the UDF Best Practices
-
-While this page is for Workbench, it builds on top of all the Best Practices that make your UDF fast & efficient. So if you haven't yet, take a look at our dedicated UDF Best Practices.
-
-### Use `return` to quickly explore data
-
-Your UDF will stop at the first `return` it sees, which you can use to your advantage to return an intermediate result and explore it directly on the map:
-
-    In this example, we're using the Overture Maps Example UDF but not sure exactly what our `bounds` object looks like.
-
-    The easiest way to check is simply to return it inside our UDF before any other logic:
-
-### Format your code for more visibility
-
-You can hit `Opt + Shift + F` (or `Alt + Shift + F` on Windows/Linux) to format your code with a smaller line-length. This comes in handy if you don't want to scroll left and right to read your code, at the expense of having a bit more up and down scrolling to do.
-
-## 🗺️ Visualizing results
-
-### Visual Debugging Techniques
-
-- **Elevation as a debugging tool**: Use 3D elevation (`extruded: true`) to add an extra dimension to your analysis
-- **Multi-dimensional visualization**: Combine opacity, color, and height to encode different aspects of your data
-- **Color by data attributes**: Map colors to categorical attributes and height to quantitative metrics
-
-### Optimizing Color Use for Analysis
-
-- **Color categories for types**: Use distinct color schemes like `TealRose` to clearly distinguish between categories
-- **Sequential colors for metrics**: Use color gradients for representing continuous values like ratios or densities
-- **Diverging color schemes**: Highlight values above and below an interesting mid-point in quantitative data - the middle color is assigned to the critical value with contrasting colors on either end
-- **Visibility first**: Choose colors that maintain visibility over your basemap (darker colors for light basemaps, lighter colors for dark basemaps)
-
-For a complete reference of available color schemes, check out CARTO color schemes which are implemented in DeckGL and available in Fused. These include categorical schemes like `Bold` and `Pastel`, sequential schemes like `BluYl` and `Sunset`, and diverging schemes like `TealRose` and `Tropic`.
-
-## Navigating Workbench
-
-### Using Keyboard Shortcuts: Command Palette
-
-Workbench has built-in keyboard shortcuts & quick navigation features: Hit `Cmd + K` (or `Ctrl + K` on Windows / Linux) to bring up Command Palette or use the search bar in the header for quick access:
-
-[Image: Command Palette]
-
-Without lifting your hands from the keyboard you can:
-- Open a New UDF
-- Search the Docs, directly in Workbench!
-- See some of the most helpful Keyboard Shortcuts
-
-You'll find a more extended list of Keyboard Shortcuts in the command palette.
-
-[Image: Preferences - Keyboard Shortcuts]
-
-### Quickly jump from UDF Builder to File Explorer
-
-UDF Builder & File Explorer work well together, so we've made easy to jump from one to the other
-
-- In UDF Builder, `Cmd + Click` on a `s3://...` path will open it directly in File Explorer
-- In File Explorer double clicking on a file will prompt Fused to do its best at guessing which Catalog UDF to use to load this file in Code Editor
-
-## Organising your work
-
-### Renaming UDFs
-
-You can easily rename UDFs by clicking on the UDF name in the header and hitting `Enter`
-
-Your team can load your own UDFs by calling it with a team udf name so be sure to give it an explicit name!
-
-### Using tags
-
-You can add tags to your UDF in the Share page. This gives yet another way to find & search your UDFs. We recommend giving tags according to:
-- Type of data the UDF works with (e.g. `satellite image`, `elevation model`, `population`)
-- Type of analysis the UDF does (e.g. `zonal stats`, `building footprint extraction`, `flood mapping`)
-- Type of file the UDF loads (e.g. `vector`, `raster`, `point cloud`)
-
-### Using Canvas
-
-You can use Canvas to organise your UDFs into different projects. This allows you to:
-- Have multiple unrelated projects in Workbench
-- Be able to share a set of UDFs at once with your team (by downloading a Canvas & sending it to your team mates)
-
-## Troubleshooting
-
-If things feel a bit off, for example your UDF output looks suspicious here are a few things you can do:
-- Manually rerun the UDF with `Shift + Enter`
-- Check how much RAM your tab is using (in Chrome can easily do so by hovering the tab). Sometimes too much data is brought in to your browser and while we do our best to manage it properly it can get out of hand. A good old tab refresh goes a long way
-
-<ReactPlayer className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench/walkthrough-videos/docs_rewrite/refresh_edit5.mp4" width="100%" />
+[Image: ]
 
 ================================================================================
 
@@ -3709,16 +3631,23 @@ def udf():
     data = fused.run('vancouver_open_data')
     
     # Load map utilities for creating interactive maps
-    map_utils = fused.load("https://github.com/fusedio/udfs/tree/cdb119d/community/milind/map_utils/")
+    map_utils = fused.load("https://github.com/fusedio/udfs/tree/7848ea5/community/milind/map_utils/")
+
+    # Widgets give greater control over the layout of the map widgets
+    widgets = ,
+      "legend": False,
+      "geocoder": "top-left",
+    }
     
     config = ,
             "tooltipColumns": ["valuePerSqm", "growth"]
         }
     }
     
-    return map_utils.deckgl_layers([
-        
-    ])
+    return map_utils.deckgl_layers(
+        layers = [], 
+        widgets=widgets
+    )
 ```
 
 This creates a simple map that you can then embed anywhere:
@@ -16407,5 +16336,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-01-19
+Generated automatically from Fused documentation. Last updated: 2026-01-22
 Total sections: 5
