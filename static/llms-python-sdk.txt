@@ -940,7 +940,7 @@ This UDF downloads a zipped file with `fused.download`, unzips it, and uploads t
 
 ## 2. Run UDF on an offline instance
 
-To go beyond the 120s limit of the default `fused.run(udf)` call we'll define a job and use `job.run_batch()` to make kick off a call on a large, offline instance.
+To go beyond the 120s limit of the default `fused.run(udf)` call we'll define a job and use `job.run_batch()` to kick off a call on a large, offline instance.
 Get in touch with Fused if your account doesn't have batch-mode enabled.
 
 Note: Make sure to replace `<YOUR_DIR>` with your own directory.
@@ -948,6 +948,175 @@ Note: Make sure to replace `<YOUR_DIR>` with your own directory.
 ## 3. Monitor job
 
 `job_id` has a number of methods to monitor the job. For example `job_tail_logs` streams logs as the job runs.
+
+---
+
+### Run UDFs
+
+Run a UDF and get results back.
+
+`fused.run()` - ### `udf` — Ways to reference a UDF
+
+| Method | Syntax | Use case |
+|--------|--------|----------|
+| Your UDF | `fused.run("my_udf")` | UDFs you created (requires auth) |
+| Teammate's UDF | `fused.run("teammate@fused.io/my_udf")` | UDFs from your team |
+| Team UDF | `fused.run("team/my_udf")` | Shared team UDFs |
+| Public UDF | `fused.run("UDF_Name")` | Public UDFs (free) |
+| Token | `fused.run("fsh_*")` | Share UDF without exposing code |
+| Git commit | `fused.run("github.com/.../tree//")` | Production stability |
+
+Avoid pointing to `main` branch—your UDF will change when others push to it.
+
+### `engine`
+
+| Engine | Where it runs | Use case |
+|--------|---------------|----------|
+| `remote` (default) | New serverless instance | Standard usage |
+| `local` | Current process | Run in existing compute |
+
+`local` contexts:
+
+| Context | What happens |
+|---------|--------------|
+| Inside a UDF | Shares that UDF's compute (120s, ~4GB) |
+| Inside a batch job | Shares the batch instance resources |
+| On your laptop | Runs on local machine |
+
+### `instance_type`
+
+| Type | RAM | Time limit | Startup |
+|------|-----|------------|---------|
+| `realtime` (default) | ~4GB | 120s | ~5s |
+| `small` | 8GB | None | ~30s |
+| `medium` | 16GB | None | ~30s |
+| `large` | 32GB | None | ~30s |
+
+Can also set in decorator: `@fused.udf(instance_type="large")`
+
+### `cache_max_age`
+
+Control how long results are cached.
+
+| Value | Meaning |
+|-------|---------|
+| `None` (default) | Follow `@fused.udf()` setting |
+| `"0s"` | No caching |
+| `"10s"`, `"48h"`, `"1d"` | Cache for specified duration |
+
+Shortcut: `cache=False` is equivalent to `cache_max_age='0s'`
+
+### `sync`
+
+| Value | Behavior |
+|-------|----------|
+| `True` (default) | Blocking call, returns result |
+| `False` | Returns coroutine for async execution |
+
+`sync=False` only works with `engine='remote'` and saved UDFs.
+
+### `max_retry`
+
+Number of retries on failure. Default: `0`
+
+Pass UDF parameters as keyword arguments:
+
+`fused.run()` - These parameters control how Fused structures the `bounds` object for tile UDFs.
+
+### With `x`, `y`, `z`
+
+`fused.run()` - ### With `bounds` as GeoDataFrame
+
+### With `bounds` as bbox list
+
+- How to run a Realtime job — walkthrough with examples
+- fused.submit — run over multiple inputs in parallel
+- Caching — how caching works
+
+---
+
+### Run UDFs in Parallel
+
+Run a UDF over multiple inputs in parallel.
+
+`fused.submit()` - ### `arg_list` — Input formats
+
+| Format | Example | Use case |
+|--------|---------|----------|
+| List | `[0, 1, 2, 3]` | Single parameter |
+| List of dicts | `[, ]` | Multiple parameters |
+| DataFrame | `pd.DataFrame()` | Multiple parameters |
+
+Each item/row becomes a separate job.
+
+### `engine`
+
+Same as fused.run. Default: `remote`
+
+### `instance_type`
+
+| Mode | Default workers | Per-job limits | Best for |
+|------|-----------------|----------------|----------|
+| `realtime` (default) | 32 (max 1024) | 120s, ~4GB | Many quick jobs |
+| `small`/`medium`/`large` | 1 (max 5) | No limit | Long/heavy jobs |
+
+### `max_workers`
+
+Number of parallel workers.
+
+| Instance type | Default | Max |
+|---------------|---------|-----|
+| `realtime` | 32 | 1024 |
+| Batch (`small`, etc.) | 1 | 5 |
+
+`fused.submit()` - ### `n_processes_per_worker` 🚧
+
+| Instance type | Default | Effect |
+|---------------|---------|--------|
+| `realtime` | 1 | Each arg = 1 lambda |
+| Batch | # of cores | Parallel within instance |
+
+Set >1 for realtime to chunk args within each lambda, reducing total invocations.
+
+### `collect`
+
+| Value | Behavior | Returns |
+|-------|----------|---------|
+| `True` (default) | Blocking, waits for all jobs | `DataFrame` |
+| `False` | Non-blocking | `JobPool` |
+
+### `debug_mode`
+
+When `True`, runs only the first input via `fused.run()`. Use for testing before scaling.
+
+### `max_retry`
+
+Max retries per failed job. Default: `2`
+
+### `ignore_exceptions`
+
+When `True`, failed runs are silently skipped in results. Default: `False`
+
+### `flatten`
+
+| Value | Result format |
+|-------|---------------|
+| `True` (default) | Flat DataFrame |
+| `False` | Results nested in `results` column |
+
+### `cache_max_age`
+
+Same as fused.run. Additionally, when `collect=True`, collected results are cached locally for `cache_max_age` or 12h by default.
+
+When using `collect=False`, you get a `JobPool` object:
+
+Test first:
+`fused.submit()` - Start small:
+`fused.submit()` - Aim for 30-45s per job — gives safety margin before 120s timeout.
+
+For batch jobs, save to S3:
+- fused.run — single UDF execution
+- How to run in parallel — walkthrough with examples
 
 ---
 
@@ -1294,4 +1463,4 @@ Params:
 ---
 
 Generated automatically from Fused Python SDK documentation. Last updated: 2026-01-26
-Total pages: 11
+Total pages: 13
