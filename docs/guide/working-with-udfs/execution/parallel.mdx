@@ -7,177 +7,183 @@ sidebar_position: 2
 
 # Running Jobs in Parallel: `fused.submit()`
 
-Sometimes you want to run a UDF over a list of inputs (for example running a [UDF that unzips a file over a list of files](/examples/dark-vessel-detection#33---run-this-udf-over-a-month-of-ais-data)). If each run itself is quite small, then you can run a batch of UDFs over a list of inputs.
-
-Let's use a simple UDF to demonstrate:
+Run a UDF over a list of inputs in parallel with [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit).
 
 ```python showLineNumbers
 @fused.udf
 def udf(val):
     import pandas as pd
-    return pd.DataFrame({'val':[val]})
+    return pd.DataFrame({'val': [val]})
 ```
-
-Say we wanted to run this `udf` 10 times over:
 
 ```python showLineNumbers
-inputs = [0,1,2,3,4,5,6,7,8,9]
+inputs = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+results = fused.submit(udf, inputs)
 ```
 
-## `fused.submit()`
+## Two approaches
 
-Fused is built to help you scale your processing to huge datasets and the core of this ability is [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit). You can run 1 UDF over a large number of arguments:
+| Approach | What happens | Best for |
+|----------|--------------|----------|
+| [Realtime workers](#realtime-workers-default) (default) | Spawns many UDFs in parallel | Many quick jobs (under 120s, under 4GB each) |
+| [Batch instance](#batch-instance) | Runs all jobs on one large machine | Jobs needing more time or RAM |
+
+## Realtime workers (default)
+
+Each input spawns a separate [realtime UDF](/guide/working-with-udfs/execution/realtime):
 
 ```python showLineNumbers
 results = fused.submit(udf, inputs)
 ```
 
-```bash
->>> 100%|██████████| 10/10 
-```
+**Characteristics:**
+- Each job has [realtime limits](/guide/working-with-udfs/execution/realtime#realtime-limits) (120s, ~4GB RAM)
+- Default: **32 workers** in parallel, can scale up to **1000+** with `max_workers`:
 
-Note that you will only see the progress bar if you are running the code in a notebook, Workbench does not yet currently stream the progress to the console.
-
-[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) runs all these jobs in parallel and defaults to directly returning the results back to you as a dataframe:
-
-```python showLineNumbers
-print(results)
-```
-
-```
->>>
- 		val
-val
-0	0	0
-1	0	1
-...
-```
-
-## Tips for using `fused.submit()`
-
-- Check that your parameters are correctly setup with `debug_mode=True`:
-
-```python showLineNumbers
-single_run = fused.submit(udf, inputs, debug_mode=True)
-```
-
-- Start with a small number of jobs, then scale up:
-
-```python showLineNumbers   
-# Only running the first 5 inputs to make sure the UDF is working as expected
-results = fused.submit(udf, inputs[:5])
-```
-
-- Check the runtime of each job:
-
-```python showLineNumbers
-# Run only 10 jobs and see how long each one took
-results = fused.submit(udf, inputs[:5], collect=False)
-print(results.times())
+```python showLineNumbers {5}
+# Limit to 50 concurrent workers
+results = fused.submit(
+    udf, 
+    inputs, 
+    max_workers=50
+)
 ```
 
 :::tip Job length rule of thumb: 30-45s
-Aim for a single UDF that takes 30-45s. This gives you a "safety" margin as UDFs will timeout after 120s. So they can still take a bit longer and not time out.
+Aim for jobs that take 30-45s each. This gives a safety margin before the 120s timeout.
 :::
 
-## Advanced Options
+## Batch instance
 
-### Blocking vs non-blocking calls
+All jobs run on a single dedicated machine:
 
-By default we've set up [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) to be blocking, meaning it will wait for all the jobs to finish before returning the results.
+```python showLineNumbers {4-5}
+results = fused.submit(
+    udf, 
+    inputs, 
+    instance_type="large", 
+    collect=False
+    )
+```
 
-However, you can set `collect=False` and then track the progress of jobs as they run:
+**Characteristics:**
+- Jobs queue and run as cores become available across the instance resources
+- **No time limit**, high RAM per job
+- Resources depend on `instance_type` chosen; see [Batch Jobs](/guide/working-with-udfs/execution/batch-jobs#instance-types) for options
+
+:::warning Best practice: save to S3, return file paths
+For batch jobs, write results to [cloud storage](/guide/data-input-outputs/import-connection/cloud-storage) rather than returning large data:
 
 ```python showLineNumbers
-results = fused.submit(udf, inputs, collect=False)
+@fused.udf
+def batch_udf(input_path: str):
+    import pandas as pd
+    
+    df = pd.read_parquet(input_path)
+    result = process(df)
+    
+    # Save to S3 and return path
+    output_path = f"s3://my-bucket/results/{input_path.split('/')[-1]}"
+    result.to_parquet(output_path)
+    return output_path  # NOT return result
 ```
 
-### Real time logs
-
-- Show a progress bar of number of jobs completed:
+Use [non-blocking execution](/guide/working-with-udfs/execution/parallel#non-blocking-execution) with `collect=False` and gather file paths after:
 
 ```python showLineNumbers
-print(results.wait())
+job = fused.submit(batch_udf, input_paths, instance_type="large", collect=False)
+job.wait()
+output_paths = job.collect()
+```
+:::
+
+## Tips
+
+- **Test first** with `debug_mode=True`:
+
+```python showLineNumbers {5}
+# Runs only the first input to verify setup
+result = fused.submit(
+    udf, 
+    inputs, 
+    debug_mode=True
+)
 ```
 
-```
-100%|██████████| 10/10 [00:01<00:00, 9.31it/s]
+- **Start small**, then scale:
+
+```python showLineNumbers {4}
+# Test with first 5 inputs
+results = fused.submit(
+    udf, 
+    inputs[:5]
+)
 ```
 
-- Show total time it took to run all the jobs:
+- **Check timing** of each job:
 
 ```python showLineNumbers
-print(results.total_time())
+results = fused.submit(
+    udf, 
+    inputs[:5], 
+    collect=False
+)
+print(results.times())
 ```
 
-```
->>> datetime.timedelta(seconds=1, microseconds=96764)
-```
+## Advanced options
 
-- Check the first error that occurred:
+### Non-blocking execution
+
+Use `collect=False` to run jobs in background:
 
 ```python showLineNumbers
-print(results.first_error())
+job = fused.submit(udf, inputs, collect=False)
+
+# Check progress
+job.wait()  # Shows progress bar
+
+# Get results when ready
+results = job.collect()
 ```
 
-- Get your data back as a dataframe:
+### Monitoring methods
 
 ```python showLineNumbers
-print(results.collect())
+job.wait()          # Progress bar
+job.total_time()    # Total wall time
+job.times()         # Time per job
+job.first_error()   # First error encountered
+job.collect()       # Get results
 ```
-
-### Debug mode
-
-Sometimes you might just want to make sure your code is running correctly before kicking off a large number of jobs. That's what Debug Mode allows you to do:
-
-```python showLineNumbers
-results = fused.submit(udf, inputs, debug_mode=True)
-```
-
-This will run the first item in `inputs` directly using `fused.run()` (equivalent to `fused.run(udf, inputs[0])`) and then return the results.
 
 ### Execution parameters
 
-[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) also have parameters giving you more control over the execution. See the Python SDK [docs page](/python-sdk/top-level-functions/#fusedsubmit) for more details:
+| Parameter | Description |
+|-----------|-------------|
+| `max_workers` | Number of parallel workers (realtime only) |
+| `engine` | `local` or `remote` (see [Execution engines](/guide/working-with-udfs/execution/realtime#execution-engines)) |
+| `max_retry` | Max retries per failed job |
+| `ignore_exceptions` | Ignore exceptions when collecting results |
 
-- `max_workers`: The number of workers to use for the job pool.
-- `engine`: `local` or `remote` (default is `remote`). See [Execution engines](/guide/working-with-udfs/execution/realtime#execution-engines).
-- `max_retry`: The maximum number of retries for a job.
+See the [Python SDK docs](/python-sdk/top-level-functions/#fusedsubmit) for more details.
 
 ## Wall time vs CPU time
 
-There are 2 different runtime calculations for `fused.submit()` jobs:
-
-**Wall time**: Total actual time taken to run the jobs:
+**Wall time**: Total elapsed time for all jobs:
 
 ```python showLineNumbers
-print(results.total_time())
+print(job.total_time())
 ```
 
-**CPU time**: Sum of all the CPU time taken by the jobs. This is the time that counts towards your bill.
+**CPU time**: Sum of individual job times (this counts toward billing):
 
 ```python showLineNumbers
-round(sum([t.seconds for t in results.times()]) + sum([t.microseconds for t in results.times()]) / 10e6, 2)
+total_cpu = sum(t.total_seconds() for t in job.times())
 ```
-
-## Scaling individual jobs
-
-If individual jobs in your `fused.submit()` need more than 120s or more RAM, use the `instance_type` parameter:
-
-```python showLineNumbers
-results = fused.submit(udf, inputs, instance_type="large")
-```
-
-This runs jobs on a dedicated batch instance rather than the realtime serverless pool. See [Batch Jobs](/guide/working-with-udfs/execution/batch-jobs) for available instance types and details.
-
-:::note
-Using `instance_type` adds startup time but removes the 120s timeout and provides more resources per job.
-:::
 
 ## Example use cases
 
-[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit) is used in many places across our docs:
-
-- 📈 Processing 20Tb of data in minutes: [Making a Climate Dashboard](/examples/climate-dashboard) of 20 years of data
-- ⛴️ [Retrieving 30 days](/examples/dark-vessel-detection#33---run-this-udf-over-a-month-of-ais-data) of AIS boat transponder data around the United States to detect illegal fishing
-- 🛰️ [Retrieving all of Maxar's Open Data STAC Catalogs](/examples/satellite-imagery#preparing-fusedsubmit-to-run-in-parallel) across every events they have imagery for.
+- 📈 [Making a Climate Dashboard](/examples/climate-dashboard) — Processing 20TB of data in minutes
+- ⛴️ [Dark Vessel Detection](/examples/dark-vessel-detection#33---run-this-udf-over-a-month-of-ais-data) — Retrieving 30 days of AIS data
+- 🛰️ [Satellite Imagery](/examples/satellite-imagery#preparing-fusedsubmit-to-run-in-parallel) — Processing Maxar's Open Data STAC Catalogs
