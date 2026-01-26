@@ -11,7 +11,7 @@ Batch jobs are for UDFs that need more time or resources than [realtime executio
 
 ## When to use batch
 
-Use batch when your UDF:
+Use batch when your UDF exceeds [realtime limits](/guide/working-with-udfs/execution/realtime#realtime-limits):
 - Takes longer than **120s** to run
 - Needs more than **~4GB RAM**
 
@@ -24,24 +24,46 @@ Use batch when your UDF:
 
 ## Quick comparison
 
-| Method | Use case |
-|--------|----------|
-| `fused.run(..., instance_type='small')` | Single job needing more time/resources |
-| `fused.submit(..., instance_type='large')` | Multiple jobs, each needing more resources |
-| `job.run_batch()` | [Advanced] Multiple jobs with `arg_list` |
+| Method | Use case | Confirmation Modal? |
+|--------|----------|---------------|
+| [`@fused.udf(instance_type=...)`](#in-workbench-fusedudfinstance_type) | Run current UDF as batch | Yes (Approval Required) |
+| [`fused.run(..., instance_type=...)`](#calling-another-udf-fusedrun-instance_type) | Call another UDF as batch | **No**  |
+| [`fused.submit(..., instance_type=...)`](#multiple-jobs-fusedsubmit-instance_type) | Multiple jobs on one machine | **No** |
+| [`job.run_batch()`](#advanced-run_batch-with-arg_list) | [Advanced] Multiple jobs with `arg_list` | **No** |
 
-## Option 1: `fused.run()` with `instance_type`
+:::warning
+Only Workbench shows a confirmation modal. Calling batch jobs programmatically (`fused.run`, `fused.submit`, `run_batch`) starts immediately—be careful not to accidentally trigger expensive jobs in loops.
+:::
 
-The simplest way to run a batch job—just add `instance_type`:
+## In Workbench: `@fused.udf(instance_type=...)`
+
+The simplest way to run a batch job—add `instance_type` to the decorator:
+
+```python showLineNumbers
+@fused.udf(instance_type='small')
+def udf(name: str = "world"):
+    import pandas as pd
+    # This UDF runs on a batch instance
+    return pd.DataFrame({"hello": [name]})
+```
+
+![Running a job from workbench](batch_job_workbench.png)
+
+:::note
+UDFs with `instance_type` require manual execution (`Shift+Enter`) and show a confirmation modal—they won't auto-run like realtime UDFs.
+:::
+
+## Calling another UDF: `fused.run(..., instance_type=...)`
+
+To call another UDF as a batch job:
 
 ```python showLineNumbers
 fused.run("my_udf", instance_type="small")
 ```
 
-This runs your UDF on a dedicated instance instead of the realtime pool.
+This runs the target UDF on a dedicated instance instead of the realtime pool.
 
 ```python showLineNumbers
-# From another UDF
 @fused.udf
 def udf():
     # Kicks off a batch job for the upstream UDF
@@ -49,7 +71,7 @@ def udf():
     return result
 ```
 
-## Option 2: `fused.submit()` with `instance_type`
+## Multiple jobs: `fused.submit(..., instance_type=...)`
 
 Run multiple inputs on a dedicated batch instance:
 
@@ -68,9 +90,9 @@ For convenience, use these aliases:
 
 | Alias | Maps to | vCPUs | RAM |
 |-------|---------|-------|-----|
-| `small` | `t3.small` | 2 | 2 GB |
-| `medium` | `m5.4xlarge` | 16 | 64 GB |
-| `large` | `r5.16xlarge` | 64 | 512 GB |
+| `small` | `t3.small` (AWS) | 2 | 2 GB |
+| `medium` | `m5.4xlarge` (AWS) | 16 | 64 GB |
+| `large` | `r5.16xlarge` (AWS) | 64 | 512 GB |
 
 <details>
 <summary>All AWS instance types</summary>
@@ -118,23 +140,6 @@ More details on [GCP instance types](https://cloud.google.com/compute/docs/machi
 
 </details>
 
-## Running from Workbench
-
-Add `instance_type` to the `@fused.udf` decorator:
-
-```python showLineNumbers
-@fused.udf(instance_type='small')
-def udf(name: str = "world"):
-    import pandas as pd
-    return pd.DataFrame({"hello": [name]})
-```
-
-![Running a job from workbench](batch_job_workbench.png)
-
-:::note
-UDFs with `instance_type` require manual execution (`Shift+Enter`) and show a confirmation modal.
-:::
-
 ## Important behaviors
 
 ### Nested UDF calls
@@ -162,19 +167,9 @@ fused.run("my_udf")                           # realtime cache
 fused.run("my_udf", instance_type="small")    # batch cache
 ```
 
-### No confirmation programmatically
-
-:::warning
-Using `fused.run(..., instance_type='small')` from code kicks off batch jobs **without confirmation**. This is different from Workbench which shows a confirmation modal. Be careful not to accidentally trigger many batch jobs in loops.
-:::
-
-### No execution time limit
-
-Batch jobs have no time limit. You can manually cancel jobs from the [Jobs page](/workbench/jobs/) in Workbench.
-
 ## Getting results
 
-Batch jobs should write results to cloud storage (S3, GCS, etc.) rather than returning large data:
+Batch jobs should write results to [cloud storage](/guide/data-input-outputs/import-connection/cloud-storage) (S3, GCS, etc.) rather than returning large data:
 
 ```python showLineNumbers
 @fused.udf
@@ -189,7 +184,7 @@ def batch_job(input_path: str):
     output_path = f"s3://my-bucket/results/{input_path.split('/')[-1]}"
     result.to_parquet(output_path)
     
-    return pd.DataFrame({"status": ["done"], "output": [output_path]})
+    return output_path
 ```
 
 ## Monitoring jobs
