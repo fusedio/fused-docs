@@ -1,0 +1,157 @@
+---
+id: fused-submit
+title: fused.submit
+sidebar_label: fused.submit
+sidebar_position: 3
+---
+
+Run a UDF over multiple inputs in parallel.
+
+## Signature
+
+```python
+fused.submit(
+    udf,
+    arg_list,
+    engine='remote',
+    instance_type='realtime',
+    max_workers=32,
+    collect=True,
+    debug_mode=False,
+    cache_max_age=None,
+    **kwargs
+)
+```
+
+## Parameters
+
+### `arg_list` — Input formats
+
+| Format | Example | Use case |
+|--------|---------|----------|
+| List | `[0, 1, 2, 3]` | Single parameter |
+| List of dicts | `[{'a': 1, 'b': 2}, {'a': 3, 'b': 4}]` | Multiple parameters |
+| DataFrame | `pd.DataFrame({'a': [1, 3], 'b': [2, 4]})` | Multiple parameters |
+
+Each item/row becomes a separate job.
+
+```python
+@fused.udf
+def udf(a: str, b: str):
+    import pandas as pd
+    return pd.DataFrame({"result": [a + b]})
+
+inputs = pd.DataFrame({'a': ['x', 'y'], 'b': ['1', '2']})
+results = fused.submit(udf, inputs)
+```
+
+### `engine`
+
+Same as [fused.run](/guide/working-with-udfs/fused-run#engine). Default: `remote`
+
+### `instance_type`
+
+| Mode | Default workers | Per-job limits | Best for |
+|------|-----------------|----------------|----------|
+| `realtime` (default) | 32 (max 1024) | 120s, ~4GB | Many quick jobs |
+| `small`/`medium`/`large` | 1 (max 5) | No limit | Long/heavy jobs |
+
+### `max_workers`
+
+Number of parallel workers.
+
+| Instance type | Default | Max |
+|---------------|---------|-----|
+| `realtime` | 32 | 1024 |
+| Batch (`small`, etc.) | 1 | 5 |
+
+```python
+fused.submit(udf, inputs, max_workers=100)
+```
+
+### `n_processes_per_worker` 🚧
+
+| Instance type | Default | Effect |
+|---------------|---------|--------|
+| `realtime` | 1 | Each arg = 1 lambda |
+| Batch | # of cores | Parallel within instance |
+
+Set >1 for realtime to chunk args within each lambda, reducing total invocations.
+
+### `collect`
+
+| Value | Behavior | Returns |
+|-------|----------|---------|
+| `True` (default) | Blocking, waits for all jobs | `DataFrame` |
+| `False` | Non-blocking | `JobPool` |
+
+### `debug_mode`
+
+When `True`, runs only the first input via `fused.run()`. Use for testing before scaling.
+
+```python
+# Test with first input only
+fused.submit(udf, inputs, debug_mode=True)
+```
+
+### `max_retry`
+
+Max retries per failed job. Default: `2`
+
+### `ignore_exceptions`
+
+When `True`, failed runs are silently skipped in results. Default: `False`
+
+### `flatten`
+
+| Value | Result format |
+|-------|---------------|
+| `True` (default) | Flat DataFrame |
+| `False` | Results nested in `results` column |
+
+### `cache_max_age`
+
+Same as [fused.run](/guide/working-with-udfs/fused-run#cache_max_age). Additionally, when `collect=True`, collected results are cached locally for `cache_max_age` or 12h by default.
+
+## JobPool methods
+
+When using `collect=False`, you get a `JobPool` object:
+
+```python
+job = fused.submit(udf, inputs, collect=False)
+
+job.wait()           # Show progress bar
+job.total_time()     # Total wall time
+job.times()          # Time per job
+job.first_error()    # First error encountered
+job.collect()        # Get results as DataFrame
+```
+
+## Tips
+
+**Test first:**
+```python
+fused.submit(udf, inputs, debug_mode=True)
+```
+
+**Start small:**
+```python
+fused.submit(udf, inputs[:5])
+```
+
+**Aim for 30-45s per job** — gives safety margin before 120s timeout.
+
+**For batch jobs, save to S3:**
+```python
+@fused.udf
+def batch_udf(input_path: str):
+    result = process(input_path)
+    output_path = f"s3://bucket/results/{...}"
+    result.to_parquet(output_path)
+    return output_path  # Return path, not data
+```
+
+## See also
+
+- [fused.run](/guide/working-with-udfs/fused-run) — single UDF execution
+- [How to run in parallel](/guide/getting-started/udf-best-practices/parallel) — walkthrough with examples
