@@ -279,8 +279,9 @@ const config: Config = {
           { to: "/guide/getting-started/first-udf-basics", from: ["/tutorials/load-and-export-data", "/tutorials/load_and_save_data"] },
           
           // Core concepts redirects
-          { to: "/guide/working-with-udfs/execution/realtime", from: ["/core-concepts/run-udfs/run-small-udfs", "/core-concepts/run-udfs"] },
-          { to: "/guide/working-with-udfs/execution/batch-jobs", from: ["/core-concepts/run-udfs/run_large", "/core-concepts/run-udfs/run-large"] },
+          { to: "/guide/getting-started/udf-best-practices/realtime", from: ["/core-concepts/run-udfs/run-small-udfs", "/core-concepts/run-udfs", "/core-concepts/async", "/guide/working-with-udfs/execution/realtime"] },
+          { to: "/guide/getting-started/udf-best-practices/batch-jobs", from: ["/core-concepts/run-udfs/run_large", "/core-concepts/run-udfs/run-large", "/guide/working-with-udfs/execution/batch-jobs"] },
+          { to: "/guide/getting-started/udf-best-practices/parallel", from: ["/guide/working-with-udfs/execution/parallel"] },
           { to: "/guide/working-with-udfs/writing-udfs", from: ["/core-concepts/write", "/core-concepts/best-practices/udf-best-practices"] },
           { to: "/guide/working-with-udfs/caching", from: ["/core-concepts/cache"] },
           { to: "/guide/advanced-setup/file-system", from: ["/core-concepts/content-management/file-system"] },
@@ -288,7 +289,6 @@ const config: Config = {
           { to: "/guide/advanced-setup/dependencies", from: ["/core-concepts/run-udfs/dependencies"] },
           { to: "/guide/getting-started/workbench-intro", from: ["/core-concepts/best-practices/workbench-best-practices"] },
           { to: "/guide/getting-started/first-udf-basics", from: ["/core-concepts/why"] },
-          { to: "/guide/working-with-udfs/execution/realtime", from: ["/core-concepts/async"] },
           
           // Old workbench paths
           { to: "/workbench/udf-explorer", from: ["/workbench/udf-catalog"] },
