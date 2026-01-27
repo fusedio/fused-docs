@@ -225,9 +225,9 @@ const config: Config = {
       {
         redirects: [
           // Revamped Jan 2026 Migration Redirects - Tutorials to new locations
-          { to: "/guide/working-with-udfs/building-outputs/standalone-maps", from: ["/tutorials/Analytics%20&%20Dashboard/standalone-maps", "/tutorials/Analytics & Dashboard/standalone-maps"] },
+          { to: "/examples/building-outputs/standalone-maps", from: ["/tutorials/Analytics%20&%20Dashboard/standalone-maps", "/tutorials/Analytics & Dashboard/standalone-maps", "/guide/working-with-udfs/building-outputs/standalone-maps"] },
           { to: "/examples/realtime-processing", from: ["/tutorials/Analytics%20&%20Dashboard/realtime-data-processing-with-duckdb-wasm", "/tutorials/Analytics & Dashboard/realtime-data-processing-with-duckdb-wasm"] },
-          { to: "/guide/working-with-udfs/building-outputs/charts", from: ["/tutorials/Analytics%20&%20Dashboard/interactive-graphs", "/tutorials/Analytics & Dashboard/interactive-graphs"] },
+          { to: "/examples/building-outputs/charts", from: ["/tutorials/Analytics%20&%20Dashboard/interactive-graphs", "/tutorials/Analytics & Dashboard/interactive-graphs", "/guide/working-with-udfs/building-outputs/charts"] },
           { to: "/guide/data-input-outputs/export-api/mcp-servers", from: ["/tutorials/Analytics%20&%20Dashboard/let-anyone-talk-to-your-data", "/tutorials/Analytics & Dashboard/let-anyone-talk-to-your-data"] },
           { to: "/examples/vibe-chart-building", from: ["/tutorials/Analytics%20&%20Dashboard/stack-overflow-surveys", "/tutorials/Analytics & Dashboard/stack-overflow-surveys"] },
           { to: "/examples/currency-prediction", from: ["/tutorials/Analytics%20&%20Dashboard/currency-trading", "/tutorials/Analytics & Dashboard/currency-trading"] },
@@ -262,7 +262,7 @@ const config: Config = {
           { to: "/guide/data-input-outputs/read-write/geospatial/ingestion", from: ["/tutorials/Geospatial%20with%20Fused/geospatial-data-ingestion/geospatial-file-formats", "/tutorials/Geospatial with Fused/geospatial-data-ingestion/geospatial-file-formats"] },
           
           // Geospatial tutorials - Other
-          { to: "/guide/working-with-udfs/geospatial/single-vs-tile", from: ["/tutorials/Geospatial%20with%20Fused/filetile", "/tutorials/Geospatial with Fused/filetile"] },
+          { to: "/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", from: ["/tutorials/Geospatial%20with%20Fused/filetile", "/tutorials/Geospatial with Fused/filetile", "/guide/working-with-udfs/geospatial/single-vs-tile"] },
           { to: "/guide/data-input-outputs/export-api/geospatial-export", from: ["/tutorials/Geospatial%20with%20Fused/other-integrations", "/tutorials/Geospatial with Fused/other-integrations"] },
           { to: "/guide/data-input-outputs/import-connection/geospatial/gee", from: ["/tutorials/Geospatial%20with%20Fused/gee_bigquery", "/tutorials/Geospatial with Fused/gee_bigquery"] },
           { to: "/examples/canvas-examples", from: ["/tutorials/Geospatial%20with%20Fused/canvas-catalog", "/tutorials/Geospatial with Fused/canvas-catalog"] },
@@ -279,11 +279,11 @@ const config: Config = {
           { to: "/guide/getting-started/first-udf-basics", from: ["/tutorials/load-and-export-data", "/tutorials/load_and_save_data"] },
           
           // Core concepts redirects
-          { to: "/guide/getting-started/udf-best-practices/realtime", from: ["/core-concepts/run-udfs/run-small-udfs", "/core-concepts/run-udfs", "/core-concepts/async", "/guide/working-with-udfs/execution/realtime"] },
-          { to: "/guide/getting-started/udf-best-practices/batch-jobs", from: ["/core-concepts/run-udfs/run_large", "/core-concepts/run-udfs/run-large", "/guide/working-with-udfs/execution/batch-jobs"] },
-          { to: "/guide/getting-started/udf-best-practices/parallel", from: ["/guide/working-with-udfs/execution/parallel"] },
+          { to: "/guide/working-with-udfs/udf-best-practices/realtime", from: ["/core-concepts/run-udfs/run-small-udfs", "/core-concepts/run-udfs", "/core-concepts/async", "/guide/working-with-udfs/execution/realtime", "/guide/getting-started/udf-best-practices/realtime"] },
+          { to: "/guide/working-with-udfs/udf-best-practices/batch-jobs", from: ["/core-concepts/run-udfs/run_large", "/core-concepts/run-udfs/run-large", "/guide/working-with-udfs/execution/batch-jobs", "/guide/getting-started/udf-best-practices/batch-jobs"] },
+          { to: "/guide/working-with-udfs/udf-best-practices/parallel", from: ["/guide/working-with-udfs/execution/parallel", "/guide/getting-started/udf-best-practices/parallel"] },
           { to: "/guide/working-with-udfs/writing-udfs", from: ["/core-concepts/write", "/core-concepts/best-practices/udf-best-practices"] },
-          { to: "/guide/working-with-udfs/caching", from: ["/core-concepts/cache"] },
+          { to: "/guide/working-with-udfs/udf-best-practices/caching", from: ["/core-concepts/cache", "/guide/working-with-udfs/caching"] },
           { to: "/guide/advanced-setup/file-system", from: ["/core-concepts/content-management/file-system"] },
           { to: "/guide/advanced-setup/git-integration", from: ["/core-concepts/content-management/git"] },
           { to: "/guide/advanced-setup/dependencies", from: ["/core-concepts/run-udfs/dependencies"] },
@@ -293,6 +293,11 @@ const config: Config = {
           // Old workbench paths
           { to: "/workbench/udf-explorer", from: ["/workbench/udf-catalog"] },
           { to: "/workbench/udf-builder/code-editor", from: ["/workbench/udf-editor"] },
+          
+          // Jan 2026 docs migration redirects
+          { to: "/guide/working-with-udfs/calling-udfs-as-api", from: ["/guide/data-input-outputs/export-api/dynamic-file-api"] },
+          { to: "/examples/building-outputs/dashboards", from: ["/guide/working-with-udfs/building-outputs/dashboards"] },
+          { to: "/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", from: ["/guide/working-with-udfs/udf-best-practices/geospatial/single-vs-tile"] },
         ],
         // createRedirects(existingPath) {
         //   if (existingPath.includes("/user-guide/out")) {
