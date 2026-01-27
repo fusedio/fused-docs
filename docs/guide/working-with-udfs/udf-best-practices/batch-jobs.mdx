@@ -1,0 +1,103 @@
+---
+id: batch-jobs
+title: How to run a batch job
+sidebar_label: How to run a batch job
+sidebar_position: 3
+---
+
+Batch jobs run on dedicated machines with more resources and no time limits. Use them when your UDF needs more than realtime can offer.
+
+This guide covers best practices for batch workflows—when to use them, how to get results, and how to monitor jobs.
+
+## When to use batch
+
+Use batch when your UDF exceeds realtime limits:
+- Takes longer than **120s** to run
+- Needs more than **~4GB RAM**
+
+**Tradeoffs:**
+- ~30s startup time (machine needs to spin up)
+{/* NOTE: This will be added in the API at some point*/}
+{/* - No execution time limit */}
+- Higher resource availability
+
+## Starting a batch job
+
+Add `instance_type` to run on a dedicated machine:
+
+```python
+@fused.udf(instance_type='small')
+def udf():
+    # This UDF runs on a batch instance
+    ...
+```
+
+![Running a job from workbench](batch_job_workbench.png)
+
+In Workbench, batch UDFs require manual execution (`Shift+Enter`) and show a confirmation modal.
+
+## Best practices
+
+### Write to disk, don't return data
+
+Batch jobs should **write results to [cloud storage](/guide/data-input-outputs/import-connection/cloud-storage/) or [mount](/guide/advanced-setup/file-system/#mntcache-disk)**, not return them. Data returned from batch jobs can be lost if the connection times out.
+
+```python
+@fused.udf(instance_type='small')
+def batch_job(input_path: str):
+    import pandas as pd
+    
+    # Process data
+    df = pd.read_parquet(input_path)
+    result = heavy_processing(df)
+    
+    # Write to S3, not return
+    output_path = f"s3://my-bucket/results/{...}"
+    result.to_parquet(output_path)
+    
+    return output_path  # Return the path, not the data
+```
+
+### Monitor your jobs
+
+Batch jobs take time to start and run. Use the **Jobs page** in Workbench to monitor:
+- **Status**: Running, Completed, Failed
+- **CPU & Memory**: Resource usage over time
+- **Disk**: Storage consumption
+- **Runtime**: How long the job has been running
+- **Logs**: Real-time output from your UDF
+
+```python
+# Programmatic monitoring
+job.status          # Check status
+job.tail_logs()     # Stream logs
+job.cancel()        # Stop a job
+```
+
+### Expect startup delay
+
+Batch machines take ~30s to spin up. Plan accordingly—batch jobs aren't for quick iterations.
+
+:::tip Iterate on realtime first
+Test your UDF on a small data sample using realtime execution. Once you're confident it works, switch to `instance_type` to scale up.
+:::
+
+## Instance types
+
+| Alias | vCPUs | RAM |
+|-------|-------|-----|
+| `small` | 2 | 2 GB |
+| `medium` | 16 | 64 GB |
+| `large` | 64 | 512 GB |
+
+See [Run UDFs in python](/guide/working-with-udfs/run-udfs-in-python#instance_type) for the full list of AWS/GCP instance types.
+
+## Example use cases
+
+- [Ingesting cropland data](/examples/zonal-stats#2-bring-in-your-data) for zonal statistics
+- [Data ingestion](/guide/data-input-outputs/read-write/geospatial/ingestion) for large geospatial files
+
+## See also
+
+- [Run UDFs in python](/guide/working-with-udfs/run-udfs-in-python#instance_type) — `instance_type` reference
+- [Run UDFs in parallel](/guide/working-with-udfs/run-udfs-in-parallel) — `fused.submit()` with batch instances
