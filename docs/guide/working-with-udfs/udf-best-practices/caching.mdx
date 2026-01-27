@@ -5,14 +5,14 @@ sidebar_label: How to use caching
 sidebar_position: 4
 ---
 
-Fused caches UDF results automatically to make repeated calls faster. Understanding the two caching mechanisms helps you control freshness vs performance.
+Fused caches UDF results automatically to make repeated calls faster. Cached calls return instantly and **don't consume Fused Credit Units**—you only pay for compute once, then reuse the result for free.
 
 ## Two types of cache
 
-| Type | When it applies | Storage | Default TTL | Speed |
+| Type | When it applies | Storage | Default Duration | Speed |
 |------|-----------------|---------|-------------|-------|
-| UDF cache | `fused.run()` results | S3 | 90 days | Good |
-| `@fused.cache` | Functions inside UDFs | mount | 12 hours | Fast |
+| [UDF cache](#udf-cache) | `fused.run()` results | [S3](/guide/data-input-outputs/import-connection/cloud-storage) | 90 days | Good |
+| [`@fused.cache`](#fusedcache) | Functions inside UDFs | [mount](/guide/data-input-outputs/import-connection/cloud-storage#mntcache-disk) | 12 hours | Fast |
 
 Both work the same way: store the result of [function + inputs], return cached result on repeat calls. Change the function or inputs → cache miss → recompute.
 
@@ -68,16 +68,25 @@ The CSV loads once and caches. Changing `ship_length` doesn't reload the file—
 
 **When NOT to use it:**
 - Very large datasets (>10GB)—consider [ingesting to cloud-native formats](/guide/data-input-outputs/read-write/geospatial/ingestion) instead
-- Operations that depend on `bounds`—you'll cache a new file for every map pan
+
+## `cache_max_age` reference
+
+Control how long cached results stay valid.
+
+**Format:** `30s` (seconds), `10m` (minutes), `24h` (hours), `7d` (days)
+
+**Where you can set it:**
+
+| Context | Example |
+|---------|---------|
+| UDF definition | `@fused.udf(cache_max_age="24h")` |
+| [fused.run()](/guide/working-with-udfs/run-udfs-in-python) | `fused.run(udf, cache_max_age="1h")` |
+| @fused.cache | `@fused.cache(cache_max_age="30m")` |
+| [HTTPs endpoint](/guide/working-with-udfs/calling-udfs-as-api) | `udf.fused.io/token?cache_max_age=0` |
+
+**Priority:** `fused.run()` > `@fused.udf()` > default (90 days)
 
 ## Common gotchas
-
-### Realtime vs batch have separate caches
-
-```python
-fused.run("my_udf")                         # realtime cache
-fused.run("my_udf", instance_type="small")  # different cache (batch)
-```
 
 ### Parent/child UDF changes
 
@@ -99,39 +108,41 @@ def child_udf():
     return data
 ```
 
-### Don't cache bounds-dependent code
+### Realtime vs batch have separate caches
 
 ```python
-# Bad: creates new cache entry for every map pan
+fused.run("my_udf")                         # realtime cache
+fused.run("my_udf", instance_type="small")  # different cache (batch)
+```
+
+### Caching with `bounds` in Tile UDFs
+
+When using [Tile UDFs](/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile#tile-udf), panning the map triggers new UDF calls with different `bounds`. If you cache a function that takes `bounds` as input, each tile creates a separate cache entry.
+
+**This can be useful:** Pan back to a previously viewed area and the cached tiles load instantly.
+
+**Watch out for:** If you're iterating on code, you may accumulate many cache entries. Consider what actually needs to vary with `bounds`:
+
+```python
+# Caches per tile - good for expensive tile-specific operations
 @fused.cache
-def process(bounds):
+def process_tile(bounds):
     ...
 
-# Good: cache the data load, filter by bounds outside
+# Caches once - better when data doesn't depend on bounds
 @fused.cache
 def load_data(path):
     return gpd.read_file(path)
 
 gdf = load_data(path)
-return gdf[gdf.geometry.within(bounds_geom)]
+return gdf[gdf.geometry.intersects(bounds_geom)]  # Filter after
 ```
 
-## cache_max_age reference
+## Monitor your cache usage
 
-Control how long cached results stay valid.
+See how much caching is saving you in the **[Account](/workbench/account)** page in Workbench. The usage dashboard shows cache hits vs actual compute across different time ranges.
 
-**Format:** `30s` (seconds), `10m` (minutes), `24h` (hours), `7d` (days)
-
-**Where you can set it:**
-
-| Context | Example |
-|---------|---------|
-| UDF definition | `@fused.udf(cache_max_age="24h")` |
-| fused.run() | `fused.run(udf, cache_max_age="1h")` |
-| @fused.cache | `@fused.cache(cache_max_age="30m")` |
-| HTTP endpoint | `udf.fused.io/token?cache_max_age=0` |
-
-**Priority:** `fused.run()` > `@fused.udf()` > default (90 days)
+![Cache usage in Account page](cache_usage_profile.png)
 
 ## See also
 
