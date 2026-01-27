@@ -5,177 +5,70 @@ sidebar_label: How to run a Realtime job
 sidebar_position: 1
 ---
 
+Realtime is the default way to run UDFs—no configuration needed. Every UDF runs in realtime mode unless you explicitly request a batch instance.
 
-Realtime is the default way to run UDFs. You can run them in 2 main ways:
-1. [`fused.run()`](/python-sdk/top-level-functions/#fusedrun) in Python
-2. [**HTTPS call**](/guide/data-input-outputs/export-api/tokens-endpoints) from anywhere
+This guide covers best practices for calling UDFs from other UDFs and building pipelines. For the full `fused.run()` reference, see [Run UDFs in Python](/guide/working-with-udfs/run-udfs-in-python).
 
-## Realtime limits
+## Limits
 
-Realtime UDF runs are:
-- Less than **120s** to execute
-- Less than **~4GB** of RAM
+| Resource | Limit |
+|----------|-------|
+| Execution time | 120s |
+| RAM | ~4GB |
 
-These run with no start-up time, so are quick to run, but with limited resources. Need more? See [Batch Jobs](/guide/working-with-udfs/udf-best-practices/batch-jobs).
+No startup time, instant execution. Need more? See [Batch Jobs](/guide/working-with-udfs/udf-best-practices/batch-jobs).
 
-## `fused.run()`
+## Calling another UDF
 
-[`fused.run()`](/python-sdk/top-level-functions/#fusedrun) is the simplest way to call another UDF
+Use `fused.run()` to call one UDF from another:
 
-```python showLineNumbers
-fused.run("my_udf")
+```python
+@fused.udf
+def parent_udf():
+    # Call child UDF
+    result = fused.run("child_udf", name="hello")
+    return result
 ```
 
 ![Calling another UDF in workbench](/img/core-concepts/execution/fused_run_simple_demo.png)
 
-### Ways to reference a UDF
+In Workbench, `fused.run("udf_name")` creates a visual link between parent and child UDFs, making pipelines easy to follow.
 
-| Method | Syntax | When to use |
-|--------|--------|-------------|
-| Your UDF | `fused.run("my_udf")` | UDFs you created (requires auth) |
-| Teammate's UDF | `fused.run("teammate@fused.io/my_udf")` | UDFs from your team |
-| Team UDF | `fused.run("team/my_udf")` | Shared team UDFs |
-| Public UDF | `fused.run("UDF_Name")` | [Public UDFs](https://github.com/fusedio/udfs/tree/main) (free) |
-| [Token](/guide/data-input-outputs/export-api/tokens-endpoints#shared-token) | `fused.run("fsh_***")` | Share UDF without exposing code |
-| Git commit | `fused.run("github.com/.../tree/{hash}/")` | Production stability |
+## Best practices
 
-<details>
-<summary>Using git commit hash (recommended for production)</summary>
+### Keep child UDFs fresh
 
-Pinning to a commit hash ensures your UDF won't break if the source changes:
+By default, child UDF results are cached. To always get fresh data from a child UDF:
 
-```python showLineNumbers
+```python
+# In parent UDF
+result = fused.run("child_udf", cache_max_age="0s")
+```
+
+:::warning
+Setting `cache_max_age="0s"` means the child UDF runs from scratch every time—no caching. Use this when the child's output depends on frequently changing data.
+:::
+
+### Pin to commit hash for production
+
+When calling UDFs from GitHub, pin to a specific commit:
+
+```python
 commit_hash = "bdfb4d0"
-udf = fused.load(f"https://github.com/fusedio/udfs/tree/{commit_hash}/public/Single_point_Eiffel_Tower/")
+udf = fused.load(f"https://github.com/fusedio/udfs/tree/{commit_hash}/public/My_UDF/")
 fused.run(udf)
 ```
 
-![Commit hash demo](/img/core-concepts/run-udfs/commit_hash_demo.png)
-
-:::warning
-Avoid pointing to `main` branch—your UDF will change when others push to it.
-:::
-
-</details>
-
-## Execution engines
-
-| Engine | Where it runs | Use case |
-|--------|---------------|----------|
-| `remote` (default) | Spins up new serverless UDF | Standard usage—each `fused.run()` gets its own compute |
-| `local` | Current process | Run in existing compute context |
-
-### `engine="local"` contexts
-
-`local` runs the UDF in whatever compute you're already using:
-
-| Context | What happens |
-|---------|--------------|
-| Inside a UDF | Runs in that UDF's compute (shares 120s limit & ~4GB RAM) |
-| Inside a batch job | Runs in the [batch job](/guide/working-with-udfs/udf-best-practices/batch-jobs)'s compute (shares instance resources) |
-| On your laptop | Runs on your local machine (requires `fused` package [installed](/python-sdk/#python-install)) |
-
-<details>
-<summary>Example: Inside a UDF</summary>
-
-```python showLineNumbers
-@fused.udf
-def my_udf():
-    # upstream_udf runs in this UDF's compute, sharing the 120s limit
-    result = fused.run("upstream_udf", engine="local")
-    return result
-```
-
-</details>
-
-<details>
-<summary>Example: Inside a batch job</summary>
-
-```python showLineNumbers
-@fused.udf(instance_type="large")
-def batch_udf():
-    # upstream_udf runs in the batch instance's compute
-    result = fused.run("upstream_udf", engine="local")
-    return result
-```
-
-This lets you leverage the [batch job's](/guide/working-with-udfs/udf-best-practices/batch-jobs) resources (more RAM, no time limit) for the inner UDF call.
-
-</details>
-
-<details>
-<summary>Example: On your laptop</summary>
-
-Requires [installing the `fused` package](/python-sdk/#python-install) and authenticating.
-
-```python showLineNumbers
-import fused
-
-# Runs on your local machine's hardware
-result = fused.run(my_udf, engine="local")
-```
-
-</details>
-
-:::note
-`engine="local"` in a batch job is similar to running on your laptop—both use "local" hardware. The batch job just provides cloud-hosted local compute.
-:::
-
-## Passing arguments
-
-```python showLineNumbers
-# my_udf
-@fused.udf
-def udf(name: str, count: int = 1):
-    import pandas as pd
-    return pd.DataFrame({"name": [name] * count})
-```
-
-```python showLineNumbers
-fused.run(my_udf, name="hello", count=3)
-```
-
-You can also pass protected arguments like [`bounds`](/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile/#bounds) and [`cache_max_age`](/guide/working-with-udfs/udf-best-practices/caching/#defining-your-cache-lifetime-cache_max_age):
-
-```python showLineNumbers
-fused.run("UDF_CDLs_Tile_Example", cache_max_age='1d')
-```
-
-## Async execution
-
-Call UDFs asynchronously to run multiple in parallel:
-
-```python showLineNumbers
-@fused.udf
-def udf(date: str='2020-01-01'):
-    import pandas as pd
-    import time
-    time.sleep(2)
-    return pd.DataFrame({'date': [date]})
-```
-
-```python showLineNumbers
-async def run_parallel():
-    import asyncio
-    
-    dates = ['2020-01-01', '2021-01-01', '2022-01-01']
-    tasks = [fused.run("my_udf", date=d, sync=False) for d in dates]
-    results = await asyncio.gather(*tasks)
-    return pd.concat(results)
-```
-
-:::note
-`sync=False` only works with `engine='remote'` and saved UDFs (by name or token).
-:::
+Avoid pointing to `main` branch—your UDF will break when others push changes.
 
 ## When to scale up
 
 | Need | Solution |
 |------|----------|
-| Run same UDF over multiple inputs | [`fused.submit()`](/guide/working-with-udfs/udf-best-practices/parallel) |
-| More than 120s execution time | [Batch Jobs](/guide/working-with-udfs/udf-best-practices/batch-jobs) with `instance_type` |
-| More than ~4GB RAM | [Batch Jobs](/guide/working-with-udfs/udf-best-practices/batch-jobs) with `instance_type` |
+| Run same UDF over multiple inputs | [How to run in parallel](/guide/working-with-udfs/udf-best-practices/parallel) |
+| More than 120s or ~4GB | [Batch Jobs](/guide/working-with-udfs/udf-best-practices/batch-jobs) |
 
-:::tip
-For HTTP endpoints, see [Tokens & Endpoints](/guide/data-input-outputs/export-api/tokens-endpoints).
-:::
+## See also
+
+- [Run UDFs in Python](/guide/working-with-udfs/run-udfs-in-python) — full `fused.run()` reference
+- [Tokens & Endpoints](/guide/data-input-outputs/export-api/tokens-endpoints) — call UDFs via HTTP

@@ -5,177 +5,44 @@ sidebar_label: How to run a Batch job
 sidebar_position: 3
 ---
 
-import LazyReactPlayer from '@site/src/components/LazyReactPlayer'
+Batch jobs run on dedicated machines with more resources and no time limits. Use them when your UDF needs more than realtime can offer.
 
-Batch jobs are for UDFs that need more time or resources than [realtime execution](/guide/working-with-udfs/udf-best-practices/realtime).
+This guide covers best practices for batch workflows—when to use them, how to get results, and how to monitor jobs.
 
 ## When to use batch
 
-Use batch when your UDF exceeds [realtime limits](/guide/working-with-udfs/udf-best-practices/realtime#realtime-limits):
+Use batch when your UDF exceeds realtime limits:
 - Takes longer than **120s** to run
 - Needs more than **~4GB RAM**
 
 **Tradeoffs:**
-- Slower startup (machine needs to spin up)
+- ~30s startup time (machine needs to spin up)
 - No execution time limit
 - Higher resource availability
 
-{/* TODO: Add cost comparison note - verify that `small` (2 vCPU) costs roughly the same as realtime */}
+## Starting a batch job
 
-## Quick comparison
+Add `instance_type` to run on a dedicated machine:
 
-| Method | Use case | Confirmation Modal? |
-|--------|----------|---------------|
-| [`@fused.udf(instance_type=...)`](#in-workbench-fusedudfinstance_type) | Run current UDF on batch instance | Yes (Approval Required) |
-| [`fused.run(..., instance_type=...)`](#calling-another-udf-fusedrun-instance_type) | Call another UDF in batch instance | **No**  |
-| [`fused.submit(..., instance_type=...)`](#multiple-jobs-fusedsubmit-instance_type) | Multiple jobs on one batch instance | **No** |
-| [`job.run_batch()`](#advanced-run_batch-with-arg_list) | [Advanced] Multiple jobs with `arg_list` | **No** |
-
-:::warning
-Only Workbench shows a confirmation modal. Calling batch jobs programmatically (`fused.run`, `fused.submit`, `run_batch`) starts immediately—be careful not to accidentally trigger expensive jobs in loops.
-:::
-
-## In Workbench: `@fused.udf(instance_type=...)`
-
-The simplest way to run a batch job—add `instance_type` to the decorator:
-
-```python showLineNumbers
+```python
 @fused.udf(instance_type='small')
-def udf(name: str = "world"):
-    import pandas as pd
+def udf():
     # This UDF runs on a batch instance
-    return pd.DataFrame({"hello": [name]})
+    ...
 ```
 
 ![Running a job from workbench](batch_job_workbench.png)
 
-:::note
-UDFs with `instance_type` require manual execution (`Shift+Enter`) and show a confirmation modal—they won't auto-run like realtime UDFs.
-:::
+In Workbench, batch UDFs require manual execution (`Shift+Enter`) and show a confirmation modal.
 
-## Calling another UDF: `fused.run(..., instance_type=...)`
+## Best practices
 
-To call another UDF as a batch job:
+### Write to disk, don't return data
 
-```python showLineNumbers
-fused.run("my_udf", instance_type="small")
-```
+Batch jobs should **write results to S3 or `/mnt/cache`**, not return them. Data returned from batch jobs can be lost if the connection times out.
 
-This runs the target UDF on a dedicated instance instead of the realtime pool.
-
-```python showLineNumbers
-@fused.udf
-def udf():
-    # Kicks off a batch job for the upstream UDF
-    result = fused.run("heavy_processing_udf", instance_type="small")
-    return result
-```
-
-## Multiple jobs: `fused.submit(..., instance_type=...)`
-
-Run multiple inputs on a dedicated batch instance:
-
-```python showLineNumbers
-results = fused.submit(udf, inputs, instance_type="large")
-```
-
-This runs all jobs on a single large machine (e.g., 64 cores), where each job gets access to the full instance resources. Useful when:
-- Individual jobs need more than 120s
-- Individual jobs need more RAM
-- You want to leverage a large machine's parallelism
-
-## Instance types
-
-For convenience, use these aliases:
-
-| Alias | Maps to | vCPUs | RAM |
-|-------|---------|-------|-----|
-| `small` | `t3.small` (AWS) | 2 | 2 GB |
-| `medium` | `m5.4xlarge` (AWS) | 16 | 64 GB |
-| `large` | `r5.16xlarge` (AWS) | 64 | 512 GB |
-
-<details>
-<summary>All AWS instance types</summary>
-
-| Instance Type | vCPUs | Memory (GB) |
-|---------------|-------|-------------|
-| `m5.large` | 2 | 8 |
-| `m5.xlarge` | 4 | 16 |
-| `m5.2xlarge` | 8 | 32 |
-| `m5.4xlarge` | 16 | 64 |
-| `m5.8xlarge` | 32 | 128 |
-| `m5.12xlarge` | 48 | 192 |
-| `m5.16xlarge` | 64 | 256 |
-| `r5.large` | 2 | 16 |
-| `r5.xlarge` | 4 | 32 |
-| `r5.2xlarge` | 8 | 64 |
-| `r5.4xlarge` | 16 | 128 |
-| `r5.8xlarge` | 32 | 256 |
-| `r5.12xlarge` | 48 | 384 |
-| `r5.16xlarge` | 64 | 512 |
-| `t3.small` | 2 | 2 |
-| `t3.medium` | 2 | 4 |
-| `t3.large` | 2 | 8 |
-| `t3.xlarge` | 4 | 16 |
-| `t3.2xlarge` | 8 | 32 |
-
-More details on [AWS instance types](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-types.html).
-
-</details>
-
-<details>
-<summary>All GCP instance types</summary>
-
-| Instance Type | vCPUs | Memory (GB) |
-|---------------|-------|-------------|
-| `c2-standard-4` | 4 | 16 |
-| `c2-standard-8` | 8 | 32 |
-| `c2-standard-16` | 16 | 64 |
-| `c2-standard-30` | 30 | 120 |
-| `c2-standard-60` | 60 | 240 |
-| `m3-ultramem-32` | 32 | 976 |
-| `m3-ultramem-64` | 64 | 1,952 |
-
-More details on [GCP instance types](https://cloud.google.com/compute/docs/machine-types).
-
-</details>
-
-## Important behaviors
-
-### Nested UDF calls
-
-Batch context does **not** propagate to nested `fused.run()` calls:
-
-```python showLineNumbers
+```python
 @fused.udf(instance_type='small')
-def batch_udf():
-    # This runs as REALTIME, not batch!
-    result = fused.run("another_udf")
-
-    # You can use the current batch instance resources though 
-    result_local = fused.run("another_udf", engine="local")
-    
-    # To run as batch (in a NEW batch instance), explicitly pass instance_type
-    result_batch = fused.run("another_udf", instance_type="small")
-    return result
-```
-
-### Cache keying
-
-`instance_type` is part of the cache key. Running the same UDF with different `instance_type` values creates separate cache entries:
-
-```python showLineNumbers
-# These are cached separately
-fused.run("my_udf")                           # realtime cache
-fused.run("my_udf", instance_type="small")    # batch cache
-```
-
-## Getting results
-
-We recommend batch jobs to write results to [cloud storage](/guide/data-input-outputs/import-connection/cloud-storage) (S3, GCS, etc.) rather than returning large data:
-
-```python showLineNumbers
-@fused.udf
 def batch_job(input_path: str):
     import pandas as pd
     
@@ -183,68 +50,49 @@ def batch_job(input_path: str):
     df = pd.read_parquet(input_path)
     result = heavy_processing(df)
     
-    # Write to S3
-    output_path = f"s3://my-bucket/results/{input_path.split('/')[-1]}"
+    # Write to S3, not return
+    output_path = f"s3://my-bucket/results/{...}"
     result.to_parquet(output_path)
     
-    return output_path
+    return output_path  # Return the path, not the data
 ```
 
-## Monitoring jobs
+### Monitor your jobs
 
-```python showLineNumbers
-# View job status
-print(job.status)
+Batch jobs take time to start and run. Use the **Jobs page** in Workbench to monitor:
+- **Status**: Running, Completed, Failed
+- **CPU & Memory**: Resource usage over time
+- **Disk**: Storage consumption
+- **Runtime**: How long the job has been running
+- **Logs**: Real-time output from your UDF
 
-# Follow logs in real-time
-print(job.tail_logs())
-
-# Get all logs
-print(job.print_logs())
-
-# Cancel a job
-job.cancel()
+```python
+# Programmatic monitoring
+job.status          # Check status
+job.tail_logs()     # Stream logs
+job.cancel()        # Stop a job
 ```
 
-Jobs can also be monitored in [Workbench](/workbench/overview) under the "Jobs" tab.
+### Expect startup delay
 
-## Advanced: `run_batch()` with `arg_list`
+Batch machines take ~30s to spin up. Plan accordingly—batch jobs aren't for quick iterations.
 
-:::note
-This is an advanced pattern only really intended for [ingestion jobs](/guide/data-input-outputs/read-write/geospatial/ingestion/). For most use cases, prefer `fused.run()` or `fused.submit()` with `instance_type`.
-:::
+## Instance types
 
-For running a UDF over multiple inputs as a batch job:
+| Alias | vCPUs | RAM |
+|-------|-------|-----|
+| `small` | 2 | 2 GB |
+| `medium` | 16 | 64 GB |
+| `large` | 64 | 512 GB |
 
-```python showLineNumbers
-@fused.udf
-def udf(val: int = 0):
-    import pandas as pd
-    return pd.DataFrame({'val': [val]})
-
-job = udf(arg_list=[0, 1, 2, 3, 4])
-job.run_batch(instance_type="m5.4xlarge", disk_size_gb=100)
-```
-
-<details>
-<summary>Multiple parameters with arg_list</summary>
-
-`arg_list` only supports one parameter. Work around this with a dict:
-
-```python showLineNumbers
-@fused.udf
-def udf(params: dict = {'val1': 1, 'val2': 2}):
-    import pandas as pd
-    val1 = params['val1']
-    val2 = params['val2']
-    return pd.DataFrame({'result': [val1 * val2]})
-
-job = udf(arg_list=[{"val1": 5, "val2": 2}, {"val1": 3, "val2": 4}])
-job.run_batch()
-```
-
-</details>
+See [Run UDFs in Python](/guide/working-with-udfs/run-udfs-in-python#instance_type) for the full list of AWS/GCP instance types.
 
 ## Example use cases
 
 - [Ingesting cropland data](/examples/zonal-stats#2-bring-in-your-data) for zonal statistics
+- [Data ingestion](/guide/data-input-outputs/read-write/geospatial/ingestion) for large geospatial files
+
+## See also
+
+- [Run UDFs in Python](/guide/working-with-udfs/run-udfs-in-python#instance_type) — `instance_type` reference
+- [Run UDFs in Parallel](/guide/working-with-udfs/run-udfs-in-parallel) — `fused.submit()` with batch instances
