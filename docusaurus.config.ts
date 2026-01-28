@@ -295,7 +295,9 @@ const config: Config = {
           { to: "/workbench/udf-builder/code-editor", from: ["/workbench/udf-editor"] },
           
           // Jan 2026 docs migration redirects
-          { to: "/guide/working-with-udfs/calling-udfs-as-api", from: ["/guide/data-input-outputs/export-api/dynamic-file-api"] },
+          { to: "/guide/working-with-udfs/run-udfs-as-api", from: ["/guide/data-input-outputs/export-api/dynamic-file-api", "/guide/working-with-udfs/calling-udfs-as-api"] },
+          { to: "/guide/working-with-udfs/fused-run", from: ["/guide/working-with-udfs/run-udfs-in-python"] },
+          { to: "/guide/working-with-udfs/fused-submit", from: ["/guide/working-with-udfs/run-udfs-in-parallel"] },
           { to: "/examples/building-outputs/dashboards", from: ["/guide/working-with-udfs/building-outputs/dashboards"] },
           { to: "/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", from: ["/guide/working-with-udfs/udf-best-practices/geospatial/single-vs-tile"] },
         ],
