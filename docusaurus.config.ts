@@ -225,18 +225,18 @@ const config: Config = {
       {
         redirects: [
           // Revamped Jan 2026 Migration Redirects - Tutorials to new locations
-          { to: "/examples/building-outputs/standalone-maps", from: ["/tutorials/Analytics%20&%20Dashboard/standalone-maps", "/tutorials/Analytics & Dashboard/standalone-maps", "/guide/working-with-udfs/building-outputs/standalone-maps"] },
-          { to: "/examples/realtime-processing", from: ["/tutorials/Analytics%20&%20Dashboard/realtime-data-processing-with-duckdb-wasm", "/tutorials/Analytics & Dashboard/realtime-data-processing-with-duckdb-wasm"] },
-          { to: "/examples/building-outputs/charts", from: ["/tutorials/Analytics%20&%20Dashboard/interactive-graphs", "/tutorials/Analytics & Dashboard/interactive-graphs", "/guide/working-with-udfs/building-outputs/charts"] },
+          { to: "/examples/standalone-html-maps", from: ["/tutorials/Analytics%20&%20Dashboard/standalone-maps", "/tutorials/Analytics & Dashboard/standalone-maps", "/guide/working-with-udfs/building-outputs/standalone-maps", "/examples/building-outputs/standalone-maps"] },
+          { to: "/examples/realtime-filtering-duckdb", from: ["/tutorials/Analytics%20&%20Dashboard/realtime-data-processing-with-duckdb-wasm", "/tutorials/Analytics & Dashboard/realtime-data-processing-with-duckdb-wasm", "/examples/realtime-processing"] },
+          { to: "/examples/creating-charts", from: ["/tutorials/Analytics%20&%20Dashboard/interactive-graphs", "/tutorials/Analytics & Dashboard/interactive-graphs", "/guide/working-with-udfs/building-outputs/charts", "/examples/building-outputs/charts", "/examples/interactive-charts", "/examples/vibe-chart-building"] },
           { to: "/guide/data-input-outputs/export-api/mcp-servers", from: ["/tutorials/Analytics%20&%20Dashboard/let-anyone-talk-to-your-data", "/tutorials/Analytics & Dashboard/let-anyone-talk-to-your-data"] },
-          { to: "/examples/vibe-chart-building", from: ["/tutorials/Analytics%20&%20Dashboard/stack-overflow-surveys", "/tutorials/Analytics & Dashboard/stack-overflow-surveys"] },
+          { to: "/examples/creating-charts", from: ["/tutorials/Analytics%20&%20Dashboard/stack-overflow-surveys", "/tutorials/Analytics & Dashboard/stack-overflow-surveys"] },
           { to: "/examples/currency-prediction", from: ["/tutorials/Analytics%20&%20Dashboard/currency-trading", "/tutorials/Analytics & Dashboard/currency-trading"] },
           
           // Data Science & AI tutorials
-          { to: "/examples/data-exploration", from: ["/tutorials/Data%20Science%20&%20AI/discover_data", "/tutorials/Data Science & AI/discover_data"] },
+          { to: "/examples/zonal-stats", from: ["/tutorials/Data%20Science%20&%20AI/discover_data", "/tutorials/Data Science & AI/discover_data", "/examples/data-exploration"] },
           { to: "/examples/web-scraping", from: ["/tutorials/Data%20Science%20&%20AI/scraping", "/tutorials/Data Science & AI/scraping"] },
           { to: "/examples/pdf-scraping", from: ["/tutorials/Data%20Science%20&%20AI/pdf_scraping", "/tutorials/Data Science & AI/pdf_scraping"] },
-          { to: "/examples/competitor-analysis", from: ["/tutorials/Data%20Science%20&%20AI/competitor_analysis", "/tutorials/Data Science & AI/competitor_analysis"] },
+          { to: "/examples/site-selection-analysis", from: ["/tutorials/Data%20Science%20&%20AI/competitor_analysis", "/tutorials/Data Science & AI/competitor_analysis", "/examples/competitor-analysis"] },
           
           // Engineering & ETL tutorials
           { to: "/guide/data-input-outputs/import-connection/cloud-storage", from: ["/tutorials/Engineering%20&%20ETL/connect-your-data-to-fused", "/tutorials/Engineering & ETL/connect-your-data-to-fused"] },
@@ -265,14 +265,14 @@ const config: Config = {
           { to: "/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", from: ["/tutorials/Geospatial%20with%20Fused/filetile", "/tutorials/Geospatial with Fused/filetile", "/guide/working-with-udfs/geospatial/single-vs-tile"] },
           { to: "/guide/data-input-outputs/export-api/geospatial-export", from: ["/tutorials/Geospatial%20with%20Fused/other-integrations", "/tutorials/Geospatial with Fused/other-integrations"] },
           { to: "/guide/data-input-outputs/import-connection/geospatial/gee", from: ["/tutorials/Geospatial%20with%20Fused/gee_bigquery", "/tutorials/Geospatial with Fused/gee_bigquery"] },
-          { to: "/examples/canvas-examples", from: ["/tutorials/Geospatial%20with%20Fused/canvas-catalog", "/tutorials/Geospatial with Fused/canvas-catalog"] },
+          { to: "/examples/canvas-gallery", from: ["/tutorials/Geospatial%20with%20Fused/canvas-catalog", "/tutorials/Geospatial with Fused/canvas-catalog", "/examples/canvas-examples"] },
           
           // Geospatial use cases
-          { to: "/examples/dark-vessel-detection", from: ["/tutorials/Geospatial%20with%20Fused/use-cases/dark-vessel-detection", "/tutorials/Geospatial with Fused/use-cases/dark-vessel-detection"] },
+          { to: "/examples/ais-dark-vessels", from: ["/tutorials/Geospatial%20with%20Fused/use-cases/dark-vessel-detection", "/tutorials/Geospatial with Fused/use-cases/dark-vessel-detection", "/examples/dark-vessel-detection"] },
           { to: "/examples/climate-dashboard", from: ["/tutorials/Geospatial%20with%20Fused/use-cases/Climate%20Dashboard", "/tutorials/Geospatial with Fused/use-cases/Climate Dashboard"] },
-          { to: "/examples/satellite-imagery", from: ["/tutorials/Geospatial%20with%20Fused/use-cases/exploring_maxar_data", "/tutorials/Geospatial with Fused/use-cases/exploring_maxar_data"] },
+          { to: "/examples/maxar-satellite-imagery", from: ["/tutorials/Geospatial%20with%20Fused/use-cases/exploring_maxar_data", "/tutorials/Geospatial with Fused/use-cases/exploring_maxar_data", "/examples/satellite-imagery"] },
           { to: "/examples/zonal-stats", from: ["/tutorials/Geospatial%20with%20Fused/use-cases/zonal-stats", "/tutorials/Geospatial with Fused/use-cases/zonal-stats"] },
-          { to: "/examples/vibe-chart-building", from: ["/tutorials/Geospatial%20with%20Fused/use-cases/vibe-coded-timeseries", "/tutorials/Geospatial with Fused/use-cases/vibe-coded-timeseries"] },
+          { to: "/examples/creating-charts", from: ["/tutorials/Geospatial%20with%20Fused/use-cases/vibe-coded-timeseries", "/tutorials/Geospatial with Fused/use-cases/vibe-coded-timeseries"] },
           
           // 2min with Fused / Quickstart
           { to: "/guide/getting-started/first-udf-basics", from: ["/tutorials/2min-with-fused", "/quickstart"] },
@@ -298,7 +298,7 @@ const config: Config = {
           { to: "/guide/working-with-udfs/run-udfs-as-api", from: ["/guide/data-input-outputs/export-api/dynamic-file-api", "/guide/working-with-udfs/calling-udfs-as-api"] },
           { to: "/guide/working-with-udfs/fused-run", from: ["/guide/working-with-udfs/run-udfs-in-python"] },
           { to: "/guide/working-with-udfs/fused-submit", from: ["/guide/working-with-udfs/run-udfs-in-parallel"] },
-          { to: "/examples/building-outputs/dashboards", from: ["/guide/working-with-udfs/building-outputs/dashboards"] },
+          { to: "/examples/sharing-canvas-dashboards", from: ["/guide/working-with-udfs/building-outputs/dashboards", "/examples/building-outputs/dashboards"] },
           { to: "/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", from: ["/guide/working-with-udfs/udf-best-practices/geospatial/single-vs-tile"] },
         ],
         // createRedirects(existingPath) {
