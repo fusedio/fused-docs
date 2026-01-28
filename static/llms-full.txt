@@ -3429,21 +3429,21 @@ Feel free to directly reach out to us at `info@fused.io` if you have any questio
 
 ================================================================================
 
-## Calling UDFs as API
-Path: guide/working-with-udfs/calling-udfs-as-api.mdx
-URL: https://docs.fused.io/guide/working-with-udfs/calling-udfs-as-api
+## Run UDFs as API
+Path: guide/working-with-udfs/run-udfs-as-api.mdx
+URL: https://docs.fused.io/guide/working-with-udfs/run-udfs-as-api
 
-# Calling UDFs as API
+# Run UDFs as API
 
 Every UDF can be used as a file system:
 
 [Image: Dynamic File System Overview]
 
-## Output Formats
+## Output formats
 
 UDFs can return data in various formats via the `format` query parameter:
 
-### Vector Data Formats
+### Vector data formats
 
 | Format | Extension | Description |
 |--------|-----------|-------------|
@@ -3457,7 +3457,7 @@ UDFs can return data in various formats via the `format` query parameter:
 | `xml` | `.xml` | XML data |
 | `html` | `.html` | HTML document |
 
-### Raster Data Formats
+### Raster data formats
 
 | Format | Extension | Description |
 |--------|-----------|-------------|
@@ -3470,7 +3470,7 @@ UDFs can return data in various formats via the `format` query parameter:
 | `tiff` | `.tiff` / `.tif` | GeoTIFF and TIFF rasters |
 | `npy` | `.npy` | NumPy array binary format |
 
-## Example Usage
+## Example usage
 
 ### Returning as JSON
 
@@ -3490,17 +3490,17 @@ https://udf.ai/YOUR_TOKEN.csv
 https://udf.ai/YOUR_TOKEN.html
 ```
 
-## Tile Endpoints
+## Tile endpoints
 
 For map tile servers, use the `tiles` path with `//` template:
 
-### Vector Tiles (MVT)
+### Vector tiles (MVT)
 
 ```bash
 https://udf.ai/YOUR_TOKEN/run/tiles///?=mvt
 ```
 
-### Raster Tiles (PNG)
+### Raster tiles (PNG)
 
 ```bash
 https://udf.ai/YOUR_TOKEN/run/tiles///?=png
@@ -3517,8 +3517,150 @@ These dynamic endpoints work with:
 
 ================================================================================
 
-## fused.run
-Path: guide/working-with-udfs/fused-run.mdx
+## Run UDFs in parallel
+Path: guide/working-with-udfs/run-udfs-in-parallel.mdx
+URL: https://docs.fused.io/guide/working-with-udfs/fused-submit
+
+Run a UDF over multiple inputs in parallel.
+
+## Signature
+
+```python
+fused.submit(
+    udf,
+    arg_list,
+    engine='remote',
+    instance_type='realtime',
+    max_workers=32,
+    collect=True,
+    cache_max_age=None,
+)
+```
+
+## Parameters
+
+### `arg_list` — Input formats
+
+| Format | Example | Use case |
+|--------|---------|----------|
+| List | `[0, 1, 2, 3]` | Single parameter |
+| List of dicts | `[, ]` | Multiple parameters |
+| DataFrame | `pd.DataFrame()` | Multiple parameters |
+
+Each item/row becomes a separate job.
+
+```python
+@fused.udf
+def udf():
+    results = fused.submit(
+        single_job_udf, 
+        [, ]
+    )
+    return results
+
+@fused.udf
+def single_job_udf(a: str, b: str):
+
+    return pd.DataFrame()
+```
+
+### `engine`
+
+Same as fused.run. Default: `remote`
+
+### `instance_type`
+
+Same as fused.run. Default: `realtime`
+
+| Mode | Best for |
+|------|----------|
+| `realtime` | Many quick jobs |
+| `small`/`medium`/`large` | Long/heavy jobs |
+
+### `max_workers`
+
+Number of realtime instances to spin up in parallel. Default: `32`, Max: `1000`.
+
+```python
+# Spin up 100 realtime instances in parallel
+fused.submit(udf, inputs, max_workers=100)
+```
+
+### `collect`
+
+| Value | Behavior | Returns |
+|-------|----------|---------|
+| `True` (default) | Blocking, waits for all jobs | `DataFrame` |
+| `False` | Non-blocking | `JobPool` |
+
+### `debug_mode`
+
+When `True`, runs only the first input via `fused.run()`. Use for testing before scaling.
+
+```python
+# Test with first input only
+fused.submit(udf, inputs, debug_mode=True)
+```
+
+### `max_retry`
+
+Max retries per failed job. Default: `2`
+
+### `ignore_exceptions`
+
+When `True`, failed runs are silently skipped in results. Default: `False`
+
+### `cache_max_age`
+
+Same as fused.run. Additionally, when `collect=True`, collected results are cached locally for `cache_max_age` or 12h by default.
+
+## JobPool methods
+
+When using `collect=False`, you get a `JobPool` object:
+
+```python
+job = fused.submit(udf, inputs, collect=False)
+
+job.wait()           # Show progress bar
+job.total_time()     # Total wall time
+job.times()          # Time per job
+job.first_error()    # First error encountered
+job.collect()        # Get results as DataFrame
+```
+
+## Tips
+
+**Test first:**
+```python
+fused.submit(udf, inputs, debug_mode=True)
+```
+
+**Start small:**
+```python
+fused.submit(udf, inputs[:5])
+```
+
+**Aim for 30-45s per job** — gives safety margin before 120s timeout.
+
+**For batch jobs, save to S3:**
+```python
+@fused.udf
+def batch_udf(input_path: str):
+    result = process(input_path)
+    output_path = f"s3://bucket/results/"
+    result.to_parquet(output_path)
+    return output_path  # Return path, not data
+```
+
+## See also
+
+- Run UDFs in python — single UDF execution
+- How to run in parallel — walkthrough with examples
+
+================================================================================
+
+## Run UDFs in python
+Path: guide/working-with-udfs/run-udfs-in-python.mdx
 URL: https://docs.fused.io/guide/working-with-udfs/fused-run
 
 Run a UDF and get results back.
@@ -3531,9 +3673,7 @@ fused.run(
     engine='remote',
     instance_type='realtime',
     cache_max_age=None,
-    sync=True,
     max_retry=0,
-    **parameters
 )
 ```
 
@@ -3543,7 +3683,7 @@ fused.run(
 
 | Method | Syntax | Use case |
 |--------|--------|----------|
-| Your UDF | `fused.run("my_udf")` | UDFs you created (requires auth) |
+| Your UDF | `fused.run("my_udf")` | UDFs you created |
 | Teammate's UDF | `fused.run("teammate@fused.io/my_udf")` | UDFs from your team |
 | Team UDF | `fused.run("team/my_udf")` | Shared team UDFs |
 | Public UDF | `fused.run("UDF_Name")` | Public UDFs (free) |
@@ -3561,7 +3701,7 @@ Avoid pointing to `main` branch—your UDF will change when others push to it.
 
 | Engine | Where it runs | Use case |
 |--------|---------------|----------|
-| `remote` (default) | New serverless instance | Standard usage |
+| `remote` (default) | Spins up new serverless instance | Standard usage |
 | `local` | Current process | Run in existing compute |
 
 **`local` contexts:**
@@ -3581,7 +3721,15 @@ Avoid pointing to `main` branch—your UDF will change when others push to it.
 | `medium` | 64 GB | None | ~30s |
 | `large` | 512 GB | None | ~30s |
 
-Can also set in decorator: `@fused.udf(instance_type="large")`
+Set a default instance type when defining a UDF:
+
+```python
+@fused.udf(instance_type="large")
+def udf():
+    ...
+```
+
+In Workbench, UDFs with a non-realtime instance type will prompt for confirmation before running as a batch job.
 
 | Instance Type | vCPUs | Memory (GB) |
 |---------------|-------|-------------|
@@ -3619,20 +3767,22 @@ Can also set in decorator: `@fused.udf(instance_type="large")`
 
 ### `cache_max_age`
 
-Control how long results are cached.
+Control how long results are cached. UDFs are cached for **90 days by default**.
 
 | Value | Meaning |
 |-------|---------|
-| `None` (default) | Follow `@fused.udf()` setting |
+| `None` (default) | Follow `@fused.udf()` setting (90 days) |
 | `"0s"` | No caching |
 | `"10s"`, `"48h"`, `"1d"` | Cache for specified duration |
 
-You can also set a default cache in the UDF decorator:
+Set a default cache duration in the UDF decorator:
 ```python
 @fused.udf(cache_max_age="1d")
 def udf():
     ...
 ```
+
+See Caching for more details on how caching works.
 
 ### `sync`
 
@@ -3696,174 +3846,19 @@ fused.run("UDF_Overture_Maps_Example", bounds=[-122.349, 37.781, -122.341, 37.81
 
 ## See also
 
-- How to run a Realtime job — walkthrough with examples
-- fused.submit — run over multiple inputs in parallel
+- How to run a realtime job — walkthrough with examples
+- Run UDFs in parallel — run over multiple inputs in parallel
 - Caching — how caching works
 
 ================================================================================
 
-## fused.submit
-Path: guide/working-with-udfs/fused-submit.mdx
-URL: https://docs.fused.io/guide/working-with-udfs/fused-submit
-
-Run a UDF over multiple inputs in parallel.
-
-## Signature
-
-```python
-fused.submit(
-    udf,
-    arg_list,
-    engine='remote',
-    instance_type='realtime',
-    max_workers=32,
-    collect=True,
-    debug_mode=False,
-    cache_max_age=None,
-    **kwargs
-)
-```
-
-## Parameters
-
-### `arg_list` — Input formats
-
-| Format | Example | Use case |
-|--------|---------|----------|
-| List | `[0, 1, 2, 3]` | Single parameter |
-| List of dicts | `[, ]` | Multiple parameters |
-| DataFrame | `pd.DataFrame()` | Multiple parameters |
-
-Each item/row becomes a separate job.
-
-```python
-@fused.udf
-def udf(a: str, b: str):
-
-    return pd.DataFrame()
-
-inputs = pd.DataFrame()
-results = fused.submit(udf, inputs)
-```
-
-### `engine`
-
-Same as fused.run. Default: `remote`
-
-### `instance_type`
-
-| Mode | Default workers | Per-job limits | Best for |
-|------|-----------------|----------------|----------|
-| `realtime` (default) | 32 (max 1024) | 120s, ~4GB | Many quick jobs |
-| `small`/`medium`/`large` | 1 (max 5) | No limit | Long/heavy jobs |
-
-### `max_workers`
-
-Number of parallel workers.
-
-| Instance type | Default | Max |
-|---------------|---------|-----|
-| `realtime` | 32 | 1024 |
-| Batch (`small`, etc.) | 1 | 5 |
-
-```python
-fused.submit(udf, inputs, max_workers=100)
-```
-
-### `n_processes_per_worker` 🚧
-
-| Instance type | Default | Effect |
-|---------------|---------|--------|
-| `realtime` | 1 | Each arg = 1 lambda |
-| Batch | # of cores | Parallel within instance |
-
-Set >1 for realtime to chunk args within each lambda, reducing total invocations.
-
-### `collect`
-
-| Value | Behavior | Returns |
-|-------|----------|---------|
-| `True` (default) | Blocking, waits for all jobs | `DataFrame` |
-| `False` | Non-blocking | `JobPool` |
-
-### `debug_mode`
-
-When `True`, runs only the first input via `fused.run()`. Use for testing before scaling.
-
-```python
-# Test with first input only
-fused.submit(udf, inputs, debug_mode=True)
-```
-
-### `max_retry`
-
-Max retries per failed job. Default: `2`
-
-### `ignore_exceptions`
-
-When `True`, failed runs are silently skipped in results. Default: `False`
-
-### `flatten`
-
-| Value | Result format |
-|-------|---------------|
-| `True` (default) | Flat DataFrame |
-| `False` | Results nested in `results` column |
-
-### `cache_max_age`
-
-Same as fused.run. Additionally, when `collect=True`, collected results are cached locally for `cache_max_age` or 12h by default.
-
-## JobPool methods
-
-When using `collect=False`, you get a `JobPool` object:
-
-```python
-job = fused.submit(udf, inputs, collect=False)
-
-job.wait()           # Show progress bar
-job.total_time()     # Total wall time
-job.times()          # Time per job
-job.first_error()    # First error encountered
-job.collect()        # Get results as DataFrame
-```
-
-## Tips
-
-**Test first:**
-```python
-fused.submit(udf, inputs, debug_mode=True)
-```
-
-**Start small:**
-```python
-fused.submit(udf, inputs[:5])
-```
-
-**Aim for 30-45s per job** — gives safety margin before 120s timeout.
-
-**For batch jobs, save to S3:**
-```python
-@fused.udf
-def batch_udf(input_path: str):
-    result = process(input_path)
-    output_path = f"s3://bucket/results/"
-    result.to_parquet(output_path)
-    return output_path  # Return path, not data
-```
-
-## See also
-
-- fused.run — single UDF execution
-- How to run in parallel — walkthrough with examples
-
-================================================================================
-
-## How to run a Batch job
+## How to run a batch job
 Path: guide/working-with-udfs/udf-best-practices/batch-jobs.mdx
 URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/batch-jobs
 
-Batch jobs are for UDFs that need more time or resources than realtime execution.
+Batch jobs run on dedicated machines with more resources and no time limits. Use them when your UDF needs more than realtime can offer.
+
+This guide covers best practices for batch workflows—when to use them, how to get results, and how to monitor jobs.
 
 ## When to use batch
 
@@ -3872,524 +3867,246 @@ Use batch when your UDF exceeds realtime limits:
 - Needs more than **~4GB RAM**
 
 **Tradeoffs:**
-- Slower startup (machine needs to spin up)
-- No execution time limit
+- ~30s startup time (machine needs to spin up)
+
 - Higher resource availability
 
-## Quick comparison
+## Starting a batch job
 
-| Method | Use case | Confirmation Modal? |
-|--------|----------|---------------|
-| `@fused.udf(instance_type=...)` | Run current UDF on batch instance | Yes (Approval Required) |
-| `fused.run(..., instance_type=...)` | Call another UDF in batch instance | **No**  |
-| `fused.submit(..., instance_type=...)` | Multiple jobs on one batch instance | **No** |
-| `job.run_batch()` | [Advanced] Multiple jobs with `arg_list` | **No** |
+Add `instance_type` to run on a dedicated machine:
 
-Only Workbench shows a confirmation modal. Calling batch jobs programmatically (`fused.run`, `fused.submit`, `run_batch`) starts immediately—be careful not to accidentally trigger expensive jobs in loops.
-
-## In Workbench: `@fused.udf(instance_type=...)`
-
-The simplest way to run a batch job—add `instance_type` to the decorator:
-
-```python showLineNumbers
+```python
 @fused.udf(instance_type='small')
-def udf(name: str = "world"):
-
+def udf():
     # This UDF runs on a batch instance
-    return pd.DataFrame()
+    ...
 ```
 
 [Image: Running a job from workbench]
 
-UDFs with `instance_type` require manual execution (`Shift+Enter`) and show a confirmation modal—they won't auto-run like realtime UDFs.
+In Workbench, batch UDFs require manual execution (`Shift+Enter`) and show a confirmation modal.
 
-## Calling another UDF: `fused.run(..., instance_type=...)`
+## Best practices
 
-To call another UDF as a batch job:
+### Write to disk, don't return data
 
-```python showLineNumbers
-fused.run("my_udf", instance_type="small")
+Batch jobs should **write results to cloud storage or mount**, not return them. Data returned from batch jobs can be lost if the connection times out.
+
+```python
+@fused.udf(instance_type='small')
+def batch_job(input_path: str):
+
+    # Process data
+    df = pd.read_parquet(input_path)
+    result = heavy_processing(df)
+    
+    # Write to S3, not return
+    output_path = f"s3://my-bucket/results/"
+    result.to_parquet(output_path)
+    
+    return output_path  # Return the path, not the data
 ```
 
-This runs the target UDF on a dedicated instance instead of the realtime pool.
+### Monitor your jobs
 
-```python showLineNumbers
-@fused.udf
-def udf():
-    # Kicks off a batch job for the upstream UDF
-    result = fused.run("heavy_processing_udf", instance_type="small")
-    return result
+Batch jobs take time to start and run. Use the **Jobs page** in Workbench to monitor:
+- **Status**: Running, Completed, Failed
+- **CPU & Memory**: Resource usage over time
+- **Disk**: Storage consumption
+- **Runtime**: How long the job has been running
+- **Logs**: Real-time output from your UDF
+
+```python
+# Programmatic monitoring
+job.status          # Check status
+job.tail_logs()     # Stream logs
+job.cancel()        # Stop a job
 ```
 
-## Multiple jobs: `fused.submit(..., instance_type=...)`
+### Expect startup delay
 
-Run multiple inputs on a dedicated batch instance:
+Batch machines take ~30s to spin up. Plan accordingly—batch jobs aren't for quick iterations.
 
-```python showLineNumbers
-results = fused.submit(udf, inputs, instance_type="large")
-```
-
-This runs all jobs on a single large machine (e.g., 64 cores), where each job gets access to the full instance resources. Useful when:
-- Individual jobs need more than 120s
-- Individual jobs need more RAM
-- You want to leverage a large machine's parallelism
+Test your UDF on a small data sample using realtime execution. Once you're confident it works, switch to `instance_type` to scale up.
 
 ## Instance types
 
-For convenience, use these aliases:
+| Alias | vCPUs | RAM |
+|-------|-------|-----|
+| `small` | 2 | 2 GB |
+| `medium` | 16 | 64 GB |
+| `large` | 64 | 512 GB |
 
-| Alias | Maps to | vCPUs | RAM |
-|-------|---------|-------|-----|
-| `small` | `t3.small` (AWS) | 2 | 2 GB |
-| `medium` | `m5.4xlarge` (AWS) | 16 | 64 GB |
-| `large` | `r5.16xlarge` (AWS) | 64 | 512 GB |
-
-| Instance Type | vCPUs | Memory (GB) |
-|---------------|-------|-------------|
-| `m5.large` | 2 | 8 |
-| `m5.xlarge` | 4 | 16 |
-| `m5.2xlarge` | 8 | 32 |
-| `m5.4xlarge` | 16 | 64 |
-| `m5.8xlarge` | 32 | 128 |
-| `m5.12xlarge` | 48 | 192 |
-| `m5.16xlarge` | 64 | 256 |
-| `r5.large` | 2 | 16 |
-| `r5.xlarge` | 4 | 32 |
-| `r5.2xlarge` | 8 | 64 |
-| `r5.4xlarge` | 16 | 128 |
-| `r5.8xlarge` | 32 | 256 |
-| `r5.12xlarge` | 48 | 384 |
-| `r5.16xlarge` | 64 | 512 |
-| `t3.small` | 2 | 2 |
-| `t3.medium` | 2 | 4 |
-| `t3.large` | 2 | 8 |
-| `t3.xlarge` | 4 | 16 |
-| `t3.2xlarge` | 8 | 32 |
-
-More details on AWS instance types.
-
-| Instance Type | vCPUs | Memory (GB) |
-|---------------|-------|-------------|
-| `c2-standard-4` | 4 | 16 |
-| `c2-standard-8` | 8 | 32 |
-| `c2-standard-16` | 16 | 64 |
-| `c2-standard-30` | 30 | 120 |
-| `c2-standard-60` | 60 | 240 |
-| `m3-ultramem-32` | 32 | 976 |
-| `m3-ultramem-64` | 64 | 1,952 |
-
-More details on GCP instance types.
-
-`arg_list` only supports one parameter. Work around this with a dict:
-
-```python showLineNumbers
-@fused.udf
-def udf(params: dict = ):
-
-    val1 = params['val1']
-    val2 = params['val2']
-    return pd.DataFrame()
-
-job = udf(arg_list=[, ])
-job.run_batch()
-```
-
-</details>
+See Run UDFs in python for the full list of AWS/GCP instance types.
 
 ## Example use cases
 
 - Ingesting cropland data for zonal statistics
+- Data ingestion for large geospatial files
+
+Batch and realtime jobs have separate caches. Running the same UDF with and without `instance_type` will cache results independently.
+
+## See also
+
+- Run UDFs in python — `instance_type` reference
+- Run UDFs in parallel — `fused.submit()` with batch instances
+- Caching — how caching works
 
 ================================================================================
 
-## Caching
+## How to use caching
 Path: guide/working-with-udfs/udf-best-practices/caching.mdx
 URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/caching
 
-# Caching
+Fused caches UDF results automatically to make repeated calls faster. Cached calls return instantly and **don't consume Fused Credit Units**—you only pay for compute once, then reuse the result for free.
 
-_This pages explains how caching makes Fused more responsive & some best practices for making the best use of it_
+## Two types of cache
 
-## Caching Basics
+| Type | When it applies | Storage | Default Duration | Speed |
+|------|-----------------|---------|-------------|-------|
+| UDF cache | `fused.run()` results | S3 | 90 days | Good |
+| `@fused.cache` | Functions inside UDFs | mount | 12 hours | Fast |
 
-The goal of Fused is to make developing & running code faster for data scientists. This is done by using efficient file formats and making UDFs simple to run. On top of those, Fused relies heavily on caching to make recurring calls much faster.
+Both work the same way: store the result of [function + inputs], return cached result on repeat calls. Change the function or inputs → cache miss → recompute.
 
-At a high level, caching is storing the output of a function run with some input so we can directly access the result next time that function is called with the same input, rather than re-computing it to save time & processing cost.
+## UDF cache
 
-[Image: Function + Input run]
+Every `fused.run()` call is cached automatically. No configuration needed.
 
-_The first run of a [Function + Input] is processed, but the next time that same combination is called, the result is retrieved much faster_
-
-As soon as either the function or the inputs change however, the output needs to be processed (as the result of this new combination has not been computed before)
-
-[Image: Different Function + Input run]
-
-Fused uses a few different types of cache, but they all work in this same manner
-
-## Caching any Python function: `@fused.cache`
-
-### Locally
-
-Any Python function, either inside a UDF or even locally on your machine can be cached using the `@fused.cache` decorator around it:
-
-```python  showLineNumbers
-# This works locally on your machine
-
-from datetime import datetime
-
-@fused.cache(cache_max_age='30s')
-def telling_time():
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    return current_time
-
-telling_time()
+```python
+fused.run(my_udf)  # First call: runs UDF
+fused.run(my_udf)  # Second call: returns cached result
 ```
 
-[Image: Fused_cache_function_locally]
+**Disable caching** when you need fresh results:
 
-As seen in the debug logs, your cached data will be saved under `/tmp/cached_data/tmp/` locally.
-
-Similar to how this works with `fused.run()`, you can overwrite `cache_max_age` when executing your function directly:
-
-```python showLineNumbers
-telling_time(cache_max_age="0s") # Overwrite cache duration to be 0s, i.e. no caching
-```
-
-### Inside a UDF
-
-This also works inside a UDF by passing `@fused.cache` decorator around any function:
-
-```python  showLineNumbers
-@fused.udf
+```python
+@fused.udf(cache_max_age=0)
 def udf():
+    ...
 
-    @fused.cache
-    def load_data(i):
-        # Do heavy processing here
-        return pd.DataFrame()
-
-    df_first = load_data(i=1)
-    df_first_repeat = load_data(i=1)
-    df_second = load_data(i=2)
-
-    return pd.concat([df_first, df_first_repeat, df_second])
+# Or at call time
+fused.run(my_udf, cache_max_age=0)
 ```
 
-Under the hood:
-- The first time Fused sees the function code and parameters, Fused runs the function and stores the return value in a cache.
-    - This is what happens in our example above, line 10: `load_data(i=1)`
-- The next time the function is called with the same parameters and code, Fused skips running the function and returns the cached value
-    - Example above: line 11, `df_first_repeat` is the same call as `df_first` so the function is simply retrieved from cache, not computed
-- As soon as the function _or_ the input changes, Fused re-computes the function
-    - Example above: line 12 as `i=2`, which is different from the previous calls
+**Reset cache** to force a fresh run once:
 
-**Implementation Details**
-
-A function cached with `@fused.cache` is:
-- Cached for 12h by default (can be changed with `cache_max_age`)
-- Stored as pickle file on `mount/`
-
-### Benchmark: With / without `@fused.cache`
-
-Using `@fused.cache` is mostly helpful to cache functions that have long, repetitive calls like for example loading data from slow file formats.
-
-Here are 2 simple UDFs to demonstrate the impact:
-- `without_cache_loading_udf` -> Doesn't use cache
-- `with_cache_loading_udf` -> Caches the loading of a CSV
-
-```python  showLineNumbers
-@fused.udf
-def without_cache_loading_udf(
-    ship_length_meters: int = 100,
-    ais_path: str = "s3://fused-users/fused/file_format_demo/AIS_2024_01_01_100k_points.csv"
-):
-    # @fused.cache
-    def load_ais_data(ais_path: str):
-
-        return pd.read_csv(ais_path)
-
-    ais = load_ais_data(ais_path)
-
-    return ais[ais.Length > ship_length_meters]
+```python
+fused.run(my_udf, cache_reset=True)
 ```
 
-and the same:
-```python  showLineNumbers
+## @fused.cache
+
+Use `@fused.cache` for expensive operations *inside* a UDF—loading slow file formats, heavy computations that repeat across runs.
+
+```python
 @fused.udf
-def with_cache_loading_udf(
-    ship_length_meters: int = 100,
-    ais_path: str = "s3://fused-users/fused/file_format_demo/AIS_2024_01_01_100k_points.csv"
-):
-    @fused.cache
-    def load_ais_data(ais_path: str):
-
-        return pd.read_csv(ais_path)
-
-    ais = load_ais_data(ais_path)
-
-    return ais[ais.Length > ship_length_meters]
-```
-
-Comparing the 2:
-
-[Image: Caching benchmark]
-
-### Best Practices: `@fused.cache`
-
-Caching a local function or inside a UDF works best for:
-- Loading data from slow formats (CSV, Shapefile)
-- Repetitive operations that can take a long amount of processing
-
-However, be wary of relying on `@fused.cache` to load very large (>10Gb) datasets as cache is only stored for a few hours by default and is over-written each time you change the cached function or inputs.
-
-Look into ingesting your data in partitioned cloud native formats if you're working with large datasets.
-
-The line between when to ingest your data or use `@fused.cache` to load data inside a UDF is a bit blurry. Check this section for more
-
-### Example use cases
-
-You can look at some real-world use cases in some of our Examples:
-- Caching a STAC catalog request when fetching Sentinel 1 radar satellite image in our Dark Vessel Detection example
-- Read about Jeff Faudi's use of `@fused.cache` in running an ML-inference model for aircraft detection. (See the public UDF for yourself)
-
-## Caching a UDF
-
-While `@fused.cache` allows you to cache functions locally or _inside_ UDFs, UDFs ran with `fused.run()` are cached by default on Fused server.
-
-You can create a token for your UDF in Python by first saving your UDF to Fused server:
-
-```python showLineNumbers
-@fused.udf
-def slow_caching_udf():
-
-    time.sleep(5)
+def udf(ship_length: int = 100):
     
-    return pd.DataFrame()
-
-fused.run(slow_caching_udf)
-```
-
-We can demonstrate this caching with a UDF that has a `time.sleep(5)` in it. Running this same UDF twice:
-
-[Image: Cached_fused_run_udf]
-
-This means that UDFs that are repeatably called with `fused.run()` become much more responsive. Do remember once again that UDFs are recomputed each time either anything in the UDF function or the inputs change!
-
-**Implementation Details**
-
-Cached UDF are:
-- Stored for 90d by default (see Python SDK for more details)
-- Stored on S3
-- You can overwrite the cache age by passing `cache_max_age` either when defining the UDF with `@fused.udf(cache_max_age)` or when running the UDF with `fused.run(udf, cache_max_age)`
-
-Note that UDFs work similarly to regular Python functions, default arguments are evaluated when defining the function, not when calling it.
-
-For example:
-```python
-
-@fused.udf
-def abc(d: str = datetime.datetime.now().strftime('%Y-%m-%D')):
-    print("with default", d)
-```
-
-and
-```python
-@fused.udf
-def abc(d: str = None):
-
-    d = datetime.datetime.now().strftime('%Y-%m-%D')
-    print("with default", d)
-```
-
-Will both be cached similarly (i.e. calling either of these functions 2 times consecutively will return the cached results).
-
-## Advanced
-
-### Caching & `bounds`
-
-Pass `bounds` to make the output unique to each Tile.
-
-```python showLineNumbers
-@fused.udf
-def udf(bounds: fused.types.Bounds=None):
-
     @fused.cache
-    def fn(bounds):
-        # convert bounds to tile
-        common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
-        zoom = common.estimate_zoom(bounds)
-        tile = common.get_tiles(bounds, zoom=zoom)
-        return tile
+    def load_data(path):
 
-    return fn(bounds)
+        return pd.read_csv(path)  # Slow format, cache it
+    
+    df = load_data("s3://bucket/large_file.csv")
+    return df[df.Length > ship_length]
 ```
 
-Note that this means that if you're running your Tile UDF in Workbench, every time you pan around on the map you will cache a new file
+The CSV loads once and caches. Changing `ship_length` doesn't reload the file—only changing the `path` would.
 
-For this reason, it's recommend to keep cache for tasks that _aren't_ dependent on your `bounds` when possible, for example:
+**When to use it:**
+- Loading CSV, Shapefile, or other slow formats
+- Expensive computations that don't depend on all UDF parameters
+- API calls you don't want to repeat
 
-```python  showLineNumbers
+**When NOT to use it:**
+- Very large datasets (>10GB)—consider ingesting to cloud-native formats instead
+
+## `cache_max_age` reference
+
+Control how long cached results stay valid.
+
+**Format:** `30s` (seconds), `10m` (minutes), `24h` (hours), `7d` (days)
+
+**Where you can set it:**
+
+| Context | Example |
+|---------|---------|
+| UDF definition | `@fused.udf(cache_max_age="24h")` |
+| fused.run() | `fused.run(udf, cache_max_age="1h")` |
+| @fused.cache | `@fused.cache(cache_max_age="30m")` |
+| HTTPs endpoint | `udf.fused.io/token?cache_max_age=0` |
+
+**Priority:** `fused.run()` > `@fused.udf()` > default (90 days)
+
+## Common gotchas
+
+### Parent/child UDF changes
+
+When calling one UDF from another, the child won't automatically refresh when the parent changes:
+
+```python
 @fused.udf
-def udf(bounds: fused.types.Bounds=None):
-
-    @fused.cache
-    def loading_slow_geodataframe(data_path):
-        ...
-        return gdf
-
-    # convert bounds to tile
-    common = fused.load("https://github.com/fusedio/udfs/tree/b672adc/public/common/")
-    zoom = common.estimate_zoom(bounds)
-    tile = common.get_tiles(bounds, zoom=zoom)
-
-    # Loading of our slow data does not depend on bounds so can be cached even if we pan around
-    gdf = loading_slow_geodataframe()
-    gdf_in_bounds = gdf[gdf.geometry.within(tile.iloc[0].geometry)]
-
-    return gdf_in_bounds
+def child_udf():
+    data = fused.run("parent_udf")  # Won't re-fetch if parent changes
+    return data
 ```
 
-### Defining your cache lifetime: `cache_max_age`
+Fix: disable cache on the child so it always calls the parent:
 
-You can define how long to keep your cache data for with `cache_max_age`. Valid time units include:
-- Seconds (`s`)
-- Minutes (`m`)
-- Hours (`h`)
-- Days (`d`)
-
-Examples: `24h` (24 hours), `30m` (30 minutes), `10s` (10 seconds)
-
-**Cache Behavior:** UDF executions are cached by default. To bypass caching and ensure fresh results, pass `cache_max_age="0s"` in your `fused.run()` call.
-
-```python showLineNumbers
-@fused.udf
-def udf():
-
-    @fused.cache(
-        cache_max_age="24h" # Your cache will stay available for 24h
-    )
-    def loading_slow_geodataframe(data_path):
-        ...
-        return gdf
-
-    return gdf
+```python
+@fused.udf(cache_max_age=0)
+def child_udf():
+    data = fused.run("parent_udf")  # Always gets latest from parent
+    return data
 ```
 
-This also works with `@fused.udf()` & `fused.run()`:
-```python showLineNumbers
-@fused.udf(cache_max_age="24h") # This UDF will be cached for 24h after its initial run
-def udf(path):
+### Realtime vs batch have separate caches
 
-    gdf = gpd.read_file(path)
-
-    return gdf
+```python
+fused.run("my_udf")                         # realtime cache
+fused.run("my_udf", instance_type="small")  # different cache (batch)
 ```
 
-This UDF will be cached from the moment it's executed with `fused.run(udf)` for as long as is defined in `cache_max_age`:
+### Caching with `bounds` in Tile UDFs
 
-```python showLineNumbers
-fused.run(udf)
-```
+When using Tile UDFs, panning the map triggers new UDF calls with different `bounds`. If you cache a function that takes `bounds` as input, each tile creates a separate cache entry.
 
-If you run `fused.run(udf)` again with no changes to `udf`, then for the next 24h `fused.run(udf)` will return a cached result. This is both faster & cheaper (saving on compute) while giving you control over how long to keep your cache for.
+**This can be useful:** Pan back to a previously viewed area and the cached tiles load instantly.
 
-You can also overwrite the `cache_max_age` defined in `udf` when running your UDF:
+**Watch out for:** If you're iterating on code, you may accumulate many cache entries. Consider what actually needs to vary with `bounds`:
 
-```python showLineNumbers
-fused.run(udf, cache_max_age="12h")
-```
-
-`udf` results will now only be cached for `12h`, even if `udf` was defined with a `cache_max_age` of `24h`:
-
-The age of your cache is defined as follows:
-- By default a UDF is cached for 90 days.
-- If `@fused.udf(cache_max_age)` is defined, this new cache age overwrites the default.
-- If `fused.run(udf, cache_max_age)` is passed, then this cache age takes priority over default & `@fused.udf(cache_max_age)`
-
-### Resetting cache: `cache_reset`
-
-Sometimes you might want to reset your cache, when for example:
-- Running a UDF with unknown `cache_max_age`, and you want to make sure you're getting fresh results
-- Having a `try / except` block to reset cache if your default UDF with cache fails.
-
-You can easily do this by passing `cache_reset=True`:
-
-```python showLineNumbers
-fused.run(udf, cache_reset=True)
-```
-
-This also works in combination with `@fused.cache`:
-
-```python showLineNumbers
-@fused.cache(cache_reset=True)
-def my_function():
+```python
+# Caches per tile - good for expensive tile-specific operations
+@fused.cache
+def process_tile(bounds):
     ...
-    return gdf
+
+# Caches once - better when data doesn't depend on bounds
+@fused.cache
+def load_data(path):
+    return gpd.read_file(path)
+
+gdf = load_data(path)
+return gdf[gdf.geometry.intersects(bounds_geom)]  # Filter after
 ```
 
-Defining a UDF that simply returns the current time:
-```python showLineNumbers
+## Monitor your cache usage
 
-@fused.udf
-def udf():
-    from datetime import datetime
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-```
+See how much caching is saving you in the **Account** page in Workbench. The usage dashboard shows cache hits vs actual compute across different time ranges.
 
-Running this a first time:
-```python showLineNumbers
-fused.run(udf)
-```
+[Image: Cache usage in Account page]
 
-Returns:
-```bash
-2025-06-06 10:00:00
-```
+## See also
 
-Running this a second time:
-```python showLineNumbers
-fused.run(udf)
-```
-
-Returns a cached result:
-```bash
-Cached UDF result returned.
-2025-06-06 10:00:00
-```
-
-This is because UDFs are cached by default even without passing any `cache_max_age` argument
-
-We can break this cache by passing `cache_reset=True`:
-
-```python showLineNumbers
-fused.run(udf, cache_reset=True)
-```
-
-Returns:
-```bash
-2025-06-06 10:00:12
-```
-
-</details>
-
- showLineNumbers
-@fused.cache(
-    storage="local"
-)
-def local_function_load(data_path):
-    ...
-    return gdf
-
-gdf = local_function_load()
-```
-
-    Read more about this in the Python SDK page on `@fused.cache`
+- Data ingestion — for large datasets, ingest to Parquet/GeoParquet instead of caching
+- Run UDFs in python — full `fused.run()` reference
 
 ================================================================================
 
-## Single vs Tile
-Path: guide/working-with-udfs/udf-best-practices/geospatial/single-vs-tile.mdx
-URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/geospatial/single-vs-tile
+## Geospatial Single vs Tile
+Path: guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile.mdx
+URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile
 
 # Working with Spatial Data: Single vs Tile
 
@@ -4576,351 +4293,180 @@ UDFs defined using the legacy keyword `bbox` are automatically now mapped to `bo
 
 ================================================================================
 
-## Tile Processing
-Path: guide/working-with-udfs/udf-best-practices/geospatial/tile-processing.mdx
-URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/geospatial/tile-processing
-
-# Tile Processing
-
-Working with tiles, get_tiles, and mosaicing.
-
-================================================================================
-
 ## How to run in parallel
 Path: guide/working-with-udfs/udf-best-practices/parallel.mdx
 URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/parallel
 
-# Running Jobs in Parallel: `fused.submit()`
+Need to process hundreds or thousands of inputs? `fused.submit()` runs a UDF over multiple inputs in parallel, spinning up separate instances for each job.
 
-Run a UDF over a list of inputs in parallel with `fused.submit()`.
+This guide covers best practices for scaling parallel workloads. For the full `fused.submit()` reference, see Run UDFs in parallel.
 
-```python showLineNumbers
-@fused.udf
-def udf(val):
-
-    return pd.DataFrame()
-```
-
-```python showLineNumbers
+```python
 inputs = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 results = fused.submit(udf, inputs)
 ```
 
-## Passing multiple parameters
+## Best practices
 
-For UDFs with multiple parameters, pass a DataFrame where each column matches a parameter name:
+### Start small, then scale
 
-```python showLineNumbers
-@fused.udf
-def udf(a: str = "a", b: str = "b"):
+Don't immediately spin up 1000 jobs. Test progressively:
 
-    return pd.DataFrame()
+```python
+# First test with 5 inputs
+results = fused.submit(udf, inputs[:5])
+
+# Then 10, then 50, then scale up
+results = fused.submit(udf, inputs[:50])
 ```
 
-```python showLineNumbers
+### Target 30-45s per job
 
-inputs = pd.DataFrame()
+Each parallel job has a **120s timeout**. Aim for 30-45s per job to leave safety margin for slower runs.
 
-results = fused.submit(udf, inputs)
+If your jobs consistently hit the timeout, either:
+- Break them into smaller chunks
+- Use `instance_type` for larger dedicated machines (see How to run a batch job)
+
+### Test first with debug mode
+
+Run only the first input to verify your setup works:
+
+```python
+result = fused.submit(udf, inputs, debug_mode=True)
 ```
 
-Each row becomes a separate job with the corresponding parameter values.
+### Check timing
 
-## Execution modes
+Monitor how long each job takes:
 
-| Approach | What happens | Best for |
-|----------|--------------|----------|
-| Realtime workers (default) | Spawns many UDFs in parallel | Many quick jobs (under 120s, under 4GB each) |
-| Batch instance | Runs all jobs on one large machine | Jobs needing more time or RAM |
-
-### Realtime workers (default)
-
-Each input spawns a separate realtime UDF:
-
-```python showLineNumbers
-results = fused.submit(udf, inputs)
-```
-
-**Characteristics:**
-- Each job has realtime limits (120s, ~4GB RAM)
-- Default: **32 workers** in parallel, can scale up to **1000+** with `max_workers`:
-
-```python showLineNumbers 
-# Limit to 50 concurrent workers
-results = fused.submit(
-    udf, 
-    inputs, 
-    max_workers=50
-)
-```
-
-Aim for jobs that take 30-45s each. This gives a safety margin before the 120s timeout.
-
-### Batch instance
-
-All jobs run on a single dedicated machine:
-
-```python showLineNumbers 
-results = fused.submit(
-    udf, 
-    inputs, 
-    instance_type="large", 
-    collect=False
-    )
-```
-
-**Characteristics:**
-- Jobs queue and run as cores become available across the instance resources
-- **No time limit**, high RAM per job
-- Resources depend on `instance_type` chosen; see Batch Jobs for options
-
-For batch jobs, write results to cloud storage rather than returning large data:
-
-```python showLineNumbers
-@fused.udf
-def batch_udf(input_path: str):
-
-    df = pd.read_parquet(input_path)
-    result = process(df)
-    
-    # Save to S3 and return path
-    output_path = f"s3://my-bucket/results/"
-    result.to_parquet(output_path)
-    return output_path  # NOT return result
-```
-
-Use non-blocking execution with `collect=False` and gather file paths after:
-
-```python showLineNumbers
-job = fused.submit(batch_udf, input_paths, instance_type="large", collect=False)
+```python
+job = fused.submit(udf, inputs[:5], collect=False)
 job.wait()
-output_paths = job.collect()
+print(job.times())  # Time per job
 ```
 
-## Tips
+## Error handling
 
-- **Test first** with `debug_mode=True`:
+**By default, errors aren't cached.** If a job fails (e.g., API timeout), it will retry fresh on the next run. See Caching for more on how caching works.
 
-```python showLineNumbers 
-# Runs only the first input to verify setup
-result = fused.submit(
+However, if you wrap errors in try/except and return a result, that result gets cached:
+
+```python
+@fused.udf
+def udf(url: str):
+    try:
+        return fetch_data(url)
+    except Exception as e:
+        return   # This gets cached!
+```
+
+Use `ignore_exceptions=True` to skip failed jobs when collecting results:
+
+```python
+results = fused.submit(udf, inputs, ignore_exceptions=True)
+```
+
+## When to use batch instances
+
+If your jobs need more than 120s or ~4GB RAM, use `instance_type`:
+
+```python
+results = fused.submit(
     udf, 
     inputs, 
-    debug_mode=True
-)
-```
-
-- **Start small**, then scale:
-
-```python showLineNumbers 
-# Test with first 5 inputs
-results = fused.submit(
-    udf, 
-    inputs[:5]
-)
-```
-
-- **Check timing** of each job:
-
-```python showLineNumbers
-results = fused.submit(
-    udf, 
-    inputs[:5], 
+    instance_type="large",
     collect=False
 )
-print(results.times())
 ```
 
-## Advanced options
-
-### Non-blocking execution
-
-Use `collect=False` to run jobs in background:
-
-```python showLineNumbers
-job = fused.submit(udf, inputs, collect=False)
-
-# Check progress
-job.wait()  # Shows progress bar
-
-# Get results when ready
-results = job.collect()
-```
-
-### Monitoring methods
-
-```python showLineNumbers
-job.wait()          # Progress bar
-job.total_time()    # Total wall time
-job.times()         # Time per job
-job.first_error()   # First error encountered
-job.collect()       # Get results
-```
-
-### Execution parameters
-
-| Parameter | Description |
-|-----------|-------------|
-| `max_workers` | Number of parallel workers (realtime only) |
-| `engine` | `local` or `remote` (see Execution engines) |
-| `max_retry` | Max retries per failed job |
-| `ignore_exceptions` | Ignore exceptions when collecting results |
-
-See the Python SDK docs for more details.
-
-## Wall time vs CPU time
-
-**Wall time**: Total elapsed time for all jobs:
-
-```python showLineNumbers
-print(job.total_time())
-```
-
-**CPU time**: Sum of individual job times (this counts toward billing):
-
-```python showLineNumbers
-total_cpu = sum(t.total_seconds() for t in job.times())
-```
+See How to run a batch job for details on batch instances.
 
 ## Example use cases
 
-- 📈 Making a Climate Dashboard — Processing 20TB of data in minutes
-- ⛴️ Dark Vessel Detection — Retrieving 30 days of AIS data
-- 🛰️ Satellite Imagery — Processing Maxar's Open Data STAC Catalogs
+- Climate Dashboard — Processing 20TB of data in minutes
+- Dark Vessel Detection — Retrieving 30 days of AIS data
+- Satellite Imagery — Processing Maxar's Open Data STAC Catalogs
+
+## See also
+
+- Run UDFs in parallel — full `fused.submit()` reference
+- Caching — how caching works
 
 ================================================================================
 
-## How to run a Realtime job
+## How to run a realtime job
 Path: guide/working-with-udfs/udf-best-practices/realtime.mdx
 URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/realtime
 
-Realtime is the default way to run UDFs. You can run them in 2 main ways:
-1. `fused.run()` in Python
-2. **HTTPS call** from anywhere
+Realtime is the default way to run UDFs—no configuration needed. Every UDF runs in realtime mode unless you explicitly request a batch instance.
 
-## Realtime limits
+This guide covers best practices for calling UDFs from other UDFs and building pipelines. For the full `fused.run()` reference, see Run UDFs in python.
 
-Realtime UDF runs are:
-- Less than **120s** to execute
-- Less than **~4GB** of RAM
+## Limits
 
-These run with no start-up time, so are quick to run, but with limited resources. Need more? See Batch Jobs.
+| Resource | Limit |
+|----------|-------|
+| Execution time | 120s |
+| RAM | ~4GB |
 
-## `fused.run()`
+No startup time, instant execution. Need more? See How to run a batch job.
 
-`fused.run()` is the simplest way to call another UDF
+## Calling another UDF
 
-```python showLineNumbers
-fused.run("my_udf")
+Use `fused.run()` to call one UDF from another:
+
+```python
+@fused.udf
+def parent_udf():
+    # Call child UDF
+    result = fused.run("child_udf", name="hello")
+    return result
 ```
 
 [Image: Calling another UDF in workbench]
 
-### Ways to reference a UDF
+In Workbench, `fused.run("udf_name")` creates a visual link between parent and child UDFs, making pipelines easy to follow.
 
-| Method | Syntax | When to use |
-|--------|--------|-------------|
-| Your UDF | `fused.run("my_udf")` | UDFs you created (requires auth) |
-| Teammate's UDF | `fused.run("teammate@fused.io/my_udf")` | UDFs from your team |
-| Team UDF | `fused.run("team/my_udf")` | Shared team UDFs |
-| Public UDF | `fused.run("UDF_Name")` | Public UDFs (free) |
-| Token | `fused.run("fsh_***")` | Share UDF without exposing code |
-| Git commit | `fused.run("github.com/.../tree//")` | Production stability |
+## Best practices
 
-Pinning to a commit hash ensures your UDF won't break if the source changes:
+### Keep results fresh
 
-```python showLineNumbers
+By default, UDF results are cached. To always get fresh data when calling another UDF, set `cache_max_age=0` on your UDF:
+
+```python
+@fused.udf(cache_max_age=0)
+def udf():
+    data = fused.run('parent_udf')
+    return data
+```
+
+Setting `cache_max_age=0` means this UDF runs from scratch every time—no caching. Use this when your output depends on frequently changing data.
+
+### Pin to commit hash for production
+
+When calling UDFs from GitHub, pin to a specific commit:
+
+```python
 commit_hash = "bdfb4d0"
-udf = fused.load(f"https://github.com/fusedio/udfs/tree//public/Single_point_Eiffel_Tower/")
+udf = fused.load(f"https://github.com/fusedio/udfs/tree//public/My_UDF/")
 fused.run(udf)
 ```
 
-[Image: Commit hash demo]
-
-Avoid pointing to `main` branch—your UDF will change when others push to it.
-
-```python showLineNumbers
-@fused.udf
-def my_udf():
-    # upstream_udf runs in this UDF's compute, sharing the 120s limit
-    result = fused.run("upstream_udf", engine="local")
-    return result
-```
-
-```python showLineNumbers
-@fused.udf(instance_type="large")
-def batch_udf():
-    # upstream_udf runs in the batch instance's compute
-    result = fused.run("upstream_udf", engine="local")
-    return result
-```
-
-This lets you leverage the batch job's resources (more RAM, no time limit) for the inner UDF call.
-
-Requires installing the `fused` package and authenticating.
-
-```python showLineNumbers
-
-# Runs on your local machine's hardware
-result = fused.run(my_udf, engine="local")
-```
-
-</details>
-
-`engine="local"` in a batch job is similar to running on your laptop—both use "local" hardware. The batch job just provides cloud-hosted local compute.
-
-## Passing arguments
-
-```python showLineNumbers
-# my_udf
-@fused.udf
-def udf(name: str, count: int = 1):
-
-    return pd.DataFrame()
-```
-
-```python showLineNumbers
-fused.run(my_udf, name="hello", count=3)
-```
-
-You can also pass protected arguments like `bounds` and `cache_max_age`:
-
-```python showLineNumbers
-fused.run("UDF_CDLs_Tile_Example", cache_max_age='1d')
-```
-
-## Async execution
-
-Call UDFs asynchronously to run multiple in parallel:
-
-```python showLineNumbers
-@fused.udf
-def udf(date: str='2020-01-01'):
-
-    time.sleep(2)
-    return pd.DataFrame()
-```
-
-```python showLineNumbers
-async def run_parallel():
-
-    dates = ['2020-01-01', '2021-01-01', '2022-01-01']
-    tasks = [fused.run("my_udf", date=d, sync=False) for d in dates]
-    results = await asyncio.gather(*tasks)
-    return pd.concat(results)
-```
-
-`sync=False` only works with `engine='remote'` and saved UDFs (by name or token).
+Avoid pointing to `main` branch—your UDF will break when others push changes.
 
 ## When to scale up
 
 | Need | Solution |
 |------|----------|
-| Run same UDF over multiple inputs | `fused.submit()` |
-| More than 120s execution time | Batch Jobs with `instance_type` |
-| More than ~4GB RAM | Batch Jobs with `instance_type` |
+| Run same UDF over multiple inputs | How to run in parallel |
+| More than 120s or ~4GB | How to run a batch job |
 
-For HTTP endpoints, see Tokens & Endpoints.
+## See also
+
+- Run UDFs in python — full `fused.run()` reference
+- Tokens & endpoints — call UDFs via HTTP
+- Caching — how caching works
 
 ================================================================================
 
@@ -5342,8 +4888,7 @@ Quick links for geospatial workflows in Fused.
 - Data ingestion (large datasets)
 
 ## Spatial Processing
-- Single vs Tile execution
-- Tile processing
+- Geospatial Single vs Tile
 
 ## H3 Hexagonal Analytics
 - Why H3
@@ -10182,6 +9727,27 @@ URL: https://docs.fused.io/python-sdk/changelog
 
 # Changelog
 
+## v1.30.1 (2026-01-22)
+
+**New Features**
+- Experimental: Fused Apps can be added to canvas.
+- Experimental: JSON-Render UI can be added to canvas.
+- `Udf.get_access_token` function.
+
+**Improvements**
+- Various canvas improvements.
+- AI tools run in the Workbench.
+
+**Bug Fixes**
+- Workbench will prevent editing in multiple tabs that could result in unintended changes.
+- Fixed flickering of the canvas sidebar.
+- Some canvas nodes (batch jobs and others) will have opaque backgrounds to make them easier to read.
+- Fixed auto retry of ingestion batch jobs.
+- Fixed UDFs losing position in canvas.
+- Fixed a bug where batch jobs would take longer to start.
+- Fixed a bug where inline diffs could overlap.
+- Fixed a bug where stdout (results panel) could fail to show for some UDFs.
+
 ## v1.30.0 (2026-01-14)
 
 **New Features**
@@ -11495,309 +11061,6 @@ _Shipping dependencies_
 - Fixed a bug when saving `fused.options`.
 
 </details>
-
-================================================================================
-
-## Run UDFs
-Path: python-sdk/fused-run.mdx
-URL: https://docs.fused.io/python-sdk/fused-run
-
-Run a UDF and get results back.
-
-## Signature
-
-```python
-fused.run(
-    udf,
-    engine='remote',
-    instance_type='realtime',
-    cache_max_age=None,
-    sync=True,
-    max_retry=0,
-    **parameters
-)
-```
-
-## Parameters
-
-### `udf` — Ways to reference a UDF
-
-| Method | Syntax | Use case |
-|--------|--------|----------|
-| Your UDF | `fused.run("my_udf")` | UDFs you created (requires auth) |
-| Teammate's UDF | `fused.run("teammate@fused.io/my_udf")` | UDFs from your team |
-| Team UDF | `fused.run("team/my_udf")` | Shared team UDFs |
-| Public UDF | `fused.run("UDF_Name")` | Public UDFs (free) |
-| Token | `fused.run("fsh_***")` | Share UDF without exposing code |
-| Git commit | `fused.run("github.com/.../tree//")` | Production stability |
-
-```python
-commit_hash = "bdfb4d0"
-udf = fused.load(f"https://github.com/fusedio/udfs/tree//public/My_UDF/")
-fused.run(udf)
-```
-Avoid pointing to `main` branch—your UDF will change when others push to it.
-
-### `engine`
-
-| Engine | Where it runs | Use case |
-|--------|---------------|----------|
-| `remote` (default) | New serverless instance | Standard usage |
-| `local` | Current process | Run in existing compute |
-
-**`local` contexts:**
-
-| Context | What happens |
-|---------|--------------|
-| Inside a UDF | Shares that UDF's compute (120s, ~4GB) |
-| Inside a batch job | Shares the batch instance resources |
-| On your laptop | Runs on local machine |
-
-### `instance_type`
-
-| Type | RAM | Time limit | Startup |
-|------|-----|------------|---------|
-| `realtime` (default) | ~4GB | 120s | ~5s |
-| `small` | 8GB | None | ~30s |
-| `medium` | 16GB | None | ~30s |
-| `large` | 32GB | None | ~30s |
-
-Can also set in decorator: `@fused.udf(instance_type="large")`
-
-### `cache_max_age`
-
-Control how long results are cached.
-
-| Value | Meaning |
-|-------|---------|
-| `None` (default) | Follow `@fused.udf()` setting |
-| `"0s"` | No caching |
-| `"10s"`, `"48h"`, `"1d"` | Cache for specified duration |
-
-Shortcut: `cache=False` is equivalent to `cache_max_age='0s'`
-
-### `sync`
-
-| Value | Behavior |
-|-------|----------|
-| `True` (default) | Blocking call, returns result |
-| `False` | Returns coroutine for async execution |
-
-```python
-# Async example
-async def run_parallel():
-    tasks = [fused.run("my_udf", date=d, sync=False) for d in dates]
-    return await asyncio.gather(*tasks)
-```
-
-`sync=False` only works with `engine='remote'` and saved UDFs.
-
-### `max_retry`
-
-Number of retries on failure. Default: `0`
-
-## Passing arguments
-
-Pass UDF parameters as keyword arguments:
-
-```python
-@fused.udf
-def udf(name: str, count: int = 1):
-
-    return pd.DataFrame()
-```
-
-```python
-fused.run(udf, name="hello", count=3)
-```
-
-## Reserved parameters
-
-These parameters control how Fused structures the `bounds` object for tile UDFs.
-
-### With `x`, `y`, `z`
-
-```python
-fused.run("UDF_Overture_Maps_Example", x=5241, y=12662, z=15)
-```
-
-### With `bounds` as GeoDataFrame
-
-```python
-
-bounds = gpd.GeoDataFrame.from_features()
-fused.run("UDF_Overture_Maps_Example", bounds=bounds)
-```
-
-### With `bounds` as bbox list
-
-```python
-# [min_x, min_y, max_x, max_y]
-fused.run("UDF_Overture_Maps_Example", bounds=[-122.349, 37.781, -122.341, 37.818])
-```
-
-## See also
-
-- How to run a Realtime job — walkthrough with examples
-- fused.submit — run over multiple inputs in parallel
-- Caching — how caching works
-
-================================================================================
-
-## Run UDFs in Parallel
-Path: python-sdk/fused-submit.mdx
-URL: https://docs.fused.io/python-sdk/fused-submit
-
-Run a UDF over multiple inputs in parallel.
-
-## Signature
-
-```python
-fused.submit(
-    udf,
-    arg_list,
-    engine='remote',
-    instance_type='realtime',
-    max_workers=32,
-    collect=True,
-    debug_mode=False,
-    cache_max_age=None,
-    **kwargs
-)
-```
-
-## Parameters
-
-### `arg_list` — Input formats
-
-| Format | Example | Use case |
-|--------|---------|----------|
-| List | `[0, 1, 2, 3]` | Single parameter |
-| List of dicts | `[, ]` | Multiple parameters |
-| DataFrame | `pd.DataFrame()` | Multiple parameters |
-
-Each item/row becomes a separate job.
-
-```python
-@fused.udf
-def udf(a: str, b: str):
-
-    return pd.DataFrame()
-
-inputs = pd.DataFrame()
-results = fused.submit(udf, inputs)
-```
-
-### `engine`
-
-Same as fused.run. Default: `remote`
-
-### `instance_type`
-
-| Mode | Default workers | Per-job limits | Best for |
-|------|-----------------|----------------|----------|
-| `realtime` (default) | 32 (max 1024) | 120s, ~4GB | Many quick jobs |
-| `small`/`medium`/`large` | 1 (max 5) | No limit | Long/heavy jobs |
-
-### `max_workers`
-
-Number of parallel workers.
-
-| Instance type | Default | Max |
-|---------------|---------|-----|
-| `realtime` | 32 | 1024 |
-| Batch (`small`, etc.) | 1 | 5 |
-
-```python
-fused.submit(udf, inputs, max_workers=100)
-```
-
-### `n_processes_per_worker` 🚧
-
-| Instance type | Default | Effect |
-|---------------|---------|--------|
-| `realtime` | 1 | Each arg = 1 lambda |
-| Batch | # of cores | Parallel within instance |
-
-Set >1 for realtime to chunk args within each lambda, reducing total invocations.
-
-### `collect`
-
-| Value | Behavior | Returns |
-|-------|----------|---------|
-| `True` (default) | Blocking, waits for all jobs | `DataFrame` |
-| `False` | Non-blocking | `JobPool` |
-
-### `debug_mode`
-
-When `True`, runs only the first input via `fused.run()`. Use for testing before scaling.
-
-```python
-# Test with first input only
-fused.submit(udf, inputs, debug_mode=True)
-```
-
-### `max_retry`
-
-Max retries per failed job. Default: `2`
-
-### `ignore_exceptions`
-
-When `True`, failed runs are silently skipped in results. Default: `False`
-
-### `flatten`
-
-| Value | Result format |
-|-------|---------------|
-| `True` (default) | Flat DataFrame |
-| `False` | Results nested in `results` column |
-
-### `cache_max_age`
-
-Same as fused.run. Additionally, when `collect=True`, collected results are cached locally for `cache_max_age` or 12h by default.
-
-## JobPool methods
-
-When using `collect=False`, you get a `JobPool` object:
-
-```python
-job = fused.submit(udf, inputs, collect=False)
-
-job.wait()           # Show progress bar
-job.total_time()     # Total wall time
-job.times()          # Time per job
-job.first_error()    # First error encountered
-job.collect()        # Get results as DataFrame
-```
-
-## Tips
-
-**Test first:**
-```python
-fused.submit(udf, inputs, debug_mode=True)
-```
-
-**Start small:**
-```python
-fused.submit(udf, inputs[:5])
-```
-
-**Aim for 30-45s per job** — gives safety margin before 120s timeout.
-
-**For batch jobs, save to S3:**
-```python
-@fused.udf
-def batch_udf(input_path: str):
-    result = process(input_path)
-    output_path = f"s3://bucket/results/"
-    result.to_parquet(output_path)
-    return output_path  # Return path, not data
-```
-
-## See also
-
-- fused.run — single UDF execution
-- How to run in parallel — walkthrough with examples
 
 ================================================================================
 
@@ -16776,5 +16039,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-01-26
+Generated automatically from Fused documentation. Last updated: 2026-01-28
 Total sections: 5
