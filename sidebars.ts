@@ -17,16 +17,16 @@ const sidebars: SidebarsConfig = {
     // Landing page
     "index",
 
-    // Introduction
+    // Quickstart
     {
       type: "category",
-      label: "Introduction",
+      label: "Quickstart",
       collapsible: false,
       link: { type: "doc", id: "guide/getting-started/first-udf-basics" },
       items: [
-        "guide/getting-started/first-udf-basics",
-        "guide/getting-started/using-ai",
-        "guide/getting-started/workbench-intro",
+        { type: "doc", id: "guide/getting-started/first-udf-basics", label: "First UDF basics" },
+        { type: "doc", id: "guide/getting-started/using-ai", label: "Using AI" },
+        { type: "doc", id: "guide/getting-started/workbench-intro", label: "Workbench intro" },
       ],
     },
 
@@ -37,11 +37,11 @@ const sidebars: SidebarsConfig = {
       collapsible: false,
       link: { type: "doc", id: "guide/working-with-udfs/why-fused" },
       items: [
-        "guide/working-with-udfs/why-fused",
-        "guide/working-with-udfs/writing-udfs",
-        "guide/working-with-udfs/run-udfs-as-api",
-        "guide/working-with-udfs/fused-run",
-        "guide/working-with-udfs/fused-submit",
+        { type: "doc", id: "guide/working-with-udfs/why-fused", label: "Why Fused" },
+        { type: "doc", id: "guide/working-with-udfs/writing-udfs", label: "Writing UDFs" },
+        { type: "doc", id: "guide/working-with-udfs/run-udfs-as-api", label: "UDFs as API" },
+        { type: "doc", id: "guide/working-with-udfs/fused-run", label: "Running UDFs" },
+        { type: "doc", id: "guide/working-with-udfs/fused-submit", label: "Parallel execution" },
       ],
     },
 
@@ -52,12 +52,12 @@ const sidebars: SidebarsConfig = {
       collapsible: false,
       link: { type: "doc", id: "guide/working-with-udfs/udf-best-practices/realtime" },
       items: [
-        "guide/working-with-udfs/udf-best-practices/realtime",
-        "guide/working-with-udfs/udf-best-practices/batch-jobs",
-        "guide/working-with-udfs/udf-best-practices/parallel",
-        "guide/working-with-udfs/udf-best-practices/caching",
-        "guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile",
-        "guide/working-with-udfs/udf-best-practices/version-control",
+        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/realtime", label: "Run jobs efficiently" },
+        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/batch-jobs", label: "Scaling out UDFs" },
+        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/parallel", label: "Parallel execution" },
+        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/caching", label: "Efficient caching" },
+        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", label: "Geospatial processing" },
+        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/version-control", label: "Working as a Team" },
       ],
     },
 
@@ -68,11 +68,11 @@ const sidebars: SidebarsConfig = {
       collapsible: false,
       link: { type: "doc", id: "guide/data-input-outputs/import-connection/local-files" },
       items: [
-        "guide/data-input-outputs/import-connection/local-files",
-        "guide/data-input-outputs/import-connection/cloud-storage",
-        "guide/data-input-outputs/import-connection/databases",
-        "guide/data-input-outputs/import-connection/geospatial/stac",
-        "guide/data-input-outputs/import-connection/geospatial/gee",
+        { type: "doc", id: "guide/data-input-outputs/import-connection/local-files", label: "Local files" },
+        { type: "doc", id: "guide/data-input-outputs/import-connection/cloud-storage", label: "Cloud storage" },
+        { type: "doc", id: "guide/data-input-outputs/import-connection/databases", label: "Databases" },
+        { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/stac", label: "STAC catalogs" },
+        { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/gee", label: "Google Earth Engine" },
       ],
     },
 
@@ -83,11 +83,11 @@ const sidebars: SidebarsConfig = {
       collapsible: false,
       link: { type: "doc", id: "guide/data-input-outputs/read-write/reading" },
       items: [
-        "guide/data-input-outputs/read-write/reading",
-        "guide/data-input-outputs/read-write/writing",
-        "guide/data-input-outputs/read-write/geospatial/geospatial-reading",
-        "guide/data-input-outputs/read-write/geospatial/geospatial-writing",
-        "guide/data-input-outputs/read-write/geospatial/ingestion",
+        { type: "doc", id: "guide/data-input-outputs/read-write/reading", label: "Reading files" },
+        { type: "doc", id: "guide/data-input-outputs/read-write/writing", label: "Writing files" },
+        { type: "doc", id: "guide/data-input-outputs/read-write/geospatial/geospatial-reading", label: "Reading geospatial" },
+        { type: "doc", id: "guide/data-input-outputs/read-write/geospatial/geospatial-writing", label: "Writing geospatial" },
+        { type: "doc", id: "guide/data-input-outputs/read-write/geospatial/ingestion", label: "Geospatial Ingestion" },
       ],
     },
 
@@ -98,10 +98,10 @@ const sidebars: SidebarsConfig = {
       collapsible: false,
       link: { type: "doc", id: "guide/data-input-outputs/export-api/tokens-endpoints" },
       items: [
-        "guide/data-input-outputs/export-api/tokens-endpoints",
-        "guide/data-input-outputs/export-api/download",
-        "guide/data-input-outputs/export-api/mcp-servers",
-        "guide/data-input-outputs/export-api/geospatial-export",
+        { type: "doc", id: "guide/data-input-outputs/export-api/tokens-endpoints", label: "Tokens & endpoints" },
+        { type: "doc", id: "guide/data-input-outputs/export-api/download", label: "Download" },
+        { type: "doc", id: "guide/data-input-outputs/export-api/mcp-servers", label: "MCP servers" },
+        { type: "doc", id: "guide/data-input-outputs/export-api/geospatial-export", label: "Geospatial Integration" },
       ],
     },
 
@@ -112,11 +112,12 @@ const sidebars: SidebarsConfig = {
       collapsible: false,
       link: { type: "doc", id: "guide/advanced-setup/dependencies" },
       items: [
-        "guide/advanced-setup/dependencies",
-        "guide/advanced-setup/environment-variables",
-        "guide/advanced-setup/file-system",
-        "guide/advanced-setup/git-integration",
-        "guide/advanced-setup/on-prem-setup",
+        { type: "doc", id: "guide/advanced-setup/dependencies", label: "Dependencies" },
+        { type: "doc", id: "guide/advanced-setup/environment-variables", label: "Environment variables" },
+        { type: "doc", id: "guide/advanced-setup/file-system", label: "File system" },
+        { type: "doc", id: "guide/advanced-setup/git-integration", label: "Git integration" },
+        { type: "doc", id: "guide/advanced-setup/local-installation", label: "Local installation" },
+        { type: "doc", id: "guide/advanced-setup/on-prem-setup", label: "On-prem setup" },
       ],
     },
 
