@@ -196,11 +196,14 @@ const sidebars: SidebarsConfig = {
   // API REFERENCE SIDEBAR (Python SDK)
   // ============================================
   apiReferenceSidebar: [
+    // Overview
+    { type: "doc", id: "python-sdk/overview", label: "Overview" },
+    
     {
       type: "category",
       label: "API Reference",
       collapsible: false,
-      link: { type: "doc", id: "python-sdk/changelog" },
+      link: { type: "doc", id: "python-sdk/api-reference/fused-udf" },
       items: [
         { type: "doc", id: "python-sdk/changelog", label: "Changelog" },
         { type: "doc", id: "python-sdk/api-reference/fused-cache", label: "@fused.cache" },
