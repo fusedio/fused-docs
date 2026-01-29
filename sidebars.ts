@@ -6,6 +6,7 @@ import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
  * - 3 separate sidebars: Guide, Examples, Reference
  * - All categories are non-collapsible (flat view)
  * - 2-level hierarchy: Section headers (white) → Pages (grey)
+ * - Category headers link to first item when clicked
  */
 
 const sidebars: SidebarsConfig = {
@@ -21,6 +22,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Introduction",
       collapsible: false,
+      link: { type: "doc", id: "guide/getting-started/first-udf-basics" },
       items: [
         "guide/getting-started/first-udf-basics",
         "guide/getting-started/using-ai",
@@ -33,6 +35,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "UDF Fundamentals",
       collapsible: false,
+      link: { type: "doc", id: "guide/working-with-udfs/why-fused" },
       items: [
         "guide/working-with-udfs/why-fused",
         "guide/working-with-udfs/writing-udfs",
@@ -47,6 +50,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "UDF Best Practices",
       collapsible: false,
+      link: { type: "doc", id: "guide/working-with-udfs/udf-best-practices/realtime" },
       items: [
         "guide/working-with-udfs/udf-best-practices/realtime",
         "guide/working-with-udfs/udf-best-practices/batch-jobs",
@@ -62,6 +66,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Connecting to Data",
       collapsible: false,
+      link: { type: "doc", id: "guide/data-input-outputs/import-connection/local-files" },
       items: [
         "guide/data-input-outputs/import-connection/local-files",
         "guide/data-input-outputs/import-connection/cloud-storage",
@@ -76,6 +81,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Reading & Writing Files",
       collapsible: false,
+      link: { type: "doc", id: "guide/data-input-outputs/read-write/reading" },
       items: [
         "guide/data-input-outputs/read-write/reading",
         "guide/data-input-outputs/read-write/writing",
@@ -90,6 +96,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Exporting Data",
       collapsible: false,
+      link: { type: "doc", id: "guide/data-input-outputs/export-api/tokens-endpoints" },
       items: [
         "guide/data-input-outputs/export-api/tokens-endpoints",
         "guide/data-input-outputs/export-api/download",
@@ -103,6 +110,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Advanced Setup",
       collapsible: false,
+      link: { type: "doc", id: "guide/advanced-setup/dependencies" },
       items: [
         "guide/advanced-setup/dependencies",
         "guide/advanced-setup/environment-variables",
@@ -129,6 +137,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "H3 Analytics",
       collapsible: false,
+      link: { type: "doc", id: "guide/h3-analytics/h3-overview" },
       items: [
         "guide/h3-analytics/h3-overview",
         "guide/h3-analytics/converting",
@@ -144,6 +153,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Use Cases & Demos",
       collapsible: false,
+      link: { type: "doc", id: "examples/zonal-stats" },
       items: [
         "examples/zonal-stats",
         "examples/ais-dark-vessels",
@@ -159,6 +169,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Data & Scraping",
       collapsible: false,
+      link: { type: "doc", id: "examples/web-scraping" },
       items: [
         "examples/web-scraping",
         "examples/pdf-scraping",
@@ -170,6 +181,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Visualization",
       collapsible: false,
+      link: { type: "doc", id: "examples/creating-charts" },
       items: [
         "examples/creating-charts",
         "examples/standalone-html-maps",
@@ -189,6 +201,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "API Reference",
       collapsible: false,
+      link: { type: "doc", id: "python-sdk/changelog" },
       items: [
         "python-sdk/changelog",
         "python-sdk/top-level-functions",
@@ -205,6 +218,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Python SDK",
       collapsible: false,
+      link: { type: "doc", id: "python-sdk/index" },
       items: [
         "python-sdk/index",
         "python-sdk/authentication",
@@ -216,6 +230,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Workbench",
       collapsible: false,
+      link: { type: "doc", id: "workbench/overview" },
       items: [
         "workbench/overview",
         "workbench/udf-builder/udf-builder",
