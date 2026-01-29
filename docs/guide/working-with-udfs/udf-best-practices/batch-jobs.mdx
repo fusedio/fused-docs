@@ -1,27 +1,110 @@
 ---
-id: batch-jobs
-title: How to run a batch job
-sidebar_label: How to run a batch job
-sidebar_position: 3
+id: scaling-out
+title: Scaling Out UDFs
+sidebar_label: Scaling out UDFs
+sidebar_position: 2
 ---
+
+When realtime isn't enough: run many jobs in parallel, or run on a dedicated machine with more resources.
+
+## Choosing your approach
+
+| Your situation | Use |
+|----------------|-----|
+| Many inputs (files, dates, regions) | [Parallel execution](#parallel-execution) |
+| Single job needs >120s or >4GB RAM | [Dedicated instance](#dedicated-instances) |
+| Many heavy jobs | [Combining both](#combining-both) |
+
+
+## Parallel execution
+
+`fused.submit()` runs a UDF over multiple inputs in parallel, spinning up separate instances for each job.
+
+```python
+inputs = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+results = fused.submit(udf, inputs)
+```
+
+For the full API reference, see [fused.submit()](/guide/working-with-udfs/fused-submit).
+
+### Start small, then scale
+
+Don't immediately spin up 1000 jobs. Test progressively:
+
+```python
+# First test with 5 inputs
+results = fused.submit(udf, inputs[:5])
+
+# Then 10, then 50, then scale up
+results = fused.submit(udf, inputs[:50])
+```
+
+### Target 30-45s per job
+
+Each parallel job has a **120s timeout**. Aim for 30-45s per job to leave safety margin for slower runs.
+
+If your jobs consistently hit the timeout, either:
+- Break them into smaller chunks
+- Use `instance_type` for dedicated machines
+
+### Test first with debug mode
+
+Run only the first input to verify your setup works:
+
+```python
+result = fused.submit(udf, inputs, debug_mode=True)
+```
+
+### Check timing
+
+Monitor how long each job takes:
+
+```python
+job = fused.submit(udf, inputs[:5], collect=False)
+job.wait()
+print(job.times())  # Time per job
+```
+
+### Error handling
+
+**By default, errors aren't cached.** If a job fails (e.g., API timeout), it will retry fresh on the next run. See [Caching](/guide/working-with-udfs/udf-best-practices/caching) for more on how caching works.
+
+However, if you wrap errors in try/except and return a result, that result gets cached:
+
+```python
+@fused.udf
+def udf(url: str):
+    try:
+        return fetch_data(url)
+    except Exception as e:
+        return {"error": str(e)}  # This gets cached!
+```
+
+:::tip
+Use `ignore_exceptions=True` to skip failed jobs when collecting results:
+
+```python
+results = fused.submit(udf, inputs, ignore_exceptions=True)
+```
+:::
+
+---
+
+## Dedicated instances
 
 Batch jobs run on dedicated machines with more resources and no time limits. Use them when your UDF needs more than realtime can offer.
 
-This guide covers best practices for batch workflows—when to use them, how to get results, and how to monitor jobs.
+### When to use
 
-## When to use batch
-
-Use batch when your UDF exceeds realtime limits:
+Use a dedicated instance when your UDF exceeds realtime limits:
 - Takes longer than **120s** to run
 - Needs more than **~4GB RAM**
 
 **Tradeoffs:**
 - ~30s startup time (machine needs to spin up)
-{/* NOTE: This will be added in the API at some point*/}
-{/* - No execution time limit */}
 - Higher resource availability
 
-## Starting a batch job
+### Starting a batch job
 
 Add `instance_type` to run on a dedicated machine:
 
@@ -40,11 +123,9 @@ In Workbench, batch UDFs require manual execution (`Shift+Enter`) and show a con
 Batch and realtime jobs have [separate caches](/guide/working-with-udfs/udf-best-practices/caching#realtime-vs-batch-have-separate-caches). Running the same UDF with and without `instance_type` will cache results independently.
 :::
 
-## Best practices
-
 ### Write to disk, don't return data
 
-Batch jobs should **write results to [cloud storage](/guide/data-input-outputs/import-connection/cloud-storage/) or [mount](/guide/advanced-setup/file-system/#mntcache-disk)**, not return them. Data returned from batch jobs can be lost if the connection times out.
+Batch jobs should **write results to [cloud storage](/guide/data-input-outputs/import-connection/cloud-storage/) or [mount](/guide/working-with-udfs/udf-best-practices/storage/#mntcache-disk)**, not return them. Data returned from batch jobs can be lost if the connection times out.
 
 ```python
 @fused.udf(instance_type='small')
@@ -86,7 +167,7 @@ Batch machines take ~30s to spin up. Plan accordingly—batch jobs aren't for qu
 Test your UDF on a small data sample using realtime execution. Once you're confident it works, switch to `instance_type` to scale up.
 :::
 
-## Instance types
+### Instance types
 
 | Alias | vCPUs | RAM |
 |-------|-------|-----|
@@ -94,15 +175,35 @@ Test your UDF on a small data sample using realtime execution. Once you're confi
 | `medium` | 16 | 64 GB |
 | `large` | 64 | 512 GB |
 
-See [Run UDFs in python](/guide/working-with-udfs/fused-run#instance_type) for the full list of AWS/GCP instance types.
+See [the full list supported of AWS / GCP instance types](/guide/working-with-udfs/fused-run#instance_type)
+
+---
+
+## Combining both
+
+If your jobs need more than 120s or ~4GB RAM each, combine parallel execution with dedicated instances:
+
+```python
+results = fused.submit(
+    udf, 
+    inputs, 
+    instance_type="large",
+    collect=False
+)
+```
+
+---
 
 ## Example use cases
 
+- [Climate Dashboard](/examples/climate-dashboard) — Processing 20TB of data in minutes
+- [Dark Vessel Detection](/examples/ais-dark-vessels#33---run-this-udf-over-a-month-of-ais-data) — Retrieving 30 days of AIS data
+- [Satellite Imagery](/examples/maxar-satellite-imagery#preparing-fusedsubmit-to-run-in-parallel) — Processing Maxar's Open Data STAC Catalogs
 - [Ingesting cropland data](/examples/zonal-stats#2-bring-in-your-data) for zonal statistics
 - [Data ingestion](/guide/data-input-outputs/read-write/geospatial/ingestion) for large geospatial files
 
 ## See also
 
-- [Run UDFs in python](/guide/working-with-udfs/fused-run#instance_type) — `instance_type` reference
-- [Run UDFs in parallel](/guide/working-with-udfs/fused-submit) — `fused.submit()` with batch instances
+- [Running UDFs](/guide/working-with-udfs/fused-run#instance_type) — `fused.run()` details
+- [parallel execution](/guide/working-with-udfs/fused-submit) —  `fused.submit()` details
 - [Caching](/guide/working-with-udfs/udf-best-practices/caching) — how caching works

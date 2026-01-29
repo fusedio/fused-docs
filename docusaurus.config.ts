@@ -23,10 +23,8 @@ const config: Config = {
   organizationName: "fusedio", // Usually your GitHub org/user name.
   projectName: "fused-docs", // Usually your repo name.
 
-  // TODO: Change back to "throw" after v6 migration fixes all broken links
-  onBrokenLinks: "warn", // Temporarily set to warn during v6 docs migration
-  // onBrokenLinks: "throw", // Breaking CI if links aren't good
-  onBrokenMarkdownLinks: "warn",
+  onBrokenLinks: "throw",
+  onBrokenMarkdownLinks: "throw",
 
   // Mermaid diagrams
   markdown: {
@@ -51,6 +49,7 @@ const config: Config = {
           routeBasePath: "/",
           editUrl: "https://github.com/fusedio/fused-docs/edit/main/",
           sidebarPath: "./sidebars.ts",
+          breadcrumbs: false,
           include: ["**/*.md", "**/*.mdx", "reference/fused/**"],
           exclude: [
             // '**/_*.{js,jsx,ts,tsx,md,mdx}',
@@ -118,20 +117,33 @@ const config: Config = {
       logo: {
         alt: "Fused Logo",
         src: "img/logo-black-bg-transparent.svg",
-        href: "https://www.fused.io",
+        href: "/",
       },
       items: [
-        // {
-        //   type: 'html',
-        //   position: 'left',
-        //   value: '<span class="logo-docs">{{ docs }}</span>'
-        // },
-        // Show "Docs" in top navbar
+        // 5 main sections
         {
           type: "docSidebar",
-          sidebarId: "tutorialSidebar",
+          sidebarId: "guideSidebar",
           position: "left",
-          label: "Docs",
+          label: "Guide",
+        },
+        {
+          type: "docSidebar",
+          sidebarId: "examplesSidebar",
+          position: "left",
+          label: "Examples",
+        },
+        {
+          type: "docSidebar",
+          sidebarId: "apiReferenceSidebar",
+          position: "left",
+          label: "API Reference",
+        },
+        {
+          type: "docSidebar",
+          sidebarId: "workbenchSidebar",
+          position: "left",
+          label: "Workbench Manual",
         },
         { to: "/blog", label: "Blog", position: "left" },
         {
@@ -280,11 +292,10 @@ const config: Config = {
           
           // Core concepts redirects
           { to: "/guide/working-with-udfs/udf-best-practices/realtime", from: ["/core-concepts/run-udfs/run-small-udfs", "/core-concepts/run-udfs", "/core-concepts/async", "/guide/working-with-udfs/execution/realtime", "/guide/getting-started/udf-best-practices/realtime"] },
-          { to: "/guide/working-with-udfs/udf-best-practices/batch-jobs", from: ["/core-concepts/run-udfs/run_large", "/core-concepts/run-udfs/run-large", "/guide/working-with-udfs/execution/batch-jobs", "/guide/getting-started/udf-best-practices/batch-jobs"] },
-          { to: "/guide/working-with-udfs/udf-best-practices/parallel", from: ["/guide/working-with-udfs/execution/parallel", "/guide/getting-started/udf-best-practices/parallel"] },
+          { to: "/guide/working-with-udfs/udf-best-practices/scaling-out", from: ["/core-concepts/run-udfs/run_large", "/core-concepts/run-udfs/run-large", "/guide/working-with-udfs/execution/batch-jobs", "/guide/getting-started/udf-best-practices/batch-jobs", "/guide/working-with-udfs/udf-best-practices/batch-jobs", "/guide/working-with-udfs/execution/parallel", "/guide/getting-started/udf-best-practices/parallel", "/guide/working-with-udfs/udf-best-practices/parallel"] },
           { to: "/guide/working-with-udfs/writing-udfs", from: ["/core-concepts/write", "/core-concepts/best-practices/udf-best-practices"] },
           { to: "/guide/working-with-udfs/udf-best-practices/caching", from: ["/core-concepts/cache", "/guide/working-with-udfs/caching"] },
-          { to: "/guide/advanced-setup/file-system", from: ["/core-concepts/content-management/file-system"] },
+          { to: "/guide/working-with-udfs/udf-best-practices/storage", from: ["/core-concepts/content-management/file-system", "/guide/advanced-setup/file-system"] },
           { to: "/guide/advanced-setup/git-integration", from: ["/core-concepts/content-management/git"] },
           { to: "/guide/advanced-setup/dependencies", from: ["/core-concepts/run-udfs/dependencies"] },
           { to: "/guide/getting-started/workbench-intro", from: ["/core-concepts/best-practices/workbench-best-practices"] },
@@ -300,6 +311,11 @@ const config: Config = {
           { to: "/guide/working-with-udfs/fused-submit", from: ["/guide/working-with-udfs/run-udfs-in-parallel"] },
           { to: "/examples/sharing-canvas-dashboards", from: ["/guide/working-with-udfs/building-outputs/dashboards", "/examples/building-outputs/dashboards"] },
           { to: "/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", from: ["/guide/working-with-udfs/udf-best-practices/geospatial/single-vs-tile"] },
+          
+          // API Reference flattening redirects
+          { to: "/python-sdk/overview", from: ["/python-sdk/top-level-functions"] },
+          { to: "/guide/advanced-setup/local-installation", from: ["/python-sdk/index", "/python-sdk/authentication"] },
+          { to: "/python-sdk/overview", from: ["/python-sdk"] },
         ],
         // createRedirects(existingPath) {
         //   if (existingPath.includes("/user-guide/out")) {
