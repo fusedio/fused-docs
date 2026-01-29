@@ -49,6 +49,7 @@ const config: Config = {
           routeBasePath: "/",
           editUrl: "https://github.com/fusedio/fused-docs/edit/main/",
           sidebarPath: "./sidebars.ts",
+          breadcrumbs: false,
           include: ["**/*.md", "**/*.mdx", "reference/fused/**"],
           exclude: [
             // '**/_*.{js,jsx,ts,tsx,md,mdx}',
