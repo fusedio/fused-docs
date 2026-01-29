@@ -23,10 +23,8 @@ const config: Config = {
   organizationName: "fusedio", // Usually your GitHub org/user name.
   projectName: "fused-docs", // Usually your repo name.
 
-  // TODO: Change back to "throw" after v6 migration fixes all broken links
-  onBrokenLinks: "warn", // Temporarily set to warn during v6 docs migration
-  // onBrokenLinks: "throw", // Breaking CI if links aren't good
-  onBrokenMarkdownLinks: "warn",
+  onBrokenLinks: "throw",
+  onBrokenMarkdownLinks: "throw",
 
   // Mermaid diagrams
   markdown: {
