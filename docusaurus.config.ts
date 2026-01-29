@@ -315,6 +315,7 @@ const config: Config = {
           // API Reference flattening redirects
           { to: "/python-sdk/api-reference/fused-udf", from: ["/python-sdk/top-level-functions"] },
           { to: "/guide/advanced-setup/local-installation", from: ["/python-sdk/index", "/python-sdk/authentication"] },
+          { to: "/python-sdk/changelog", from: ["/python-sdk"] },
         ],
         // createRedirects(existingPath) {
         //   if (existingPath.includes("/user-guide/out")) {
