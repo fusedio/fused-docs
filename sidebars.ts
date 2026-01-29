@@ -111,11 +111,11 @@ const sidebars: SidebarsConfig = {
       collapsible: false,
       link: { type: "doc", id: "guide/advanced-setup/dependencies" },
       items: [
+        { type: "doc", id: "guide/advanced-setup/local-installation", label: "Python installation" },
         { type: "doc", id: "guide/advanced-setup/dependencies", label: "Dependencies" },
-        { type: "doc", id: "guide/advanced-setup/environment-variables", label: "Environment variables" },
+        { type: "doc", id: "guide/advanced-setup/secrets-management", label: "Secrets management" },
         { type: "doc", id: "guide/advanced-setup/file-system", label: "File system" },
         { type: "doc", id: "guide/advanced-setup/git-integration", label: "Git integration" },
-        { type: "doc", id: "guide/advanced-setup/local-installation", label: "Local installation" },
         { type: "doc", id: "guide/advanced-setup/on-prem-setup", label: "On-prem setup" },
       ],
     },
