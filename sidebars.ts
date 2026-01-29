@@ -245,7 +245,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "workbench/ai-assistant", label: "AI Assistant" },
         { type: "doc", id: "workbench/udf-explorer", label: "UDF Explorer" },
         { type: "doc", id: "workbench/udf-builder/runtime", label: "Runtime" },
-        { type: "doc", id: "workbench/udf-builder/navigation", label: "Navigation" },
+        { type: "doc", id: "workbench/udf-builder/navigation", label: "Map Navigation" },
         { type: "doc", id: "workbench/udf-builder/map", label: "Map View" },
         { type: "doc", id: "workbench/udf-builder/styling", label: "Map Layer Styling" },
         { type: "doc", id: "workbench/app-builder/app-builder", label: "App Builder" },
