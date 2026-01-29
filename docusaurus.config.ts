@@ -121,17 +121,24 @@ const config: Config = {
         href: "https://www.fused.io",
       },
       items: [
-        // {
-        //   type: 'html',
-        //   position: 'left',
-        //   value: '<span class="logo-docs">{{ docs }}</span>'
-        // },
-        // Show "Docs" in top navbar
+        // 4 main doc sections - Modal style
         {
           type: "docSidebar",
-          sidebarId: "tutorialSidebar",
+          sidebarId: "guideSidebar",
           position: "left",
-          label: "Docs",
+          label: "Guide",
+        },
+        {
+          type: "docSidebar",
+          sidebarId: "examplesSidebar",
+          position: "left",
+          label: "Examples",
+        },
+        {
+          type: "docSidebar",
+          sidebarId: "referenceSidebar",
+          position: "left",
+          label: "Reference",
         },
         { to: "/blog", label: "Blog", position: "left" },
         {
