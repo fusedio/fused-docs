@@ -132,22 +132,6 @@ const sidebars: SidebarsConfig = {
   // EXAMPLES SIDEBAR
   // ============================================
   examplesSidebar: [
-    // H3 Analytics
-    {
-      type: "category",
-      label: "H3 Analytics",
-      collapsible: false,
-      link: { type: "doc", id: "guide/h3-analytics/h3-overview" },
-      items: [
-        "guide/h3-analytics/h3-overview",
-        "guide/h3-analytics/converting",
-        "guide/h3-analytics/aggregations",
-        "guide/h3-analytics/joining",
-        "guide/h3-analytics/resolution-guide",
-        "guide/h3-analytics/visualization",
-      ],
-    },
-
     // Use Cases & Demos
     {
       type: "category",
@@ -161,6 +145,22 @@ const sidebars: SidebarsConfig = {
         "examples/maxar-satellite-imagery",
         "examples/site-selection-analysis",
         "examples/currency-prediction",
+      ],
+    },
+
+    // H3 Analytics
+    {
+      type: "category",
+      label: "H3 Analytics",
+      collapsible: false,
+      link: { type: "doc", id: "guide/h3-analytics/h3-overview" },
+      items: [
+        "guide/h3-analytics/h3-overview",
+        "guide/h3-analytics/converting",
+        "guide/h3-analytics/aggregations",
+        "guide/h3-analytics/joining",
+        "guide/h3-analytics/resolution-guide",
+        "guide/h3-analytics/visualization",
       ],
     },
 
@@ -196,32 +196,30 @@ const sidebars: SidebarsConfig = {
   // REFERENCE SIDEBAR
   // ============================================
   referenceSidebar: [
-    // API Reference
+    // API Reference - Flat list like Modal
     {
       type: "category",
       label: "API Reference",
       collapsible: false,
       link: { type: "doc", id: "python-sdk/changelog" },
       items: [
-        "python-sdk/changelog",
-        "python-sdk/top-level-functions",
-        "python-sdk/api-reference/udf",
-        "python-sdk/api-reference/jobpool",
-        "python-sdk/api-reference/api",
-        "python-sdk/api-reference/h3",
-        "python-sdk/api-reference/options",
-      ],
-    },
-
-    // Python SDK
-    {
-      type: "category",
-      label: "Python SDK",
-      collapsible: false,
-      link: { type: "doc", id: "python-sdk/index" },
-      items: [
-        "python-sdk/index",
-        "python-sdk/authentication",
+        { type: "doc", id: "python-sdk/changelog", label: "Changelog" },
+        { type: "doc", id: "python-sdk/api-reference/fused-udf", label: "@fused.udf" },
+        { type: "doc", id: "python-sdk/api-reference/fused-cache", label: "@fused.cache" },
+        { type: "doc", id: "python-sdk/api-reference/fused-load", label: "fused.load" },
+        { type: "doc", id: "python-sdk/api-reference/fused-run", label: "fused.run" },
+        { type: "doc", id: "python-sdk/api-reference/fused-submit", label: "fused.submit" },
+        { type: "doc", id: "python-sdk/api-reference/fused-download", label: "fused.download" },
+        { type: "doc", id: "python-sdk/api-reference/fused-ingest", label: "fused.ingest" },
+        { type: "doc", id: "python-sdk/api-reference/fused-ingest-nongeospatial", label: "fused.ingest_nongeospatial" },
+        { type: "doc", id: "python-sdk/api-reference/fused-file-path", label: "fused.file_path" },
+        { type: "doc", id: "python-sdk/api-reference/fused-get-chunks-metadata", label: "fused.get_chunks_metadata" },
+        { type: "doc", id: "python-sdk/api-reference/fused-get-chunk-from-table", label: "fused.get_chunk_from_table" },
+        { type: "doc", id: "python-sdk/api-reference/udf", label: "Udf (class)" },
+        { type: "doc", id: "python-sdk/api-reference/jobpool", label: "JobPool (class)" },
+        { type: "doc", id: "python-sdk/api-reference/api", label: "fused.api" },
+        { type: "doc", id: "python-sdk/api-reference/h3", label: "fused.h3" },
+        { type: "doc", id: "python-sdk/api-reference/options", label: "fused.options" },
       ],
     },
 
