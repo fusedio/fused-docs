@@ -25,8 +25,8 @@ const sidebars: SidebarsConfig = {
       link: { type: "doc", id: "guide/getting-started/first-udf-basics" },
       items: [
         { type: "doc", id: "guide/getting-started/first-udf-basics", label: "First UDF basics" },
-        { type: "doc", id: "guide/getting-started/using-ai", label: "Using AI" },
         { type: "doc", id: "guide/getting-started/workbench-intro", label: "Workbench intro" },
+        { type: "doc", id: "guide/getting-started/using-ai", label: "Using AI" },
       ],
     },
 
@@ -55,9 +55,9 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/realtime", label: "Run UDFs efficiently" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/scaling-out", label: "Scaling out UDFs" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/caching", label: "Efficient caching" },
+        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/storage", label: "Storage Options" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/version-control", label: "Working as a Team" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", label: "Geospatial processing" },
-        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/storage", label: "Storage" },
       ],
     },
 
