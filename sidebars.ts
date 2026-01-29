@@ -193,10 +193,9 @@ const sidebars: SidebarsConfig = {
   ],
 
   // ============================================
-  // REFERENCE SIDEBAR
+  // API REFERENCE SIDEBAR (Python SDK)
   // ============================================
-  referenceSidebar: [
-    // API Reference - Flat list like Modal
+  apiReferenceSidebar: [
     {
       type: "category",
       label: "API Reference",
@@ -229,31 +228,68 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "python-sdk/api-reference/udf", label: "Udf (class)" },
       ],
     },
+  ],
 
-    // Workbench
+  // ============================================
+  // WORKBENCH SIDEBAR
+  // ============================================
+  workbenchSidebar: [
+    // Overview
+    { type: "doc", id: "workbench/overview", label: "Overview" },
+
+    // Canvas
     {
       type: "category",
-      label: "Workbench",
+      label: "Canvas",
       collapsible: false,
-      link: { type: "doc", id: "workbench/overview" },
+      link: { type: "doc", id: "workbench/udf-builder/canvas" },
       items: [
-        { type: "doc", id: "workbench/overview", label: "Overview" },
-        { type: "doc", id: "workbench/udf-builder/canvas", label: "Canvas" },
-        { type: "doc", id: "workbench/file-explorer", label: "File Explorer" },
-        { type: "doc", id: "workbench/udf-builder/udf-builder", label: "UDF Builder" },
+        { type: "doc", id: "workbench/udf-builder/canvas", label: "Overview" },
         { type: "doc", id: "workbench/udf-builder/code-editor", label: "Code Editor" },
-        { type: "doc", id: "workbench/ai-assistant", label: "AI Assistant" },
         { type: "doc", id: "workbench/udf-explorer", label: "UDF Explorer" },
+        { type: "doc", id: "workbench/ai-assistant", label: "AI Assistant" },
         { type: "doc", id: "workbench/udf-builder/runtime", label: "Runtime" },
+        { type: "doc", id: "workbench/file-explorer", label: "File Explorer" },
+      ],
+    },
+
+    // UDF Builder
+    {
+      type: "category",
+      label: "UDF Builder",
+      collapsible: false,
+      link: { type: "doc", id: "workbench/udf-builder/udf-builder" },
+      items: [
+        { type: "doc", id: "workbench/udf-builder/udf-builder", label: "Overview" },
         { type: "doc", id: "workbench/udf-builder/navigation", label: "Map Navigation" },
         { type: "doc", id: "workbench/udf-builder/map", label: "Map View" },
         { type: "doc", id: "workbench/udf-builder/styling", label: "Map Layer Styling" },
-        { type: "doc", id: "workbench/app-builder/app-builder", label: "App Builder" },
-        { type: "doc", id: "workbench/app-builder/app-overview", label: "App Overview" },
-        { type: "doc", id: "workbench/app-builder/app-map", label: "App Map" },
+      ],
+    },
+
+    // Account
+    {
+      type: "category",
+      label: "Account Management",
+      collapsible: false,
+      link: { type: "doc", id: "workbench/account" },
+      items: [
         { type: "doc", id: "workbench/account", label: "Account" },
         { type: "doc", id: "workbench/preferences", label: "Preferences" },
         { type: "doc", id: "workbench/free-tier", label: "Free Tier" },
+      ],
+    },
+
+    // App Builder
+    {
+      type: "category",
+      label: "Fused Apps",
+      collapsible: false,
+      link: { type: "doc", id: "workbench/app-builder/app-builder" },
+      items: [
+        { type: "doc", id: "workbench/app-builder/app-builder", label: "App Builder" },
+        { type: "doc", id: "workbench/app-builder/app-overview", label: "App Overview" },
+        { type: "doc", id: "workbench/app-builder/app-map", label: "App Map" },
       ],
     },
   ],

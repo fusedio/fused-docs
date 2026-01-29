@@ -120,7 +120,7 @@ const config: Config = {
         href: "https://www.fused.io",
       },
       items: [
-        // 4 main doc sections - Modal style
+        // 5 main sections
         {
           type: "docSidebar",
           sidebarId: "guideSidebar",
@@ -135,9 +135,15 @@ const config: Config = {
         },
         {
           type: "docSidebar",
-          sidebarId: "referenceSidebar",
+          sidebarId: "apiReferenceSidebar",
           position: "left",
-          label: "Reference",
+          label: "API Reference",
+        },
+        {
+          type: "docSidebar",
+          sidebarId: "workbenchSidebar",
+          position: "left",
+          label: "Workbench Manual",
         },
         { to: "/blog", label: "Blog", position: "left" },
         {
