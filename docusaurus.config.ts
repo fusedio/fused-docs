@@ -288,7 +288,7 @@ const config: Config = {
           { to: "/guide/working-with-udfs/udf-best-practices/scaling-out", from: ["/core-concepts/run-udfs/run_large", "/core-concepts/run-udfs/run-large", "/guide/working-with-udfs/execution/batch-jobs", "/guide/getting-started/udf-best-practices/batch-jobs", "/guide/working-with-udfs/udf-best-practices/batch-jobs", "/guide/working-with-udfs/execution/parallel", "/guide/getting-started/udf-best-practices/parallel", "/guide/working-with-udfs/udf-best-practices/parallel"] },
           { to: "/guide/working-with-udfs/writing-udfs", from: ["/core-concepts/write", "/core-concepts/best-practices/udf-best-practices"] },
           { to: "/guide/working-with-udfs/udf-best-practices/caching", from: ["/core-concepts/cache", "/guide/working-with-udfs/caching"] },
-          { to: "/guide/advanced-setup/file-system", from: ["/core-concepts/content-management/file-system"] },
+          { to: "/guide/working-with-udfs/udf-best-practices/storage", from: ["/core-concepts/content-management/file-system", "/guide/advanced-setup/file-system"] },
           { to: "/guide/advanced-setup/git-integration", from: ["/core-concepts/content-management/git"] },
           { to: "/guide/advanced-setup/dependencies", from: ["/core-concepts/run-udfs/dependencies"] },
           { to: "/guide/getting-started/workbench-intro", from: ["/core-concepts/best-practices/workbench-best-practices"] },
