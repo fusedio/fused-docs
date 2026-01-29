@@ -287,8 +287,7 @@ const config: Config = {
           
           // Core concepts redirects
           { to: "/guide/working-with-udfs/udf-best-practices/realtime", from: ["/core-concepts/run-udfs/run-small-udfs", "/core-concepts/run-udfs", "/core-concepts/async", "/guide/working-with-udfs/execution/realtime", "/guide/getting-started/udf-best-practices/realtime"] },
-          { to: "/guide/working-with-udfs/udf-best-practices/batch-jobs", from: ["/core-concepts/run-udfs/run_large", "/core-concepts/run-udfs/run-large", "/guide/working-with-udfs/execution/batch-jobs", "/guide/getting-started/udf-best-practices/batch-jobs"] },
-          { to: "/guide/working-with-udfs/udf-best-practices/parallel", from: ["/guide/working-with-udfs/execution/parallel", "/guide/getting-started/udf-best-practices/parallel"] },
+          { to: "/guide/working-with-udfs/udf-best-practices/scaling-out", from: ["/core-concepts/run-udfs/run_large", "/core-concepts/run-udfs/run-large", "/guide/working-with-udfs/execution/batch-jobs", "/guide/getting-started/udf-best-practices/batch-jobs", "/guide/working-with-udfs/udf-best-practices/batch-jobs", "/guide/working-with-udfs/execution/parallel", "/guide/getting-started/udf-best-practices/parallel", "/guide/working-with-udfs/udf-best-practices/parallel"] },
           { to: "/guide/working-with-udfs/writing-udfs", from: ["/core-concepts/write", "/core-concepts/best-practices/udf-best-practices"] },
           { to: "/guide/working-with-udfs/udf-best-practices/caching", from: ["/core-concepts/cache", "/guide/working-with-udfs/caching"] },
           { to: "/guide/advanced-setup/file-system", from: ["/core-concepts/content-management/file-system"] },

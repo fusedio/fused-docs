@@ -53,8 +53,7 @@ const sidebars: SidebarsConfig = {
       link: { type: "doc", id: "guide/working-with-udfs/udf-best-practices/realtime" },
       items: [
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/realtime", label: "Run jobs efficiently" },
-        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/batch-jobs", label: "Scaling out UDFs" },
-        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/parallel", label: "Parallel execution" },
+        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/scaling-out", label: "Scaling out UDFs" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/caching", label: "Efficient caching" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", label: "Geospatial processing" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/version-control", label: "Working as a Team" },
