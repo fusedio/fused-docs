@@ -117,7 +117,7 @@ const config: Config = {
       logo: {
         alt: "Fused Logo",
         src: "img/logo-black-bg-transparent.svg",
-        href: "https://www.fused.io",
+        href: "/",
       },
       items: [
         // 5 main sections

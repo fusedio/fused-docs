@@ -14,8 +14,8 @@ const sidebars: SidebarsConfig = {
   // GUIDE SIDEBAR
   // ============================================
   guideSidebar: [
-    // Landing page
-    "index",
+    // Guide Overview
+    { type: "doc", id: "guide/guide-overview", label: "Overview" },
 
     // Quickstart
     {
