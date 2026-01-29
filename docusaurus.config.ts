@@ -313,7 +313,7 @@ const config: Config = {
           { to: "/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", from: ["/guide/working-with-udfs/udf-best-practices/geospatial/single-vs-tile"] },
           
           // API Reference flattening redirects
-          { to: "/python-sdk/api-reference/fused-udf", from: ["/python-sdk/top-level-functions"] },
+          { to: "/python-sdk/overview", from: ["/python-sdk/top-level-functions"] },
           { to: "/guide/advanced-setup/local-installation", from: ["/python-sdk/index", "/python-sdk/authentication"] },
           { to: "/python-sdk/overview", from: ["/python-sdk"] },
         ],
