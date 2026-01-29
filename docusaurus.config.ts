@@ -305,11 +305,11 @@ const config: Config = {
           { to: "/guide/working-with-udfs/fused-run", from: ["/guide/working-with-udfs/run-udfs-in-python"] },
           { to: "/guide/working-with-udfs/fused-submit", from: ["/guide/working-with-udfs/run-udfs-in-parallel"] },
           { to: "/examples/sharing-canvas-dashboards", from: ["/guide/working-with-udfs/building-outputs/dashboards", "/examples/building-outputs/dashboards"] },
-          { to: "/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", from: ["/guide/working-with-udfs/udf-best-practices/geospatial/single-vs-tile"] },
+          { to: "/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", from: ["/guide/working-with-udfs/udf-best-practices/geospatial/single-vs-tile", "/guide/working-with-udfs/geospatial/single-vs-tile"] },
           
           // API Reference flattening redirects
           { to: "/python-sdk/api-reference/fused-udf", from: ["/python-sdk/top-level-functions"] },
-          { to: "/guide/advanced-setup/local-installation", from: ["/python-sdk", "/python-sdk/index", "/python-sdk/authentication"] },
+          { to: "/guide/advanced-setup/local-installation", from: ["/python-sdk/index", "/python-sdk/authentication"] },
         ],
         // createRedirects(existingPath) {
         //   if (existingPath.includes("/user-guide/out")) {
