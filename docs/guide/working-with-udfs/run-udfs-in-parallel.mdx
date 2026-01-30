@@ -1,5 +1,5 @@
 ---
-id: fused-submit
+id: parallel-execution
 title: Parallel execution
 sidebar_label: Parallel execution
 sidebar_position: 4
@@ -7,154 +7,116 @@ sidebar_position: 4
 
 Run a UDF over multiple inputs in parallel.
 
-## Signature
+## Using `.map()`
+
+Call [`.map()`](/python-sdk/api-reference/udf#map) on a UDF to run it over multiple inputs in parallel:
 
 ```python
-fused.submit(
-    udf,
-    arg_list,
-    engine='remote',
-    instance_type='realtime',
-    max_workers=32,
-    collect=True,
-    cache_max_age=None,
-)
+my_udf.map(
+    arg_list,              # list of arguments, each element becomes a job
+    *,
+    engine=None,           # "remote" (default), "local", or instance type
+    cache_max_age=None,    # max cache age
+    max_workers=None,      # max parallel workers (default 32)
+    cache=True,            # set False to disable caching
+    max_retry=2,           # max retries for failed jobs
+) -> JobPool
 ```
 
-## Parameters
+See the [`Udf.map()` API reference](/python-sdk/api-reference/udf#map) for full details.
 
-### `arg_list` — Input formats
+## Basic example
+
+```python
+@fused.udf
+def my_udf(x: int):
+    return x ** 2
+
+# Run over multiple inputs
+pool = my_udf.map([1, 2, 3, 4, 5])
+results = pool.collect()  # Returns DataFrame
+```
+
+## Input formats
 
 | Format | Example | Use case |
 |--------|---------|----------|
 | List | `[0, 1, 2, 3]` | Single parameter |
 | List of dicts | `[{'a': 1, 'b': 2}, {'a': 3, 'b': 4}]` | Multiple parameters |
-| DataFrame | `pd.DataFrame({'a': [1, 3], 'b': [2, 4]})` | Multiple parameters |
 
-Each item/row becomes a separate job.
+Each item becomes a separate job.
 
 ```python
 @fused.udf
-def udf():
-    results = fused.submit(
-        single_job_udf, 
-        [{'a': 1, 'b': 2}, {'a': 3, 'b': 4}]
-    )
-    return results
+def process_pair(a: int, b: int):
+    return a + b
 
-@fused.udf
-def single_job_udf(a: str, b: str):
-    import pandas as pd
-    return pd.DataFrame({"result": [a + b]})
+pool = process_pair.map([{'a': 1, 'b': 2}, {'a': 3, 'b': 4}])
 ```
+
+## Parameters
 
 ### `engine`
 
-Same as [fused.run](/guide/working-with-udfs/fused-run#engine). Default: `remote`
-
-### `instance_type`
-
-Same as [fused.run](/guide/working-with-udfs/fused-run#instance_type). Default: `realtime`
+Same as [running UDFs](/guide/working-with-udfs/running-udfs#engine). Default: `"remote"`
 
 | Mode | Best for |
 |------|----------|
-| `realtime` | Many quick jobs |
-| `small`/`medium`/`large` | Long/heavy jobs |
+| `"remote"` (default) | Many quick jobs |
+| `"small"`/`"medium"`/`"large"` | Long/heavy jobs |
 
 ### `max_workers`
 
-Number of realtime instances to spin up in parallel. Default: `32`, Max: `1000`.
+Number of instances to spin up in parallel. Default: `32`, Max: `1000`.
 
 ```python
-# Spin up 100 realtime instances in parallel
-fused.submit(udf, inputs, max_workers=100)
-```
-
-{/* TODO: Add this back in once we have proper API for it*/}
-{/* ### `n_processes_per_worker` 🚧
-
-| Instance type | Default | Effect |
-|---------------|---------|--------|
-| `realtime` | 1 | Each arg = 1 lambda |
-| Batch | # of cores | Parallel within instance |
-
-Set >1 for realtime to chunk args within each lambda, reducing total invocations. */}
-
-### `collect`
-
-| Value | Behavior | Returns |
-|-------|----------|---------|
-| `True` (default) | Blocking, waits for all jobs | `DataFrame` |
-| `False` | Non-blocking | [`JobPool`](#jobpool-methods) |
-
-### `debug_mode`
-
-When `True`, runs only the first input via `fused.run()`. Use for testing before scaling.
-
-```python
-# Test with first input only
-fused.submit(udf, inputs, debug_mode=True)
+# Spin up 100 instances in parallel
+pool = my_udf.map(inputs, max_workers=100)
 ```
 
 ### `max_retry`
 
 Max retries per failed job. Default: `2`
 
-### `ignore_exceptions`
-
-When `True`, failed runs are silently skipped in results. Default: `False`
-
-{/* ### `flatten`
-
-| Value | Result format |
-|-------|---------------|
-| `True` (default) | Flat DataFrame |
-| `False` | Results nested in `results` column | */}
-
 ### `cache_max_age`
 
-{/* Based on the Python SDK page, so leaving this as is for now */}
-Same as [fused.run](/guide/working-with-udfs/fused-run#cache_max_age). Additionally, when `collect=True`, collected results are cached locally for `cache_max_age` or 12h by default.
+Same as [running UDFs](/guide/working-with-udfs/running-udfs#cache_max_age).
 
-## JobPool methods
+## Working with results
 
-When using `collect=False`, you get a `JobPool` object:
+`.map()` returns a [`JobPool`](/python-sdk/api-reference/jobpool) object:
 
 ```python
-job = fused.submit(udf, inputs, collect=False)
+pool = my_udf.map(inputs)
 
-job.wait()           # Show progress bar
-job.total_time()     # Total wall time
-job.times()          # Time per job
-job.first_error()    # First error encountered
-job.collect()        # Get results as DataFrame
+pool.wait()           # Show progress bar
+pool.total_time()     # Total wall time
+pool.times()          # Time per job
+pool.first_error()    # First error encountered
+pool.collect()        # Get results as DataFrame
+pool.results()        # Get results as list
 ```
 
-## Tips
+See the [`JobPool` API reference](/python-sdk/api-reference/jobpool) for full details.
 
-**Test first:**
-```python
-fused.submit(udf, inputs, debug_mode=True)
-```
-
-**Start small:**
-```python
-fused.submit(udf, inputs[:5])
-```
-
-**Aim for 30-45s per job** — gives safety margin before 120s timeout.
-
-**For batch jobs, save to S3:**
-```python
-@fused.udf
-def batch_udf(input_path: str):
-    result = process(input_path)
-    output_path = f"s3://bucket/results/{...}"
-    result.to_parquet(output_path)
-    return output_path  # Return path, not data
-```
 
 ## See also
 
-- [Run UDFs in python](/guide/working-with-udfs/fused-run) — single UDF execution
-- [Scaling out UDFs](/guide/working-with-udfs/udf-best-practices/scaling-out) — best practices for parallel and batch execution
+- [Running UDFs](/guide/working-with-udfs/running-udfs) — single UDF execution
+- [Scaling out UDFs](/guide/working-with-udfs/udf-best-practices/scaling-out) — best practices
+- [`JobPool` API reference](/python-sdk/api-reference/jobpool) — all JobPool methods
+
+---
+
+## [[Legacy](/python-sdk/api-reference/fused-submit)]: `fused.submit()`
+
+The `fused.submit()` function still works but `.map()` is preferred:
+
+```python
+# Legacy
+results = fused.submit(my_udf, inputs)
+
+# Preferred
+pool = my_udf.map(inputs)
+results = pool.collect()
+```

@@ -1,5 +1,5 @@
 ---
-id: fused-run
+id: running-udfs
 title: Running UDFs
 sidebar_label: Running UDFs
 sidebar_position: 3
@@ -7,46 +7,59 @@ sidebar_position: 3
 
 Run a UDF and get results back.
 
-## Signature
+## Calling a UDF
+
+UDFs are callable objects—call them directly like regular Python functions:
 
 ```python
-fused.run(
-    udf,
-    engine='remote',
-    instance_type='realtime',
-    cache_max_age=None,
-    max_retry=0,
+my_udf(
+    *args,               # positional arguments
+    engine=None,         # "remote" (default), "local", or instance type
+    cache_max_age=None,  # max cache age, e.g. "48h", "10s"
+    cache=True,          # set False to disable caching
+    **kwargs,            # keyword arguments
 )
 ```
 
-## Parameters
+See the [`Udf` API reference](/python-sdk/api-reference/udf) for full details.
 
-### `udf` — Ways to reference a UDF
+## Loading a UDF
+
+Use [`fused.load()`](/python-sdk/api-reference/fused-load) to get a UDF object, then call it directly:
 
 | Method | Syntax | Use case |
 |--------|--------|----------|
-| Your UDF | `fused.run("my_udf")` | UDFs you created |
-| Teammate's UDF | `fused.run("teammate@fused.io/my_udf")` | UDFs from your team |
-| Team UDF | `fused.run("team/my_udf")` | Shared team UDFs |
-| Public UDF | `fused.run("UDF_Name")` | [Public UDFs](https://github.com/fusedio/udfs/tree/main) (free) |
-| [Token](/guide/data-input-outputs/export-api/tokens-endpoints#shared-token) | `fused.run("fsh_***")` | Share UDF without exposing code |
-| Git commit | `fused.run("github.com/.../tree/{hash}/")` | Production stability |
+| Your UDF | `fused.load("my_udf")` | UDFs you created |
+| Teammate's UDF | `fused.load("teammate@fused.io/my_udf")` | UDFs from your team |
+| Team UDF | `fused.load("team/my_udf")` | Shared team UDFs |
+| Public UDF | `fused.load("UDF_Name")` | [Public UDFs](https://github.com/fusedio/udfs/tree/main) (free) |
+| [Token](/guide/data-input-outputs/export-api/tokens-endpoints#shared-token) | `fused.load("fsh_***")` | Share UDF without exposing code |
+| Git commit | `fused.load("github.com/.../tree/{hash}/")` | Production stability |
+
+```python
+# Load and call
+my_udf = fused.load("my_udf")
+result = my_udf(name="hello")
+```
 
 :::tip Pin to commit hash for production
 ```python
 commit_hash = "bdfb4d0"
-udf = fused.load(f"https://github.com/fusedio/udfs/tree/{commit_hash}/public/My_UDF/")
-fused.run(udf)
+my_udf = fused.load(f"https://github.com/fusedio/udfs/tree/{commit_hash}/public/My_UDF/")
+result = my_udf()
 ```
 Avoid pointing to `main` branch—your UDF will change when others push to it.
 :::
+
+## Parameters
 
 ### `engine`
 
 | Engine | Where it runs | Use case |
 |--------|---------------|----------|
-| `remote` (default) | Spins up new serverless instance | Standard usage |
-| `local` | Current process | Run in existing compute |
+| `"remote"` (default) | Spins up new serverless instance | Standard usage |
+| `"local"` | Current process | Run in existing compute |
+| Instance type | Dedicated machine | Heavy workloads |
 
 **`local` contexts:**
 
@@ -58,19 +71,25 @@ Avoid pointing to `main` branch—your UDF will change when others push to it.
 
 ### `instance_type`
 
+Pass an instance type as `engine` to run on a dedicated machine:
+
+```python
+result = my_udf(engine="medium")  # 64 GB RAM
+```
+
 | Type | RAM | Time limit | Startup |
 |------|-----|------------|---------|
-| `realtime` (default) | ~4GB | 120s | ~5s |
-| `small` | 2 GB | None | ~30s |
-| `medium` | 64 GB | None | ~30s |
-| `large` | 512 GB | None | ~30s |
+| `"realtime"` (default) | ~4GB | 120s | ~5s |
+| `"small"` | 2 GB | None | ~30s |
+| `"medium"` | 64 GB | None | ~30s |
+| `"large"` | 512 GB | None | ~30s |
 
 :::tip Default instance type
 Set a default instance type when defining a UDF:
 
 ```python
 @fused.udf(instance_type="large")
-def udf():
+def my_udf():
     ...
 ```
 
@@ -129,38 +148,21 @@ Control how long results are cached. UDFs are cached for **90 days by default**.
 | `"0s"` | No caching |
 | `"10s"`, `"48h"`, `"1d"` | Cache for specified duration |
 
+```python
+result = my_udf(cache_max_age="1h")  # Cache for 1 hour
+result = my_udf(cache=False)         # Disable caching
+```
+
 :::tip
 Set a default cache duration in the UDF decorator:
 ```python
 @fused.udf(cache_max_age="1d")
-def udf():
+def my_udf():
     ...
 ```
 :::
 
-See [Caching](/guide/working-with-udfs/udf-best-practices/caching#udf-cache) for more details on how caching works.
-
-### `sync`
-
-| Value | Behavior |
-|-------|----------|
-| `True` (default) | Blocking call, returns result |
-| `False` | Returns coroutine for async execution |
-
-```python
-# Async example
-async def run_parallel():
-    tasks = [fused.run("my_udf", date=d, sync=False) for d in dates]
-    return await asyncio.gather(*tasks)
-```
-
-:::note
-`sync=False` only works with `engine='remote'` and saved UDFs.
-:::
-
-### `max_retry`
-
-Number of retries on failure. Default: `0`
+Learn more about [caching](/guide/working-with-udfs/udf-best-practices/caching).
 
 ## Passing arguments
 
@@ -168,13 +170,11 @@ Pass UDF parameters as keyword arguments:
 
 ```python
 @fused.udf
-def udf(name: str, count: int = 1):
+def my_udf(name: str, count: int = 1):
     import pandas as pd
     return pd.DataFrame({"name": [name] * count})
-```
 
-```python
-fused.run(udf, name="hello", count=3)
+result = my_udf(name="hello", count=3)
 ```
 
 ## Reserved parameters
@@ -184,7 +184,8 @@ These parameters control how Fused structures the `bounds` object for [tile UDFs
 ### With `x`, `y`, `z`
 
 ```python
-fused.run("UDF_Overture_Maps_Example", x=5241, y=12662, z=15)
+overture_udf = fused.load("UDF_Overture_Maps_Example")
+result = overture_udf(x=5241, y=12662, z=15)
 ```
 
 ### With `bounds` as GeoDataFrame
@@ -192,18 +193,33 @@ fused.run("UDF_Overture_Maps_Example", x=5241, y=12662, z=15)
 ```python
 import geopandas as gpd
 bounds = gpd.GeoDataFrame.from_features({...})
-fused.run("UDF_Overture_Maps_Example", bounds=bounds)
+result = overture_udf(bounds=bounds)
 ```
 
 ### With `bounds` as bbox list
 
 ```python
 # [min_x, min_y, max_x, max_y]
-fused.run("UDF_Overture_Maps_Example", bounds=[-122.349, 37.781, -122.341, 37.818])
+result = overture_udf(bounds=[-122.349, 37.781, -122.341, 37.818])
 ```
 
 ## See also
 
-- [How to run a realtime job](/guide/working-with-udfs/udf-best-practices/realtime) — walkthrough with examples
-- [Run UDFs in parallel](/guide/working-with-udfs/fused-submit) — run over multiple inputs in parallel
+- [Run UDFs efficiently](/guide/working-with-udfs/udf-best-practices/realtime) — best practices
+- [Parallel execution](/guide/working-with-udfs/parallel-execution) — run over multiple inputs
 - [Caching](/guide/working-with-udfs/udf-best-practices/caching) — how caching works
+- [`Udf` API reference](/python-sdk/api-reference/udf) — full API details
+
+---
+
+## [[Legacy](/python-sdk/api-reference/fused-run)]: `fused.run()`
+
+The `fused.run()` function still works but direct UDF calling is preferred:
+
+```python
+# Legacy
+result = fused.run(my_udf, name="hello")
+
+# Preferred
+result = my_udf(name="hello")
+```
