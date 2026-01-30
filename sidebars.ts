@@ -22,9 +22,8 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Quickstart",
       collapsible: false,
-      link: { type: "doc", id: "guide/getting-started/first-udf-basics" },
       items: [
-        { type: "doc", id: "guide/getting-started/first-udf-basics", label: "First UDF basics" },
+        { type: "doc", id: "guide/getting-started/first-udf-basics", label: "First UDF & Basics" },
         { type: "doc", id: "guide/getting-started/workbench-intro", label: "Workbench intro" },
         { type: "doc", id: "guide/getting-started/using-ai", label: "Using AI" },
       ],
@@ -35,7 +34,6 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "UDF Fundamentals",
       collapsible: false,
-      link: { type: "doc", id: "guide/working-with-udfs/why-fused" },
       items: [
         { type: "doc", id: "guide/working-with-udfs/why-fused", label: "Why Fused" },
         { type: "doc", id: "guide/working-with-udfs/writing-udfs", label: "Writing UDFs" },
@@ -50,7 +48,6 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "UDF Best Practices",
       collapsible: false,
-      link: { type: "doc", id: "guide/working-with-udfs/udf-best-practices/realtime" },
       items: [
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/realtime", label: "Run UDFs efficiently" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/scaling-out", label: "Scaling out UDFs" },
@@ -66,7 +63,6 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Connecting to Data",
       collapsible: false,
-      link: { type: "doc", id: "guide/data-input-outputs/import-connection/local-files" },
       items: [
         { type: "doc", id: "guide/data-input-outputs/import-connection/local-files", label: "Local files" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/cloud-storage", label: "Cloud storage" },
@@ -81,7 +77,6 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Reading & Writing Files",
       collapsible: false,
-      link: { type: "doc", id: "guide/data-input-outputs/read-write/reading" },
       items: [
         { type: "doc", id: "guide/data-input-outputs/read-write/reading", label: "Reading files" },
         { type: "doc", id: "guide/data-input-outputs/read-write/writing", label: "Writing files" },
@@ -96,7 +91,6 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Exporting Data",
       collapsible: false,
-      link: { type: "doc", id: "guide/data-input-outputs/export-api/tokens-endpoints" },
       items: [
         { type: "doc", id: "guide/data-input-outputs/export-api/tokens-endpoints", label: "Tokens & endpoints" },
         { type: "doc", id: "guide/data-input-outputs/export-api/download", label: "Download" },
@@ -110,7 +104,6 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Advanced Setup",
       collapsible: false,
-      link: { type: "doc", id: "guide/advanced-setup/local-installation" },
       items: [
         { type: "doc", id: "guide/advanced-setup/local-installation", label: "Python installation" },
         { type: "doc", id: "guide/advanced-setup/git-integration", label: "Git integration" },
@@ -137,7 +130,6 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Use Cases & Demos",
       collapsible: false,
-      link: { type: "doc", id: "examples/zonal-stats" },
       items: [
         "examples/zonal-stats",
         "examples/ais-dark-vessels",
@@ -153,7 +145,6 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "H3 Analytics",
       collapsible: false,
-      link: { type: "doc", id: "guide/h3-analytics/h3-overview" },
       items: [
         "guide/h3-analytics/h3-overview",
         "guide/h3-analytics/converting",
@@ -169,7 +160,6 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Data & Scraping",
       collapsible: false,
-      link: { type: "doc", id: "examples/web-scraping" },
       items: [
         "examples/web-scraping",
         "examples/pdf-scraping",
@@ -181,7 +171,6 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Visualization",
       collapsible: false,
-      link: { type: "doc", id: "examples/creating-charts" },
       items: [
         "examples/creating-charts",
         "examples/standalone-html-maps",
@@ -203,7 +192,6 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "API Reference",
       collapsible: false,
-      link: { type: "doc", id: "python-sdk/api-reference/fused-udf" },
       items: [
         { type: "doc", id: "python-sdk/changelog", label: "Changelog" },
         { type: "doc", id: "python-sdk/api-reference/fused-cache", label: "@fused.cache" },
@@ -245,7 +233,6 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Canvas",
       collapsible: false,
-      link: { type: "doc", id: "workbench/udf-builder/canvas" },
       items: [
         { type: "doc", id: "workbench/udf-builder/canvas", label: "Overview" },
         { type: "doc", id: "workbench/udf-builder/code-editor", label: "Code Editor" },
@@ -261,7 +248,6 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "UDF Builder",
       collapsible: false,
-      link: { type: "doc", id: "workbench/udf-builder/udf-builder" },
       items: [
         { type: "doc", id: "workbench/udf-builder/udf-builder", label: "Overview" },
         { type: "doc", id: "workbench/udf-builder/navigation", label: "Map Navigation" },
@@ -275,7 +261,6 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Account Management",
       collapsible: false,
-      link: { type: "doc", id: "workbench/account" },
       items: [
         { type: "doc", id: "workbench/account", label: "Account" },
         { type: "doc", id: "workbench/preferences", label: "Preferences" },
@@ -288,7 +273,6 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Fused Apps",
       collapsible: false,
-      link: { type: "doc", id: "workbench/app-builder/app-builder" },
       items: [
         { type: "doc", id: "workbench/app-builder/app-builder", label: "App Builder" },
         { type: "doc", id: "workbench/app-builder/app-overview", label: "App Overview" },
