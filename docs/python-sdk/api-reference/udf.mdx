@@ -1,61 +1,203 @@
 ---
 sidebar_label: Udf (class)
 title: Udf (class)
-toc_max_heading_level: 5
+toc_max_heading_level: 2
 sidebar_position: 0
 ---
 
-## Udf
+```python
+class Udf
+```
 
-The `Udf` class is the object you get when defining a UDF with the
-[`@fused.udf`](/python-sdk/api-reference/fused-udf) decorator, or when loading
-a saved UDF with [`fused.load()`](/python-sdk/api-reference/fused-load).
+A Fused UDF (User-Defined Function) is a callable Python function that runs on Fused infrastructure.
 
-## Properties
+The `Udf` class is the object returned when decorating a function with [`@fused.udf`](/python-sdk/api-reference/fused-udf), or when loading a saved UDF with [`fused.load()`](/python-sdk/api-reference/fused-load).
 
-### name
+**Calling a UDF**
+
+UDFs are callable objects. Call them directly like regular Python functions:
+
+```python
+@fused.udf
+def my_udf(x: int, multiplier: int = 2):
+    return x * multiplier
+
+# Call directly
+result = my_udf(x=5, multiplier=3)  # Returns 15
+
+# Run locally
+result = my_udf(x=5, engine="local")
+
+# Run on a batch instance
+result = my_udf(x=5, engine="medium")
+```
+
+**Parallel execution**
+
+Use `.map()` to run a UDF in parallel across multiple inputs:
+
+```python
+@fused.udf
+def my_udf(x: int):
+    return x * 2
+
+pool = my_udf.map([1, 2, 3, 4, 5])
+df = pool.collect()  # Returns DataFrame with results
+```
+
+---
+
+## \_\_call\_\_
+
+```python
+udf(
+    *args,
+    engine=None,
+    cache_max_age=None,
+    max_retry=2,
+    cache=True,
+    **kwargs
+)
+```
+
+Call the UDF to execute it.
+
+**Parameters:**
+
+- **\*args** – Positional arguments to pass to the UDF.
+- **engine** (`str | None`) – Execution engine:
+  - `"remote"`: Run remotely on a realtime instance. (Default)
+  - `"local"`: Run locally.
+  - `"small"`, `"medium"`, `"large"`: Run on a batch instance.
+- **cache_max_age** (`str | None`) – Maximum cache age. Units: `s`, `m`, `h`, `d`. Example: `"48h"`.
+- **cache** (`bool`) – Set to `False` to disable caching. Default: `True`.
+- **max_retry** (`int`) – Max retries for failed jobs. Default: `2`.
+- **\*\*kwargs** – Keyword arguments to pass to the UDF.
+
+**Returns:** The result of the UDF execution.
+
+---
+
+## map
+
+```python
+udf.map(
+    arg_list,
+    *,
+    engine=None,
+    cache_max_age=None,
+    max_workers=None,
+    worker_concurrency=None,
+    cache=True,
+    max_retry=2,
+) -> JobPool
+```
+
+Run the UDF in parallel for each element in `arg_list`.
+
+**Parameters:**
+
+- **arg_list** (`list`) – Arguments for each job. Can be a list of values or list of dicts.
+- **engine** (`str | None`) – Execution engine (`"remote"`, `"local"`, `"small"`, `"medium"`, `"large"`).
+- **max_workers** (`int | None`) – Maximum parallel workers. Default: 32 (remote), 1 (local/batch).
+- **worker_concurrency** (`int | None`) – Concurrency per worker.
+- **cache_max_age** (`str | None`) – Maximum cache age.
+- **cache** (`bool`) – Set to `False` to disable caching.
+- **max_retry** (`int`) – Max retries for failed jobs. Default: `2`.
+
+**Returns:** [`JobPool`](/python-sdk/api-reference/jobpool) – Call `.collect()` to get results.
+
+**Example:**
+
+```python
+@fused.udf
+def process(city: str, year: int):
+    return f"{city}-{year}"
+
+pool = process.map([
+    {"city": "NYC", "year": 2023},
+    {"city": "LA", "year": 2024},
+])
+df = pool.collect()
+```
+
+---
+
+## map_async
+
+```python
+async udf.map_async(
+    arg_list,
+    *,
+    engine=None,
+    max_workers=None,
+    cache_max_age=None,
+    cache=True,
+    max_retry=2,
+) -> JobPool
+```
+
+Async version of `map()`. Batch instance types not supported.
+
+---
+
+## name
 
 The name of the UDF. Defaults to the function name.
 
-### code
+---
+
+## code
 
 The source code of the UDF as a string.
 
-### headers
+---
 
-Sequence of header files included with the UDF.
-
-### metadata
+## metadata
 
 Optional dictionary of metadata associated with the UDF.
 
-### parameters
+---
+
+## parameters
 
 Dictionary of default parameters for the UDF.
 
-### cache_max_age
+---
+
+## cache_max_age
 
 Maximum cache age in seconds. `None` for default caching behavior.
 
-### instance_type
+---
 
-The instance type to use for remote execution (e.g., `'realtime'`, `'small'`, `'medium'`, `'large'`).
+## instance_type
 
-### disk_size_gb
+Default instance type for remote execution (`"realtime"`, `"small"`, `"medium"`, `"large"`).
+
+---
+
+## disk_size_gb
 
 Disk size in GB for batch execution.
 
-### region
+---
+
+## region
 
 AWS region for execution.
 
-### entrypoint
+---
+
+## entrypoint
 
 The name of the entrypoint function within the UDF code.
 
-### catalog_url
+---
 
-Returns the URL to open this UDF in the Workbench Catalog, or `None` if the UDF is not saved.
+## catalog_url
+
+Returns the URL to open this UDF in Workbench, or `None` if not saved.
 
 ```python
 udf = fused.load("my_udf")
@@ -65,96 +207,137 @@ print(udf.catalog_url)
 
 ---
 
-## Methods
+## collection_id
 
-### to_directory
-
-```python
-to_directory(where: str | Path | None = None, *, overwrite: bool = False)
-```
-
-Write the UDF to disk as a directory (folder).
-
-**Parameters:**
-
-- **where** (`str | Path | None`) – Path to a directory. If not provided, uses the UDF function name.
-- **overwrite** (`bool`) – If True, overwriting is allowed.
+The ID of the collection this UDF belongs to.
 
 ---
 
-### to_file
+## collection_name
 
-```python
-to_file(where: str | Path | BinaryIO, *, overwrite: bool = False)
-```
-
-Write the UDF to disk as a zip file.
-
-**Parameters:**
-
-- **where** (`str | Path | BinaryIO`) – Path to a file or a file-like object.
-- **overwrite** (`bool`) – If True, overwriting is allowed.
+The name of the collection this UDF belongs to.
 
 ---
 
-### to_fused
+## to_fused
 
 ```python
-to_fused(overwrite: bool | None = None)
+udf.to_fused(*, overwrite=None, collection_name=None)
 ```
 
 Save this UDF to the Fused service.
 
 **Parameters:**
 
-- **overwrite** (`bool | None`) – If True, overwrite existing remote UDF.
-
-**Example:**
-
-```python
-@fused.udf
-def my_udf():
-    return "Hello"
-
-my_udf.to_fused()  # Save to Fused
-my_udf.to_fused(overwrite=True)  # Update existing
-```
+- **overwrite** (`bool | None`) – If `True`, overwrite existing remote UDF.
+- **collection_name** (`str | None`) – Collection to save to. Defaults to `"default"`.
 
 ---
 
-### run_local
+## to_directory
 
 ```python
-run_local(*, inplace: bool = False, validate_imports: bool | None = None, **kwargs) -> UdfEvaluationResult
+udf.to_directory(where=None, *, overwrite=False)
 ```
 
-Evaluate this UDF locally against a sample.
+Write the UDF to disk as a directory.
 
 **Parameters:**
 
-- **inplace** (`bool`) – If True, update this UDF object with schema information.
-- **validate_imports** (`bool | None`) – Whether to validate imports.
-- ****kwargs** – Additional arguments to pass to the UDF.
-
-**Example:**
-
-```python
-result = udf.run_local(x=0, y=0, z=0)
-```
+- **where** (`str | Path | None`) – Directory path. Defaults to UDF name.
+- **overwrite** (`bool`) – Allow overwriting.
 
 ---
 
-### schedule
+## to_file
 
 ```python
-schedule(
-    minute: list[int] | int,
-    hour: list[int] | int,
-    day_of_month: list[int] | int | None = None,
-    month: list[int] | int | None = None,
-    day_of_week: list[int] | int | None = None,
-    udf_args: dict[str, Any] | None = None,
-    enabled: bool = True
+udf.to_file(where, *, overwrite=False)
+```
+
+Write the UDF to disk as a zip file.
+
+---
+
+## delete_saved
+
+```python
+udf.delete_saved(inplace=True)
+```
+
+Delete this UDF from the Fused service.
+
+---
+
+## delete_cache
+
+```python
+udf.delete_cache()
+```
+
+Delete cached results for this UDF.
+
+---
+
+## create_access_token
+
+```python
+udf.create_access_token(
+    *,
+    client_id=None,
+    public_read=None,
+    access_scope=None,
+    cache=True,
+    metadata_json=None,
+    enabled=True,
+) -> UdfAccessToken
+```
+
+Create an access token for sharing this UDF.
+
+---
+
+## get_access_tokens
+
+```python
+udf.get_access_tokens() -> UdfAccessTokenList
+```
+
+Get all access tokens for this UDF.
+
+---
+
+## get_access_token
+
+```python
+udf.get_access_token() -> UdfAccessToken | None
+```
+
+Get the first access token, or `None`.
+
+---
+
+## shared_url
+
+```python
+udf.shared_url(format=None) -> str | None
+```
+
+Get the shared URL for this UDF.
+
+---
+
+## schedule
+
+```python
+udf.schedule(
+    minute,
+    hour,
+    day_of_month=None,
+    month=None,
+    day_of_week=None,
+    udf_args=None,
+    enabled=True,
 ) -> CronJob
 ```
 
@@ -164,9 +347,9 @@ Schedule this UDF to run on a cron schedule.
 
 - **minute** (`list[int] | int`) – Minute(s) to run (0-59).
 - **hour** (`list[int] | int`) – Hour(s) to run (0-23).
-- **day_of_month** (`list[int] | int | None`) – Day(s) of month (1-31). Default: every day.
-- **month** (`list[int] | int | None`) – Month(s) (1-12). Default: every month.
-- **day_of_week** (`list[int] | int | None`) – Day(s) of week (0-6, 0=Sunday). Default: every day.
+- **day_of_month** (`list[int] | int | None`) – Day(s) of month (1-31).
+- **month** (`list[int] | int | None`) – Month(s) (1-12).
+- **day_of_week** (`list[int] | int | None`) – Day(s) of week (0-6, 0=Sunday).
 - **udf_args** (`dict[str, Any] | None`) – Arguments to pass to the UDF.
 - **enabled** (`bool`) – Whether the schedule is active.
 
@@ -175,153 +358,35 @@ Schedule this UDF to run on a cron schedule.
 ```python
 # Run every day at 8:00 AM
 udf.schedule(minute=0, hour=8)
-
-# Run every Monday at noon
-udf.schedule(minute=0, hour=12, day_of_week=1)
 ```
 
 ---
 
-### get_schedule
+## get_schedule
 
 ```python
-get_schedule() -> CronJobSequence
+udf.get_schedule() -> CronJobSequence
 ```
 
-Retrieve any scheduled runs of this UDF.
-
-**Returns:**
-
-- `CronJobSequence` – List of scheduled cron jobs.
+Retrieve scheduled runs of this UDF.
 
 ---
 
-### set_parameters
+## render
 
 ```python
-set_parameters(
-    parameters: dict[str, Any],
-    replace_parameters: bool = False,
-    inplace: bool = False
-) -> Udf
+udf.render()
 ```
 
-Set the parameters on this UDF.
-
-**Parameters:**
-
-- **parameters** (`dict[str, Any]`) – The new parameters dictionary.
-- **replace_parameters** (`bool`) – If True, unset any parameters not in the new dict.
-- **inplace** (`bool`) – If True, modify this object. If False, return a new object.
-
-**Example:**
-
-```python
-udf = udf.set_parameters({"table_path": "s3://my-bucket/data/"})
-```
+Render the UDF code in a Jupyter notebook cell.
 
 ---
 
-### create_access_token
-
-```python
-create_access_token(
-    *,
-    client_id: str | None = None,
-    public_read: bool | None = None,
-    access_scope: str | None = None,
-    cache: bool = True,
-    metadata_json: dict[str, Any] | None = None,
-    enabled: bool = True
-) -> UdfAccessToken
-```
-
-Create an access token for sharing this UDF.
-
-**Parameters:**
-
-- **client_id** (`str | None`) – Override which realtime environment to run under.
-- **public_read** (`bool | None`) – Whether the token allows public read access.
-- **access_scope** (`str | None`) – Access scope for the token.
-- **cache** (`bool`) – If True, UDF tiles will be cached.
-- **metadata_json** (`dict[str, Any] | None`) – Additional metadata for tiles.
-- **enabled** (`bool`) – If True, the token can be used.
-
-**Returns:**
-
-- `UdfAccessToken` – The created access token.
-
----
-
-### get_access_tokens
-
-```python
-get_access_tokens() -> UdfAccessTokenList
-```
-
-Get all access tokens for this UDF.
-
-**Returns:**
-
-- `UdfAccessTokenList` – List of access tokens.
-
----
-
-### delete_cache
-
-```python
-delete_cache()
-```
-
-Delete the cached results for this UDF.
-
----
-
-### delete_saved
-
-```python
-delete_saved(inplace: bool = True)
-```
-
-Delete this UDF from the Fused service.
-
-**Parameters:**
-
-- **inplace** (`bool`) – If True, update this object to reflect deletion.
-
----
-
-### eval_schema
-
-```python
-eval_schema(inplace: bool = False) -> Udf
-```
-
-Reload the schema saved in the code of the UDF.
-
-Note: This will evaluate the UDF function.
-
-**Parameters:**
-
-- **inplace** (`bool`) – If True, update this UDF object. Otherwise return a new UDF object.
-
----
-
-### from_gist
+## from_gist
 
 ```python
 @classmethod
-from_gist(gist_id: str) -> Udf
+Udf.from_gist(gist_id: str) -> Udf
 ```
 
 Create a UDF from a GitHub gist.
-
-**Parameters:**
-
-- **gist_id** (`str`) – The GitHub gist ID.
-
-**Example:**
-
-```python
-udf = Udf.from_gist("abc123def456")
-```
