@@ -11,35 +11,31 @@ Fused caches UDF results automatically to make repeated calls faster. Cached cal
 
 | Type | When it applies | Storage | Default Duration | Speed |
 |------|-----------------|---------|-------------|-------|
-| [UDF cache](#udf-cache) | `fused.run()` results | [S3](/guide/data-input-outputs/import-connection/cloud-storage) | 90 days | Good |
+| [UDF cache](#udf-cache) | UDF call results | [S3](/guide/data-input-outputs/import-connection/cloud-storage) | 90 days | Good |
 | [`@fused.cache`](#fusedcache) | Functions inside UDFs | [mount](/guide/data-input-outputs/import-connection/cloud-storage#mntcache-disk) | 12 hours | Fast |
 
 Both work the same way: store the result of [function + inputs], return cached result on repeat calls. Change the function or inputs → cache miss → recompute.
 
 ## UDF cache
 
-Every `fused.run()` call is cached automatically. No configuration needed.
+Every UDF call is cached automatically. No configuration needed.
 
 ```python
-fused.run(my_udf)  # First call: runs UDF
-fused.run(my_udf)  # Second call: returns cached result
+my_udf()  # First call: runs UDF
+my_udf()  # Second call: returns cached result
 ```
 
 **Disable caching** when you need fresh results:
 
 ```python
 @fused.udf(cache_max_age=0)
-def udf():
+def my_udf():
     ...
 
 # Or at call time
-fused.run(my_udf, cache_max_age=0)
-```
-
-**Reset cache** to force a fresh run once:
-
-```python
-fused.run(my_udf, cache_reset=True)
+my_udf(cache_max_age=0)
+# or
+my_udf(cache=False)
 ```
 
 ## @fused.cache
@@ -80,11 +76,11 @@ Control how long cached results stay valid.
 | Context | Example |
 |---------|---------|
 | UDF definition | `@fused.udf(cache_max_age="24h")` |
-| [fused.run()](/guide/working-with-udfs/fused-run) | `fused.run(udf, cache_max_age="1h")` |
+| Direct call | `my_udf(cache_max_age="1h")` |
 | @fused.cache | `@fused.cache(cache_max_age="30m")` |
 | [HTTPs endpoint](/guide/working-with-udfs/run-udfs-as-api) | `udf.fused.io/token?cache_max_age=0` |
 
-**Priority:** `fused.run()` > `@fused.udf()` > default (90 days)
+**Priority:** Call-time param > `@fused.udf()` > default (90 days)
 
 ## Common gotchas
 
@@ -95,7 +91,8 @@ When calling one UDF from another, the child won't automatically refresh when th
 ```python
 @fused.udf
 def child_udf():
-    data = fused.run("parent_udf")  # Won't re-fetch if parent changes
+    parent = fused.load("parent_udf")
+    data = parent()  # Won't re-fetch if parent changes
     return data
 ```
 
@@ -104,15 +101,16 @@ Fix: disable cache on the child so it always calls the parent:
 ```python
 @fused.udf(cache_max_age=0)
 def child_udf():
-    data = fused.run("parent_udf")  # Always gets latest from parent
+    parent = fused.load("parent_udf")
+    data = parent()  # Always gets latest from parent
     return data
 ```
 
-### Realtime vs batch have separate caches
+### Realtime vs dedicated instance have separate caches
 
 ```python
-fused.run("my_udf")                         # realtime cache
-fused.run("my_udf", instance_type="small")  # different cache (batch)
+my_udf()                     # realtime cache
+my_udf(engine="small")       # different cache (dedicated instance)
 ```
 
 ### Caching with `bounds` in Tile UDFs
@@ -147,4 +145,5 @@ See how much caching is saving you in the **[Account](/workbench/account)** page
 ## See also
 
 - [Data ingestion](/guide/data-input-outputs/read-write/geospatial/ingestion) — for large datasets, ingest to Parquet/GeoParquet instead of caching
-- [Run UDFs in python](/guide/working-with-udfs/fused-run) — full `fused.run()` reference
+- [Running UDFs](/guide/working-with-udfs/fused-run) — calling UDFs
+- [`Udf` API reference](/python-sdk/api-reference/udf) — full API details
