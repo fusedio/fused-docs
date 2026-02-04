@@ -43,16 +43,43 @@ pool.all_succeeded() # True if all jobs succeeded
 pool.any_failed()    # True if any job failed
 ```
 
+**Parallel processing within workers**
+
+Use `n_processes_per_worker` to combine multiple items per UDF invocation, reducing total invocations for large job counts:
+
+```python
+# Process 4 items in parallel within each UDF instance
+pool = my_udf.map(range(1000), n_processes_per_worker=4)
+df = pool.collect()
+```
+
+**Local engine execution**
+
+When using `engine="local"`, the pool uses process-based execution. The pool automatically shuts down after `collect()`:
+
+```python
+pool = my_udf.map([1, 2, 3], engine="local")
+df = pool.collect()  # Pool automatically shuts down after collecting
+```
+
 **Async methods**
 
-When using [`udf.map_async()`](/python-sdk/api-reference/udf#map_async), the returned pool has async variants of key methods:
+When using [`udf.map_async()`](/python-sdk/api-reference/udf#map_async), the returned pool has async variants of all key methods:
 
 ```python
 pool = await my_udf.map_async([1, 2, 3])
 
 await pool.wait_async()
 results = await pool.results_async()
+results_now = await pool.results_now_async()
 errors = await pool.errors_async()
+first_error = await pool.first_error_async()
+logs = await pool.logs_async()
+first_log = await pool.first_log_async()
+logs_df = await pool.logs_df_async()
+success = await pool.success_async()
+await pool.tail_async()
+await pool.cancel_async()
 ```
 
 ---
@@ -131,22 +158,23 @@ pool.collect(
 
 Wait for all jobs and collect results into a DataFrame.
 
+:::note
+When using `engine="local"`, `collect()` automatically shuts down the pool after collecting results.
+:::
+
 ---
 
 ## df
 
 ```python
 pool.df(
-    status_column="status",    # column name for status (None to omit)
-    result_column="result",    # column name for result (None to omit)
-    time_column="time",        # column name for time (None to omit)
-    logs_column="logs",        # column name for logs (None to omit)
-    exception_column=None,     # column name for exceptions (None to omit)
-    include_exceptions=True,   # include exceptions in result column
+    ignore_exceptions=False,  # if True, skip failed jobs instead of raising
+    flatten=True,             # if True, flatten DataFrame results
+    drop_index=False,         # if True, use position index instead of args
 ) -> pd.DataFrame
 ```
 
-Get a DataFrame of results as they are currently. Includes columns for each argument passed, plus status, result, time, and logs.
+Alias for [`collect()`](#collect).
 
 ---
 
@@ -197,6 +225,23 @@ pool.logs() -> list[str | None]
 ```
 
 Logs for each task. Incomplete tasks will be reported as `None`.
+
+---
+
+## logs_df
+
+```python
+pool.logs_df(
+    status_column="status",    # column name for status (None to omit)
+    result_column="result",    # column name for result (None to omit)
+    time_column="time",        # column name for time (None to omit)
+    logs_column="logs",        # column name for logs (None to omit)
+    exception_column=None,     # column name for exceptions (None to omit)
+    include_exceptions=True,   # include exceptions in result column
+) -> pd.DataFrame
+```
+
+Get a DataFrame of results as they are currently. Includes columns for each argument passed, plus status, result, time, and logs.
 
 ---
 
@@ -257,6 +302,18 @@ pool.running() -> dict[int, Any]
 ```
 
 Retrieve the results that are currently running. Results are indexed by position in the args list.
+
+---
+
+## shutdown
+
+```python
+pool.shutdown(
+    wait=True,  # if True, wait for all workers to complete
+)
+```
+
+Shutdown the pool. Only applicable when using `engine="local"`. Called automatically by `collect()`.
 
 ---
 
