@@ -240,7 +240,7 @@ const config: Config = {
           { to: "/examples/standalone-html-maps", from: ["/tutorials/Analytics%20&%20Dashboard/standalone-maps", "/tutorials/Analytics & Dashboard/standalone-maps", "/guide/working-with-udfs/building-outputs/standalone-maps", "/examples/building-outputs/standalone-maps"] },
           { to: "/examples/realtime-filtering-duckdb", from: ["/tutorials/Analytics%20&%20Dashboard/realtime-data-processing-with-duckdb-wasm", "/tutorials/Analytics & Dashboard/realtime-data-processing-with-duckdb-wasm", "/examples/realtime-processing"] },
           { to: "/examples/creating-charts", from: ["/tutorials/Analytics%20&%20Dashboard/interactive-graphs", "/tutorials/Analytics & Dashboard/interactive-graphs", "/guide/working-with-udfs/building-outputs/charts", "/examples/building-outputs/charts", "/examples/interactive-charts", "/examples/vibe-chart-building"] },
-          { to: "/guide/data-input-outputs/export-api/mcp-servers", from: ["/tutorials/Analytics%20&%20Dashboard/let-anyone-talk-to-your-data", "/tutorials/Analytics & Dashboard/let-anyone-talk-to-your-data"] },
+          { to: "/guide/data-input-outputs/import-connection/ai-data-connection", from: ["/tutorials/Analytics%20&%20Dashboard/let-anyone-talk-to-your-data", "/tutorials/Analytics & Dashboard/let-anyone-talk-to-your-data", "/guide/data-input-outputs/export-api/mcp-servers"] },
           { to: "/examples/creating-charts", from: ["/tutorials/Analytics%20&%20Dashboard/stack-overflow-surveys", "/tutorials/Analytics & Dashboard/stack-overflow-surveys"] },
           { to: "/examples/currency-prediction", from: ["/tutorials/Analytics%20&%20Dashboard/currency-trading", "/tutorials/Analytics & Dashboard/currency-trading"] },
           
