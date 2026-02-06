@@ -11,7 +11,7 @@ The `fused.h3` module provides functions for working with H3-indexed datasets, i
 import fused
 
 # Ingest raster data to H3
-fused.h3.run_ingest_raster_to_h3(...)
+fused.h3.run_ingest_raster_to_h3(input_path="s3://...", output_path="s3://...")
 
 # Read H3-indexed data
 table = fused.h3.read_hex_table(...)
@@ -43,33 +43,37 @@ Each metadata file contains:
 - Full metadata_json stored as custom metadata in the parquet schema
 
 Requires a `hex` column (or variant like `h3`, `h3_index`) in all files.
+Raises ValueError if no hex column is found.
 
 **Parameters:**
 
 - **dataset_path** (`str`) – Path to the dataset directory (e.g., `"s3://bucket/dataset/"`)
-- **output_path** (`str | None`) – Deprecated - use `metadata_path` instead.
-- **metadata_path** (`str | None`) – Directory path where metadata files should be written. If None, writes to `{source_dir}/.fused/{source_filename}.metadata.parquet` for each source file.
+- **output_path** (`str | None`) – Deprecated; use `metadata_path` instead.
+- **metadata_path** (`str | None`) – Where to write metadata files. If None, writes to `{source_dir}/.fused/{source_filename}.metadata.parquet` per source file. If provided, writes to `{metadata_path}/{full_source_path}.metadata.parquet` (allows storing metadata elsewhere when you don't have write access to the dataset directory).
 - **verbose** (`bool`) – If True, print timing/progress information.
-- **row_group_size** (`int`) – Number of rows per row group in output parquet file. Default is 500.
-- **indexed_columns** (`list[str] | None`) – List of column names to index. If None (default), indexes only the first identified indexed column. If empty list, indexes all detected indexed columns.
-- **pool_size** (`int`) – Number of parallel workers to use for processing files. Default is 10.
-- **metadata_compression_level** (`int | None`) – Optional zstd compression level for metadata parquet files.
+- **row_group_size** (`int`) – Rows per row group in output. Default 500.
+- **indexed_columns** (`list[str] | None`) – Column names to index. If None, indexes only the first identified indexed column; if `[]`, indexes all detected indexed columns.
+- **pool_size** (`int`) – Parallel workers. Default 10; set to 1 for sequential.
+- **metadata_compression_level** (`int | None`) – Optional zstd compression level for metadata parquet files (e.g. 1–22).
 
 **Returns:**
 
-- `str` – Path to metadata directory (if metadata_path provided) or first metadata file path.
+- `str` – Path to metadata directory (if `metadata_path` provided) or first metadata file path.
+
+**Raises:** 
+- `ImportError` (job2 required)
+- `ValueError` (no hex column)
+- `FileNotFoundError` (no parquet files).
 
 **Example:**
 
 ```python
-fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/")
-# Returns: 's3://my-bucket/my-dataset/.fused/file1.metadata.parquet'
-
-fused.h3.persist_hex_table_metadata(
-    "s3://my-bucket/my-dataset/",
-    metadata_path="s3://my-bucket/metadata/"
-)
-# Returns: 's3://my-bucket/metadata/'
+>>> fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/")
+'s3://my-bucket/my-dataset/.fused/file1.metadata.parquet'
+>>> fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/", metadata_path="s3://my-bucket/metadata/")
+'s3://my-bucket/metadata/'
+>>> fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/", pool_size=4)
+'s3://my-bucket/my-dataset/.fused/file1.metadata.parquet'
 ```
 
 ---
@@ -91,22 +95,24 @@ read_hex_table(
 
 Read data from an H3-indexed dataset by querying hex ranges.
 
-This is an optimized version that assumes the server always provides full metadata (start_offset, end_offset, metadata, and row_group_bytes) for all row groups. This function eliminates all metadata API calls by using prefetched metadata.
+Optimized path: assumes the server provides full metadata (start_offset, end_offset, metadata, row_group_bytes) for all row groups and uses prefetched metadata from the `/datasets/items-with-metadata` endpoint, so no metadata API calls are made. If any row group is missing required metadata, raises an error indicating the dataset must be re-indexed.
 
 **Parameters:**
 
 - **dataset_path** (`str`) – Path to the H3-indexed dataset (e.g., `"s3://bucket/dataset/"`)
 - **hex_ranges_list** (`list[list[int]]`) – List of [min_hex, max_hex] pairs as integers. Example: `[[622236719905341439, 622246719905341439]]`
-- **columns** (`list[str] | None`) – Optional list of column names to read. If None, reads all columns.
+- **columns** (`list[str] | None`) – Columns to read. If None, reads all.
 - **base_url** (`str | None`) – Base URL for API. If None, uses current environment.
-- **verbose** (`bool`) – If True, print progress information. Default is False.
-- **return_timing_info** (`bool`) – If True, return a tuple of (table, timing_info) instead of just the table.
-- **batch_size** (`int | None`) – Target size in bytes for combining row groups. If None, uses `fused.options.row_group_batch_size` (default: 32KB).
-- **max_concurrent_downloads** (`int | None`) – Maximum number of simultaneous download operations.
+- **verbose** (`bool`) – If True, print progress. Default False.
+- **return_timing_info** (`bool`) – If True, return (table, timing_info) instead of just the table.
+- **batch_size** (`int | None`) – Target size in bytes for combining row groups. If None, uses `fused.options.row_group_batch_size` (default 32KB).
+- **max_concurrent_downloads** (`int | None`) – Max simultaneous downloads. If None, uses a default based on number of files.
 
 **Returns:**
 
-- `pa.Table` – PyArrow Table containing the concatenated data from all matching row groups. If `return_timing_info` is True, returns a tuple of (table, timing_info dict).
+- `pa.Table` – PyArrow Table (or (table, timing_info) if `return_timing_info`).
+
+**Raises:** `ValueError` if any row group is missing required metadata (dataset needs re-indexing).
 
 **Example:**
 
@@ -137,23 +143,23 @@ read_hex_table_slow(
 ) -> pa.Table | tuple[pa.Table, dict[str, Any]]
 ```
 
-Read data from an H3-indexed dataset by querying hex ranges (slower version with metadata API calls).
+Read data from an H3-indexed dataset by querying hex ranges (slower path with metadata API calls).
 
-This function queries the dataset index to find matching row groups, then fetches metadata and downloads data. Adjacent row groups from the same file are combined into single downloads for better S3 performance.
+Queries the dataset index for matching row groups, then fetches metadata and downloads data. Adjacent row groups from the same file are combined into single downloads for better S3 performance. Batch size for combining row groups is controlled by `fused.options.row_group_batch_size` (default 32KB).
 
 **Parameters:**
 
 - **dataset_path** (`str`) – Path to the H3-indexed dataset (e.g., `"s3://bucket/dataset/"`)
 - **hex_ranges_list** (`list[list[int]]`) – List of [min_hex, max_hex] pairs as integers.
-- **columns** (`list[str] | None`) – Optional list of column names to read. If None, reads all columns.
+- **columns** (`list[str] | None`) – Columns to read. If None, reads all.
 - **base_url** (`str | None`) – Base URL for API. If None, uses current environment.
-- **verbose** (`bool`) – If True, print progress information. Default is False.
-- **return_timing_info** (`bool`) – If True, return a tuple of (table, timing_info) instead of just the table.
-- **metadata_batch_size** (`int`) – Maximum number of row group metadata requests to batch together in a single API call. Default is 50.
+- **verbose** (`bool`) – If True, print progress. Default False.
+- **return_timing_info** (`bool`) – If True, return (table, timing_info) instead of just the table.
+- **metadata_batch_size** (`int`) – Max row group metadata requests to batch per API call. Default 50.
 
 **Returns:**
 
-- `pa.Table` – PyArrow Table containing the concatenated data from all matching row groups.
+- `pa.Table` – PyArrow Table (or (table, timing_info) if `return_timing_info`).
 
 **Example:**
 
@@ -185,27 +191,27 @@ read_hex_table_with_persisted_metadata(
 ) -> pa.Table | tuple[pa.Table, dict[str, Any]]
 ```
 
-Read data from an H3-indexed dataset using persisted metadata parquet files.
+Read data from an H3-indexed dataset using persisted metadata parquet files (no server).
 
-This function reads from per-file metadata parquet files instead of querying a server. Each source parquet file has a corresponding `.metadata.parquet` file stored at `{source_dir}/.fused/{source_filename}.metadata.parquet`.
-
-Supports subdirectory queries - if dataset_path points to a subdirectory, the function will look for metadata files for files in that subdirectory.
+Reads from per-file `.metadata.parquet` files instead of querying a server. Metadata location: `{source_dir}/.fused/{source_filename}.metadata.parquet`, or when `metadata_path` is provided, `{metadata_path}/{full_source_path}.metadata.parquet`. Supports subdirectory queries: if `dataset_path` is a subdirectory, metadata is looked up for files in that subdirectory.
 
 **Parameters:**
 
-- **dataset_path** (`str`) – Path to the H3-indexed dataset (e.g., `"s3://bucket/dataset/"`). Can also be a subdirectory path for filtering.
+- **dataset_path** (`str`) – Path to the H3-indexed dataset (e.g., `"s3://bucket/dataset/"`) or a subdirectory for filtering.
 - **hex_ranges_list** (`list[list[int]]`) – List of [min_hex, max_hex] pairs as integers.
-- **columns** (`list[str] | None`) – Optional list of column names to read. If None, reads all columns.
-- **metadata_path** (`str | None`) – Directory path where metadata files are stored. If None, looks for metadata at `{source_dir}/.fused/` for each source file.
-- **verbose** (`bool`) – If True, print progress information. Default is False.
-- **return_timing_info** (`bool`) – If True, return a tuple of (table, timing_info) instead of just the table.
+- **columns** (`list[str] | None`) – Columns to read. If None, reads all.
+- **metadata_path** (`str | None`) – Where metadata files are stored. If None, uses `{source_dir}/.fused/` per source file; if provided, reads from this location using full source paths (e.g. when you don't have access to the dataset directory).
+- **verbose** (`bool`) – If True, print progress. Default False.
+- **return_timing_info** (`bool`) – If True, return (table, timing_info) instead of just the table.
 - **batch_size** (`int | None`) – Target size in bytes for combining row groups. If None, uses `fused.options.row_group_batch_size`.
-- **max_concurrent_downloads** (`int | None`) – Maximum number of simultaneous download operations.
-- **max_concurrent_metadata_reads** (`int | None`) – Maximum number of simultaneous metadata file reads.
+- **max_concurrent_downloads** (`int | None`) – Max simultaneous downloads. If None, default based on number of files.
+- **max_concurrent_metadata_reads** (`int | None`) – Max simultaneous metadata file reads. If None, defaults to `min(10, len(source_files))`.
 
 **Returns:**
 
-- `pa.Table` – PyArrow Table containing the concatenated data from all matching row groups.
+- `pa.Table` – PyArrow Table (or (table, timing_info) if `return_timing_info`).
+
+**Raises:** `FileNotFoundError` (metadata file not found), `ValueError` (row group missing required metadata).
 
 **Example:**
 
@@ -228,7 +234,7 @@ table = fused.h3.read_hex_table_with_persisted_metadata(
 
 ```python
 run_ingest_raster_to_h3(
-    src_path: str | list[str],
+    input_path: str | list[str],
     output_path: str,
     metrics: str | list[str] = "cnt",
     res: int | None = None,
@@ -241,78 +247,70 @@ run_ingest_raster_to_h3(
     max_rows_per_chunk: int = 0,
     include_source_url: bool = True,
     target_chunk_size: int | None = None,
+    nodata: int | float | None = None,
     debug_mode: bool = False,
     remove_tmp_files: bool = True,
     tmp_path: str | None = None,
     overwrite: bool = False,
     steps: list[str] | None = None,
-    extract_kwargs: dict | None = {},
-    partition_kwargs: dict | None = {},
-    overview_kwargs: dict | None = {},
-    **kwargs
+    extract_instance_type: str | None = None,
+    extract_max_workers: int = 256,
+    partition_instance_type: str | None = None,
+    partition_max_workers: int = 256,
+    overview_instance_type: str | None = None,
+    overview_max_workers: int = 256,
+    **kwargs,
 )
 ```
 
 Run the raster to H3 ingestion process.
 
 This process involves multiple steps:
-
-- Extract pixel values and assign to H3 cells in chunks (extract step)
-- Combine the chunks per partition (file) and prepare metadata (partition step)
-- Create the metadata `_sample` file and overviews files
+- extract pixels values and assign to H3 cells in chunks (extract step)
+- combine the chunks per partition (file) and prepare metadata (partition step)
+- create the metadata `_sample` file and overviews files
 
 **Parameters:**
 
-- **src_path** (`str | list[str]`) – Path(s) to the input raster data. When a single path, the file is chunked for processing based on `target_chunk_size`. When a list, each file is processed as one chunk.
+- **input_path** (`str | list[str]`) – Path(s) to the input raster data. When a single path, the file is chunked for processing based on `target_chunk_size`. When a list of paths, each file is processed as one chunk.
 - **output_path** (`str`) – Path for the resulting Parquet dataset.
-- **metrics** (`str | list[str]`) – The metrics to compute per H3 cell. Supported metrics are either `"cnt"` or a list containing any of `"avg"`, `"min"`, `"max"`, `"stddev"`, `"mode"`, and `"sum"`.
-- **res** (`int | None`) – The resolution of the H3 cells in the output data. By default, inferred based on the resolution of the input data.
-- **k_ring** (`int`) – The k-ring distance at resolution `res + res_offset` to which the pixel value is assigned. Defaults to 1.
+- **metrics** (`str | list[str]`) – The metrics to compute per H3 cell. Supported: `"cnt"` or a list containing any of `"avg"`, `"min"`, `"max"`, `"stddev"`, `"mode"` (most common value), and `"sum"`.
+- **res** (`int | None`) – The resolution of the H3 cells in the output data. Pixel values are assigned to H3 cells at resolution `res + res_offset` and then aggregated to `res`. By default, inferred from the input data so H3 cell size is close to pixel size (e.g. 30×30m raster → resolution 11).
+- **k_ring** (`int`) – The k-ring distance at resolution `res + res_offset` to which the pixel value is assigned (in addition to the center cell). Defaults to 1.
 - **res_offset** (`int`) – Offset to child resolution (relative to `res`) at which to assign the raw pixel values to H3 cells.
-- **file_res** (`int | None`) – The H3 resolution to chunk the resulting files of the Parquet dataset. Specify `file_res=-1` to have a single output file.
-- **chunk_res** (`int | None`) – The H3 resolution to chunk the row groups within each file.
-- **overview_res** (`list[int] | None`) – The H3 resolutions for which to create overview files. By default, resolutions 3-7.
-- **overview_chunk_res** (`int | list[int] | None`) – The H3 resolution(s) to chunk the row groups within each overview file.
+- **file_res** (`int | None`) – The H3 resolution to chunk the resulting files of the Parquet dataset. By default inferred from `res`. Use `file_res=-1` for a single output file.
+- **chunk_res** (`int | None`) – The H3 resolution to chunk the row groups within each file (ignored when `max_rows_per_chunk` is specified). By default inferred from `res`.
+- **overview_res** (`list[int] | None`) – The H3 resolutions for which to create overview files. By default, resolutions 3 to 7 (or capped at a lower value if output `res` is lower).
+- **overview_chunk_res** (`int | list[int] | None`) – The H3 resolution(s) to chunk the row groups within each overview file. By default, each overview file is chunked at overview resolution minus 5 (clamped between 0 and output `res`).
 - **max_rows_per_chunk** (`int`) – Maximum number of rows per chunk in the resulting data and overview files. If 0 (default), `chunk_res` and `overview_chunk_res` are used.
-- **include_source_url** (`bool`) – If True, include a `"source_url"` column in the output dataset. Defaults to True.
-- **target_chunk_size** (`int | None`) – Approximate number of pixel values to process per chunk in the extract step. Defaults to 10,000,000.
+- **include_source_url** (`bool`) – If True, include a `"source_url"` column in the output with the list of source URLs that contributed data to each H3 cell. Defaults to True.
+- **target_chunk_size** (`int | None`) – Approximate number of pixel values to process per chunk in the extract step. Defaults to 10,000,000 for a single file or a few files. If ingesting more than 20 files, each file is processed as a single chunk by default; override with a specific value or `target_chunk_size=0` to always process each file as one chunk.
+- **nodata** (`int | float | None`) – By default, the "nodata" value from the raster metadata is used to ignore pixels when ingesting. If missing or wrong in the raster metadata, override with this keyword.
 - **debug_mode** (`bool`) – If True, run only the first two chunks for debugging. Defaults to False.
 - **remove_tmp_files** (`bool`) – If True, remove temporary files after ingestion. Defaults to True.
-- **tmp_path** (`str | None`) – Optional path for temporary files. If specified, the extract step is skipped.
-- **overwrite** (`bool`) – If True, overwrite the output path if it already exists. Defaults to False.
-- **steps** (`list[str] | None`) – Processing steps to run. Can include `"extract"`, `"partition"`, `"metadata"`, and `"overview"`. By default, all steps run.
-- **extract_kwargs** (`dict | None`) – Additional keyword arguments for [`fused.submit`](/python-sdk/api-reference/fused-submit) for the extract step.
-- **partition_kwargs** (`dict | None`) – Additional keyword arguments for `fused.submit` for the partition step.
-- **overview_kwargs** (`dict | None`) – Additional keyword arguments for `fused.submit` for the overview step.
+- **tmp_path** (`str | None`) – Optional path for temporary files. If specified, the extract step is skipped and temporary files are assumed to already exist at this path.
+- **overwrite** (`bool`) – If True, overwrite the output path if it already exists (by first removing existing content). Defaults to False.
+- **steps** (`list[str] | None`) – The processing steps to run. Can include `"extract"`, `"partition"`, `"metadata"`, and `"overview"`. By default, all steps run.
+- **extract_instance_type** (`str | None`) – Instance type for the extract step. By default, tries "realtime" then falls back to "large".
+- **extract_max_workers** (`int`) – Maximum number of workers for the extract step. Defaults to 256.
+- **partition_instance_type** (`str | None`) – Instance type for the partition step. By default, tries "realtime" then falls back to "large".
+- **partition_max_workers** (`int`) – Maximum number of workers for the partition step. Defaults to 256.
+- **overview_instance_type** (`str | None`) – Instance type for the overview step. By default, tries "realtime" then falls back to "large".
+- **overview_max_workers** (`int`) – Maximum number of workers for the overview step. Defaults to 256.
+- **\*\*kwargs** – Additional keyword arguments for `fused.submit` for the extract, partition, and overview steps (e.g. `engine`, `instance_type`, `max_workers`, `n_processes_per_worker`, `max_retry`). To run locally: `run_ingest_raster_to_h3(..., engine="local")`.
 
-The extract, partition and overview steps are run in parallel using [`fused.submit()`](/python-sdk/api-reference/fused-submit). By default, the function will first attempt to run this using "realtime" instances, and retry any failed runs using "large" instances.
+The extract, partition and overview steps are run in parallel using
+`fused.submit()`. By default, the function will first attempt to run this using
+"realtime" instances, and retry any failed runs using "large" instances.
 
-**Example:**
+You can override this behavior by specifying the `engine`, `instance_type`,
+`max_workers`, `n_processes_per_worker`, etc parameters as additional
+keyword arguments to this function (`**kwargs`). If you want to specify
+those per step, use `extract_instance_type`, `partition_instance_type`, etc.
+For example, to run everything locally on the same machine where this
+function runs, use:
 
-```python
-fused.h3.run_ingest_raster_to_h3(
-    src_path="s3://my-bucket/raster.tif",
-    output_path="s3://my-bucket/output/",
-    metrics=["avg", "min", "max"],
-    res=10,
-)
-```
-
-To run everything locally:
-
-```python
-fused.h3.run_ingest_raster_to_h3(..., engine="local")
-```
-
-To customize instance types per step:
-
-```python
-fused.h3.run_ingest_raster_to_h3(
-    ...,
-    extract_kwargs={"instance_type": "realtime", "max_workers": 256},
-    partition_kwargs={"instance_type": "medium", "max_workers": 5},
-)
-```
+    run_ingest_raster_to_h3(..., engine="local")
 
 ---
 
@@ -343,38 +341,29 @@ run_partition_to_h3(
 
 Run the H3 partitioning process.
 
-This pipeline assumes that the input data already has a `"hex"` column with H3 cell IDs at the target resolution. It will then repartition the data spatially and add overview files.
+This pipeline assumes that the input data already has a `"hex"` column with H3 cell IDs at the target resolution. It will then repartition the data spatially and add overview files. See `run_ingest_raster_to_h3` for more on the processing steps and execution options.
 
 **Parameters:**
 
-- **input_path** (`str | list[str]`) – Path(s) to the input data. Can be a path to file or directory, or list of file paths.
+- **input_path** (`str | list[str]`) – Path(s) to the input data (file, directory, or list of file paths). The first step is parallelized per input file.
 - **output_path** (`str`) – Path for the resulting Parquet dataset.
-- **metrics** (`str | list[str]`) – The metrics to compute per H3 cell. Supported: `"cnt"` or a list containing `"avg"`, `"min"`, `"max"`, `"stddev"`, and `"sum"`.
-- **groupby_cols** (`list[str]`) – The columns indicating the groups for which aggregated metrics are calculated. Default is `["hex", "data"]`. Must always include `"hex"`. Only applies when `"cnt"` metric is specified.
-- **window_cols** (`list[str]`) – The columns for which to calculate total counts over using a window function. Default is `["hex"]`. Only applies when `"cnt"` metric is specified.
-- **additional_cols** (`list[str]`) – Additional columns from the input data to include in the output dataset. Default is empty.
-- **res** (`int | None`) – The resolution at which to assign the pixel values to H3 cells.
-- **file_res** (`int | None`) – The H3 resolution to chunk the resulting files. Specify `file_res=-1` for a single output file.
-- **chunk_res** (`int | None`) – The H3 resolution to chunk the row groups within each file.
-- **overview_res** (`list[int] | None`) – The H3 resolutions for which to create overview files.
-- **overview_chunk_res** (`int | list[int] | None`) – The H3 resolution(s) to chunk the row groups within each overview file.
-- **max_rows_per_chunk** (`int`) – Maximum number of rows per chunk. If 0 (default), `chunk_res` and `overview_chunk_res` are used.
-- **remove_tmp_files** (`bool`) – If True, remove temporary files after ingestion. Defaults to True.
-- **overwrite** (`bool`) – If True, overwrite the output path if it already exists. Defaults to False.
-- **extract_kwargs** (`dict`) – Additional keyword arguments for the extract step.
-- **partition_kwargs** (`dict`) – Additional keyword arguments for the partition step.
-- **overview_kwargs** (`dict`) – Additional keyword arguments for the overview step.
+- **metrics** (`str | list[str]`) – Per H3 cell: `"cnt"` or a list of `"avg"`, `"min"`, `"max"`, `"stddev"`, `"sum"`.
+- **groupby_cols** (`list[str]`) – Columns defining groups for aggregated metrics. Default `["hex", "data"]`; must include `"hex"`. Only for `"cnt"` metric.
+- **window_cols** (`list[str]`) – Columns for window total counts (adds one output column per column). Default `["hex"]`. Only for `"cnt"` metric.
+- **additional_cols** (`list[str]`) – Extra columns to include; assumed unique per `groupby_cols` group. Default `[]`. Only for `"cnt"` metric.
+- **res** (`int | None`) – H3 resolution; must be specified.
+- **file_res** (`int | None`) – H3 resolution to chunk output files. Default inferred from `res`. Use `file_res=-1` for a single file.
+- **chunk_res** (`int | None`) – H3 resolution to chunk row groups within each file (ignored when `max_rows_per_chunk` is set). Default inferred from `res`.
+- **overview_res** (`list[int] | None`) – Resolutions for overview files. Default 3–7 (capped by `res`).
+- **overview_chunk_res** (`int | list[int] | None`) – Row-group chunk resolution(s) for overview files. Default: overview resolution minus 5 (clamped to 0–`res`).
+- **max_rows_per_chunk** (`int`) – Max rows per chunk; 0 (default) uses `chunk_res` and `overview_chunk_res`.
+- **remove_tmp_files** (`bool`) – Remove temporary files after run. Default True.
+- **overwrite** (`bool`) – Overwrite output path if it exists. Default False.
+- **extract_kwargs** (`dict`) – Extra arguments for [`fused.submit`](/python-sdk/api-reference/fused-submit) for the extract step.
+- **partition_kwargs** (`dict`) – Extra arguments for `fused.submit` for the partition step.
+- **overview_kwargs** (`dict`) – Extra arguments for `fused.submit` for the overview step.
+- **\*\*kwargs** – Extra arguments for all steps; overridden by `extract_kwargs`, `partition_kwargs`, `overview_kwargs`.
 
-**Example:**
-
-```python
-# Partition data that already has H3 hex column
-fused.h3.run_partition_to_h3(
-    input_path="s3://my-bucket/data-with-hex/",
-    output_path="s3://my-bucket/partitioned-output/",
-    metrics=["avg", "sum"],
-    res=10,
-)
-```
+See the docstring of `run_ingest_raster_to_h3` for more details on the processing steps and how to configure the execution.
 
 ---
