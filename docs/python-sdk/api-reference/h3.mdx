@@ -95,24 +95,26 @@ read_hex_table(
 
 Read data from an H3-indexed dataset by querying hex ranges.
 
-Optimized path: assumes the server provides full metadata (start_offset, end_offset, metadata, row_group_bytes) for all row groups and uses prefetched metadata from the `/datasets/items-with-metadata` endpoint, so no metadata API calls are made. If any row group is missing required metadata, raises an error indicating the dataset must be re-indexed.
+This is an optimized version that assumes the server always provides full metadata (start_offset, end_offset, metadata, and row_group_bytes) for all row groups. If any row group is missing required metadata, this function will raise an error indicating that the dataset needs to be re-indexed.
+
+This function eliminates all metadata API calls by using prefetched metadata from the /datasets/items-with-metadata endpoint.
 
 **Parameters:**
 
-- **dataset_path** (`str`) – Path to the H3-indexed dataset (e.g., `"s3://bucket/dataset/"`)
-- **hex_ranges_list** (`list[list[int]]`) – List of [min_hex, max_hex] pairs as integers. Example: `[[622236719905341439, 622246719905341439]]`
-- **columns** (`list[str] | None`) – Columns to read. If None, reads all.
+- **dataset_path** (`str`) – Path to the H3-indexed dataset (e.g., "s3://bucket/dataset/")
+- **hex_ranges_list** (`list[list[int]]`) – List of [min_hex, max_hex] pairs as integers. Example: [[622236719905341439, 622246719905341439]]
+- **columns** (`list[str] | None`) – Optional list of column names to read. If None, reads all columns.
 - **base_url** (`str | None`) – Base URL for API. If None, uses current environment.
-- **verbose** (`bool`) – If True, print progress. Default False.
-- **return_timing_info** (`bool`) – If True, return (table, timing_info) instead of just the table.
-- **batch_size** (`int | None`) – Target size in bytes for combining row groups. If None, uses `fused.options.row_group_batch_size` (default 32KB).
-- **max_concurrent_downloads** (`int | None`) – Max simultaneous downloads. If None, uses a default based on number of files.
+- **verbose** (`bool`) – If True, print progress information. Default is False.
+- **return_timing_info** (`bool`) – If True, return a tuple of (table, timing_info) instead of just the table. Default is False for backward compatibility.
+- **batch_size** (`int | None`) – Target size in bytes for combining row groups. If None, uses `fused.options.row_group_batch_size` (default: 32KB).
+- **max_concurrent_downloads** (`int | None`) – Maximum number of simultaneous download operations. If None, uses a default based on the number of files. Default is None.
 
 **Returns:**
 
-- `pa.Table` – PyArrow Table (or (table, timing_info) if `return_timing_info`).
+- PyArrow Table containing the concatenated data from all matching row groups. If return_timing_info is True, returns a tuple of (table, timing_info dict).
 
-**Raises:** `ValueError` if any row group is missing required metadata (dataset needs re-indexing).
+**Raises:** ValueError: If any row group is missing required metadata (start_offset, end_offset, metadata, or row_group_bytes). This indicates the dataset needs to be re-indexed.
 
 **Example:**
 
@@ -143,29 +145,32 @@ read_hex_table_slow(
 ) -> pa.Table | tuple[pa.Table, dict[str, Any]]
 ```
 
-Read data from an H3-indexed dataset by querying hex ranges (slower path with metadata API calls).
+Read data from an H3-indexed dataset by querying hex ranges.
 
-Queries the dataset index for matching row groups, then fetches metadata and downloads data. Adjacent row groups from the same file are combined into single downloads for better S3 performance. Batch size for combining row groups is controlled by `fused.options.row_group_batch_size` (default 32KB).
+This function queries the dataset index for row groups that match the given H3 hex ranges, downloads them in parallel with optimized batching, and returns a concatenated table.
+
+Adjacent row groups from the same file are combined into single downloads for better S3 performance. The batch size is controlled by `fused.options.row_group_batch_size` (default: 32KB).
 
 **Parameters:**
 
-- **dataset_path** (`str`) – Path to the H3-indexed dataset (e.g., `"s3://bucket/dataset/"`)
-- **hex_ranges_list** (`list[list[int]]`) – List of [min_hex, max_hex] pairs as integers.
-- **columns** (`list[str] | None`) – Columns to read. If None, reads all.
+- **dataset_path** (`str`) – Path to the H3-indexed dataset (e.g., "s3://bucket/dataset/")
+- **hex_ranges_list** (`list[list[int]]`) – List of [min_hex, max_hex] pairs as integers. Example: [[622236719905341439, 622246719905341439]]
+- **columns** (`list[str] | None`) – Optional list of column names to read. If None, reads all columns.
 - **base_url** (`str | None`) – Base URL for API. If None, uses current environment.
-- **verbose** (`bool`) – If True, print progress. Default False.
-- **return_timing_info** (`bool`) – If True, return (table, timing_info) instead of just the table.
-- **metadata_batch_size** (`int`) – Max row group metadata requests to batch per API call. Default 50.
+- **verbose** (`bool`) – If True, print progress information. Default is False.
+- **return_timing_info** (`bool`) – If True, return a tuple of (table, timing_info) instead of just the table. Default is False for backward compatibility.
+- **metadata_batch_size** (`int`) – Maximum number of row group metadata requests to batch together in a single API call. Larger batches reduce API overhead. Default is 50. Consider MongoDB's 16KB document limit when adjusting this value.
 
 **Returns:**
 
-- `pa.Table` – PyArrow Table (or (table, timing_info) if `return_timing_info`).
+- PyArrow Table containing the concatenated data from all matching row groups. If return_timing_info is True, returns a tuple of (table, timing_info dict).
 
 **Example:**
 
 ```python
 import fused
 
+# Read data for a specific H3 hex range
 table = fused.h3.read_hex_table_slow(
     dataset_path="s3://my-bucket/my-h3-dataset/",
     hex_ranges_list=[[622236719905341439, 622246719905341439]]

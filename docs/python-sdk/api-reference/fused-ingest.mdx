@@ -45,26 +45,42 @@ Ingest a dataset into the Fused partitioned format.
 - **input** (`str | Path | Sequence[str | Path] | gpd.GeoDataFrame`) – A GeoPandas `GeoDataFrame` or a path to file or files on S3 to ingest. Files may be Parquet or another geo data format.
 - **output** (`str | None`) – Location on S3 to write the `main` table to.
 - **output_metadata** (`str | None`) – Location on S3 to write the `fused` table to.
-- **schema** (`Schema | None`) – Schema of the data to be ingested. Optional, will be inferred if not provided.
-- **file_suffix** (`str | None`) – Filter which files are used for ingestion (e.g. `.geojson`).
-- **load_columns** (`Sequence[str] | None`) – Read only this set of columns. Defaults to all columns.
-- **remove_cols** (`Sequence[str] | None`) – Columns to drop when ingesting.
-- **explode_geometries** (`bool`) – Whether to unpack multipart geometries to single geometries. Defaults to `False`.
+- **schema** (`Schema | None`) – Schema of the data to be ingested. This is optional and will be inferred from the data if not provided.
+- **file_suffix** (`str | None`) – filter which files are used for ingestion. If `input` is a directory on S3, all files under that directory will be listed and used for ingestion. If `file_suffix` is not None, it will be used to filter paths by checking the trailing characters of each filename. E.g. pass `file_suffix=".geojson"` to include only GeoJSON files inside the directory.
+- **load_columns** (`Sequence[str] | None`) – Read only this set of columns when ingesting geospatial datasets. Defaults to all columns.
+- **remove_cols** (`Sequence[str] | None`) – The named columns to drop when ingesting geospatial datasets. Defaults to not drop any columns.
+- **explode_geometries** (`bool`) – Whether to unpack multipart geometries to single geometries when ingesting geospatial datasets, saving each part as its own row. Defaults to `False`.
 - **drop_out_of_bounds** (`bool | None`) – Whether to drop geometries outside of the expected WGS84 bounds. Defaults to True.
 - **partitioning_method** (`Literal['area', 'length', 'coords', 'rows']`) – The method to use for grouping rows into partitions. Defaults to `"rows"`.
-- **partitioning_maximum_per_file** (`int | float | None`) – Maximum value for `partitioning_method` to use per file.
-- **partitioning_maximum_per_chunk** (`int | float | None`) – Maximum value for `partitioning_method` to use per chunk.
-- **target_num_chunks** (`int`) – The target for the number of files. Defaults to 500.
-- **lonlat_cols** (`tuple[str, str] | None`) – Names of longitude, latitude columns to construct point geometries from.
-- **gdal_config** (`GDALOpenConfig | dict[str, Any] | None`) – Configuration options to pass to GDAL for reading files.
-- **overwrite** (`bool`) – If True, overwrite the output directory if it already exists. Defaults to False.
-- **as_udf** (`bool`) – Return the ingestion workflow as a UDF. Defaults to False.
+  - `"area"`: Construct partitions where all contain a maximum total area among geometries.
+  - `"length"`: Construct partitions where all contain a maximum total length among geometries.
+  - `"coords"`: Construct partitions where all contain a maximum total number of coordinates among geometries.
+  - `"rows"`: Construct partitions where all contain a maximum number of rows.
+- **partitioning_maximum_per_file** (`int | float | None`) – Maximum value for `partitioning_method` to use per file. If `None`, defaults to _1/10th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will have no more than 1/10th the total area of all geometries. Defaults to `None`.
+- **partitioning_maximum_per_chunk** (`int | float | None`) – Maximum value for `partitioning_method` to use per chunk. If `None`, defaults to _1/100th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will have no more than 1/100th the total area of all geometries. Defaults to `None`.
+- **partitioning_max_width_ratio** (`int | float`) – The maximum ratio of width to height of each partition to use in the ingestion process. So for example, if the value is `2`, then if the width divided by the height is greater than `2`, the box will be split in half along the horizontal axis. Defaults to `2`.
+- **partitioning_max_height_ratio** (`int | float`) – The maximum ratio of height to width of each partition to use in the ingestion process. So for example, if the value is `2`, then if the height divided by the width is greater than `2`, the box will be split in half along the vertical axis. Defaults to `2`.
+- **partitioning_force_utm** (`Literal["file", "chunk", None]`) – Whether to force partitioning within UTM zones. If set to `"file"`, this will ensure that the centroid of all geometries per _file_ are contained in the same UTM zone. If set to `"chunk"`, this will ensure that the centroid of all geometries per _chunk_ are contained in the same UTM zone. If set to `None`, then no UTM-based partitioning will be done. Defaults to "chunk".
+- **partitioning_split_method** (`Literal["mean", "median"]`) – How to split one partition into children. Defaults to `"mean"` (this may change in the future).
+  - `"mean"`: Split each axis according to the mean of the centroid values.
+  - `"median"`: Split each axis according to the median of the centroid values.
+- **subdivide_method** (`Literal["area", None]`) – The method to use for subdividing large geometries into multiple rows. Currently the only option is `"area"`, where geometries will be subdivided based on their area (in WGS84 degrees).
+- **subdivide_start** (`float | None`) – The value above which geometries will be subdivided into smaller parts, according to `subdivide_method`.
+- **subdivide_stop** (`float | None`) – The value below which geometries will not be subdivided into smaller parts, according to `subdivide_method`. Recommended to be equal to subdivide_start. If `None`, geometries will be subdivided up to a recursion depth of 100 or until the subdivided geometry is rectangular.
+- **split_identical_centroids** (`bool`) – If `True`, should split a partition that has identical centroids (such as if all geometries in the partition are the same) if there are more such rows than defined in "partitioning_maximum_per_file" and "partitioning_maximum_per_chunk".
+- **target_num_chunks** (`int`) – The target for the number of files if `partitioning_maximum_per_file` is None. Note that this number is only a _target_ and the actual number of files generated can be higher or lower than this number, depending on the spatial distribution of the data itself. Defaults to 500, rough default to use in most cases.
+- **lonlat_cols** (`tuple[str, str] | None`) – Names of longitude, latitude columns to construct point geometries from. If your point columns are named `"x"` and `"y"`, then pass `lonlat_cols=("x", "y")`. This only applies to reading from Parquet files. For reading from CSV files, pass options to `gdal_config`.
+- **gdal_config** (`GDALOpenConfig | dict[str, Any] | None`) – Configuration options to pass to GDAL for how to read these files. For all files other than Parquet files, Fused uses GDAL as a step in the ingestion process. For some inputs, like CSV files or zipped shapefiles, you may need to pass some parameters to GDAL to tell it how to open your files. This config is expected to be a dictionary with up to two keys: `layer` (`str`): Define the layer of the input file you wish to read when the source contains multiple layers, as in GeoPackage. `open_options` (`Dict[str, str]`): Pass in key-value pairs with GDAL open options. These are defined on each driver's page in the GDAL documentation. For example, if you're ingesting a CSV file with two columns `"longitude"` and `"latitude"` denoting the coordinate information, pass `gdal_config={"open_options": {"X_POSSIBLE_NAMES": "longitude", "Y_POSSIBLE_NAMES": "latitude"}}`.
+- **overwrite** (`bool`) – If True, overwrite the output directory if it already exists (by first removing all existing content of the directory, i.e. it does not only overwrite conflicting files). Defaults to False.
+- **as_udf** (`bool`) – Return the ingestion workflow as a UDF that can be executed using `fused.run()`. Local files or python objects passed to `input` or `partitioning_schema_input` are still uploaded to S3 first such that those are available when executing the UDF remotely. Defaults to False.
 
 ## Returns
 
-`GeospatialPartitionJobStepConfig` – Configuration object describing the ingestion process. Call `.execute` on this object to start a job.
+Configuration object describing the ingestion process. Call `.execute` on this object to start a job.
 
 ## Example
+
+For example, to ingest the California Census dataset for the year 2022:
 
 ```python
 job = fused.ingest(
