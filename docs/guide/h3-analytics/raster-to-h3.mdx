@@ -1,0 +1,155 @@
+---
+id: raster-to-h3
+title: Raster to H3
+sidebar_label: Raster to H3
+sidebar_position: 2
+toc_min_heading_level: 2
+toc_max_heading_level: 4
+---
+
+# Raster to H3
+
+Convert raster data (e.g. DEM, land cover, soil) into H3 hexagons. Which approach to use depends on data size, resolution, coverage, and how often you need to rerun.
+
+---
+
+## Choosing approach
+
+Small / medium / large is not rigid—it depends on your data and how you want to process it.
+
+- **Small** — Runs in realtime in a single UDF. One small raster or a tile; hexify on the fly. No pre-ingestion.
+- **Medium** — Single dataset, relatively low resolution, limited area, infrequent updates (e.g. 30 m DEM for a large city). Custom chipping and a mix of realtime and batch UDFs (e.g. 3DEP-style pipeline).
+- **Large** — Higher resolution, larger coverage, and/or frequent reruns (e.g. global weather). Use `run_ingest_raster_to_h3`. For very large jobs, use the planner UDF to estimate compute and storage.
+
+---
+
+## Small: on-the-fly raster to hex
+
+One small GeoTIFF or a tile within the viewport; hexify in a single UDF. No pre-computed H3 output. Set the UDF to **Tile UDF Mode** so resolution follows the viewport.
+
+Example: tiled DEM → hex by viewport (e.g. [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/)): [DEM Tile Hexify](https://www.fused.io/workbench/catalog/DEM_Tile_Hexify-c9aae65c-0047-42ba-8b3c-4326a5a2e47b).
+
+---
+
+## Medium: custom chipping pipeline
+
+Single dataset, limited area, infrequent updates. Use custom chipping (e.g. split by tiles or AOI), then run realtime or batch UDFs to produce hex output. No single API; design depends on the source (e.g. 3DEP-style ingestion). For large-scale ingestion instead, use the large pipeline below.
+
+---
+
+## Large: run_ingest_raster_to_h3
+
+For large or frequently updated rasters, pre-compute with [`fused.h3.run_ingest_raster_to_h3()`](/python-sdk/api-reference/h3#run_ingest_raster_to_h3).
+
+### Basic ingestion
+
+```python showLineNumbers
+@fused.udf
+def udf():
+    src_path = "s3://fused-asset/data/nyc_dem.tif"
+    output_path = "s3://fused-users/fused/joris/nyc_dem_h3/"
+
+    result_extract, result_partition = fused.h3.run_ingest_raster_to_h3(
+        src_path,
+        output_path,
+        metrics=["avg"],
+    )
+
+    if not result_extract.all_succeeded():
+        print(result_extract.errors())
+    if result_partition is not None and not result_partition.all_succeeded():
+        print(result_partition.errors())
+```
+
+**Required parameters:**
+- `src_path`: Raster file path(s) on S3 (TIFF or any GDAL-readable format)
+- `output_path`: Writable S3 location for output
+- `metrics`: Aggregation per H3 cell (`"avg"`, `"sum"`, `"cnt"`, `"min"`, `"max"`, `"stddev"`)
+
+### Metrics
+
+| Metric | Use Case | Output Columns |
+|--------|----------|----------------|
+| `"cnt"` | Categorical (land use, crop types) | `data`, `cnt`, `cnt_total` |
+| `"avg"` | Continuous (elevation, temperature) | `data_avg` |
+| `"sum"` | Totals (population) | `data_sum` |
+| `"min"`, `"max"`, `"stddev"` | Extra statistics | `data_min`, `data_max`, `data_stddev` |
+
+:::note
+`"cnt"` cannot be combined with other metrics. Others can: `metrics=["avg", "min", "max"]`
+:::
+
+### Configuration
+
+**Data resolution (`res`):** Inferred from raster pixel size by default. Override with `res`. See [Resolution Guide](/guide/h3-analytics/resolution-guide).
+
+**Partitioning (`file_res`, `chunk_res`):**
+
+| Parameter | Purpose | Default |
+|-----------|---------|---------|
+| `file_res` | Split into multiple files | Inferred (~100MB–1GB per file) |
+| `chunk_res` | Row groups within files | Inferred (~1M rows per chunk) |
+| `max_rows_per_chunk` | Alternative to `chunk_res` | - |
+
+`file_res=-1` creates a single output file for smaller datasets.
+
+**Overview resolutions (`overview_res`):** Pre-aggregated files for fast zoomed-out views. Default: 3–7.
+
+```python
+result_extract, result_partition = fused.h3.run_ingest_raster_to_h3(
+    src_path,
+    output_path,
+    metrics=["avg"],
+    overview_res=[7, 6, 5, 4, 3],
+)
+```
+
+### Multiple files
+
+**Single file:** `src_path = "s3://bucket/file.tif"`
+
+**Directory:** `src_path = fused.api.list("s3://bucket/")`
+
+**List of paths:**
+
+```python
+import pyarrow.fs
+fs, path = pyarrow.fs.FileSystem.from_uri("s3://bucket/")
+listing = fs.get_file_info(pyarrow.fs.FileSelector(path, recursive=True))
+src_paths = ["s3://" + f.path for f in listing if f.path.endswith(".tif")]
+```
+
+:::info
+Ingestion works with any hosted raster; files do not need to be on Fused S3.
+:::
+
+### Execution control
+
+Runs in parallel via [`.map()`](/python-sdk/api-reference/udf#map): **extract** → **partition** → **overview**. Use `engine` and `max_workers` for large jobs. For big data, use a batch instance:
+
+```python
+@fused.udf(engine="small")
+def udf():
+    ...
+```
+
+---
+
+## Dataset examples
+
+Full walkthroughs (ingest + read) live on separate pages:
+
+- [Example: Read Copernicus DEM](/guide/h3-analytics/h3-example-read-copernicus-dem) — Ingest Copernicus DEM 90m (multi-file), then read by bounds.
+- [Example: Ingest gSSURGO](/guide/h3-analytics/h3-example-ingest-gssurgo) — Soil mukey raster to H3, read and optionally join to soil names.
+- [Example: Ingest CDL](/guide/h3-analytics/h3-example-ingest-cdl) — Cropland Data Layer with `metrics=["cnt"]`, read and filter by crop class.
+
+---
+
+## Output structure and reading
+
+Ingestion creates:
+- **Parquet data files** — one row per H3 cell with `hex` and value columns
+- **`_sample`** — metadata for spatial queries
+- **`/overview/`** — lower-resolution aggregates (e.g. `hex3.parquet` … `hex7.parquet`)
+
+Use [read_h3_dataset](/guide/h3-analytics/reading-querying#read_h3_dataset) to load by bounds and resolution. For visualization, see [H3 Visualization](/guide/h3-analytics/visualization).

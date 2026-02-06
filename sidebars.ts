@@ -140,6 +140,17 @@ const sidebars: SidebarsConfig = {
       ],
     },
 
+    // Data Manipulating
+    {
+      type: "category",
+      label: "Data Manipulating",
+      collapsible: false,
+      items: [
+        "guide/data-manipulating/download-large-files",
+        "guide/data-manipulating/downloading-to-parquet",
+      ],
+    },
+
     // H3 Analytics
     {
       type: "category",
@@ -147,11 +158,18 @@ const sidebars: SidebarsConfig = {
       collapsible: false,
       items: [
         "guide/h3-analytics/h3-overview",
-        "guide/h3-analytics/converting",
+        "guide/h3-analytics/resolution-guide",
+        "guide/h3-analytics/raster-to-h3",
+        "guide/h3-analytics/vector-to-h3",
+        "guide/h3-analytics/reading-querying",
         "guide/h3-analytics/aggregations",
         "guide/h3-analytics/joining",
-        "guide/h3-analytics/resolution-guide",
         "guide/h3-analytics/visualization",
+        "guide/h3-analytics/h3-example-ingest-gssurgo",
+        "guide/h3-analytics/h3-example-ingest-lanid",
+        "guide/h3-analytics/h3-example-ingest-cdl",
+        "guide/h3-analytics/h3-example-ingest-gridmet",
+        "guide/h3-analytics/h3-example-read-copernicus-dem",
       ],
     },
 

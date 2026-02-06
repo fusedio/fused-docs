@@ -1,0 +1,55 @@
+---
+id: downloading-to-parquet
+title: NetCDF to Parquet
+sidebar_label: NetCDF to Parquet
+sidebar_position: 2
+---
+
+# NetCDF to Parquet
+
+Convert a NetCDF (e.g. climate) dataset to Parquet so you can turn lat/lon + variables into H3 in the [Vector to H3](/guide/h3-analytics/vector-to-h3) pipeline (e.g. GridMET ingestion).
+
+Example: GridMET yearly NetCDF → Parquet with `lat`, `lon`, `day`, and a data column:
+
+```python
+@fused.udf
+def udf(
+    year: str = "2025",
+    var: str = "pr",
+    data_var: str = "precipitation_amount",
+    n_chunk: int = 150,
+):
+    output_path = f"/mount/tmp/precipitation_{var}_{year}.parquet"
+    input_path = f"https://www.northwestknowledge.net/metdata/data/{var}_{year}.nc"
+    output_path = nc_to_pq(input_path, output_path, data_var, n_chunk=n_chunk)
+    return output_path
+
+
+@fused.cache
+def nc_to_pq(input_path, output_path, data_var, n_chunk: int = 150):
+    import xarray
+
+    path = fused.download(input_path, input_path)
+    xds = xarray.open_dataset(path)
+
+    day_size = len(xds.day) if "day" in xds.dims else 365
+    lat_size = len(xds.lat) if "lat" in xds.dims else len(xds.coords.get("lat", []))
+    lon_size = len(xds.lon) if "lon" in xds.dims else len(xds.coords.get("lon", []))
+
+    xds = xds.chunk({
+        "day": day_size,
+        "lat": lat_size,
+        "lon": max(1, int(lon_size / n_chunk)),
+    })
+
+    df = xds[data_var].to_dask_dataframe().reset_index()
+    df = df.rename(columns={data_var: "data", "day": "datestr"})
+    df.to_parquet(output_path)
+    return output_path
+```
+
+- **`input_path`**: URL or path to the NetCDF file.
+- **`data_var`**: Name of the variable to export (e.g. `precipitation_amount`, `tmmn`, `tmmx`).
+- **`n_chunk`**: Number of longitude chunks for Dask; tune for memory and parallelism.
+
+Output Parquet has `lat`, `lon`, `datestr`, and `data`. Use it in the next step of the [GridMET ingestion pipeline](/guide/h3-analytics/vector-to-h3#example-gridmet-netcdfto-parquetto-hex) (Parquet → H3 hex files).

@@ -1,0 +1,208 @@
+---
+id: vector-to-h3
+title: Vector to H3
+sidebar_label: Vector to H3
+sidebar_position: 3
+toc_min_heading_level: 2
+toc_max_heading_level: 4
+---
+
+# Vector to H3
+
+Convert points or polygons into H3 hexagons. Use **small** when you have a single file or a viewport-sized subset; use **large** when you have many features and need parallel ingest.
+
+---
+
+## Choosing approach
+
+- **Small** — Single file (points or polygons) or data for the current viewport. Hexify in one UDF or in Tile UDF Mode.
+- **Large** — Many features (e.g. millions of polygons). Split and run a hexagonify UDF in parallel with `.map()`.
+
+---
+
+## Small: points from a single file
+
+One file (CSV, GeoJSON, Parquet) with lat/lon; count or aggregate per hex in a single UDF. File should be &lt; 100MB.
+
+Example: [311 calls CSV](https://gist.githubusercontent.com/kashuk/670a350ea1f9fc543c3f6916ab392f62/raw/4c5ced45cc94d5b00e3699dd211ad7125ee6c4d3/NYC311_noise.csv) → heatmap of calls per hex 9:
+
+<details>
+<summary>Code</summary>
+
+```python
+@fused.udf
+def udf(
+    noise_311_link: str = "https://gist.githubusercontent.com/kashuk/670a350ea1f9fc543c3f6916ab392f62/raw/4c5ced45cc94d5b00e3699dd211ad7125ee6c4d3/NYC311_noise.csv",
+    res: int = 9,
+):
+    common = fused.load("https://github.com/fusedio/udfs/tree/b7637ee/public/common/")
+    con = common.duckdb_connect()
+    qr = f"""
+    SELECT
+      h3_latlng_to_cell(lat, lng, {res}) AS hex,
+      COUNT(*) AS cnt,
+      AVG(lat) AS lat,
+      AVG(lng) AS lng
+    FROM read_csv_auto('{noise_311_link}')
+    WHERE lat IS NOT NULL AND lng IS NOT NULL
+    GROUP BY 1
+    """
+    return con.sql(qr).df()
+```
+
+</details>
+
+---
+
+## Small: hexify in the viewport (tile mode)
+
+Polygons or raster tiles for the current map view; resolution follows zoom. Set the UDF to **Tile UDF Mode**.
+
+### Polygon to hex
+
+Example: Census block groups → population per hex.
+
+<iframe
+  src="https://www.fused.io/server/v1/realtime-shared/UDF_Hex_Tile_Map_Template/run/file"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+/>
+
+[Catalog: Census to hex template](https://www.fused.io/workbench/catalog/census_to_hex_template_v2-53ff4b2f-fb6e-4284-9c0d-4b5f04b4f3d1)
+
+<details>
+<summary>Code</summary>
+
+```python
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-125.0, 24.0, -66.9, 49.0],
+    path: str = "s3://fused-asset/demos/catchment_analysis/simplified_acs_bg_ca_2022.parquet",
+    min_hex_cell_res: int = 11,
+    max_hex_cell_res: int = 4,
+):
+    import pandas as pd
+    import geopandas as gpd
+    common = fused.load("https://github.com/fusedio/udfs/tree/f430c25/public/common/")
+
+    def dynamic_h3_res(b):
+        z = common.estimate_zoom(b)
+        return max(min(int(2 + z / 1.5), min_hex_cell_res), max_hex_cell_res)
+
+    parent_res = max(dynamic_h3_res(bounds) - 1, 0)
+    gdf = gpd.read_parquet(path)
+    tile = common.get_tiles(bounds, clip=True)
+    gdf = gdf.to_crs(4326).clip(tile)
+    if len(gdf) == 0:
+        return pd.DataFrame(columns=["hex", "POP", "pct"])
+
+    con = common.duckdb_connect()
+    df_hex = common.gdf_to_hex(gdf, res=parent_res, add_latlng_cols=None)
+    con.register("df_hex", df_hex)
+    query = f"""
+    WITH agg AS (
+        SELECT h3_cell_to_parent(hex, {parent_res}) AS hex, SUM(POP) AS POP
+        FROM df_hex GROUP BY hex
+    )
+    SELECT hex, POP, POP * 100.0 / SUM(POP) OVER () AS pct FROM agg ORDER BY POP DESC
+    """
+    return con.sql(query).df()
+```
+
+</details>
+
+---
+
+## Large: parallel vector to H3
+
+For many features (e.g. &lt; 100k vectors), split geometries and run a hexagonify UDF in parallel with `.map()`.
+
+<img
+  alt="Vector to H3 ingestion"
+  src={require('/static/img/tutorials/geospatial/h3/vector_to_hex_ingestion.png').default}
+  style={{width: "100%", maxWidth: 700, margin: "2em auto", display: "block"}}
+/>
+
+:::note
+Run in Single (viewport) mode, not Tiled. For larger datasets, contact info@fused.io.
+:::
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds = [8.44, 41.76, 8.90, 42.05]):
+    common = fused.load("https://github.com/fusedio/udfs/tree/208c30d/public/common/")
+    res = max(9, common.bounds_to_res(bounds, offset=0))
+    gdf = get_data()
+    if gdf.shape[0] > 100_000:
+        print("Dataset too large. Contact info@fused.io for scaling.")
+        return
+    vector_chunks = common.split_gdf(gdf[["geometry"]], n=32, return_type="file")
+    pool = hexagonify_udf.map(vector_chunks, res=res, engine="remote")
+    df = pool.collect().reset_index(drop=True)
+    df = df.groupby("hex").sum(["cnt", "area"]).sort_values("hex").reset_index()[["hex", "cnt", "area"]]
+    return df
+
+@fused.udf
+def hexagonify_udf(geometry, res: int = 12):
+    common = fused.load("https://github.com/fusedio/udfs/tree/208c30d/public/common/")
+    gdf = common.to_gdf(geometry)
+    gdf = common.gdf_to_hex(gdf[["geometry"]], res=15)
+    con = common.duckdb_connect()
+    return con.sql(f"""
+        SELECT h3_cell_to_parent(hex, {res}) AS hex, COUNT(1) AS cnt, SUM(h3_cell_area(hex, 'm^2')) AS area
+        FROM gdf GROUP BY 1 ORDER BY 1
+    """).df()
+
+@fused.cache
+def get_data():
+    return fused.get_chunk_from_table("s3://.../overture/.../part=3", 10, 0)
+```
+
+[Catalog: vector to GDF small](https://www.fused.io/workbench/catalog/vector_to_gdf_small-d2563bc5-a7af-4a32-8b1e-7a0968e3b49f)
+
+---
+
+## Example: GridMET (NetCDF → Parquet → hex)
+
+GridMET and similar climate NetCDFs: **NetCDF → Parquet** (lat/lon + variable), then **Parquet → hex** per chunk, then **combine** into one hex dataset. For the full walkthrough, see [Example: Ingest GridMET](/guide/h3-analytics/h3-example-ingest-gridmet).
+
+1. **NetCDF to Parquet** — [NetCDF to Parquet](/guide/data-manipulating/downloading-to-parquet): output has `lat`, `lon`, `datestr`, `data`.
+2. **Parquet to hex files** — For each Parquet chunk, assign `h3_latlng_to_cell(lat, lon, res)` and write hex + `datestr` + `data` to Parquet (e.g. res 6 for ~4 km).
+3. **Combine hex files** — Concatenate all chunk Parquets, sort by `hex`, write one Parquet (e.g. `s3://.../gridmet_pr_2022_hex6.parquet`).
+
+<details>
+<summary>Parquet → hex (per chunk)</summary>
+
+```python
+@fused.udf
+def udf_(path: str, res: int = 6):
+    common = fused.load("https://github.com/fusedio/udfs/tree/4dde28e/public/common/")
+    con = common.duckdb_connect()
+    df = con.sql(f"""
+        SELECT h3_latlng_to_cell(lat, lon, {res}) AS hex, datestr, data
+        FROM read_parquet('{path}')
+        WHERE data IS NOT NULL
+    """).df()
+    df.to_parquet(output_path)  # e.g. per-chunk output
+    return output_path
+```
+
+</details>
+
+<details>
+<summary>Combine all chunks</summary>
+
+```python
+import polars as pl
+df_all = (
+    pl.concat([pl.scan_parquet(p) for p in chunk_paths])
+    .select(["hex", "data", "datestr"])
+    .sort("hex")
+    .collect()
+)
+df_all.write_parquet("s3://.../gridmet_pr_2022_hex6.parquet")
+```
+
+</details>

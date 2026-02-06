@@ -2,7 +2,7 @@
 id: joining
 title: Joining
 sidebar_label: Joining
-sidebar_position: 4
+sidebar_position: 6
 ---
 
 # Join
@@ -19,8 +19,8 @@ This is particularly helpful when working with:
 ### Assumptions
 
 We assume both datasets:
-- Use `hex` as the H3 hexagon column name (as would be the case for any [ingested H3 dataset](/guide/h3-analytics/converting#ingesting-dataset-to-h3) through Fused)
-- Are accessible at the same hex resolutions
+- Use `hex` as the H3 hexagon column name (as with any [ingested H3 dataset](/guide/h3-analytics/raster-to-h3) or vector-to-H3 output)
+- Are accessible at the same hex resolution
 
 ### Joining logic
 
@@ -91,11 +91,49 @@ Returns the following table:
 | 599671261723484159  | 306.1185      | 1.0      | 121949200     |
 
 
-### Example
+### Example: Joining env variables
 
-- [Environmental Variable Exploration](/examples/canvas-gallery) canvas merging all these variables into a single dataset:
-    - Crop Data Layer
-    - Land Irrigation
-    - Soil Type
-    - Temperature
-    - Precipitation
+Join multiple H3 layers (CDL, soil, irrigation, GridMET) by hex for analysis:
+
+```python
+@fused.udf(cache_max_age=0)
+def udf(
+    bounds: fused.types.Bounds = [-121.525, 37.70, -120.96, 38.06],
+    hex_res: int = 7,
+    irr: bool = True,
+    state_fips: str = "06",
+):
+    gdf = get_counties(state_fips)
+    bounds = list(gdf.total_bounds)
+
+    df_irr = fused.run("LanID_Irrigation_reader", bounds=bounds, irrigated=irr, hex_res=hex_res, engine="remote")
+    df_irr = df_irr[["area", "hex"]].rename(columns={"area": "irr_area"})
+
+    df_crop = fused.run("reading_cdl_2021_hex", bounds=bounds, value=1, res=hex_res, engine="remote")
+    df_crop = df_crop[["area", "hex"]].rename(columns={"area": "crop_area"})
+
+    df_soil = fused.run("Soil_gSSURGO_hex_readrer", bounds=bounds, res=hex_res, engine="remote")
+    df_soil = df_soil[["data", "taxsubgrp", "cnt", "hex"]].rename(columns={"cnt": "soil_cnt", "data": "mukey"})
+
+    df_gridmet = fused.run("GridMet_Data_Reader", bounds=bounds, hex_res=hex_res, engine="remote")
+
+    df = (
+        df_crop.set_index("hex")
+        .join(df_soil.set_index("hex"))
+        .join(df_irr.set_index("hex"))
+        .join(df_gridmet.set_index("hex"))
+    )
+    return df.reset_index()
+
+@fused.cache
+def get_counties(state_fips):
+    import geopandas as gpd
+    county_gdf = gpd.read_parquet("s3://fused-asset/data/tiger/county/tl_rd22_us_county 1pct.parquet").to_crs("EPSG:4326")
+    return county_gdf[county_gdf["GEOID"].str.startswith(f"{int(state_fips):02d}")]
+```
+
+Each reader returns a DataFrame with a `hex` column; joining on `hex` gives one row per cell with crop, soil, irrigation, and climate fields.
+
+### More examples
+
+- [Environmental Variable Exploration](/examples/canvas-gallery) canvas: Crop Data Layer, Land Irrigation, Soil Type, Temperature, Precipitation

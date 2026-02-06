@@ -1,0 +1,133 @@
+---
+id: reading-querying
+title: Reading and querying H3
+sidebar_label: Reading and querying
+sidebar_position: 4
+toc_min_heading_level: 2
+toc_max_heading_level: 4
+---
+
+# Reading and querying H3
+
+After [ingesting raster](/guide/h3-analytics/raster-to-h3) or [vector](/guide/h3-analytics/vector-to-h3) data to H3, read a spatial subset by bounds and resolution. Use DuckDB for extra filtering or aggregation.
+
+---
+
+## read_h3_dataset
+
+Ingested H3 output has Parquet data files and an `/overview/` directory with lower-resolution aggregates. A reader should:
+
+1. Prefer **overview** files when the requested `res` exists under `path/overview/hex{res}.parquet` (fast zoomed-out views).
+2. Otherwise read from the main data and filter by bounds using the `_sample` metadata or spatial filter.
+
+You can use the community [Read_H3_dataset](https://github.com/fusedio/udfs/tree/main/community/joris/Read_H3_dataset) UDF:
+
+```python
+utils = fused.load("https://github.com/fusedio/udfs/tree/dd40354/community/joris/Read_H3_dataset/")
+df = utils.read_h3_dataset(path, bounds, res=res)
+```
+
+**Parameters:**
+- `path`: S3 (or local) directory containing the H3 Parquet dataset (and `overview/` if present).
+- `bounds`: `[minx, miny, maxx, maxy]` in WGS84.
+- `res`: H3 resolution (e.g. 5–10). If `None`, resolution is inferred from zoom derived from bounds.
+- `value`: Optional. For categorical datasets (e.g. CDL), filter to rows where `data == value`.
+
+Returns a DataFrame with at least a `hex` column and value column(s) (`data_avg`, `data`, `cnt`, etc. depending on ingestion metrics).
+
+---
+
+## Example: Reading Copernicus DEM
+
+Ingested Copernicus DEM 90m at `s3://fused-asset/hex/copernicus-dem-90m/`:
+
+```python
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-125.82, 21.31, -65.63, 52.59],
+    res: int = 5,
+):
+    path = "s3://fused-asset/hex/copernicus-dem-90m/"
+    utils = fused.load("https://github.com/fusedio/udfs/tree/dd40354/community/joris/Read_H3_dataset/")
+    df = utils.read_h3_dataset(path, bounds, res=res)
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/35afd2a/public/common/")
+    con = common.duckdb_connect()
+    df = con.execute("SELECT hex, data_avg AS elevation FROM df").df()
+    return df
+```
+
+For a full walkthrough, see [Example: Read Copernicus DEM](/guide/h3-analytics/h3-example-read-copernicus-dem).
+
+---
+
+## Querying with DuckDB
+
+Querying happens **inside a UDF**: read H3 data (e.g. with `read_h3_dataset`), get a DuckDB connection via `common.duckdb_connect()`, register the DataFrame, then run SQL.
+
+
+DuckDB’s H3 extension gives you `h3_grid_ring`, `h3_cell_to_parent`, `h3_get_hexagon_edge_length_avg`, `h3_get_resolution`, etc.—use these to build derivative layers (e.g. slope from elevation) or to aggregate and join. For aggregation patterns, see [Aggregations](/guide/h3-analytics/aggregations). For joining multiple H3 datasets, see [Joining](/guide/h3-analytics/joining).
+
+---
+
+## Example: Slope from elevation
+
+Full UDF that reads elevation H3 data and computes slope per hex using neighbors (`h3_grid_ring`) and edge length:
+
+```python
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],
+    res: int = None,
+):
+    path = "s3://fused-asset/hex/copernicus-dem-90m/"
+    hex_reader = fused.load("https://github.com/fusedio/udfs/tree/8024b5c/community/joris/Read_H3_dataset/")
+    df = hex_reader.read_h3_dataset(path, bounds, res=res)
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/5b11e17/public/common/")
+    con = common.duckdb_connect()
+    qr = """
+    WITH hex_neighbors AS (
+        SELECT
+            h1.hex AS hex,
+            h1.data_avg AS elevation,
+            UNNEST(h3_grid_ring(h1.hex, 1)) AS neighbor_hex
+        FROM df h1
+    ),
+    neighbor_data AS (
+        SELECT
+            n.hex,
+            n.elevation,
+            n.neighbor_hex,
+            df2.data_avg AS neighbor_elevation,
+            h3_get_hexagon_edge_length_avg(h3_get_resolution(n.hex), 'm') AS edge_length_m
+        FROM hex_neighbors n
+        JOIN df df2 ON n.neighbor_hex = df2.hex
+    ),
+    calculations AS (
+        SELECT
+            hex,
+            elevation,
+            DEGREES(ATAN(ABS(elevation - neighbor_elevation) / edge_length_m)) AS slope_deg
+        FROM neighbor_data
+    ),
+    slope_aggregated AS (
+        SELECT
+            hex,
+            elevation,
+            AVG(slope_deg) * 100 AS avg_slope_deg,
+            MAX(slope_deg) * 100 AS max_slope_deg
+        FROM calculations
+        GROUP BY hex, elevation
+    )
+    SELECT
+        s.hex,
+        ROUND(s.elevation, 2) AS elevation,
+        ROUND(s.avg_slope_deg, 2) AS avg_slope_deg,
+        ROUND(s.max_slope_deg, 2) AS max_slope_deg
+    FROM slope_aggregated s
+    """
+    return con.execute(qr).df()
+```
+
+Returns a DataFrame with `hex`, `elevation`, `avg_slope_deg`, `max_slope_deg`. For more aggregation patterns, see [Aggregations](/guide/h3-analytics/aggregations).

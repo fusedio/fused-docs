@@ -2,12 +2,12 @@
 id: aggregations
 title: Aggregations
 sidebar_label: Aggregations
-sidebar_position: 3
+sidebar_position: 5
 ---
 
 # Aggregate
 
-After ingesting a dataset to [H3 hexagons](/guide/h3-analytics/converting#ingesting-dataset-to-h3) it's possible to [visualize it in Fused](/guide/h3-analytics/visualization) but we can also directly work with the data.
+After ingesting a dataset to [H3 hexagons](/guide/h3-analytics/raster-to-h3) (or [vector to H3](/guide/h3-analytics/vector-to-h3)) it's possible to [visualize it in Fused](/guide/h3-analytics/visualization) but we can also directly work with the data.
 
 This page shows how to aggregate data at different resolutions or create derivative layers.
 
@@ -155,86 +155,4 @@ def udf(
 
 You can also create derivative layers by writing custom logic after reading data using the [h3_reader.read_h3_dataset](https://github.com/fusedio/udfs/tree/dd40354/community/joris/Read_H3_dataset/)
 
-Example: Calculating slope from elevation
-
-<LazyReactPlayer 
-    url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/geospatial/elevation_to_slope_compressed.mp4"
-    playing={true}
-    muted={true}
-    loop={true}
-    controls={true}
-    width="100%"
-    height="auto"
-    style={{
-        maxWidth: "800px",
-        margin: "0 auto 2rem auto",
-        display: "block",
-        aspectRatio: "16/9"
-    }}
-/>
-
-<details>
-<summary>Expand for code</summary>
-
-```python showLineNumbers
-@fused.udf
-def udf(
-    bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],  # Default to full NYC
-):
-    path = "s3://fused-asset/hex/copernicus-dem-90m/"
-    
-    hex_reader = fused.load("https://github.com/fusedio/udfs/tree/8024b5c/community/joris/Read_H3_dataset/")
-    df = hex_reader.read_h3_dataset(path, bounds, res=None)
-
-    # Slope calculation using h3_grid_ring
-    common = fused.load("https://github.com/fusedio/udfs/tree/5b11e17/public/common/")
-    con = common.duckdb_connect()
-    qr = f"""
-    WITH hex_neighbors AS (
-        SELECT 
-            h1.hex AS hex,
-            h1.data_avg AS elevation,
-            UNNEST(h3_grid_ring(h1.hex, 1)) AS neighbor_hex
-        FROM df h1       -- Notice that DuckDB allows you to directly call the dataframe by its name
-    ),
-    neighbor_data AS (
-        SELECT
-            n.hex,
-            n.elevation,
-            n.neighbor_hex,
-            df2.data_avg AS neighbor_elevation,
-            h3_get_hexagon_edge_length_avg(h3_get_resolution(n.hex), 'm') AS edge_length_m
-        FROM hex_neighbors n
-        JOIN df df2 ON n.neighbor_hex = df2.hex
-    ),
-    calculations AS (
-        SELECT
-            hex,
-            elevation,
-            DEGREES(ATAN(ABS(elevation - neighbor_elevation) / edge_length_m)) AS slope_deg
-        FROM neighbor_data
-    ),
-    slope_aggregated AS (
-        SELECT
-            hex,
-            elevation,
-            AVG(slope_deg) * 100 AS avg_slope_deg,
-            MAX(slope_deg) * 100 AS max_slope_deg
-        FROM calculations
-        GROUP BY hex, elevation
-    )
-    SELECT
-        s.hex,
-        ROUND(s.elevation, 2) AS elevation,
-        ROUND(s.avg_slope_deg, 2) AS avg_slope_deg,
-        ROUND(s.max_slope_deg, 2) AS max_slope_deg
-    FROM slope_aggregated s;
-    """
-    processed_df = con.execute(qr).df()
-
-    print(processed_df.describe())
-
-    return processed_df
-```
-
-</details>
+Example: Slope from elevation — Read elevation H3 data, register in DuckDB, then use `h3_grid_ring` and neighbor elevation to compute slope per hex. For the full UDF and explanation, see [Reading and querying H3 — Example: Slope from elevation](/guide/h3-analytics/reading-querying#example-slope-from-elevation).

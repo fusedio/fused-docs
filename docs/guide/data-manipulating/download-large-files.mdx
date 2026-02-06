@@ -1,0 +1,87 @@
+---
+id: download-large-files
+title: Download large files (zip / rar)
+sidebar_label: Download large files
+sidebar_position: 1
+---
+
+# Download large files to S3
+
+Source data for [raster-to-hex](/guide/h3-analytics/raster-to-h3) ingestion is often distributed as zip or rar archives. Download the file to Fused-managed S3 so downstream UDFs can read or extract it. For large files, use a batch instance and sufficient disk (`disk_size_gb`).
+
+---
+
+## Example: Download a zip and upload to S3
+
+Example: [WorldCereal irrigation confidence](https://zenodo.org/records/7875105) (zip from Zenodo) → S3:
+
+```python
+@fused.udf(instance_type="c2-standard-4", disk_size_gb=999)
+def udf():
+    """Download a zip from a URL and upload to Fused-managed S3."""
+    import s3fs
+    import requests
+    import os
+    import tempfile
+
+    url = "https://zenodo.org/records/7875105/files/WorldCereal_2021_tc-maize-second_irrigation_confidence.zip"
+    s3_path = f"s3://fused-asset/data/downloading_compressed_files/{url.split('/')[-1]}"
+
+    if s3fs.S3FileSystem().exists(s3_path):
+        print(f"File exists: {s3_path}")
+        return s3_path
+
+    temp_path = tempfile.NamedTemporaryFile(
+        delete=False, suffix=os.path.splitext(url.split("/")[-1])[1]
+    ).name
+    resp = requests.get(url, stream=True)
+    resp.raise_for_status()
+    total_size = int(resp.headers.get("Content-Length", 0))
+    size_mb = total_size / (1024 * 1024)
+    print(f"Download file size: {size_mb:.2f} MB")
+    with open(temp_path, "wb") as f:
+        for i, chunk in enumerate(resp.iter_content(chunk_size=total_size // 100)):
+            print(f"{i}% | {round(size_mb * i / 100, 1)}/{round(size_mb)} MB")
+            f.write(chunk)
+    print("Done downloading. Uploading to S3.")
+    s3 = s3fs.S3FileSystem()
+    s3.put(temp_path, s3_path)
+    print(f"Uploaded to: {s3_path}")
+    return s3_path
+```
+
+- **`url`**: HTTP(S) URL of the zip/rar file.
+- **`s3_path`**: Writable S3 path. Downstream UDFs (e.g. extract, then [Raster to H3](/guide/h3-analytics/raster-to-h3)) read from here.
+
+For very large archives, increase `disk_size_gb` or use a larger `instance_type` so the temp file fits on disk.
+
+---
+
+## Listing files in a zip
+
+After the zip is on S3 (or before, if you already have an S3 path), list its contents and sizes with `zipfile` and `s3fs`:
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+    import zipfile
+    import s3fs
+
+    zip_path = "s3://fused-asset/data/downloading_compressed_files/WorldCereal_2021_tc-maize-second_irrigation_confidence.zip"
+    s3 = s3fs.S3FileSystem()
+    with s3.open(zip_path, "rb") as f:
+        with zipfile.ZipFile(f) as zip_ref:
+            file_list = zip_ref.namelist()
+            file_info = []
+            for filename in file_list:
+                info = zip_ref.getinfo(filename)
+                file_info.append({
+                    "filename": filename,
+                    "compressed_size_mb": round(info.compress_size / (1024 * 1024), 2),
+                    "uncompressed_size_mb": round(info.file_size / (1024 * 1024), 2),
+                })
+    return pd.DataFrame(file_info)
+```
+
+Use the returned table to see what’s inside the archive before extracting or feeding paths to ingestion. For a list of source URLs (e.g. multiple zips), maintain a config list or call an API that returns URLs and loop over them in your UDF.
