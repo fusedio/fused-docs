@@ -889,6 +889,8 @@ Mapbox GL JS creates interactive web maps. Load Fused data using tile sources.
 
 ### Vector Tiles
 
+Fused MVT tiles always use `udf` as the `source-layer` name. This is required for Mapbox GL JS, MapLibre, and react-map-gl.
+
 ```html
 
 ```
@@ -1269,8 +1271,8 @@ For datasets from external sources like Zenodo or Humanitarian Data Exchange tha
 
 ```python showLineNumbers
 @fused.udf(
-    instance_type='c2-standard-4',  # Small instance - download uses little resources
-    disk_size_gb=999                # Large disk for the file
+    engine='c2-standard-4',  # Small instance - download uses little resources
+    disk_size_gb=999         # Large disk for the file
 )
 def udf():
 
@@ -2428,7 +2430,7 @@ Learn more about Calling UDFs as API.
 
 ## Caching
 
-First request runs your code. Subsequent requests (same code, same parameters) return cached results in under a second. UDFs are cached for 90 days by default.
+First request runs your code. Subsequent requests (same code, same parameters) return cached results in under a second. UDFs are cached for 14 days by default.
 
 Try it yourself:
 
@@ -2932,7 +2934,7 @@ This produces H3 hexagon data like:
 The function runs multiple UDFs in parallel under the hood. The orchestrating UDF doesn't need much resources, but can exceed the 2-min realtime limit. For larger data, use a batch instance:
 
 ```python showLineNumbers 
-@fused.udf(instance_type="small")
+@fused.udf(engine="small")
 def udf():
     src_path = "s3://fused-asset/data/nyc_dem.tif"
     ...
@@ -3572,6 +3574,8 @@ For map tile servers, use the `tiles` path with `//` template:
 https://udf.ai/YOUR_TOKEN/run/tiles///?=mvt
 ```
 
+When consuming Fused MVT tiles in tools that require a `source-layer` name (like Mapbox GL JS, MapLibre, or react-map-gl), the layer is always named `udf`.
+
 ### Raster tiles (PNG)
 
 ```bash
@@ -3761,11 +3765,20 @@ Avoid pointing to `main` branch—your UDF will change when others push to it.
 
 ### `engine`
 
-| Engine | Where it runs | Use case |
-|--------|---------------|----------|
-| `"remote"` (default) | Spins up new serverless instance | Standard usage |
-| `"local"` | Current process | Run in existing compute |
-| Instance type | Dedicated machine | Heavy workloads |
+Controls where your UDF runs:
+
+| Value | Where it runs | RAM | Time limit |
+|-------|---------------|-----|------------|
+| `"remote"` / `"realtime"` (default) | Serverless instance | ~4GB | 120s |
+| `"local"` | Current process | — | — |
+| `"small"` | Dedicated machine | 2 GB | None |
+| `"medium"` | Dedicated machine | 64 GB | None |
+| `"large"` | Dedicated machine | 512 GB | None |
+| AWS/GCP type (e.g. `"m5.4xlarge"`) | Dedicated machine | Varies | None |
+
+```python
+result = my_udf(engine="medium")  # 64 GB RAM, no time limit
+```
 
 **`local` contexts:**
 
@@ -3775,33 +3788,23 @@ Avoid pointing to `main` branch—your UDF will change when others push to it.
 | Inside a batch job | Shares the batch instance resources |
 | On your laptop | Runs on local machine |
 
-### `instance_type`
-
-Pass an instance type as `engine` to run on a dedicated machine:
+Set a default engine when defining a UDF:
 
 ```python
-result = my_udf(engine="medium")  # 64 GB RAM
-```
-
-| Type | RAM | Time limit | Startup |
-|------|-----|------------|---------|
-| `"realtime"` (default) | ~4GB | 120s | ~5s |
-| `"small"` | 2 GB | None | ~30s |
-| `"medium"` | 64 GB | None | ~30s |
-| `"large"` | 512 GB | None | ~30s |
-
-Set a default instance type when defining a UDF:
-
-```python
-@fused.udf(instance_type="large")
+@fused.udf(engine="large")
 def my_udf():
     ...
 ```
 
-In Workbench, UDFs with a non-realtime instance type will prompt for confirmation before running as a batch job.
+In Workbench, UDFs with a batch engine will prompt for confirmation before running.
 
 | Instance Type | vCPUs | Memory (GB) |
 |---------------|-------|-------------|
+| `t3.small` | 2 | 2 |
+| `t3.medium` | 2 | 4 |
+| `t3.large` | 2 | 8 |
+| `t3.xlarge` | 4 | 16 |
+| `t3.2xlarge` | 8 | 32 |
 | `m5.large` | 2 | 8 |
 | `m5.xlarge` | 4 | 16 |
 | `m5.2xlarge` | 8 | 32 |
@@ -3816,11 +3819,6 @@ In Workbench, UDFs with a non-realtime instance type will prompt for confirmatio
 | `r5.8xlarge` | 32 | 256 |
 | `r5.12xlarge` | 48 | 384 |
 | `r5.16xlarge` | 64 | 512 |
-| `t3.small` | 2 | 2 |
-| `t3.medium` | 2 | 4 |
-| `t3.large` | 2 | 8 |
-| `t3.xlarge` | 4 | 16 |
-| `t3.2xlarge` | 8 | 32 |
 
 | Instance Type | vCPUs | Memory (GB) |
 |---------------|-------|-------------|
@@ -4013,10 +4011,10 @@ Use a dedicated instance when your UDF exceeds realtime limits:
 
 ### Starting a dedicated instance job
 
-Add `instance_type` to run on a dedicated machine:
+Set `engine` to run on a dedicated machine:
 
 ```python
-@fused.udf(instance_type='small')
+@fused.udf(engine='small')
 def my_udf():
     # This UDF runs on a dedicated instance
     ...
@@ -4026,14 +4024,14 @@ def my_udf():
 
 In Workbench, dedicated instance UDFs require manual execution (`Shift+Enter`) and show a confirmation modal.
 
-Dedicated instance and realtime jobs have separate caches. Running the same UDF with and without `instance_type` will cache results independently.
+Dedicated instance and realtime jobs have separate caches. Running the same UDF with different `engine` values will cache results independently.
 
 ### Write to disk, don't return data
 
 Dedicated instance jobs should **write results to cloud storage or mount**, not return them. Data returned can be lost if the connection times out.
 
 ```python
-@fused.udf(instance_type='small')
+@fused.udf(engine='small')
 def my_udf(input_path: str):
 
     # Process data
@@ -4067,7 +4065,7 @@ job.cancel()        # Stop a job
 
 Dedicated instances take ~30s to spin up. Plan accordingly—they aren't for quick iterations.
 
-Test your UDF on a small data sample using realtime execution. Once you're confident it works, switch to `instance_type` to scale up.
+Test your UDF on a small data sample using realtime execution. Once you're confident it works, switch to a batch `engine` to scale up.
 
 ### Instance types
 
@@ -4119,8 +4117,8 @@ Fused caches UDF results automatically to make repeated calls faster. Cached cal
 
 | Type | When it applies | Storage | Default Duration | Speed |
 |------|-----------------|---------|-------------|-------|
-| UDF cache | UDF call results | S3 | 90 days | Good |
-| `@fused.cache` | Functions inside UDFs | mount | 12 hours | Fast |
+| UDF cache | UDF call results | S3 | 14 days | Good |
+| `@fused.cache` | Functions inside UDFs | mount | 48 hours | Fast |
 
 Both work the same way: store the result of [function + inputs], return cached result on repeat calls. Change the function or inputs → cache miss → recompute.
 
@@ -7645,13 +7643,19 @@ fused.api.function_name()
 
 ---
 
-## whoami
+## access_token
 
 ```python
-whoami()
+access_token() -> str
 ```
 
-Returns information on the currently logged in user
+Get an access token for the Fused service.
+
+Returns the Bearer token for the authenticated user. Use this for authenticating API requests outside of the Fused SDK.
+
+**Returns:**
+
+- `str` – The access token string.
 
 ---
 
@@ -7665,8 +7669,8 @@ Delete the files at the path.
 
 **Parameters:**
 
-- **path** (<code>str</code>) – Directory or file to delete, like `fd://my-old-table/`
-- **max_deletion_depth** (<code>int | Literal['unlimited']</code>) – If set (defaults to 3), the maximum depth the operation will recurse to.
+- **path** (`str`) – Directory or file to delete, like `fd://my-old-table/`
+- **max_deletion_depth** (`int | Literal['unlimited']`) – If set (defaults to 3), the maximum depth the operation will recurse to.
   This option is to help avoid accidentally deleting more data that intended.
   Pass `"unlimited"` for unlimited.
 
@@ -7674,55 +7678,6 @@ Delete the files at the path.
 
 ```python
 fused.api.delete("fd://bucket-name/deprecated_table/")
-```
-
----
-
-## list
-
-```python
-list(path: str, *, details: bool = False) -> list[str] | list[ListDetails]
-```
-
-List the files at the path.
-
-**Parameters:**
-
-- **path** (<code>str</code>) – Parent directory URL, like `fd://bucket-name/`
-- **details** (<code>bool</code>) – If True, return additional metadata about each record.
-
-**Returns:**
-
-- <code>list[str] | list[ListDetails]</code> – A list of paths as URLs, or as metadata objects.
-
-**Examples:**
-
-```python
-fused.api.list("fd://bucket-name/")
-```
-
----
-
-## get
-
-```python
-get(path: str) -> bytes
-```
-
-Download the contents at the path to memory.
-
-**Parameters:**
-
-- **path** (<code>str</code>) – URL to a file, like `fd://bucket-name/file.parquet`
-
-**Returns:**
-
-- `bytes` – bytes of the file
-
-**Examples:**
-
-```python
-fused.api.get("fd://bucket-name/file.parquet")
 ```
 
 ---
@@ -7737,88 +7692,107 @@ Download the contents at the path to disk.
 
 **Parameters:**
 
-- **path** (<code>str</code>) – URL to a file, like `fd://bucket-name/file.parquet`
-- **local_path** (<code>str | Path</code>) – Path to a local file.
+- **path** (`str`) – URL to a file, like `fd://bucket-name/file.parquet`
+- **local_path** (`str | Path`) – Path to a local file.
 
 ---
 
-## upload
+## enable_gcs
 
 ```python
-upload(
-    local_path: str | Path | bytes | BinaryIO | pd.DataFrame | gpd.GeoDataFrame,
-    remote_path: str,
-    timeout: float | None = None,
-) -> None
+enable_gcs()
 ```
 
-Upload local file to S3.
+Save GCS credentials from AWS secret manager into a temporary local file and set its path to the environment variable.
 
-**Parameters:**
-
-- **local_path** (<code>str | Path | bytes | BinaryIO | pd.DataFrame | gpd.GeoDataFrame</code>) – Either a path to a local file (`str`, `Path`), a (Geo)DataFrame
-  (which will get uploaded as Parquet file), or the contents to upload.
-  Any string will be treated as a Path, if you wish to upload the contents of
-  the string, first encode it: `s.encode("utf-8")`
-- **remote_path** (<code>str</code>) – URL to upload to, like `fd://new-file.txt`
-- **timeout** (<code>float | None</code>) – Optional timeout in seconds for the upload (will default to `OPTIONS.request_timeout` if not specified).
-
-**Examples:**
-
-To upload a local json file to your Fused-managed S3 bucket:
-
-```py
-fused.api.upload("my_file.json", "fd://my_bucket/my_file.json")
-```
+Use this to enable Google Cloud Storage access in your UDFs.
 
 ---
 
-## sign_url
+## get
 
 ```python
-sign_url(path: str) -> str
+get(path: str) -> bytes
 ```
 
-Create a signed URL to access the path.
-
-This function may not check that the file represented by the path exists.
+Download the contents at the path to memory.
 
 **Parameters:**
 
-- **path** (<code>str</code>) – URL to a file, like `fd://bucket-name/file.parquet`
+- **path** (`str`) – URL to a file, like `fd://bucket-name/file.parquet`
 
 **Returns:**
 
-- <code>str</code> – HTTPS URL to access the file using signed access.
+- `bytes` – bytes of the file
 
 **Examples:**
 
 ```python
-fused.api.sign_url("fd://bucket-name/table_directory/file.parquet")
+fused.api.get("fd://bucket-name/file.parquet")
 ```
 
 ---
 
-## sign_url_prefix
+## get_apps
 
 ```python
-sign_url_prefix(path: str) -> dict[str, str]
+get_apps(
+    n: int | None = None,
+    *,
+    skip: int = 0,
+    by: Literal['name', 'id', 'slug'] = 'name',
+    whose: Literal['self', 'public'] = 'self'
+) -> dict
 ```
 
-Create signed URLs to access all blobs under the path.
+Get apps for the current user or public apps.
 
 **Parameters:**
 
-- **path** (<code>str</code>) – URL to a prefix, like `fd://bucket-name/some_directory/`
+- **n** (`int | None`) – Maximum number of apps to return. None for all.
+- **skip** (`int`) – Number of apps to skip.
+- **by** (`Literal['name', 'id', 'slug']`) – Sort order.
+- **whose** (`Literal['self', 'public']`) – Whose apps to get.
 
 **Returns:**
 
-- <code>dict\[str, str\]</code> – Dictionary mapping from blob store key to signed HTTPS URL.
+- `dict` – Dictionary of apps.
+
+---
+
+## get_jobs
+
+```python
+get_jobs(
+    n: int = 5,
+    *,
+    skip: int = 0,
+    per_request: int = 25,
+    max_requests: int | None = None
+) -> Jobs
+```
+
+Get the job history.
+
+**Parameters:**
+
+- **n** (`int`) – The number of jobs to fetch. Defaults to 5.
+- **skip** (`int`) – Where in the job history to begin. Defaults to 0, which retrieves the most recent job.
+- **per_request** (`int`) – Number of jobs per request to fetch. Defaults to 25.
+- **max_requests** (`int | None`) – Maximum number of requests to make. May be None to fetch all jobs.
+
+**Returns:**
+
+- `Jobs` – The job history.
 
 **Examples:**
 
 ```python
-fused.api.sign_url_prefix("fd://bucket-name/table_directory/")
+# Get the 5 most recent jobs
+jobs = fused.api.get_jobs()
+
+# Get more jobs
+jobs = fused.api.get_jobs(n=20)
 ```
 
 ---
@@ -7831,7 +7805,8 @@ get_udfs(
     *,
     skip: int = 0,
     by: Literal["name", "id", "slug"] = "name",
-    whose: Literal["self", "public", "community", "team"] = "self"
+    whose: Literal["self", "public", "community", "team"] = "self",
+    collection_name: str | None = None
 ) -> dict
 ```
 
@@ -7839,15 +7814,16 @@ Fetches a list of UDFs.
 
 **Parameters:**
 
-- **n** (<code>int | None</code>) – The total number of UDFs to fetch. Defaults to All.
-- **skip** (<code>int</code>) – The number of UDFs to skip before starting to collect the result set. Defaults to 0.
-- **by** (<code>Literal['name', 'id', 'slug']</code>) – The attribute by which to sort the UDFs. Can be "name", "id", or "slug". Defaults to "name".
-- **whose** (<code>Literal['self', 'public', 'community', 'team']</code>) – Specifies whose UDFs to fetch. Can be "self" for the user's own UDFs or "public" for
+- **n** (`int | None`) – The total number of UDFs to fetch. Defaults to All.
+- **skip** (`int`) – The number of UDFs to skip before starting to collect the result set. Defaults to 0.
+- **by** (`Literal['name', 'id', 'slug']`) – The attribute by which to sort the UDFs. Can be "name", "id", or "slug". Defaults to "name".
+- **whose** (`Literal['self', 'public', 'community', 'team']`) – Specifies whose UDFs to fetch. Can be "self" for the user's own UDFs or "public" for
   UDFs available publicly or "community" for all community UDFs. Defaults to "self".
+- **collection_name** (`str | None`) – Filter UDFs by collection name. If not provided, returns UDFs from all collections.
 
 **Returns:**
 
-- <code>dict</code> – A list of UDFs.
+- `dict` – A list of UDFs.
 
 **Examples:**
 
@@ -7856,6 +7832,38 @@ Fetch UDFs under the user account:
 ```py
 fused.api.get_udfs()
 ```
+
+---
+
+## job_cancel
+
+```python
+job_cancel(job: CoerceableToJobId) -> RunResponse
+```
+
+Cancel an existing job
+
+**Parameters:**
+
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
+
+**Returns:**
+
+- `RunResponse` – A new job object.
+
+---
+
+## job_get_exec_time
+
+```python
+job_get_exec_time(job: CoerceableToJobId) -> timedelta
+```
+
+Determine the execution time of this job, using the logs.
+
+**Returns:**
+
+- `timedelta` – Time the job took. If the job is in progress, time from first to last log message is returned.
 
 ---
 
@@ -7869,12 +7877,48 @@ Fetch logs for a job
 
 **Parameters:**
 
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
-- **since_ms** (<code>int | None</code>) – Timestamp, in milliseconds since epoch, to get logs for. Defaults to None for all logs.
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
+- **since_ms** (`int | None`) – Timestamp, in milliseconds since epoch, to get logs for. Defaults to None for all logs.
 
 **Returns:**
 
-- <code>list[Any]</code> – Log messages for the given job.
+- `list[Any]` – Log messages for the given job.
+
+---
+
+## job_get_results
+
+```python
+job_get_results(job: CoerceableToJobId) -> list[Any]
+```
+
+Get the results of a completed job.
+
+**Parameters:**
+
+- **job** (`CoerceableToJobId`) – The identifier of a job or a `RunResponse` object.
+
+**Returns:**
+
+- `list[Any]` – List of results from the job.
+
+---
+
+## job_get_status
+
+```python
+job_get_status(job: CoerceableToJobId) -> RunResponse
+```
+
+Fetch the status of a running job
+
+**Parameters:**
+
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
+
+**Returns:**
+
+- `RunResponse` – The status of the given job.
 
 ---
 
@@ -7890,13 +7934,13 @@ Fetch and print logs for a job
 
 **Parameters:**
 
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
-- **since_ms** (<code>int | None</code>) – Timestamp, in milliseconds since epoch, to get logs for. Defaults to None for all logs.
-- **file** (<code>IO | None</code>) – Where to print logs to. Defaults to sys.stdout.
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
+- **since_ms** (`int | None`) – Timestamp, in milliseconds since epoch, to get logs for. Defaults to None for all logs.
+- **file** (`IO | None`) – Where to print logs to. Defaults to sys.stdout.
 
 **Returns:**
 
-- <code>None</code> – None
+- `None` – None
 
 ---
 
@@ -7915,60 +7959,10 @@ Continuously print logs for a job
 
 **Parameters:**
 
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
-- **refresh_seconds** (<code>float</code>) – how frequently, in seconds, to check for new logs. Defaults to 1.
-- **sample_logs** (<code>bool</code>) – if true, print out only a sample of logs. Defaults to True.
-- **timeout** (<code>float | None</code>) – if not None, how long to continue tailing logs for. Defaults to None for indefinite.
-
----
-
-## job_get_status
-
-```python
-job_get_status(job: CoerceableToJobId) -> RunResponse
-```
-
-Fetch the status of a running job
-
-**Parameters:**
-
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
-
-**Returns:**
-
-- <code>RunResponse</code> – The status of the given job.
-
----
-
-## job_cancel
-
-```python
-job_cancel(job: CoerceableToJobId) -> RunResponse
-```
-
-Cancel an existing job
-
-**Parameters:**
-
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
-
-**Returns:**
-
-- <code>RunResponse</code> – A new job object.
-
----
-
-## job_get_exec_time
-
-```python
-job_get_exec_time(job: CoerceableToJobId) -> timedelta
-```
-
-Determine the execution time of this job, using the logs.
-
-**Returns:**
-
-- <code>timedelta</code> – Time the job took. If the job is in progress, time from first to last log message is returned.
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
+- **refresh_seconds** (`float`) – how frequently, in seconds, to check for new logs. Defaults to 1.
+- **sample_logs** (`bool`) – if true, print out only a sample of logs. Defaults to True.
+- **timeout** (`float | None`) – if not None, how long to continue tailing logs for. Defaults to None for indefinite.
 
 ---
 
@@ -7986,32 +7980,139 @@ Block the Python kernel until this job has finished
 
 **Parameters:**
 
-- **poll_interval_seconds** (<code>float</code>) – How often (in seconds) to poll for status updates. Defaults to 5.
-- **timeout** (<code>float | None</code>) – The length of time in seconds to wait for the job. Defaults to None.
+- **poll_interval_seconds** (`float`) – How often (in seconds) to poll for status updates. Defaults to 5.
+- **timeout** (`float | None`) – The length of time in seconds to wait for the job. Defaults to None.
 
 **Raises:**
 
-- <code>TimeoutError</code> – if waiting for the job timed out.
+- `TimeoutError` – if waiting for the job timed out.
 
 **Returns:**
 
-- <code>RunResponse</code> – The status of the given job.
+- `RunResponse` – The status of the given job.
 
 ---
 
-## access_token
+## job_wait_for_results
 
 ```python
-access_token() -> str
+job_wait_for_results(
+    job: CoerceableToJobId,
+    poll_interval_seconds: float = 5,
+    timeout: float | None = None
+) -> list[UdfEvaluationResult]
 ```
 
-Get an access token for the Fused service.
+Block until a job completes and return its results.
 
-Returns the Bearer token for the authenticated user. Use this for authenticating API requests outside of the Fused SDK.
+Combines `job_wait_for_job` and `job_get_results` into a single call.
+
+**Parameters:**
+
+- **job** (`CoerceableToJobId`) – The identifier of a job or a `RunResponse` object.
+- **poll_interval_seconds** (`float`) – How often to poll for status. Defaults to 5.
+- **timeout** (`float | None`) – Maximum time to wait in seconds. None for no timeout.
 
 **Returns:**
 
-- `str` – The access token string.
+- `list[UdfEvaluationResult]` – List of UDF evaluation results.
+
+---
+
+## list
+
+```python
+list(path: str, *, details: bool = False) -> list[str] | list[ListDetails]
+```
+
+List the files at the path.
+
+**Parameters:**
+
+- **path** (`str`) – Parent directory URL, like `fd://bucket-name/`
+- **details** (`bool`) – If True, return additional metadata about each record.
+
+**Returns:**
+
+- `list[str] | list[ListDetails]` – A list of paths as URLs, or as metadata objects.
+
+**Examples:**
+
+```python
+fused.api.list("fd://bucket-name/")
+```
+
+---
+
+## log
+
+```python
+log(
+    id: str | None = None,
+    *,
+    udf_id: str | None = None,
+    udf_name: str | None = None,
+    shared_token: str | None = None,
+    exec_env: bool = False,
+    distinct: bool = False,
+    distinct_type: Literal["names", "ids"] | None = None,
+    start_timestamp: str | None = None,
+    end_timestamp: str | None = None,
+    limit: int = 100,
+    scan_forward: bool = True,
+    page_token: str | None = None,
+    max_records_to_scan: int = 1000,
+) -> dict[str, Any]
+```
+
+Get audit logs with flexible filtering options.
+
+Routes to the appropriate audit log method based on the provided arguments.
+
+**Parameters:**
+
+- **id** (`str | None`) – Get audit log by record ID. If provided, other filters are ignored.
+- **udf_id** (`str | None`) – Filter logs by UDF ID.
+- **udf_name** (`str | None`) – Filter logs by UDF name.
+- **shared_token** (`str | None`) – Filter logs by shared token.
+- **exec_env** (`bool`) – If True, filter by execution environment. Defaults to False.
+- **distinct** (`bool`) – If True, return distinct values instead of full logs. Defaults to False.
+- **distinct_type** (`Literal["names", "ids"] | None`) – When distinct=True, specify "names" or "ids" to get distinct UDF names or IDs.
+- **start_timestamp** (`str | None`) – Start timestamp (ISO format, inclusive). Defaults to None.
+- **end_timestamp** (`str | None`) – End timestamp (ISO format, inclusive). Defaults to None.
+- **limit** (`int`) – Maximum number of items to return (max 300). Defaults to 100.
+- **scan_forward** (`bool`) – If True, scan forward in time; if False, scan backward. Defaults to True.
+- **page_token** (`str | None`) – Pagination token from previous response. Defaults to None.
+- **max_records_to_scan** (`int`) – Maximum number of records to scan (max 5000). Used for distinct queries. Defaults to 1000.
+
+**Returns:**
+
+- `dict[str, Any]` – Dictionary containing items, limit, and next_page_token.
+
+**Examples:**
+
+```py
+# Get all logs for the authenticated user
+logs = fused.api.log()
+
+# Get logs filtered by execution environment
+logs = fused.api.log(exec_env=True)
+
+# Get logs by UDF ID
+logs = fused.api.log(udf_id="udf-id")
+
+# Get logs by UDF name
+logs = fused.api.log(udf_name="my_udf")
+
+# Get a specific log by ID
+log_entry = fused.api.log(id="audit-log-id")
+
+# Get distinct UDF names
+distinct_names = fused.api.log(distinct=True, distinct_type="names")
+
+# Get distinct UDF IDs filtered by execution environment
+distinct_ids = fused.api.log(distinct=True, distinct_type="ids", exec_env=True)
+```
 
 ---
 
@@ -8027,17 +8128,42 @@ Deletes the credentials saved to disk and resets the global Fused API.
 
 ---
 
-## team_info
+## resolve
 
 ```python
-team_info() -> dict
+resolve(path: str) -> str
 ```
 
-Get information about the current user's team.
+Resolve a path from `fd://` to the full S3 URI.
+
+**Parameters:**
+
+- **path** (`str`) – The path to resolve (e.g., `fd://my-bucket/data/`).
 
 **Returns:**
 
-- `dict` – Team information including name, members, and settings.
+- `str` – The resolved S3 path.
+
+**Example:**
+
+```python
+s3_path = fused.api.resolve("fd://my-data/output.parquet")
+# Returns: "s3://fused-users/my-team/my-data/output.parquet"
+```
+
+---
+
+## schedule_list
+
+```python
+schedule_list()
+```
+
+List all cron jobs scheduled for the current user.
+
+**Returns:**
+
+- List of `CronJob` objects.
 
 ---
 
@@ -8095,125 +8221,108 @@ fused.api.schedule_udf(
 
 ---
 
-## schedule_list
+## sign_url
 
 ```python
-schedule_list()
+sign_url(path: str) -> str
 ```
 
-List all cron jobs scheduled for the current user.
+Create a signed URL to access the path.
 
-**Returns:**
-
-- List of `CronJob` objects.
-
----
-
-## get_apps
-
-```python
-get_apps(
-    n: int | None = None,
-    *,
-    skip: int = 0,
-    by: Literal['name', 'id', 'slug'] = 'name',
-    whose: Literal['self', 'public'] = 'self'
-) -> dict
-```
-
-Get apps for the current user or public apps.
+This function may not check that the file represented by the path exists.
 
 **Parameters:**
 
-- **n** (`int | None`) – Maximum number of apps to return. None for all.
-- **skip** (`int`) – Number of apps to skip.
-- **by** (`Literal['name', 'id', 'slug']`) – Sort order.
-- **whose** (`Literal['self', 'public']`) – Whose apps to get.
+- **path** (`str`) – URL to a file, like `fd://bucket-name/file.parquet`
 
 **Returns:**
 
-- `dict` – Dictionary of apps.
+- `str` – HTTPS URL to access the file using signed access.
+
+**Examples:**
+
+```python
+fused.api.sign_url("fd://bucket-name/table_directory/file.parquet")
+```
 
 ---
 
-## resolve
+## sign_url_prefix
 
 ```python
-resolve(path: str) -> str
+sign_url_prefix(path: str) -> dict[str, str]
 ```
 
-Resolve a path from `fd://` to the full S3 URI.
+Create signed URLs to access all blobs under the path.
 
 **Parameters:**
 
-- **path** (`str`) – The path to resolve (e.g., `fd://my-bucket/data/`).
+- **path** (`str`) – URL to a prefix, like `fd://bucket-name/some_directory/`
 
 **Returns:**
 
-- `str` – The resolved S3 path.
+- `dict[str, str]` – Dictionary mapping from blob store key to signed HTTPS URL.
 
-**Example:**
+**Examples:**
 
 ```python
-s3_path = fused.api.resolve("fd://my-data/output.parquet")
-# Returns: "s3://fused-users/my-team/my-data/output.parquet"
+fused.api.sign_url_prefix("fd://bucket-name/table_directory/")
 ```
 
 ---
 
-## enable_gcs
+## team_info
 
 ```python
-enable_gcs()
+team_info() -> dict
 ```
 
-Save GCS credentials from AWS secret manager into a temporary local file and set its path to the environment variable.
+Get information about the current user's team.
 
-Use this to enable Google Cloud Storage access in your UDFs.
+**Returns:**
+
+- `dict` – Team information including name, members, and settings.
 
 ---
 
-## job_get_results
+## upload
 
 ```python
-job_get_results(job: CoerceableToJobId) -> list[Any]
+upload(
+    local_path: str | Path | bytes | BinaryIO | pd.DataFrame | gpd.GeoDataFrame,
+    remote_path: str,
+    timeout: float | None = None,
+) -> None
 ```
 
-Get the results of a completed job.
+Upload local file to S3.
 
 **Parameters:**
 
-- **job** (`CoerceableToJobId`) – The identifier of a job or a `RunResponse` object.
+- **local_path** (`str | Path | bytes | BinaryIO | pd.DataFrame | gpd.GeoDataFrame`) – Either a path to a local file (`str`, `Path`), a (Geo)DataFrame
+  (which will get uploaded as Parquet file), or the contents to upload.
+  Any string will be treated as a Path, if you wish to upload the contents of
+  the string, first encode it: `s.encode("utf-8")`
+- **remote_path** (`str`) – URL to upload to, like `fd://new-file.txt`
+- **timeout** (`float | None`) – Optional timeout in seconds for the upload (will default to `OPTIONS.request_timeout` if not specified).
 
-**Returns:**
+**Examples:**
 
-- `list[Any]` – List of results from the job.
+To upload a local json file to your Fused-managed S3 bucket:
+
+```py
+fused.api.upload("my_file.json", "fd://my_bucket/my_file.json")
+```
 
 ---
 
-## job_wait_for_results
+## whoami
 
 ```python
-job_wait_for_results(
-    job: CoerceableToJobId,
-    poll_interval_seconds: float = 5,
-    timeout: float | None = None
-) -> list[UdfEvaluationResult]
+whoami()
 ```
 
-Block until a job completes and return its results.
-
-Combines `job_wait_for_job` and `job_get_results` into a single call.
-
-**Parameters:**
-
-- **job** (`CoerceableToJobId`) – The identifier of a job or a `RunResponse` object.
-- **poll_interval_seconds** (`float`) – How often to poll for status. Defaults to 5.
-- **timeout** (`float | None`) – Maximum time to wait in seconds. None for no timeout.
-
-**Returns:**
-
-- `list[UdfEvaluationResult]` – List of UDF evaluation results.
+Returns information on the currently logged in user
 
 ---
 
@@ -8245,10 +8354,42 @@ Create a FusedAPI instance.
 
 **Other Parameters:**
 
-- **base_url** (<code>str | None</code>) – The Fused instance to send requests to. Defaults to `https://www.fused.io/server/v1`.
-- **shared_udf_base_url** (<code>str | None</code>) – The shared UDF instance to send requests to. Defaults to `https://www.udf.ai`.
-- **set_global_api** (<code>bool</code>) – Set this as the global API object. Defaults to True.
-- **credentials_needed** (<code>bool</code>) – If True, automatically attempt to log in. Defaults to True.
+- **base_url** (`str | None`) – The Fused instance to send requests to. Defaults to `https://www.fused.io/server/v1`.
+- **shared_udf_base_url** (`str | None`) – The shared UDF instance to send requests to. Defaults to `https://www.udf.ai`.
+- **set_global_api** (`bool`) – Set this as the global API object. Defaults to True.
+- **credentials_needed** (`bool`) – If True, automatically attempt to log in. Defaults to True.
+
+---
+
+### auth_token
+
+```python
+auth_token() -> str
+```
+
+Returns the current user's Fused environment (team) auth token
+
+**Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.auth_token()`
+
+---
+
+### cancel_job
+
+```python
+cancel_job(job: CoerceableToJobId) -> RunResponse
+```
+
+Cancel an existing job
+
+**Parameters:**
+
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
+
+**Returns:**
+
+- `RunResponse` – A new job object.
+
+**Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.cancel_job()`
 
 ---
 
@@ -8278,36 +8419,92 @@ The token does not allow running any other UDF on your account.
 
 **Parameters:**
 
-- **udf_email_or_name_or_id** (<code>str | None</code>) – A UDF ID, email address (for use with udf_name), or UDF name.
-- **udf_name** (<code>str | None</code>) – The name of the UDF to create the token for.
+- **udf_email_or_name_or_id** (`str | None`) – A UDF ID, email address (for use with udf_name), or UDF name.
+- **udf_name** (`str | None`) – The name of the UDF to create the token for.
 
 **Other Parameters:**
 
-- **udf_email** (<code>str | None</code>) – The email of the user owning the UDF, or, if udf_name is None, the name of the UDF.
-- **udf_id** (<code>str | None</code>) – The backend ID of the UDF to create the token for.
-- **client_id** (<code>str | Ellipsis | None</code>) – If specified, overrides which realtime environment to run the UDF under.
-- **cache** (<code>bool</code>) – If True, UDF tiles will be cached.
-- **metadata_json** (<code>dict\[str, Any\] | None</code>) – Additional metadata to serve as part of the tiles metadata.json.
-- **enabled** (<code>bool</code>) – If True, the token can be used.
+- **udf_email** (`str | None`) – The email of the user owning the UDF, or, if udf_name is None, the name of the UDF.
+- **udf_id** (`str | None`) – The backend ID of the UDF to create the token for.
+- **client_id** (`str | Ellipsis | None`) – If specified, overrides which realtime environment to run the UDF under.
+- **cache** (`bool`) – If True, UDF tiles will be cached.
+- **metadata_json** (`dict[str, Any] | None`) – Additional metadata to serve as part of the tiles metadata.json.
+- **enabled** (`bool`) – If True, the token can be used.
 
 **Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.create_udf_access_token()`
 
 ---
 
-### upload
+### get_jobs
 
 ```python
-upload(
-    path: str,
-    data: bytes | BinaryIO,
-    client_id: str | None = None,
-    timeout: float | None = None,
-) -> None
+get_jobs(
+    n: int = 5,
+    *,
+    skip: int = 0,
+    per_request: int = 25,
+    max_requests: int | None = 1
+) -> Jobs
 ```
 
-Upload a binary blob to a cloud location
+Get the job history.
 
-**Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.upload()`
+**Parameters:**
+
+- **n** (`int`) – The number of jobs to fetch. Defaults to 5.
+
+**Other Parameters:**
+
+- **skip** (`int`) – Where in the job history to begin. Defaults to 0, which retrieves the most recent job.
+- **per_request** (`int`) – Number of jobs per request to fetch. Defaults to 25.
+- **max_requests** (`int | None`) – Maximum number of requests to make. May be None to fetch all jobs. Defaults to 1.
+
+**Returns:**
+
+- `Jobs` – The job history.
+
+**Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.get_jobs()`
+
+---
+
+### get_logs
+
+```python
+get_logs(job: CoerceableToJobId, since_ms: int | None = None) -> list[Any]
+```
+
+Fetch logs for a job
+
+**Parameters:**
+
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
+- **since_ms** (`int | None`) – Timestamp, in milliseconds since epoch, to get logs for. Defaults to None for all logs.
+
+**Returns:**
+
+- `list[Any]` – Log messages for the given job.
+
+**Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.get_logs()`
+
+---
+
+### get_status
+
+```python
+get_status(job: CoerceableToJobId) -> RunResponse
+```
+
+Fetch the status of a running job
+
+**Parameters:**
+
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
+
+**Returns:**
+
+- `RunResponse` – The status of the given job.
+
+**Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.get_status()`
 
 ---
 
@@ -8331,91 +8528,18 @@ Execute an operation
 
 **Parameters:**
 
-- **config** (<code>JobConfig | JobStepConfig</code>) – the configuration object to run in the job.
+- **config** (`JobConfig | JobStepConfig`) – the configuration object to run in the job.
 
 **Other Parameters:**
 
-- **instance_type** (<code>WHITELISTED_INSTANCE_TYPES | None</code>) – The AWS EC2 instance type to use for the job. Acceptable strings are "m5.large", "m5.xlarge", "m5.2xlarge", "m5.4xlarge", "r5.large", "r5.xlarge", "r5.2xlarge", "r5.4xlarge". Defaults to None.
-- **region** (<code>str | None</code>) – The AWS region in which to run. Defaults to None.
-- **disk_size_gb** (<code>int | None</code>) – The disk size to specify for the job. Defaults to None.
-- **additional_env** (<code>Sequence\[str\] | None</code>) – Any additional environment variables to be passed into the job, each in the form KEY=value. Defaults to None.
-- **image_name** (<code>str | None</code>) – Custom image name to run. Defaults to None for default image.
-- **send_status_email** (<code>bool | None</code>) – Whether to send a status email to the user when the job is complete.
+- **instance_type** (`WHITELISTED_INSTANCE_TYPES | None`) – The AWS EC2 instance type to use for the job. Acceptable strings are "m5.large", "m5.xlarge", "m5.2xlarge", "m5.4xlarge", "r5.large", "r5.xlarge", "r5.2xlarge", "r5.4xlarge". Defaults to None.
+- **region** (`str | None`) – The AWS region in which to run. Defaults to None.
+- **disk_size_gb** (`int | None`) – The disk size to specify for the job. Defaults to None.
+- **additional_env** (`Sequence[str] | None`) – Any additional environment variables to be passed into the job, each in the form KEY=value. Defaults to None.
+- **image_name** (`str | None`) – Custom image name to run. Defaults to None for default image.
+- **send_status_email** (`bool | None`) – Whether to send a status email to the user when the job is complete.
 
 **Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.start_job()`
-
----
-
-### get_jobs
-
-```python
-get_jobs(
-    n: int = 5,
-    *,
-    skip: int = 0,
-    per_request: int = 25,
-    max_requests: int | None = 1
-) -> Jobs
-```
-
-Get the job history.
-
-**Parameters:**
-
-- **n** (<code>int</code>) – The number of jobs to fetch. Defaults to 5.
-
-**Other Parameters:**
-
-- **skip** (<code>int</code>) – Where in the job history to begin. Defaults to 0, which retrieves the most recent job.
-- **per_request** (<code>int</code>) – Number of jobs per request to fetch. Defaults to 25.
-- **max_requests** (<code>int | None</code>) – Maximum number of requests to make. May be None to fetch all jobs. Defaults to 1.
-
-**Returns:**
-
-- <code>Jobs</code> – The job history.
-
-**Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.get_jobs()`
-
----
-
-### get_status
-
-```python
-get_status(job: CoerceableToJobId) -> RunResponse
-```
-
-Fetch the status of a running job
-
-**Parameters:**
-
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
-
-**Returns:**
-
-- <code>RunResponse</code> – The status of the given job.
-
-**Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.get_status()`
-
----
-
-### get_logs
-
-```python
-get_logs(job: CoerceableToJobId, since_ms: int | None = None) -> list[Any]
-```
-
-Fetch logs for a job
-
-**Parameters:**
-
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
-- **since_ms** (<code>int | None</code>) – Timestamp, in milliseconds since epoch, to get logs for. Defaults to None for all logs.
-
-**Returns:**
-
-- <code>list\[Any\]</code> – Log messages for the given job.
-
-**Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.get_logs()`
 
 ---
 
@@ -8434,12 +8558,29 @@ Continuously print logs for a job
 
 **Parameters:**
 
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
-- **refresh_seconds** (<code>float</code>) – how frequently, in seconds, to check for new logs. Defaults to 1.
-- **sample_logs** (<code>bool</code>) – if true, print out only a sample of logs. Defaults to False.
-- **timeout** (<code>float | None</code>) – if not None, how long to continue tailing logs for. Defaults to None for indefinite.
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
+- **refresh_seconds** (`float`) – how frequently, in seconds, to check for new logs. Defaults to 1.
+- **sample_logs** (`bool`) – if true, print out only a sample of logs. Defaults to False.
+- **timeout** (`float | None`) – if not None, how long to continue tailing logs for. Defaults to None for indefinite.
 
 **Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.tail_logs()`
+
+---
+
+### upload
+
+```python
+upload(
+    path: str,
+    data: bytes | BinaryIO,
+    client_id: str | None = None,
+    timeout: float | None = None,
+) -> None
+```
+
+Upload a binary blob to a cloud location
+
+**Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.upload()`
 
 ---
 
@@ -8457,51 +8598,19 @@ Block the Python kernel until the given job has finished
 
 **Parameters:**
 
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
-- **poll_interval_seconds** (<code>float</code>) – How often (in seconds) to poll for status updates. Defaults to 5.
-- **timeout** (<code>float | None</code>) – The length of time in seconds to wait for the job. Defaults to None.
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
+- **poll_interval_seconds** (`float`) – How often (in seconds) to poll for status updates. Defaults to 5.
+- **timeout** (`float | None`) – The length of time in seconds to wait for the job. Defaults to None.
 
 **Raises:**
 
-- <code>TimeoutError</code> – if waiting for the job timed out.
+- `TimeoutError` – if waiting for the job timed out.
 
 **Returns:**
 
-- <code>RunResponse</code> – The status of the given job.
+- `RunResponse` – The status of the given job.
 
 **Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.wait_for_job()`
-
----
-
-### cancel_job
-
-```python
-cancel_job(job: CoerceableToJobId) -> RunResponse
-```
-
-Cancel an existing job
-
-**Parameters:**
-
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
-
-**Returns:**
-
-- <code>RunResponse</code> – A new job object.
-
-**Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.cancel_job()`
-
----
-
-### auth_token
-
-```python
-auth_token() -> str
-```
-
-Returns the current user's Fused environment (team) auth token
-
-**Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.auth_token()`
 
 ---
 
@@ -9263,7 +9372,7 @@ job = fused.ingest(
     explode_geometries=True,
     partitioning_maximum_per_file=2000,
     partitioning_maximum_per_chunk=200,
-).execute()
+).run_batch()
 ```
 
 ---
@@ -9919,7 +10028,7 @@ udf(
     *,
     name: Optional[str] = None,
     cache_max_age: Optional[str] = None,
-    instance_type: Optional[str] = None,
+    engine: Optional[str] = None,
     disk_size_gb: Optional[int] = None,
     region: Optional[str] = None,
     default_parameters: Optional[Dict[str, Any]] = None,
@@ -9936,9 +10045,11 @@ A decorator that transforms a function into a Fused UDF.
 
 - **cache_max_age** (`Optional[str]`) – The maximum age when returning a result from the cache.
 
-- **instance_type** (`Optional[str]`) – The type of instance to use for remote execution ('realtime', or 'small', 'medium', 'large' or one of the whitelisted instance types). If not specified (and also not specified in `fused.run()`), defaults to 'realtime'.
+- **engine** (`Optional[str]`) – The execution engine to use (`'remote'`, `'local'`, `'realtime'`, or a batch instance type like `'small'`, `'medium'`, `'large'`, `'m5.large'`, etc.). If not specified (and also not specified when calling the UDF), defaults to `'realtime'`.
 
-- **disk_size_gb** (`Optional[int]`) – The size of the disk in GB to use for remote execution (only supported for a batch instance type).
+- **instance_type** (`Optional[str]`) – **[Deprecated]** Use `engine` instead. Accepts the same values as `engine`.
+
+- **disk_size_gb** (`Optional[int]`) – The size of the disk in GB to use for remote execution (only supported for batch instance types).
 
 - **default_parameters** (`Optional[Dict[str, Any]]`) – Parameters to embed in the UDF object, separately from the arguments list of the function. Defaults to None for empty parameters.
 
@@ -9955,7 +10066,9 @@ A decorator that transforms a function into a Fused UDF.
 
 - `Callable[..., Udf]` – A callable that represents the transformed UDF.
 
-## Example
+## Examples
+
+Basic UDF:
 
 ```python
 @fused.udf
@@ -9965,11 +10078,236 @@ def udf(bbox, table_path="s3://fused-asset/infra/building_msft_us"):
     return gdf
 ```
 
+UDF with a specific engine:
+
+```python
+@fused.udf(engine='large')
+def udf(bbox):
+    # Runs on a large batch instance by default
+    ...
+    return result
+```
+
 ================================================================================
 
 ## fused.h3
 Path: python-sdk/api-reference/h3.mdx
 URL: https://docs.fused.io/python-sdk/api-reference/h3
+
+The `fused.h3` module provides functions for working with H3-indexed datasets, including ingestion, reading, and metadata management.
+
+```python
+
+# Ingest raster data to H3
+fused.h3.run_ingest_raster_to_h3(...)
+
+# Read H3-indexed data
+table = fused.h3.read_hex_table(...)
+```
+
+---
+
+## persist_hex_table_metadata
+
+```python
+persist_hex_table_metadata(
+    dataset_path: str,
+    output_path: str | None = None,
+    metadata_path: str | None = None,
+    verbose: bool = False,
+    row_group_size: int = 500,
+    indexed_columns: list[str] | None = None,
+    pool_size: int = 10,
+    metadata_compression_level: int | None = None,
+) -> str
+```
+
+Persist metadata for a hex table to enable serverless queries.
+
+Scans all parquet files in the dataset, extracts metadata needed for fast reconstruction, and writes one `.metadata.parquet` file per source file.
+
+Each metadata file contains:
+- Row group metadata (offsets, H3 ranges, etc.)
+- Full metadata_json stored as custom metadata in the parquet schema
+
+Requires a `hex` column (or variant like `h3`, `h3_index`) in all files.
+
+**Parameters:**
+
+- **dataset_path** (`str`) – Path to the dataset directory (e.g., `"s3://bucket/dataset/"`)
+- **output_path** (`str | None`) – Deprecated - use `metadata_path` instead.
+- **metadata_path** (`str | None`) – Directory path where metadata files should be written. If None, writes to `/.fused/.metadata.parquet` for each source file.
+- **verbose** (`bool`) – If True, print timing/progress information.
+- **row_group_size** (`int`) – Number of rows per row group in output parquet file. Default is 500.
+- **indexed_columns** (`list[str] | None`) – List of column names to index. If None (default), indexes only the first identified indexed column. If empty list, indexes all detected indexed columns.
+- **pool_size** (`int`) – Number of parallel workers to use for processing files. Default is 10.
+- **metadata_compression_level** (`int | None`) – Optional zstd compression level for metadata parquet files.
+
+**Returns:**
+
+- `str` – Path to metadata directory (if metadata_path provided) or first metadata file path.
+
+**Example:**
+
+```python
+fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/")
+# Returns: 's3://my-bucket/my-dataset/.fused/file1.metadata.parquet'
+
+fused.h3.persist_hex_table_metadata(
+    "s3://my-bucket/my-dataset/",
+    metadata_path="s3://my-bucket/metadata/"
+)
+# Returns: 's3://my-bucket/metadata/'
+```
+
+---
+
+## read_hex_table
+
+```python
+read_hex_table(
+    dataset_path: str,
+    hex_ranges_list: list[list[int]],
+    columns: list[str] | None = None,
+    base_url: str | None = None,
+    verbose: bool = False,
+    return_timing_info: bool = False,
+    batch_size: int | None = None,
+    max_concurrent_downloads: int | None = None,
+) -> pa.Table | tuple[pa.Table, dict[str, Any]]
+```
+
+Read data from an H3-indexed dataset by querying hex ranges.
+
+This is an optimized version that assumes the server always provides full metadata (start_offset, end_offset, metadata, and row_group_bytes) for all row groups. This function eliminates all metadata API calls by using prefetched metadata.
+
+**Parameters:**
+
+- **dataset_path** (`str`) – Path to the H3-indexed dataset (e.g., `"s3://bucket/dataset/"`)
+- **hex_ranges_list** (`list[list[int]]`) – List of [min_hex, max_hex] pairs as integers. Example: `[[622236719905341439, 622246719905341439]]`
+- **columns** (`list[str] | None`) – Optional list of column names to read. If None, reads all columns.
+- **base_url** (`str | None`) – Base URL for API. If None, uses current environment.
+- **verbose** (`bool`) – If True, print progress information. Default is False.
+- **return_timing_info** (`bool`) – If True, return a tuple of (table, timing_info) instead of just the table.
+- **batch_size** (`int | None`) – Target size in bytes for combining row groups. If None, uses `fused.options.row_group_batch_size` (default: 32KB).
+- **max_concurrent_downloads** (`int | None`) – Maximum number of simultaneous download operations.
+
+**Returns:**
+
+- `pa.Table` – PyArrow Table containing the concatenated data from all matching row groups. If `return_timing_info` is True, returns a tuple of (table, timing_info dict).
+
+**Example:**
+
+```python
+
+# Read data for a specific H3 hex range
+table = fused.h3.read_hex_table(
+    dataset_path="s3://my-bucket/my-h3-dataset/",
+    hex_ranges_list=[[622236719905341439, 622246719905341439]]
+)
+df = table.to_pandas()
+```
+
+---
+
+## read_hex_table_slow
+
+```python
+read_hex_table_slow(
+    dataset_path: str,
+    hex_ranges_list: list[list[int]],
+    columns: list[str] | None = None,
+    base_url: str | None = None,
+    verbose: bool = False,
+    return_timing_info: bool = False,
+    metadata_batch_size: int = 50,
+) -> pa.Table | tuple[pa.Table, dict[str, Any]]
+```
+
+Read data from an H3-indexed dataset by querying hex ranges (slower version with metadata API calls).
+
+This function queries the dataset index to find matching row groups, then fetches metadata and downloads data. Adjacent row groups from the same file are combined into single downloads for better S3 performance.
+
+**Parameters:**
+
+- **dataset_path** (`str`) – Path to the H3-indexed dataset (e.g., `"s3://bucket/dataset/"`)
+- **hex_ranges_list** (`list[list[int]]`) – List of [min_hex, max_hex] pairs as integers.
+- **columns** (`list[str] | None`) – Optional list of column names to read. If None, reads all columns.
+- **base_url** (`str | None`) – Base URL for API. If None, uses current environment.
+- **verbose** (`bool`) – If True, print progress information. Default is False.
+- **return_timing_info** (`bool`) – If True, return a tuple of (table, timing_info) instead of just the table.
+- **metadata_batch_size** (`int`) – Maximum number of row group metadata requests to batch together in a single API call. Default is 50.
+
+**Returns:**
+
+- `pa.Table` – PyArrow Table containing the concatenated data from all matching row groups.
+
+**Example:**
+
+```python
+
+table = fused.h3.read_hex_table_slow(
+    dataset_path="s3://my-bucket/my-h3-dataset/",
+    hex_ranges_list=[[622236719905341439, 622246719905341439]]
+)
+df = table.to_pandas()
+```
+
+---
+
+## read_hex_table_with_persisted_metadata
+
+```python
+read_hex_table_with_persisted_metadata(
+    dataset_path: str,
+    hex_ranges_list: list[list[int]],
+    columns: list[str] | None = None,
+    metadata_path: str | None = None,
+    verbose: bool = False,
+    return_timing_info: bool = False,
+    batch_size: int | None = None,
+    max_concurrent_downloads: int | None = None,
+    max_concurrent_metadata_reads: int | None = None,
+) -> pa.Table | tuple[pa.Table, dict[str, Any]]
+```
+
+Read data from an H3-indexed dataset using persisted metadata parquet files.
+
+This function reads from per-file metadata parquet files instead of querying a server. Each source parquet file has a corresponding `.metadata.parquet` file stored at `/.fused/.metadata.parquet`.
+
+Supports subdirectory queries - if dataset_path points to a subdirectory, the function will look for metadata files for files in that subdirectory.
+
+**Parameters:**
+
+- **dataset_path** (`str`) – Path to the H3-indexed dataset (e.g., `"s3://bucket/dataset/"`). Can also be a subdirectory path for filtering.
+- **hex_ranges_list** (`list[list[int]]`) – List of [min_hex, max_hex] pairs as integers.
+- **columns** (`list[str] | None`) – Optional list of column names to read. If None, reads all columns.
+- **metadata_path** (`str | None`) – Directory path where metadata files are stored. If None, looks for metadata at `/.fused/` for each source file.
+- **verbose** (`bool`) – If True, print progress information. Default is False.
+- **return_timing_info** (`bool`) – If True, return a tuple of (table, timing_info) instead of just the table.
+- **batch_size** (`int | None`) – Target size in bytes for combining row groups. If None, uses `fused.options.row_group_batch_size`.
+- **max_concurrent_downloads** (`int | None`) – Maximum number of simultaneous download operations.
+- **max_concurrent_metadata_reads** (`int | None`) – Maximum number of simultaneous metadata file reads.
+
+**Returns:**
+
+- `pa.Table` – PyArrow Table containing the concatenated data from all matching row groups.
+
+**Example:**
+
+```python
+
+# First, persist metadata
+fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/")
+
+# Then read using persisted metadata (no server needed)
+table = fused.h3.read_hex_table_with_persisted_metadata(
+    dataset_path="s3://my-bucket/my-dataset/",
+    hex_ranges_list=[[622236719905341439, 622246719905341439]]
+)
+```
+
+---
 
 ## run_ingest_raster_to_h3
 
@@ -9993,10 +10331,10 @@ run_ingest_raster_to_h3(
     tmp_path: str | None = None,
     overwrite: bool = False,
     steps: list[str] | None = None,
-    extract_kwargs: list[str] | None = ,
-    partition_kwargs: list[str] | None = ,
-    overview_kwargs: list[str] | None = ,
-    **kwargs: list[str] | None
+    extract_kwargs: dict | None = ,
+    partition_kwargs: dict | None = ,
+    overview_kwargs: dict | None = ,
+    **kwargs
 )
 ```
 
@@ -10004,113 +10342,125 @@ Run the raster to H3 ingestion process.
 
 This process involves multiple steps:
 
-- extract pixels values and assign to H3 cells in chunks (extract step)
-- combine the chunks per partition (file) and prepare metadata (partition step)
-- create the metadata `_sample` file and overviews files
+- Extract pixel values and assign to H3 cells in chunks (extract step)
+- Combine the chunks per partition (file) and prepare metadata (partition step)
+- Create the metadata `_sample` file and overviews files
 
 **Parameters:**
 
-- **src_path** (<code>str, list</code>) – Path(s) to the input raster data.
-  When this is a single path, the file is chunked up for processing
-  based on `target_chunk_size`. When this is a list of paths, each
-  file is processed as one chunk.
-- **output_path** (<code>str</code>) – Path for the resulting Parquet dataset.
-- **metrics** (<code>str or list of str</code>) – The metrics to compute per H3 cell.
-  Supported metrics are either "cnt" or a list containing any of
-  "avg", "min", "max", "stddev", "mode" (i.e. most common value),
-  and "sum".
-- **res** (<code>int</code>) – The resolution of the H3 cells in the output data.
-  The pixel values are assigned to H3 cells at resolution
-  `res + res_offset` and then aggregated to `res`.
-  By default, this is inferred based on the resolution of the
-  input data ensuring the H3 cell size is close to the pixel size
-  (e.g. for a raster with pixel size of 30x30m, a resolution of 11
-  is inferred).
-- **k_ring** (<code>int</code>) – The k-ring distance at resolution `res + res_offset`
-  to which the pixel value is assigned (in addition to the center
-  cell). Defaults to 1.
-- **res_offset** (<code>int</code>) – Offset to child resolution (relative to `res`) at
-  which to assign the raw pixel values to H3 cells.
-- **file_res** (<code>int</code>) – The H3 resolution to chunk the resulting files of the
-  Parquet dataset. By default will be inferred based on the target
-  resolution `res`. You can specify `file_res=-1` to have a single
-  output file.
-- **chunk_res** (<code>int</code>) – The H3 resolution to chunk the row groups within
-  each file of the Parquet dataset (ignored when `max_rows_per_chunk`
-  is specified). By default will be inferred based on the target
-  resolution `res`.
-- **overview_res** (<code>list of int</code>) – The H3 resolutions for which to create
-  overview files. By default, overviews are created for resolutions 3
-  to 7 (or capped at a lower value if the `res` of the output dataset
-  is lower).
-- **overview_chunk_res** (<code>int or list of int</code>) – The H3 resolution(s) to chunk
-  the row groups within each overview file of the Parquet dataset. By
-  default, each overview file is chunked at the overview resolution
-  minus 5 (clamped between 0 and the `res` of the output dataset).
-- **max_rows_per_chunk** (<code>int</code>) – The maximum number of rows per chunk in the
-  resulting data and overview files. If 0 (the default), `chunk_res`
-  and `overview_chunk_res` are used to determine the chunking.
-- **include_source_url** (<code>bool</code>) – If True, include a `"source_url"` column in
-  the output dataset that contains a list of source URLs that
-  contributed data to each H3 cell. Defaults to True, set to False
-  to omit this column.
-- **target_chunk_size** (<code>int</code>) – The approximate number of pixel values to
-  process per chunk in the first "extract" step. Defaults to
-  10,000,000 for ingesting a single file or a few files. If ingesting
-  more than 20 files, each file is processed as a single chunk by
-  default, but you can override this by specifying a specific
-  `target_chunk_size` value, or by specifying `target_chunk_size=0` to
-  always process each file as a single chunk.
-- **debug_mode** (<code>bool</code>) – If True, run only the first two chunks for
-  debugging purposes. Defaults to False.
-- **remove_tmp_files** (<code>bool</code>) – If True, remove the temporary files after
-  ingestion is complete. Defaults to True.
-- **tmp_path** (<code>str</code>) – Optional path to use for the temporary files.
-  If specified, the extract step is skipped and it is assumed that
-  the temporary files are already present at this path.
-- **overwrite** (<code>bool</code>) – If True, overwrite the output path if it already
-  exists, by first removing the existing content before writing the
-  new files. Defaults to False, in which case an error is raised if
-  the `output_path` is not empty.
-- **steps** (<code>list of str</code>) – The processing steps to run. Can include
-  "extract", "partition", "metadata", and "overview". By default, all
-  steps are run.
-- **extract_kwargs** (<code>dict</code>) – Additional keyword arguments to pass to
-  `fused.submit` for the extract step.
-- **partition_kwargs** (<code>dict</code>) – Additional keyword arguments to pass to
-  `fused.submit` for the partition step.
-- **overview_kwargs** (<code>dict</code>) – Additional keyword arguments to pass to
-  `fused.submit` for the overview step.
+- **src_path** (`str | list[str]`) – Path(s) to the input raster data. When a single path, the file is chunked for processing based on `target_chunk_size`. When a list, each file is processed as one chunk.
+- **output_path** (`str`) – Path for the resulting Parquet dataset.
+- **metrics** (`str | list[str]`) – The metrics to compute per H3 cell. Supported metrics are either `"cnt"` or a list containing any of `"avg"`, `"min"`, `"max"`, `"stddev"`, `"mode"`, and `"sum"`.
+- **res** (`int | None`) – The resolution of the H3 cells in the output data. By default, inferred based on the resolution of the input data.
+- **k_ring** (`int`) – The k-ring distance at resolution `res + res_offset` to which the pixel value is assigned. Defaults to 1.
+- **res_offset** (`int`) – Offset to child resolution (relative to `res`) at which to assign the raw pixel values to H3 cells.
+- **file_res** (`int | None`) – The H3 resolution to chunk the resulting files of the Parquet dataset. Specify `file_res=-1` to have a single output file.
+- **chunk_res** (`int | None`) – The H3 resolution to chunk the row groups within each file.
+- **overview_res** (`list[int] | None`) – The H3 resolutions for which to create overview files. By default, resolutions 3-7.
+- **overview_chunk_res** (`int | list[int] | None`) – The H3 resolution(s) to chunk the row groups within each overview file.
+- **max_rows_per_chunk** (`int`) – Maximum number of rows per chunk in the resulting data and overview files. If 0 (default), `chunk_res` and `overview_chunk_res` are used.
+- **include_source_url** (`bool`) – If True, include a `"source_url"` column in the output dataset. Defaults to True.
+- **target_chunk_size** (`int | None`) – Approximate number of pixel values to process per chunk in the extract step. Defaults to 10,000,000.
+- **debug_mode** (`bool`) – If True, run only the first two chunks for debugging. Defaults to False.
+- **remove_tmp_files** (`bool`) – If True, remove temporary files after ingestion. Defaults to True.
+- **tmp_path** (`str | None`) – Optional path for temporary files. If specified, the extract step is skipped.
+- **overwrite** (`bool`) – If True, overwrite the output path if it already exists. Defaults to False.
+- **steps** (`list[str] | None`) – Processing steps to run. Can include `"extract"`, `"partition"`, `"metadata"`, and `"overview"`. By default, all steps run.
+- **extract_kwargs** (`dict | None`) – Additional keyword arguments for `fused.submit` for the extract step.
+- **partition_kwargs** (`dict | None`) – Additional keyword arguments for `fused.submit` for the partition step.
+- **overview_kwargs** (`dict | None`) – Additional keyword arguments for `fused.submit` for the overview step.
 
-The extract, partition and overview steps are run in parallel using
-`fused.submit()`. By default, the function will first attempt to run this using
-"realtime" instances, and retry any failed runs using "large" instances.
+The extract, partition and overview steps are run in parallel using `fused.submit()`. By default, the function will first attempt to run this using "realtime" instances, and retry any failed runs using "large" instances.
 
-You can override this behavior by specifying the `engine`, `instance_type`,
-`max_workers`, `n_processes_per_worker`, etc parameters as additional
-keyword arguments to this function (`**kwargs`). If you want to specify
-those per step, use `extract_kwargs`, `partition_kwargs`, and `overview_kwargs`.
-For example, to run everything locally on the same machine where this
-function runs, use:
+**Example:**
 
-```
-run_ingest_raster_to_h3(..., engine="local")
+```python
+fused.h3.run_ingest_raster_to_h3(
+    src_path="s3://my-bucket/raster.tif",
+    output_path="s3://my-bucket/output/",
+    metrics=["avg", "min", "max"],
+    res=10,
+)
 ```
 
-To run the extract step on realtime and the partition step on medium
-instance, you could do:
+To run everything locally:
 
+```python
+fused.h3.run_ingest_raster_to_h3(..., engine="local")
 ```
-run_ingest_raster_to_h3(...,
+
+To customize instance types per step:
+
+```python
+fused.h3.run_ingest_raster_to_h3(
+    ...,
     extract_kwargs=,
     partition_kwargs=,
 )
 ```
 
-In contrast to `fused.submit` itself, the ingestion sets `n_processes_per_worker=1`
-by default to avoid out-of-memory issues on batch instances. You can
-increase this if you know the instance has enough memory to process multiple
-chunks in parallel.
+---
+
+## run_partition_to_h3
+
+```python
+run_partition_to_h3(
+    input_path: str | list[str],
+    output_path: str,
+    metrics: str | list[str] = "cnt",
+    groupby_cols: list[str] = ["hex", "data"],
+    window_cols: list[str] = ["hex"],
+    additional_cols: list[str] = [],
+    res: int | None = None,
+    chunk_res: int | None = None,
+    file_res: int | None = None,
+    overview_res: list[int] | None = None,
+    overview_chunk_res: int | list[int] | None = None,
+    max_rows_per_chunk: int = 0,
+    remove_tmp_files: bool = True,
+    overwrite: bool = False,
+    extract_kwargs: dict = ,
+    partition_kwargs: dict = ,
+    overview_kwargs: dict = ,
+    **kwargs
+)
+```
+
+Run the H3 partitioning process.
+
+This pipeline assumes that the input data already has a `"hex"` column with H3 cell IDs at the target resolution. It will then repartition the data spatially and add overview files.
+
+**Parameters:**
+
+- **input_path** (`str | list[str]`) – Path(s) to the input data. Can be a path to file or directory, or list of file paths.
+- **output_path** (`str`) – Path for the resulting Parquet dataset.
+- **metrics** (`str | list[str]`) – The metrics to compute per H3 cell. Supported: `"cnt"` or a list containing `"avg"`, `"min"`, `"max"`, `"stddev"`, and `"sum"`.
+- **groupby_cols** (`list[str]`) – The columns indicating the groups for which aggregated metrics are calculated. Default is `["hex", "data"]`. Must always include `"hex"`. Only applies when `"cnt"` metric is specified.
+- **window_cols** (`list[str]`) – The columns for which to calculate total counts over using a window function. Default is `["hex"]`. Only applies when `"cnt"` metric is specified.
+- **additional_cols** (`list[str]`) – Additional columns from the input data to include in the output dataset. Default is empty.
+- **res** (`int | None`) – The resolution at which to assign the pixel values to H3 cells.
+- **file_res** (`int | None`) – The H3 resolution to chunk the resulting files. Specify `file_res=-1` for a single output file.
+- **chunk_res** (`int | None`) – The H3 resolution to chunk the row groups within each file.
+- **overview_res** (`list[int] | None`) – The H3 resolutions for which to create overview files.
+- **overview_chunk_res** (`int | list[int] | None`) – The H3 resolution(s) to chunk the row groups within each overview file.
+- **max_rows_per_chunk** (`int`) – Maximum number of rows per chunk. If 0 (default), `chunk_res` and `overview_chunk_res` are used.
+- **remove_tmp_files** (`bool`) – If True, remove temporary files after ingestion. Defaults to True.
+- **overwrite** (`bool`) – If True, overwrite the output path if it already exists. Defaults to False.
+- **extract_kwargs** (`dict`) – Additional keyword arguments for the extract step.
+- **partition_kwargs** (`dict`) – Additional keyword arguments for the partition step.
+- **overview_kwargs** (`dict`) – Additional keyword arguments for the overview step.
+
+**Example:**
+
+```python
+# Partition data that already has H3 hex column
+fused.h3.run_partition_to_h3(
+    input_path="s3://my-bucket/data-with-hex/",
+    output_path="s3://my-bucket/partitioned-output/",
+    metrics=["avg", "sum"],
+    res=10,
+)
+```
 
 ---
 
@@ -10392,16 +10742,43 @@ pool.all_succeeded() # True if all jobs succeeded
 pool.any_failed()    # True if any job failed
 ```
 
+**Parallel processing within workers**
+
+Use `n_processes_per_worker` to combine multiple items per UDF invocation, reducing total invocations for large job counts:
+
+```python
+# Process 4 items in parallel within each UDF instance
+pool = my_udf.map(range(1000), n_processes_per_worker=4)
+df = pool.collect()
+```
+
+**Local engine execution**
+
+When using `engine="local"`, the pool uses process-based execution. The pool automatically shuts down after `collect()`:
+
+```python
+pool = my_udf.map([1, 2, 3], engine="local")
+df = pool.collect()  # Pool automatically shuts down after collecting
+```
+
 **Async methods**
 
-When using `udf.map_async()`, the returned pool has async variants of key methods:
+When using `udf.map_async()`, the returned pool has async variants of all key methods:
 
 ```python
 pool = await my_udf.map_async([1, 2, 3])
 
 await pool.wait_async()
 results = await pool.results_async()
+results_now = await pool.results_now_async()
 errors = await pool.errors_async()
+first_error = await pool.first_error_async()
+logs = await pool.logs_async()
+first_log = await pool.first_log_async()
+logs_df = await pool.logs_df_async()
+success = await pool.success_async()
+await pool.tail_async()
+await pool.cancel_async()
 ```
 
 ---
@@ -10480,22 +10857,21 @@ pool.collect(
 
 Wait for all jobs and collect results into a DataFrame.
 
+When using `engine="local"`, `collect()` automatically shuts down the pool after collecting results.
+
 ---
 
 ## df
 
 ```python
 pool.df(
-    status_column="status",    # column name for status (None to omit)
-    result_column="result",    # column name for result (None to omit)
-    time_column="time",        # column name for time (None to omit)
-    logs_column="logs",        # column name for logs (None to omit)
-    exception_column=None,     # column name for exceptions (None to omit)
-    include_exceptions=True,   # include exceptions in result column
+    ignore_exceptions=False,  # if True, skip failed jobs instead of raising
+    flatten=True,             # if True, flatten DataFrame results
+    drop_index=False,         # if True, use position index instead of args
 ) -> pd.DataFrame
 ```
 
-Get a DataFrame of results as they are currently. Includes columns for each argument passed, plus status, result, time, and logs.
+Alias for `collect()`.
 
 ---
 
@@ -10546,6 +10922,23 @@ pool.logs() -> list[str | None]
 ```
 
 Logs for each task. Incomplete tasks will be reported as `None`.
+
+---
+
+## logs_df
+
+```python
+pool.logs_df(
+    status_column="status",    # column name for status (None to omit)
+    result_column="result",    # column name for result (None to omit)
+    time_column="time",        # column name for time (None to omit)
+    logs_column="logs",        # column name for logs (None to omit)
+    exception_column=None,     # column name for exceptions (None to omit)
+    include_exceptions=True,   # include exceptions in result column
+) -> pd.DataFrame
+```
+
+Get a DataFrame of results as they are currently. Includes columns for each argument passed, plus status, result, time, and logs.
 
 ---
 
@@ -10606,6 +10999,18 @@ pool.running() -> dict[int, Any]
 ```
 
 Retrieve the results that are currently running. Results are indexed by position in the args list.
+
+---
+
+## shutdown
+
+```python
+pool.shutdown(
+    wait=True,  # if True, wait for all workers to complete
+)
+```
+
+Shutdown the pool. Only applicable when using `engine="local"`. Called automatically by `collect()`.
 
 ---
 
@@ -10691,29 +11096,9 @@ Change the `request_timeout` option from its default value to 60 seconds:
 fused.options.request_timeout = 60
 ```
 
+---
+
 ## Options
-
-### __dir__
-
-```python
-__dir__() -> List[str]
-```
-
-### base_url
-
-```python
-base_url: str = PROD_DEFAULT_BASE_URL
-```
-
-Fused API endpoint
-
-### shared_udf_base_url
-
-```python
-shared_udf_base_url: str = PROD_SHARED_UDF_DEFAULT_BASE_URL
-```
-
-Shared UDF API endpoint
 
 ### auth
 
@@ -10723,13 +11108,217 @@ auth: AuthOptions = Field(default_factory=AuthOptions)
 
 Options for authentication.
 
-### show
+---
+
+### base_url
 
 ```python
-show: ShowOptions = Field(default_factory=ShowOptions)
+base_url: str = PROD_DEFAULT_BASE_URL
 ```
 
-Options for object reprs and how data are shown for debugging.
+Fused API endpoint
+
+---
+
+### base_web_url
+
+```python
+base_web_url
+```
+
+Base URL for web interface.
+
+---
+
+### cache_decorator_max_age
+
+```python
+cache_decorator_max_age: int = 60 * 60 * 48  # 48 hours
+```
+
+Default max age for cache decorated functions. Accepts duration strings like "12h", "30m", "7d", or integer seconds.
+
+---
+
+### cache_directory
+
+```python
+cache_directory: Path | None = None
+```
+
+The base directory for storing cached results.
+
+---
+
+### cache_storage
+
+```python
+cache_storage: StorageStr = 'auto'
+```
+
+Specify the default cache storage type
+
+---
+
+### data_directory
+
+```python
+data_directory: Path = None
+```
+
+The base directory for storing data results. Note: if storage type is 'object', then this path is relative to fd_prefix.
+
+---
+
+### default_dtype_out_raster
+
+```python
+default_dtype_out_raster: StrictStr = 'npy,tiff'
+```
+
+Default transfer type for raster data
+
+---
+
+### default_dtype_out_simple
+
+```python
+default_dtype_out_simple: StrictStr = 'json'
+```
+
+Default transfer type for simple Python data (bool, int, float, str, list)
+
+---
+
+### default_dtype_out_vector
+
+```python
+default_dtype_out_vector: StrictStr = 'parquet'
+```
+
+Default transfer type for vector (tabular) data
+
+---
+
+### default_run_headers
+
+```python
+default_run_headers: Optional[Dict[str, str]] = 
+```
+
+(Advanced) Default headers to include with UDF run requests.
+
+---
+
+### default_send_status_email
+
+```python
+default_send_status_email: StrictBool = True
+```
+
+Whether to send a status email to the user when a job is complete.
+
+---
+
+### default_udf_run_engine
+
+```python
+default_udf_run_engine: Optional[StrictStr] = None
+```
+
+Default engine to run UDFs, one of: "local" or "remote".
+
+---
+
+### default_validate_imports
+
+```python
+default_validate_imports: StrictBool = False
+```
+
+Default for whether to validate imports in UDFs before `run_local`, `run_batch`.
+
+---
+
+### fd_prefix
+
+```python
+fd_prefix: Optional[str] = None
+```
+
+If set, where fd:// scheme URLs will resolve to. By default will infer this from your user account.
+
+---
+
+### gcp_project_name
+
+```python
+gcp_project_name: Optional[StrictStr] = None
+```
+
+Project name for GCS to use for GCS operations.
+
+---
+
+### gcs_filename
+
+```python
+gcs_filename: str = '/tmp/.gcs.fused'
+```
+
+Filename for saving temporary GCS credentials to locally or in rt2 instance
+
+---
+
+### gcs_secret
+
+```python
+gcs_secret: str = 'gcs_fused'
+```
+
+Secret name for GCS credentials.
+
+---
+
+### job_id
+
+```python
+job_id: Optional[StrictStr] = None
+```
+
+ID of the job being executed (set by job2 when running in job context). This is automatically populated when running inside a Fused batch job.
+
+---
+
+### local_engine_cache
+
+```python
+local_engine_cache: StrictBool = True
+```
+
+Enable UDF cache with local engine
+
+---
+
+### logging
+
+```python
+logging: StrictBool = Field(default=False, validate_default=True)
+```
+
+Control logging for Fused
+
+---
+
+### max_recursion_factor
+
+```python
+max_recursion_factor: int = 5
+```
+
+Maximum recursion factor for UDFs. This is used to limit the number of recursive calls to UDFs. If a UDF exceeds this limit, an error will be raised.
+
+---
 
 ### max_workers
 
@@ -10739,13 +11328,87 @@ max_workers: int = 16
 
 Maximum number of threads, when multithreading requests
 
-### run_timeout
+---
+
+### metadata_request_timeout
 
 ```python
-run_timeout: float = 130
+metadata_request_timeout: float = 60.0
 ```
 
-Request timeout for UDF run requests to the Fused service
+Request timeout for file metadata requests (e.g., /file-metadata endpoint). These requests may involve processing large parquet files and can take longer.
+
+---
+
+### never_import
+
+```python
+never_import: StrictBool = False
+```
+
+Never import UDF code when loading UDFs.
+
+---
+
+### no_login
+
+```python
+no_login: StrictBool = False
+```
+
+If set, Fused will not attempt to login automatically when needed.
+
+---
+
+### prompt_to_login
+
+```python
+prompt_to_login: StrictBool = False
+```
+
+Automatically prompt the user to login when importing Fused.
+
+---
+
+### pyodide_async_requests
+
+```python
+pyodide_async_requests: StrictBool = False
+```
+
+If set, Fused is being called inside Pyodide and should use pyodide for async HTTP requests.
+
+---
+
+### realtime_client_id
+
+```python
+realtime_client_id: Optional[StrictStr] = None
+```
+
+Client ID for realtime service.
+
+---
+
+### request_max_retries
+
+```python
+request_max_retries: int = 5
+```
+
+Maximum number of retries for API requests
+
+---
+
+### request_retry_base_delay
+
+```python
+request_retry_base_delay: float = 1.0
+```
+
+Base delay before retrying a API request in seconds
+
+---
 
 ### request_timeout
 
@@ -10757,47 +11420,27 @@ Request timeout for the Fused service
 
 May be set to a tuple of connection timeout and read timeout
 
-### metadata_request_timeout
+---
+
+### row_group_batch_size
 
 ```python
-metadata_request_timeout: float = 60.0
+row_group_batch_size: int = 32768
 ```
 
-Request timeout for file metadata requests (e.g., /file-metadata endpoint).
-These requests may involve processing large parquet files and can take longer.
+Target size in bytes for combining adjacent row group downloads. Adjacent row groups from the same file will be combined into single downloads until this threshold is reached. Default is 32KB (32768 bytes), which is optimized for S3 performance.
 
-### request_max_retries
+---
+
+### run_timeout
 
 ```python
-request_max_retries: int = 5
+run_timeout: float = 130
 ```
 
-Maximum number of retries for API requests
+Request timeout for UDF run requests to the Fused service
 
-### request_retry_base_delay
-
-```python
-request_retry_base_delay: float = 1.0
-```
-
-Base delay before retrying a API request in seconds
-
-### realtime_client_id
-
-```python
-realtime_client_id: Optional[StrictStr] = None
-```
-
-Client ID for realtime service.
-
-### max_recursion_factor
-
-```python
-max_recursion_factor: int = 5
-```
-
-Maximum recursion factor for UDFs. This is used to limit the number of
-recursive calls to UDFs. If a UDF exceeds this limit, an error will be raised.
+---
 
 ### save_user_settings
 
@@ -10807,64 +11450,27 @@ save_user_settings: StrictBool = True
 
 Save per-user settings such as credentials and environment IDs.
 
-### default_udf_run_engine
+---
+
+### shared_udf_base_url
 
 ```python
-default_udf_run_engine: Optional[StrictStr] = None
+shared_udf_base_url: str = PROD_SHARED_UDF_DEFAULT_BASE_URL
 ```
 
-Default engine to run UDFs, one of: "local" or "remote".
+Shared UDF API endpoint
 
-### default_validate_imports
+---
+
+### show
 
 ```python
-default_validate_imports: StrictBool = False
+show: ShowOptions = Field(default_factory=ShowOptions)
 ```
 
-Default for whether to validate imports in UDFs before `run_local`,
-`run_batch`.
+Options for object reprs and how data are shown for debugging.
 
-### prompt_to_login
-
-```python
-prompt_to_login: StrictBool = False
-```
-
-Automatically prompt the user to login when importing Fused.
-
-### no_login
-
-```python
-no_login: StrictBool = False
-```
-
-If set, Fused will not attempt to login automatically when needed.
-
-### pyodide_async_requests
-
-```python
-pyodide_async_requests: StrictBool = False
-```
-
-If set, Fused is being called inside Pyodide and should use pyodide
-for async HTTP requests.
-
-### cache_directory
-
-```python
-cache_directory: Path | None = None
-```
-
-The base directory for storing cached results.
-
-### data_directory
-
-```python
-data_directory: Path = None
-```
-
-The base directory for storing data results. Note: if storage type is 'object', then this path is relative to
-fd_prefix.
+---
 
 ### temp_directory
 
@@ -10874,94 +11480,17 @@ temp_directory: Path = Path(tempfile.gettempdir())
 
 The base directory for storing temporary files.
 
-### never_import
+---
+
+### use_process_pool_for_local_submit
 
 ```python
-never_import: StrictBool = False
+use_process_pool_for_local_submit: StrictBool = False
 ```
 
-Never import UDF code when loading UDFs.
+Use ProcessPoolExecutor instead of ThreadPoolExecutor for local engine submit. This avoids GDAL thread-safety issues and Python GIL limitations, but has higher memory overhead and slower startup time.
 
-### gcs_secret
-
-```python
-gcs_secret: str = 'gcs_fused'
-```
-
-Secret name for GCS credentials.
-
-### gcs_filename
-
-```python
-gcs_filename: str = '/tmp/.gcs.fused'
-```
-
-Filename for saving temporary GCS credentials to locally or in rt2 instance
-
-### gcp_project_name
-
-```python
-gcp_project_name: Optional[StrictStr] = None
-```
-
-Project name for GCS to use for GCS operations.
-
-### logging
-
-```python
-logging: StrictBool = Field(default=False, validate_default=True)
-```
-
-Control logging for Fused
-
-### verbose_udf_runs
-
-```python
-verbose_udf_runs: StrictBool = True
-```
-
-Whether to print logs from UDF runs by default
-
-### default_run_headers
-
-```python
-default_run_headers: Optional[Dict[str, str]] = 
-
-```
-
-(Advanced) Default headers to include with UDF run requests.
-
-### default_dtype_out_vector
-
-```python
-default_dtype_out_vector: StrictStr = 'parquet'
-```
-
-Default transfer type for vector (tabular) data
-
-### default_dtype_out_raster
-
-```python
-default_dtype_out_raster: StrictStr = 'npy,tiff'
-```
-
-Default transfer type for raster data
-
-### default_dtype_out_simple
-
-```python
-default_dtype_out_simple: StrictStr = 'json'
-```
-
-Default transfer type for simple Python data (bool, int, float, str, list)
-
-### fd_prefix
-
-```python
-fd_prefix: Optional[str] = None
-```
-
-If set, where fd:// scheme URLs will resolve to. By default will infer this from your user account.
+---
 
 ### verbose_cached_functions
 
@@ -10971,56 +11500,17 @@ verbose_cached_functions: StrictBool = True
 
 Whether to print logs from cache decorated functions by default
 
-### local_engine_cache
+---
+
+### verbose_udf_runs
 
 ```python
-local_engine_cache: StrictBool = True
+verbose_udf_runs: StrictBool = True
 ```
 
-Enable UDF cache with local engine
+Whether to print logs from UDF runs by default
 
-### default_send_status_email
-
-```python
-default_send_status_email: StrictBool = True
-```
-
-Whether to send a status email to the user when a job is complete.
-
-### cache_storage
-
-```python
-cache_storage: StorageStr = 'auto'
-```
-
-Specify the default cache storage type
-
-### use_process_pool_for_local_submit
-
-```python
-use_process_pool_for_local_submit: StrictBool = False
-```
-
-Use ProcessPoolExecutor instead of ThreadPoolExecutor for local engine submit.
-This avoids GDAL thread-safety issues and Python GIL limitations, but has higher
-memory overhead and slower startup time.
-
-### row_group_batch_size
-
-```python
-row_group_batch_size: int = 32768
-```
-
-Target size in bytes for combining adjacent row group downloads.
-Adjacent row groups from the same file will be combined into single downloads
-until this threshold is reached. Default is 32KB (32768 bytes), which is
-optimized for S3 performance.
-
-### base_web_url
-
-```python
-base_web_url
-```
+---
 
 ### save
 
@@ -11028,8 +11518,7 @@ base_web_url
 save()
 ```
 
-Save Fused options to `~/.fused/settings.toml`. They will be automatically
-reloaded the next time fused-py is imported.
+Save Fused options to `~/.fused/settings.toml`. They will be automatically reloaded the next time fused-py is imported.
 
 ================================================================================
 
@@ -11059,7 +11548,7 @@ udf(
 )
 ```
 
-Learn more about instance types and caching.
+Learn more about engine options and caching.
 
 ```python
 @fused.udf
@@ -11228,9 +11717,15 @@ Retrieve scheduled runs of this UDF.
 
 ---
 
-## instance_type
+## engine
 
-Default instance type for remote execution (`"realtime"`, `"small"`, `"medium"`, `"large"`).
+Default engine for execution (`"remote"`, `"local"`, `"realtime"`, or batch instance types like `"small"`, `"medium"`, `"large"`).
+
+---
+
+## instance_type [Deprecated]
+
+**[Deprecated]** Use `engine` instead. This property is an alias for `engine`.
 
 ---
 
@@ -11251,7 +11746,7 @@ udf.map(
 
 Parallel map over a set of inputs. Returns a `JobPool` object.
 
-Learn more about instance types and caching.
+Learn more about engine options and caching.
 
 Each element in `arg_list` becomes a separate job. Pass a list of values for single-parameter UDFs, or a list of dicts for multi-parameter UDFs.
 
@@ -11488,6 +11983,22 @@ Path: python-sdk/changelog.mdx
 URL: https://docs.fused.io/python-sdk/changelog
 
 # Changelog
+
+## v2.0.1 (2026-02-03)
+
+Fast follow release to fix some issues with the new Canvas-first architecture.
+
+**Changes**
+- `@fused.udf(instance_type=...)` deprecated in favor of `@fused.udf(engine=...)`. The `engine` parameter accepts `'local'`, `'remote'`, `'realtime'`, or batch instance types (`'small'`, `'medium'`, `'large'`, `'m5.large'`, etc.).
+- Removed File Explorer and UDF Explorer from the Canvas lower sticky bar.
+- `JobPool.df()` renamed to `JobPool.logs_df()`. New `df()` is an alias for `collect()`.
+
+**Bug Fixes**
+- Fixed checkpoint restore layout and modal UI.
+- Fixed Canvas flickering and viewport change issues.
+- Fixed multi-select rerun behavior.
+- History size now configurable in Preferences.
+- Various AI and Canvas bug fixes.
 
 ## v2.0.0 (2026-02-02)
 
@@ -15056,7 +15567,7 @@ This can significantly speed up parallel tasks like:
 #### Improved caching
 
 Under the hood we've significantly improved how Fused caches results of recurring UDFs & cached functions + we've introduced new tools for developers to control caching:
-- A default 90 days cache time for all UDFs
+- A default 14 days cache time for all UDFs
 - Editing the cache duration with the new `cache_max_age` argument
 
 Read more about Caching
@@ -17005,5 +17516,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-02-03
+Generated automatically from Fused documentation. Last updated: 2026-02-06
 Total sections: 5
