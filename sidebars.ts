@@ -69,6 +69,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/data-input-outputs/import-connection/databases", label: "Databases" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/stac", label: "STAC catalogs" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/gee", label: "Google Earth Engine" },
+        { type: "doc", id: "guide/data-input-outputs/import-connection/ai-data-connection", label: "Connecting AI to Data" },
       ],
     },
 
@@ -94,7 +95,6 @@ const sidebars: SidebarsConfig = {
       items: [
         { type: "doc", id: "guide/data-input-outputs/export-api/tokens-endpoints", label: "Tokens & endpoints" },
         { type: "doc", id: "guide/data-input-outputs/export-api/download", label: "Download" },
-        { type: "doc", id: "guide/data-input-outputs/export-api/mcp-servers", label: "MCP servers" },
         { type: "doc", id: "guide/data-input-outputs/export-api/geospatial-export", label: "Geospatial Integration" },
       ],
     },
