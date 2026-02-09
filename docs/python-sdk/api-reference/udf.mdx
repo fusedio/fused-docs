@@ -9,23 +9,26 @@ sidebar_position: 0
 class Udf
 ```
 
-A Fused UDF (User-Defined Function) is a callable Python function that runs on Fused infrastructure.
-
-The `Udf` class is the object returned when decorating a function with [`@fused.udf`](/python-sdk/api-reference/fused-udf), or when loading a saved UDF with [`fused.load()`](/python-sdk/api-reference/fused-load).
+A user-defined function. The `Udf` class is the object returned when decorating a function with [`@fused.udf`](/python-sdk/api-reference/fused-udf), or when loading a saved UDF with [`fused.load()`](/python-sdk/api-reference/fused-load).
 
 **Calling a UDF**
 
-UDFs are callable objects. Call them directly like regular Python functions:
+Call this UDF. UDFs are callable; pass arguments as for a regular function, plus optional `engine`, `cache_max_age`, and `cache`:
 
 ```python
 udf(
     *args,               # positional arguments to pass to the UDF
-    engine=None,         # "remote" (default), "local", or instance type
-    cache_max_age=None,  # max cache age, e.g. "48h", "10s"
+    engine=None,         # "remote" (default), "local", or "small"/"medium"/"large"
+    cache_max_age=None,  # max cache age, e.g. "48h", "10s"; None uses @fused.udf() default
     cache=True,          # set False to disable caching
     **kwargs,            # keyword arguments to pass to the UDF
 )
 ```
+
+- **engine**: "remote" (default), "local", or batch instance type ("small", "medium", "large"). Other values are interpreted as batch instance type.
+- **cache_max_age**: Maximum age when returning a result from the cache (e.g. "48h", "10s"). Default `None` so the UDF follows `cache_max_age` from `@fused.udf()` unless overridden.
+- **cache**: Set to False as a shortcut for `cache_max_age='0s'` to disable caching. (Default True.)
+- **Returns**: The result of the UDF execution.
 
 Learn more about [engine options](/guide/working-with-udfs/fused-run#engine) and [caching](/guide/working-with-udfs/udf-best-practices/caching).
 
@@ -75,13 +78,13 @@ def my_udf(x: int):
 
 ## cache_max_age
 
-Maximum cache age in seconds. `None` for default caching behavior.
+The maximum age when returning a result from the cache.
 
 ---
 
 ## catalog_url
 
-Returns the URL to open this UDF in Workbench, or `None` if not saved.
+Returns the link to open this UDF in the Workbench Catalog, or None if the UDF is not saved.
 
 ```python
 udf = fused.load("my_udf")
@@ -220,24 +223,30 @@ Default engine for execution (`"remote"`, `"local"`, `"realtime"`, or batch inst
 
 ```python
 udf.map(
-    arg_list,              # list of arguments, each element becomes a job
+    arg_list,
     *,
-    engine=None,           # "remote" (default), "local", or instance type
-    cache_max_age=None,    # max cache age
-    max_workers=None,      # max parallel workers (default 32 remote, 1 local/batch)
-    worker_concurrency=None,  # concurrency per worker
-    cache=True,            # set False to disable caching
-    max_retry=2,           # max retries for failed jobs
+    engine=None,
+    cache_max_age=None,
+    max_workers=None,
+    worker_concurrency=None,
+    cache=True,
+    max_retry=2,
 ) -> JobPool
 ```
 
-Parallel map over a set of inputs. Returns a [`JobPool`](/python-sdk/api-reference/jobpool) object.
+Submit a job for each element in arg_list.
 
-Learn more about [engine options](/guide/working-with-udfs/fused-run#engine) and [caching](/guide/working-with-udfs/udf-best-practices/caching).
+- **arg_list**: A list of arguments to pass to the UDF. Each element in arg_list will become a job and run.
+- **engine**: "remote" (default), "local", or "small"/"medium"/"large". Other values are interpreted as a batch instance type.
+- **max_workers**: For realtime: number of instances (default 32). For local: number of threads (default 1). For batch: number of worker machines (default 1).
+- **worker_concurrency**: For realtime: arguments per instance (default 1). For batch: processes per worker. Not settable for local.
+- **cache_max_age**: Max age when returning a result from the cache (e.g. "48h", "10s"). Default `None` to follow `@fused.udf()`.
+- **cache**: Set to False to disable caching. (Default True.)
+- **max_retry**: Max retries for failed jobs (default 2). Retries only if the pool is waited on (e.g. `pool.wait()`, `pool.tail()`, `pool.collect()`).
 
-Each element in `arg_list` becomes a separate job. Pass a list of values for single-parameter UDFs, or a list of dicts for multi-parameter UDFs.
+**Returns:** A JobPool object. Call `.collect()` to get the results.
 
-Example:
+**Example:**
 
 ```python
 @fused.udf
@@ -253,20 +262,31 @@ df = pool.collect()  # Returns [2, 4, 6]
 ## map_async
 
 ```python
-async udf.map_async(
-    arg_list,            # list of arguments, each element becomes a job
+await udf.map_async(
+    arg_list,
     *,
-    engine=None,         # "remote" (default) or "local" only
-    max_workers=None,    # max parallel workers
-    cache_max_age=None,  # max cache age
-    cache=True,          # set False to disable caching
-    max_retry=2,         # max retries for failed jobs
-) -> JobPool
+    engine=None,
+    max_workers=None,
+    cache_max_age=None,
+    cache=True,
+    max_retry=2,
+) -> AsyncJobPool
 ```
 
-Async version of [`map()`](#map) for use in async contexts. Does not support batch instance types or `worker_concurrency`.
+Submit a job for each element in arg_list. (Async; use in async contexts.)
 
-Learn more about [caching](/guide/working-with-udfs/udf-best-practices/caching).
+- **arg_list**: A list of arguments to pass to the UDF. Each element will become a job and run.
+- **engine**: "remote" (default) or "local". Note: batch instance types are not supported for async map.
+- **max_workers**: For realtime: number of instances (default 32). For local: number of threads (default 1).
+- **cache_max_age**: Max age when returning a result from the cache. Default `None` to follow `@fused.udf()`.
+- **cache**: Set to False to disable caching. (Default True.)
+- **max_retry**: Max retries for failed jobs (default 2). Retries only if the pool is waited on.
+
+Note: worker_concurrency is not supported for async map.
+
+**Returns:** An AsyncJobPool object. Call `.collect()` to get the results.
+
+**Example:**
 
 ```python
 @fused.udf
