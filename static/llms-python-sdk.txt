@@ -666,8 +666,6 @@ This can be called with file_id and chunk_id from `get_chunks_metadata`.
 
 - columns (`Optional[Iterable[str]]`)
 
-`gpd.GeoDataFrame` – The chunk data as a GeoDataFrame.
-
 ---
 
 ### fused.get_chunks_metadata
@@ -678,15 +676,13 @@ This can be called with file_id and chunk_id from `get_chunks_metadata`.
 
 - url (`str`)
 
-`gpd.GeoDataFrame` – A GeoDataFrame where each row represents a chunk in the table.
-
 ---
 
 ### fused.ingest_nongeospatial
 
 # ingest_nongeospatial
 
-`ingest_nongeospatial() -> NonGeospatialPartitionJobStepConfig` - Ingest a non-geospatial dataset into the Fused partitioned format.
+`ingest_nongeospatial() -> NonGeospatialPartitionJobStepConfig` - Ingest a dataset into the Fused partitioned format.
 
 - input (`str | Path | Sequence[str, Path] | pd.DataFrame | gpd.GeoDataFrame`)
 
@@ -700,7 +696,7 @@ This can be called with file_id and chunk_id from `get_chunks_metadata`.
 
 - partitioning_maximum_per_chunk (`int`)
 
-`NonGeospatialPartitionJobStepConfig` – Configuration object describing the ingestion process. Call `.execute` on this object to start a job.
+Configuration object describing the ingestion process. Call `.execute` on this object to start a job.
 
 ---
 
@@ -734,6 +730,22 @@ This can be called with file_id and chunk_id from `get_chunks_metadata`.
 
 - partitioning_maximum_per_chunk (`int | float | None`)
 
+- partitioning_max_width_ratio (`int | float`)
+
+- partitioning_max_height_ratio (`int | float`)
+
+- partitioning_force_utm (`Literal["file", "chunk", None]`)
+
+- partitioning_split_method (`Literal["mean", "median"]`)
+
+- subdivide_method (`Literal["area", None]`)
+
+- subdivide_start (`float | None`)
+
+- subdivide_stop (`float | None`)
+
+- split_identical_centroids (`bool`)
+
 - target_num_chunks (`int`)
 
 - lonlat_cols (`tuple[str, str] | None`)
@@ -744,7 +756,9 @@ This can be called with file_id and chunk_id from `get_chunks_metadata`.
 
 - as_udf (`bool`)
 
-`GeospatialPartitionJobStepConfig` – Configuration object describing the ingestion process. Call `.execute` on this object to start a job.
+Configuration object describing the ingestion process. Call `.execute` on this object to start a job.
+
+For example, to ingest the California Census dataset for the year 2022:
 
 Begin execution of the ingestion job by calling `run_batch` on the job object.
 
@@ -1085,6 +1099,7 @@ Each metadata file contains:
 - Full metadata_json stored as custom metadata in the parquet schema
 
 Requires a `hex` column (or variant like `h3`, `h3_index`) in all files.
+Raises ValueError if no hex column is found.
 Params:
 - dataset_path (`str`)
 
@@ -1104,11 +1119,18 @@ Params:
 
 Returns: `str`
 
+Raises: 
+- `ImportError` (job2 required)
+- `ValueError` (no hex column)
+- `FileNotFoundError` (no parquet files).
+
 Example:
 
 `read_hex_table() -> pa.Table | tuple[pa.Table, dict[str, Any]]` - Read data from an H3-indexed dataset by querying hex ranges.
 
-This is an optimized version that assumes the server always provides full metadata (start_offset, end_offset, metadata, and row_group_bytes) for all row groups. This function eliminates all metadata API calls by using prefetched metadata.
+This is an optimized version that assumes the server always provides full metadata (start_offset, end_offset, metadata, and row_group_bytes) for all row groups. If any row group is missing required metadata, this function will raise an error indicating that the dataset needs to be re-indexed.
+
+This function eliminates all metadata API calls by using prefetched metadata from the /datasets/items-with-metadata endpoint.
 Params:
 - dataset_path (`str`)
 
@@ -1126,13 +1148,17 @@ Params:
 
 - max_concurrent_downloads (`int | None`)
 
-Returns: `pa.Table`
+Returns: PyArrow Table containing the concatenated data from all matching row groups. If return_timing_info is True, returns a tuple of (table, timing_info dict).
+
+Raises: ValueError: If any row group is missing required metadata (start_offset, end_offset, metadata, or row_group_bytes). This indicates the dataset needs to be re-indexed.
 
 Example:
 
-`read_hex_table_slow() -> pa.Table | tuple[pa.Table, dict[str, Any]]` - Read data from an H3-indexed dataset by querying hex ranges (slower version with metadata API calls).
+`read_hex_table_slow() -> pa.Table | tuple[pa.Table, dict[str, Any]]` - Read data from an H3-indexed dataset by querying hex ranges.
 
-This function queries the dataset index to find matching row groups, then fetches metadata and downloads data. Adjacent row groups from the same file are combined into single downloads for better S3 performance.
+This function queries the dataset index for row groups that match the given H3 hex ranges, downloads them in parallel with optimized batching, and returns a concatenated table.
+
+Adjacent row groups from the same file are combined into single downloads for better S3 performance. The batch size is controlled by `fused.options.row_group_batch_size` (default: 32KB).
 Params:
 - dataset_path (`str`)
 
@@ -1148,15 +1174,13 @@ Params:
 
 - metadata_batch_size (`int`)
 
-Returns: `pa.Table`
+Returns: PyArrow Table containing the concatenated data from all matching row groups. If return_timing_info is True, returns a tuple of (table, timing_info dict).
 
 Example:
 
-`read_hex_table_with_persisted_metadata() -> pa.Table | tuple[pa.Table, dict[str, Any]]` - Read data from an H3-indexed dataset using persisted metadata parquet files.
+`read_hex_table_with_persisted_metadata() -> pa.Table | tuple[pa.Table, dict[str, Any]]` - Read data from an H3-indexed dataset using persisted metadata parquet files (no server).
 
-This function reads from per-file metadata parquet files instead of querying a server. Each source parquet file has a corresponding `.metadata.parquet` file stored at `/.fused/.metadata.parquet`.
-
-Supports subdirectory queries - if dataset_path points to a subdirectory, the function will look for metadata files for files in that subdirectory.
+Reads from per-file `.metadata.parquet` files instead of querying a server. Metadata location: `/.fused/.metadata.parquet`, or when `metadata_path` is provided, `/.metadata.parquet`. Supports subdirectory queries: if `dataset_path` is a subdirectory, metadata is looked up for files in that subdirectory.
 Params:
 - dataset_path (`str`)
 
@@ -1178,17 +1202,18 @@ Params:
 
 Returns: `pa.Table`
 
+Raises: `FileNotFoundError` (metadata file not found), `ValueError` (row group missing required metadata).
+
 Example:
 
 `run_ingest_raster_to_h3()` - Run the raster to H3 ingestion process.
 
 This process involves multiple steps:
-
-- Extract pixel values and assign to H3 cells in chunks (extract step)
-- Combine the chunks per partition (file) and prepare metadata (partition step)
-- Create the metadata `_sample` file and overviews files
+- extract pixels values and assign to H3 cells in chunks (extract step)
+- combine the chunks per partition (file) and prepare metadata (partition step)
+- create the metadata `_sample` file and overviews files
 Params:
-- src_path (`str | list[str]`)
+- input_path (`str | list[str]`)
 
 - output_path (`str`)
 
@@ -1214,6 +1239,8 @@ Params:
 
 - target_chunk_size (`int | None`)
 
+- nodata (`int | float | None`)
+
 - debug_mode (`bool`)
 
 - remove_tmp_files (`bool`)
@@ -1224,23 +1251,36 @@ Params:
 
 - steps (`list[str] | None`)
 
-- extract_kwargs (`dict | None`)
+- extract_instance_type (`str | None`)
 
-- partition_kwargs (`dict | None`)
+- extract_max_workers (`int`)
 
-- overview_kwargs (`dict | None`)
+- partition_instance_type (`str | None`)
 
-The extract, partition and overview steps are run in parallel using `fused.submit()`. By default, the function will first attempt to run this using "realtime" instances, and retry any failed runs using "large" instances.
+- partition_max_workers (`int`)
 
-Example:
+- overview_instance_type (`str | None`)
 
-`fused.h3.run_ingest_raster_to_h3()` - To run everything locally:
+- overview_max_workers (`int`)
 
-`fused.h3.run_ingest_raster_to_h3()` - To customize instance types per step:
+- \*\*kwargs – Additional keyword arguments for `fused.submit` for the extract, partition, and overview steps (e.g. `engine`, `instance_type`, `max_workers`, `n_processes_per_worker`, `max_retry`). To run locally: `run_ingest_raster_to_h3(..., engine="local")`.
+
+The extract, partition and overview steps are run in parallel using
+`fused.submit()`. By default, the function will first attempt to run this using
+"realtime" instances, and retry any failed runs using "large" instances.
+
+You can override this behavior by specifying the `engine`, `instance_type`,
+`max_workers`, `n_processes_per_worker`, etc parameters as additional
+keyword arguments to this function (`kwargs`). If you want to specify
+those per step, use `extract_instance_type`, `partition_instance_type`, etc.
+For example, to run everything locally on the same machine where this
+function runs, use:
+
+    run_ingest_raster_to_h3(..., engine="local")
 
 `run_partition_to_h3()` - Run the H3 partitioning process.
 
-This pipeline assumes that the input data already has a `"hex"` column with H3 cell IDs at the target resolution. It will then repartition the data spatially and add overview files.
+This pipeline assumes that the input data already has a `"hex"` column with H3 cell IDs at the target resolution. It will then repartition the data spatially and add overview files. See `run_ingest_raster_to_h3` for more on the processing steps and execution options.
 Params:
 - input_path (`str | list[str]`)
 
@@ -1276,7 +1316,9 @@ Params:
 
 - overview_kwargs (`dict`)
 
-Example:
+- \*\*kwargs – Extra arguments for all steps; overridden by `extract_kwargs`, `partition_kwargs`, `overview_kwargs`.
+
+See the docstring of `run_ingest_raster_to_h3` for more details on the processing steps and how to configure the execution.
 
 ---
 
@@ -1825,5 +1867,5 @@ The reference is intended to be limited to low-level descriptions of various pro
 
 ---
 
-Generated automatically from Fused Python SDK documentation. Last updated: 2026-02-06
+Generated automatically from Fused Python SDK documentation. Last updated: 2026-02-09
 Total pages: 27

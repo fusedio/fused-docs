@@ -15,19 +15,23 @@ The `JobPool` class manages parallel job execution and result retrieval. It is r
 
 ```python
 @fused.udf
+def udf():
+    # Create a pool of jobs
+    pool = my_udf.map([1, 2, 3, 4, 5])
+
+    # Wait and collect results as DataFrame
+    df = pool.df()
+
+    return df
+
+@fused.udf
 def my_udf(x: int):
     return x ** 2
-
-# Create a pool of jobs
-pool = my_udf.map([1, 2, 3, 4, 5])
-
-# Wait and collect results as DataFrame
-df = pool.collect()
-
-# Or get raw results as list
-pool.wait()
-results = pool.results()  # [1, 4, 9, 16, 25]
 ```
+
+:::note
+`my_udf` is defined in the same file above, so there is no need to load it.
+:::
 
 **Monitoring progress**
 
@@ -45,42 +49,58 @@ pool.any_failed()    # True if any job failed
 
 **Parallel processing within workers**
 
-Use `n_processes_per_worker` to combine multiple items per UDF invocation, reducing total invocations for large job counts:
+Use `worker_concurrency` to combine multiple items per UDF invocation, reducing total invocations for large job counts:
 
 ```python
-# Process 4 items in parallel within each UDF instance
-pool = my_udf.map(range(1000), n_processes_per_worker=4)
-df = pool.collect()
+@fused.udf
+def udf():
+    # Running 10 jobs in parallel but with 4 jobs per UDF instance
+    pool = my_udf.map(range(10), worker_concurrency=4)
+    df = pool.df()
+
+    return df
+
+@fused.udf
+def my_udf(x: int):
+    return x ** 2
 ```
 
 **Local engine execution**
 
-When using `engine="local"`, the pool uses process-based execution. The pool automatically shuts down after `collect()`:
+When using `engine="local"`, the pool uses process-based execution. The pool automatically shuts down after `df()`:
 
 ```python
-pool = my_udf.map([1, 2, 3], engine="local")
-df = pool.collect()  # Pool automatically shuts down after collecting
+@fused.udf
+def udf():
+    # All jobs are executed locally
+    pool = my_udf.map(range(10), engine="local")
+    df = pool.df() # Pool automatically shuts down after collecting
+
+    return df
+
+@fused.udf
+def my_udf(x: int):
+    return x ** 2
 ```
 
-**Async methods**
+**Async methods (AsyncJobPool)**
 
-When using [`udf.map_async()`](/python-sdk/api-reference/udf#map_async), the returned pool has async variants of all key methods:
+When using [`udf.map_async()`](/python-sdk/api-reference/udf#map_async), the returned object is an `AsyncJobPool` (subclass of `JobPool`) with async variants of the key methods. Use them in `async` code so they don't block the event loop (e.g. in Workbench):
 
 ```python
-pool = await my_udf.map_async([1, 2, 3])
+@fused.udf
+async def udf():
+    pool = await my_udf.map_async([1, 2, 3])
+    await pool.wait_async()
+    results = await pool.results_async()
+    return results
 
-await pool.wait_async()
-results = await pool.results_async()
-results_now = await pool.results_now_async()
-errors = await pool.errors_async()
-first_error = await pool.first_error_async()
-logs = await pool.logs_async()
-first_log = await pool.first_log_async()
-logs_df = await pool.logs_df_async()
-success = await pool.success_async()
-await pool.tail_async()
-await pool.cancel_async()
+@fused.udf
+def my_udf(x: int):
+    return x ** 2
 ```
+
+The async variants are documented below in alphabetical order with the sync methods.
 
 ---
 
@@ -136,13 +156,23 @@ Cancel any pending (not running) tasks. Note it will not be possible to retry on
 
 ---
 
+## cancel_async
+
+```python
+await pool.cancel_async(wait: bool = False)
+```
+
+Cancel any pending (not running) tasks. (AsyncJobPool only.)
+
+---
+
 ## cancelled
 
 ```python
 pool.cancelled() -> dict[int, Any]
 ```
 
-Retrieve the arguments that were cancelled and not run. Results are indexed by position in the args list.
+Retrieve the arguments that were cancelled and not run.
 
 ---
 
@@ -156,7 +186,7 @@ pool.collect(
 ) -> pd.DataFrame
 ```
 
-Wait for all jobs and collect results into a DataFrame.
+Collect all results into a DataFrame.
 
 :::note
 When using `engine="local"`, `collect()` automatically shuts down the pool after collecting results.
@@ -198,13 +228,33 @@ Retrieve the results that are currently done and are errors. Results are indexed
 
 ---
 
+## errors_async
+
+```python
+await pool.errors_async() -> dict[int, Exception]
+```
+
+Async version of [`errors()`](#errors) that doesn't block the event loop. (AsyncJobPool only.)
+
+---
+
 ## first_error
 
 ```python
 pool.first_error() -> Exception | None
 ```
 
-Retrieve the first (by order of arguments) error result, or `None`.
+Retrieve the first (by order of arguments) error result, or None.
+
+---
+
+## first_error_async
+
+```python
+await pool.first_error_async() -> Exception | None
+```
+
+Async version of [`first_error()`](#first_error) that doesn't block the event loop. (AsyncJobPool only.)
 
 ---
 
@@ -214,7 +264,17 @@ Retrieve the first (by order of arguments) error result, or `None`.
 pool.first_log() -> str | None
 ```
 
-Retrieve the first (by order of arguments) logs, or `None`.
+Retrieve the first (by order of arguments) logs, or None.
+
+---
+
+## first_log_async
+
+```python
+await pool.first_log_async() -> str | None
+```
+
+Async version of [`first_log()`](#first_log) that doesn't block the event loop. (AsyncJobPool only.)
 
 ---
 
@@ -224,7 +284,17 @@ Retrieve the first (by order of arguments) logs, or `None`.
 pool.logs() -> list[str | None]
 ```
 
-Logs for each task. Incomplete tasks will be reported as `None`.
+Logs for each task. Incomplete tasks will be reported as None.
+
+---
+
+## logs_async
+
+```python
+await pool.logs_async() -> list[str | None]
+```
+
+Async version of [`logs()`](#logs) that doesn't block the event loop. (AsyncJobPool only.)
 
 ---
 
@@ -241,7 +311,24 @@ pool.logs_df(
 ) -> pd.DataFrame
 ```
 
-Get a DataFrame of results as they are currently. Includes columns for each argument passed, plus status, result, time, and logs.
+Get a DataFrame of results as they are currently. The DataFrame will have columns for each argument passed, and columns for: `status`, `result`, `time`, `logs` and optionally `exception`.
+
+---
+
+## logs_df_async
+
+```python
+await pool.logs_df_async(
+    status_column="status",
+    result_column="result",
+    time_column="time",
+    logs_column="logs",
+    exception_column=None,
+    include_exceptions=True,
+) -> pd.DataFrame
+```
+
+Async version of [`logs_df()`](#logs_df) that doesn't block the event loop. (AsyncJobPool only.)
 
 ---
 
@@ -273,6 +360,16 @@ Retrieve all results of the job. Results are ordered by the order of the args li
 
 ---
 
+## results_async
+
+```python
+await pool.results_async(return_exceptions: bool = False) -> list[Any]
+```
+
+Async version of [`results()`](#results); assumes waiting has already been done. (AsyncJobPool only.)
+
+---
+
 ## results_now
 
 ```python
@@ -301,7 +398,7 @@ Rerun any tasks in error or timeout states. Tasks are rerun in the same pool.
 pool.running() -> dict[int, Any]
 ```
 
-Retrieve the results that are currently running. Results are indexed by position in the args list.
+Retrieve the results that are currently running.
 
 ---
 
@@ -313,7 +410,9 @@ pool.shutdown(
 )
 ```
 
-Shutdown the pool. Only applicable when using `engine="local"`. Called automatically by `collect()`.
+Shutdown the process pool executor.
+
+This should be called when all jobs are complete to ensure worker processes are properly terminated and don't hang. Only applicable when using `engine="local"`. Called automatically by `collect()`.
 
 ---
 
@@ -337,6 +436,16 @@ Retrieve the results that are currently done and are successful. Results are ind
 
 ---
 
+## success_async
+
+```python
+await pool.success_async() -> dict[int, Any]
+```
+
+Async version of [`success()`](#success) that doesn't block the event loop. (AsyncJobPool only.)
+
+---
+
 ## tail
 
 ```python
@@ -345,7 +454,19 @@ pool.tail(
 )
 ```
 
-Wait until all jobs are finished, printing statuses as they become available. Useful for interactively watching the state of the pool.
+Wait until all jobs are finished, printing statuses as they become available.
+
+This is useful for interactively watching for the state of the pool. Use pool._wait_sleep to set if sleep should occur while waiting.
+
+---
+
+## tail_async
+
+```python
+await pool.tail_async(stop_on_exception: bool = False)
+```
+
+Async version of [`tail()`](#tail) that doesn't block the event loop. (AsyncJobPool only.)
 
 ---
 
@@ -355,7 +476,7 @@ Wait until all jobs are finished, printing statuses as they become available. Us
 pool.times() -> list[timedelta | None]
 ```
 
-Time taken for each task. Incomplete tasks will be reported as `None`.
+Time taken for each task. Incomplete tasks will be reported as None.
 
 ---
 
@@ -377,4 +498,18 @@ Returns how long the entire job took. If only partial results are available, ret
 pool.wait()
 ```
 
-Wait until all jobs are finished. Use `fused.options.show.enable_tqdm` to enable/disable progress bar.
+Wait until all jobs are finished.
+
+Use fused.options.show.enable_tqdm to enable/disable tqdm. Use pool._wait_sleep to set if sleep should occur while waiting.
+
+---
+
+## wait_async
+
+```python
+await pool.wait_async()
+```
+
+Wait until all jobs are finished. Does not block the event loop. (AsyncJobPool only.)
+
+---
