@@ -3616,6 +3616,7 @@ my_udf.map(
     engine=None,           # "remote" (default), "local", or instance type
     cache_max_age=None,    # max cache age
     max_workers=None,      # max parallel workers (default 32)
+    worker_concurrency=None,  # concurrency per worker (default 1)
     cache=True,            # set False to disable caching
     max_retry=2,           # max retries for failed jobs
 ) -> JobPool
@@ -3627,12 +3628,17 @@ See the `Udf.map()` API reference for full details.
 
 ```python
 @fused.udf
+def udf():
+    # Create a pool of jobs
+    pool = my_udf.map([1, 2, 3, 4, 5])
+
+    # Wait and collect results as DataFrame
+    df = pool.df()
+    return df
+
+@fused.udf
 def my_udf(x: int):
     return x ** 2
-
-# Run over multiple inputs
-pool = my_udf.map([1, 2, 3, 4, 5])
-results = pool.collect()  # Returns DataFrame
 ```
 
 ## Input formats
@@ -3644,12 +3650,17 @@ results = pool.collect()  # Returns DataFrame
 
 Each item becomes a separate job.
 
-```python
+```python 
+@fused.udf
+def udf():
+    # Create a pool of jobs
+    pool = my_udf.map([, ])
+    df = pool.df()
+    return df
+
 @fused.udf
 def process_pair(a: int, b: int):
     return a + b
-
-pool = process_pair.map([, ])
 ```
 
 ## Parameters
@@ -3679,6 +3690,24 @@ Max retries per failed job. Default: `2`
 ### `cache_max_age`
 
 Same as running UDFs.
+
+### `worker_concurrency`
+
+Number of arguments to pass to the UDF per instance. Default: `1`.
+
+```python
+@fused.udf
+def udf():
+    # Running 10 jobs in parallel but with 4 jobs per UDF instance
+    pool = my_udf.map(range(10), worker_concurrency=4)
+    df = pool.df()
+
+    return df
+
+@fused.udf
+def my_udf(x: int):
+    return x ** 2
+```
 
 ## Working with results
 
@@ -10722,19 +10751,21 @@ The `JobPool` class manages parallel job execution and result retrieval. It is r
 
 ```python
 @fused.udf
+def udf():
+    # Create a pool of jobs
+    pool = my_udf.map([1, 2, 3, 4, 5])
+
+    # Wait and collect results as DataFrame
+    df = pool.df()
+
+    return df
+
+@fused.udf
 def my_udf(x: int):
     return x ** 2
-
-# Create a pool of jobs
-pool = my_udf.map([1, 2, 3, 4, 5])
-
-# Wait and collect results as DataFrame
-df = pool.collect()
-
-# Or get raw results as list
-pool.wait()
-results = pool.results()  # [1, 4, 9, 16, 25]
 ```
+
+`my_udf` is defined in the same file above, so there is no need to load it.
 
 **Monitoring progress**
 
@@ -10752,42 +10783,58 @@ pool.any_failed()    # True if any job failed
 
 **Parallel processing within workers**
 
-Use `n_processes_per_worker` to combine multiple items per UDF invocation, reducing total invocations for large job counts:
+Use `worker_concurrency` to combine multiple items per UDF invocation, reducing total invocations for large job counts:
 
 ```python
-# Process 4 items in parallel within each UDF instance
-pool = my_udf.map(range(1000), n_processes_per_worker=4)
-df = pool.collect()
+@fused.udf
+def udf():
+    # Running 10 jobs in parallel but with 4 jobs per UDF instance
+    pool = my_udf.map(range(10), worker_concurrency=4)
+    df = pool.df()
+
+    return df
+
+@fused.udf
+def my_udf(x: int):
+    return x ** 2
 ```
 
 **Local engine execution**
 
-When using `engine="local"`, the pool uses process-based execution. The pool automatically shuts down after `collect()`:
+When using `engine="local"`, the pool uses process-based execution. The pool automatically shuts down after `df()`:
 
 ```python
-pool = my_udf.map([1, 2, 3], engine="local")
-df = pool.collect()  # Pool automatically shuts down after collecting
+@fused.udf
+def udf():
+    # All jobs are executed locally
+    pool = my_udf.map(range(10), engine="local")
+    df = pool.df() # Pool automatically shuts down after collecting
+
+    return df
+
+@fused.udf
+def my_udf(x: int):
+    return x ** 2
 ```
 
-**Async methods**
+**Async methods (AsyncJobPool)**
 
-When using `udf.map_async()`, the returned pool has async variants of all key methods:
+When using `udf.map_async()`, the returned object is an `AsyncJobPool` (subclass of `JobPool`) with async variants of the key methods. Use them in `async` code so they don't block the event loop (e.g. in Workbench):
 
 ```python
-pool = await my_udf.map_async([1, 2, 3])
+@fused.udf
+async def udf():
+    pool = await my_udf.map_async([1, 2, 3])
+    await pool.wait_async()
+    results = await pool.results_async()
+    return results
 
-await pool.wait_async()
-results = await pool.results_async()
-results_now = await pool.results_now_async()
-errors = await pool.errors_async()
-first_error = await pool.first_error_async()
-logs = await pool.logs_async()
-first_log = await pool.first_log_async()
-logs_df = await pool.logs_df_async()
-success = await pool.success_async()
-await pool.tail_async()
-await pool.cancel_async()
+@fused.udf
+def my_udf(x: int):
+    return x ** 2
 ```
+
+The async variants are documented below in alphabetical order with the sync methods.
 
 ---
 
@@ -10843,13 +10890,23 @@ Cancel any pending (not running) tasks. Note it will not be possible to retry on
 
 ---
 
+## cancel_async
+
+```python
+await pool.cancel_async(wait: bool = False)
+```
+
+Cancel any pending (not running) tasks. (AsyncJobPool only.)
+
+---
+
 ## cancelled
 
 ```python
 pool.cancelled() -> dict[int, Any]
 ```
 
-Retrieve the arguments that were cancelled and not run. Results are indexed by position in the args list.
+Retrieve the arguments that were cancelled and not run.
 
 ---
 
@@ -10863,7 +10920,7 @@ pool.collect(
 ) -> pd.DataFrame
 ```
 
-Wait for all jobs and collect results into a DataFrame.
+Collect all results into a DataFrame.
 
 When using `engine="local"`, `collect()` automatically shuts down the pool after collecting results.
 
@@ -10903,13 +10960,33 @@ Retrieve the results that are currently done and are errors. Results are indexed
 
 ---
 
+## errors_async
+
+```python
+await pool.errors_async() -> dict[int, Exception]
+```
+
+Async version of `errors()` that doesn't block the event loop. (AsyncJobPool only.)
+
+---
+
 ## first_error
 
 ```python
 pool.first_error() -> Exception | None
 ```
 
-Retrieve the first (by order of arguments) error result, or `None`.
+Retrieve the first (by order of arguments) error result, or None.
+
+---
+
+## first_error_async
+
+```python
+await pool.first_error_async() -> Exception | None
+```
+
+Async version of `first_error()` that doesn't block the event loop. (AsyncJobPool only.)
 
 ---
 
@@ -10919,7 +10996,17 @@ Retrieve the first (by order of arguments) error result, or `None`.
 pool.first_log() -> str | None
 ```
 
-Retrieve the first (by order of arguments) logs, or `None`.
+Retrieve the first (by order of arguments) logs, or None.
+
+---
+
+## first_log_async
+
+```python
+await pool.first_log_async() -> str | None
+```
+
+Async version of `first_log()` that doesn't block the event loop. (AsyncJobPool only.)
 
 ---
 
@@ -10929,7 +11016,17 @@ Retrieve the first (by order of arguments) logs, or `None`.
 pool.logs() -> list[str | None]
 ```
 
-Logs for each task. Incomplete tasks will be reported as `None`.
+Logs for each task. Incomplete tasks will be reported as None.
+
+---
+
+## logs_async
+
+```python
+await pool.logs_async() -> list[str | None]
+```
+
+Async version of `logs()` that doesn't block the event loop. (AsyncJobPool only.)
 
 ---
 
@@ -10946,7 +11043,24 @@ pool.logs_df(
 ) -> pd.DataFrame
 ```
 
-Get a DataFrame of results as they are currently. Includes columns for each argument passed, plus status, result, time, and logs.
+Get a DataFrame of results as they are currently. The DataFrame will have columns for each argument passed, and columns for: `status`, `result`, `time`, `logs` and optionally `exception`.
+
+---
+
+## logs_df_async
+
+```python
+await pool.logs_df_async(
+    status_column="status",
+    result_column="result",
+    time_column="time",
+    logs_column="logs",
+    exception_column=None,
+    include_exceptions=True,
+) -> pd.DataFrame
+```
+
+Async version of `logs_df()` that doesn't block the event loop. (AsyncJobPool only.)
 
 ---
 
@@ -10978,6 +11092,16 @@ Retrieve all results of the job. Results are ordered by the order of the args li
 
 ---
 
+## results_async
+
+```python
+await pool.results_async(return_exceptions: bool = False) -> list[Any]
+```
+
+Async version of `results()`; assumes waiting has already been done. (AsyncJobPool only.)
+
+---
+
 ## results_now
 
 ```python
@@ -11006,7 +11130,7 @@ Rerun any tasks in error or timeout states. Tasks are rerun in the same pool.
 pool.running() -> dict[int, Any]
 ```
 
-Retrieve the results that are currently running. Results are indexed by position in the args list.
+Retrieve the results that are currently running.
 
 ---
 
@@ -11018,7 +11142,9 @@ pool.shutdown(
 )
 ```
 
-Shutdown the pool. Only applicable when using `engine="local"`. Called automatically by `collect()`.
+Shutdown the process pool executor.
+
+This should be called when all jobs are complete to ensure worker processes are properly terminated and don't hang. Only applicable when using `engine="local"`. Called automatically by `collect()`.
 
 ---
 
@@ -11042,6 +11168,16 @@ Retrieve the results that are currently done and are successful. Results are ind
 
 ---
 
+## success_async
+
+```python
+await pool.success_async() -> dict[int, Any]
+```
+
+Async version of `success()` that doesn't block the event loop. (AsyncJobPool only.)
+
+---
+
 ## tail
 
 ```python
@@ -11050,7 +11186,19 @@ pool.tail(
 )
 ```
 
-Wait until all jobs are finished, printing statuses as they become available. Useful for interactively watching the state of the pool.
+Wait until all jobs are finished, printing statuses as they become available.
+
+This is useful for interactively watching for the state of the pool. Use pool._wait_sleep to set if sleep should occur while waiting.
+
+---
+
+## tail_async
+
+```python
+await pool.tail_async(stop_on_exception: bool = False)
+```
+
+Async version of `tail()` that doesn't block the event loop. (AsyncJobPool only.)
 
 ---
 
@@ -11060,7 +11208,7 @@ Wait until all jobs are finished, printing statuses as they become available. Us
 pool.times() -> list[timedelta | None]
 ```
 
-Time taken for each task. Incomplete tasks will be reported as `None`.
+Time taken for each task. Incomplete tasks will be reported as None.
 
 ---
 
@@ -11082,7 +11230,21 @@ Returns how long the entire job took. If only partial results are available, ret
 pool.wait()
 ```
 
-Wait until all jobs are finished. Use `fused.options.show.enable_tqdm` to enable/disable progress bar.
+Wait until all jobs are finished.
+
+Use fused.options.show.enable_tqdm to enable/disable tqdm. Use pool._wait_sleep to set if sleep should occur while waiting.
+
+---
+
+## wait_async
+
+```python
+await pool.wait_async()
+```
+
+Wait until all jobs are finished. Does not block the event loop. (AsyncJobPool only.)
+
+---
 
 ================================================================================
 
@@ -11538,71 +11700,82 @@ URL: https://docs.fused.io/python-sdk/api-reference/udf
 class Udf
 ```
 
-A Fused UDF (User-Defined Function) is a callable Python function that runs on Fused infrastructure.
-
-The `Udf` class is the object returned when decorating a function with `@fused.udf`, or when loading a saved UDF with `fused.load()`.
+A user-defined function. The `Udf` class is the object returned when decorating a function with `@fused.udf`, or when loading a saved UDF with `fused.load()`.
 
 **Calling a UDF**
 
-UDFs are callable objects. Call them directly like regular Python functions:
+Call this UDF. UDFs are callable; pass arguments as for a regular function, plus optional `engine`, `cache_max_age`, and `cache`:
 
 ```python
 udf(
     *args,               # positional arguments to pass to the UDF
-    engine=None,         # "remote" (default), "local", or instance type
-    cache_max_age=None,  # max cache age, e.g. "48h", "10s"
+    engine=None,         # "remote" (default), "local", or "small"/"medium"/"large"
+    cache_max_age=None,  # max cache age, e.g. "48h", "10s"; None uses @fused.udf() default
     cache=True,          # set False to disable caching
     **kwargs,            # keyword arguments to pass to the UDF
 )
 ```
 
+- **engine**: "remote" (default), "local", or batch instance type ("small", "medium", "large"). Other values are interpreted as batch instance type.
+- **cache_max_age**: Maximum age when returning a result from the cache (e.g. "48h", "10s"). Default `None` so the UDF follows `cache_max_age` from `@fused.udf()` unless overridden.
+- **cache**: Set to False as a shortcut for `cache_max_age='0s'` to disable caching. (Default True.)
+- **Returns**: The result of the UDF execution.
+
 Learn more about engine options and caching.
 
 ```python
 @fused.udf
+def udf():
+    # Call directly
+    result = my_udf(x=5, multiplier=3)  # Returns 15
+
+    # Run locally
+    result = my_udf(x=5, engine="local")
+
+    # Run on a dedicated instance
+    result = my_udf(x=5, engine="small")
+
+    # Cache results for 1 hour
+    result = my_udf(x=5, cache_max_age="1h")
+
+    # Disable caching
+    result = my_udf(x=5, cache=False)
+
+    return result
+
+@fused.udf
 def my_udf(x: int, multiplier: int = 2):
     return x * multiplier
-
-# Call directly
-result = my_udf(x=5, multiplier=3)  # Returns 15
-
-# Run locally
-result = my_udf(x=5, engine="local")
-
-# Run on a dedicated instance
-result = my_udf(x=5, engine="medium")
-
-# Cache results for 1 hour
-result = my_udf(x=5, cache_max_age="1h")
-
-# Disable caching
-result = my_udf(x=5, cache=False)
 ```
 
 **Parallel execution**
 
 Use `.map()` to run a UDF in parallel across multiple inputs:
 
-```python
+```python 
+@fused.udf
+def udf():
+    # Create a pool of jobs
+    pool = my_udf.map([1, 2, 3])
+    df = pool.df()
+    return df
+
 @fused.udf
 def my_udf(x: int):
-    return x * 2
-
-pool = my_udf.map([1, 2, 3])
-df = pool.collect()  # Returns [2, 4, 6]
+    return x ** 2
 ```
 
 ---
 
 ## cache_max_age
 
-Maximum cache age in seconds. `None` for default caching behavior.
+The maximum age when returning a result from the cache.
 
 ---
 
 ## catalog_url
 
-Returns the URL to open this UDF in Workbench, or `None` if not saved.
+Returns the link to open this UDF in the Workbench Catalog, or None if the UDF is not saved.
 
 ```python
 udf = fused.load("my_udf")
@@ -11672,13 +11845,13 @@ Delete this UDF from the Fused service.
 
 ## disk_size_gb
 
-Disk size in GB for batch execution.
+The size of the disk in GB to use for remote execution. Used in batch jobs.
 
 ---
 
 ## entrypoint
 
-The name of the entrypoint function within the UDF code.
+Name of the function within the code to invoke.
 
 ---
 
@@ -11727,7 +11900,7 @@ Retrieve scheduled runs of this UDF.
 
 ## engine
 
-Default engine for execution (`"remote"`, `"local"`, `"realtime"`, or batch instance types like `"small"`, `"medium"`, `"large"`).
+The engine to run this UDF on by default, if not specified in `fused.run()`, e.g., "small"/"medium"/"large".
 
 ---
 
@@ -11741,24 +11914,30 @@ Default engine for execution (`"remote"`, `"local"`, `"realtime"`, or batch inst
 
 ```python
 udf.map(
-    arg_list,              # list of arguments, each element becomes a job
+    arg_list,
     *,
-    engine=None,           # "remote" (default), "local", or instance type
-    cache_max_age=None,    # max cache age
-    max_workers=None,      # max parallel workers (default 32 remote, 1 local/batch)
-    worker_concurrency=None,  # concurrency per worker
-    cache=True,            # set False to disable caching
-    max_retry=2,           # max retries for failed jobs
+    engine=None,
+    cache_max_age=None,
+    max_workers=None,
+    worker_concurrency=None,
+    cache=True,
+    max_retry=2,
 ) -> JobPool
 ```
 
-Parallel map over a set of inputs. Returns a `JobPool` object.
+Submit a job for each element in arg_list.
 
-Learn more about engine options and caching.
+- **arg_list**: A list of arguments to pass to the UDF. Each element in arg_list will become a job and run.
+- **engine**: "remote" (default), "local", or "small"/"medium"/"large". Other values are interpreted as a batch instance type.
+- **max_workers**: For realtime: number of instances (default 32). For local: number of threads (default 1). For batch: number of worker machines (default 1).
+- **worker_concurrency**: For realtime: arguments per instance (default 1). For batch: processes per worker. Not settable for local.
+- **cache_max_age**: Max age when returning a result from the cache (e.g. "48h", "10s"). Default `None` to follow `@fused.udf()`.
+- **cache**: Set to False to disable caching. (Default True.)
+- **max_retry**: Max retries for failed jobs (default 2). Retries only if the pool is waited on (e.g. `pool.wait()`, `pool.tail()`, `pool.collect()`).
 
-Each element in `arg_list` becomes a separate job. Pass a list of values for single-parameter UDFs, or a list of dicts for multi-parameter UDFs.
+**Returns:** A JobPool object. Call `.collect()` to get the results.
 
-Example:
+**Example:**
 
 ```python
 @fused.udf
@@ -11774,20 +11953,31 @@ df = pool.collect()  # Returns [2, 4, 6]
 ## map_async
 
 ```python
-async udf.map_async(
-    arg_list,            # list of arguments, each element becomes a job
+await udf.map_async(
+    arg_list,
     *,
-    engine=None,         # "remote" (default) or "local" only
-    max_workers=None,    # max parallel workers
-    cache_max_age=None,  # max cache age
-    cache=True,          # set False to disable caching
-    max_retry=2,         # max retries for failed jobs
-) -> JobPool
+    engine=None,
+    max_workers=None,
+    cache_max_age=None,
+    cache=True,
+    max_retry=2,
+) -> AsyncJobPool
 ```
 
-Async version of `map()` for use in async contexts. Does not support batch instance types or `worker_concurrency`.
+Submit a job for each element in arg_list. (Async; use in async contexts.)
 
-Learn more about caching.
+- **arg_list**: A list of arguments to pass to the UDF. Each element will become a job and run.
+- **engine**: "remote" (default) or "local". Note: batch instance types are not supported for async map.
+- **max_workers**: For realtime: number of instances (default 32). For local: number of threads (default 1).
+- **cache_max_age**: Max age when returning a result from the cache. Default `None` to follow `@fused.udf()`.
+- **cache**: Set to False to disable caching. (Default True.)
+- **max_retry**: Max retries for failed jobs (default 2). Retries only if the pool is waited on.
+
+Note: worker_concurrency is not supported for async map.
+
+**Returns:** An AsyncJobPool object. Call `.collect()` to get the results.
+
+**Example:**
 
 ```python
 @fused.udf
@@ -11816,13 +12006,13 @@ The name of the UDF. Defaults to the function name.
 
 ## parameters
 
-Dictionary of default parameters for the UDF.
+Parameters to pass into the entrypoint.
 
 ---
 
 ## region
 
-AWS region for execution.
+The region to use for remote execution. Used in batch jobs.
 
 ---
 
@@ -17541,5 +17731,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-02-09
+Generated automatically from Fused documentation. Last updated: 2026-02-10
 Total sections: 5
