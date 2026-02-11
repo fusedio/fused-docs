@@ -1,0 +1,181 @@
+---
+id: ai-data-connection
+title: Connecting the AI to Data
+sidebar_label: Connecting AI to Data
+sidebar_position: 6
+---
+
+# Connecting the AI to Data
+
+User Defined Tools let you use UDFs as tools to provide the AI with extra context about your data. This enables the AI to query your databases, search your documents, or interact with any data source you configure.
+
+## Try it out
+
+See the demo canvas below with all the live demos:
+
+<div style={{
+  display: "flex",
+  justifyContent: "center",
+  margin: "32px 0"
+}}>
+  <a
+    href="https://www.fused.io/canvas/fc_31w2Yde1bqvp0yHOGcUBDo?bounds=586%2C-2412%2C3135%2C-660"
+    target="_blank"
+    rel="noopener noreferrer"
+    style={{
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "12px",
+      padding: "18px 40px",
+      fontSize: "1.2rem",
+      fontWeight: "700",
+      color: "#1a1a1a",
+      background: "linear-gradient(135deg, #E5FF44 0%, #f0f0f0 100%)",
+      border: "none",
+      borderRadius: "12px",
+      textDecoration: "none",
+      boxShadow: "0 4px 20px rgba(229, 255, 68, 0.4)",
+      transition: "all 0.2s ease",
+      height: "64px",
+      lineHeight: "64px",
+      verticalAlign: "middle"
+    }}
+    onMouseOver={e => {
+      e.currentTarget.style.transform = "translateY(-3px)";
+      e.currentTarget.style.boxShadow = "0 8px 30px rgba(229, 255, 68, 0.5)";
+    }}
+    onMouseOut={e => {
+      e.currentTarget.style.transform = "translateY(0)";
+      e.currentTarget.style.boxShadow = "0 4px 20px rgba(229, 255, 68, 0.4)";
+    }}
+  >
+    <span style={{ display: "flex", alignItems: "center", height: "100%" }}>Open Template Canvas</span>
+  </a>
+</div>
+
+Or try this one out, asking any questions about Population & Income from Census data:
+
+> "What is the population of Brooklyn, NY in 2024?"
+
+<div style={{
+  display: "flex",
+  justifyContent: "center",
+  margin: "32px 0"
+}}>
+  <iframe
+    src="https://udf.ai/fsh_F6IZLVnNBbhzbW0YQGgQl.html"
+    style={{
+      width: "100%",
+      maxWidth: "900px",
+      height: "600px",
+      border: "1px solid #e3e3e6",
+      borderRadius: "12px",
+      boxShadow: "0 2px 16px rgba(0,0,0,0.06)"
+    }}
+    allow="clipboard-write"
+    loading="lazy"
+    title="UDF AI Census Population & Income Demo"
+  ></iframe>
+</div>
+
+## Setting up AI profiles
+
+Profiles are a way of "scoping" your AI's data access. You can connect specific data sources, rules, and tools to a profile, allowing you to create different configurations for different use cases.
+
+### Accessing the profile settings
+
+1. Open the AI chat window
+2. Click the profile dropdown menu
+3. Hover over any profile and click the edit icon to configure your tools
+
+![Profile dropdown navigation](/img/ai/ai-user-profile.png)
+
+## User defined tools
+
+![Profile page tools configuration](/img/ai/profile-page-tool.png)
+
+Inside a profile, you can configure what we call "MCP JSON" - a configuration format that tells the AI how to call your UDFs as tools. Despite the name, this isn't actual MCP (Model Context Protocol) JSON, but uses a similar concept to make it easy to understand: it defines how the AI can call your UDFs to fetch data.
+
+### How it works
+
+1. **Create a UDF** that acts as a pure function - it takes some input and returns a response
+2. **Generate the MCP JSON** configuration for your UDF
+3. **Add the configuration** to your AI profile
+
+The input to your UDF can be:
+- An SQL query for database lookups
+- A plain text query for RAG (Retrieval Augmented Generation) searches
+- Any other structured input that determines the query result
+
+{/* TODO: Add screenshot of MCP JSON configuration in profile */}
+{/* ![MCP JSON configuration](/img/ai-tools/mcp-json-config.png) */}
+
+### Example: RAG search tool
+
+A common use case is creating a RAG search tool that queries your vector database. Here's how it works:
+
+1. Create a UDF that takes a string query parameter
+2. The UDF queries your vector database and returns relevant results
+3. Generate the MCP JSON for this UDF
+4. The AI can now search your data using natural language
+
+```python showLineNumbers
+@fused.udf
+def udf(query: str = "how does fused.cache work?"):
+    """
+    Fused SDK search function for finding methods, types, and functions.
+    Searches through the Fused SDK documentation using vector embeddings
+    to return relevant code examples and function signatures.
+    """
+    TABLE_NAME = "fused_sdk_chunker_demo"
+    TOP_K = 5
+
+    rag = fused.load("https://github.com/fusedio/udfs/tree/5c526cc/community/joey/RAG_Utils_new/")
+
+    print(f"Searching for: {query}")
+    query_embedding = rag.embed_text(query, provider="qwen")
+
+    results = rag.search_vector_table(
+        table_name=TABLE_NAME,
+        query_vec=query_embedding,
+        top_k=TOP_K,
+    )
+
+    display_cols = ['method', 'signature', 'similarity']
+    available_cols = [c for c in display_cols if c in results.columns]
+
+    return results[available_cols + ['content']]
+```
+
+### Generating MCP JSON
+
+To generate the MCP JSON configuration for your UDF, simply ask the AI chat:
+
+> "Generate an MCP JSON for this UDF"
+
+The AI will create a JSON configuration like this:
+
+```json
+{
+    "udf_name": "census_income_fetch",
+    "link": "https://udf.ai/fsh_RSuSMvR2wc3uf2CX3TjIc/run",
+    "description": "This UDF fetches demographic and income data from the US Census API for a specific state and county. It accepts parameters for state_fips (default 13 for Georgia), county_fips (default 121 for a specific county), and year (default 2023). The function returns a pandas DataFrame containing population and median income data along with the geographic name.",
+    "parameters": {
+        "state_fips": "str",
+        "county_fips": "str",
+        "year": "int"
+    }
+}
+```
+
+Paste this configuration into your profile settings to enable the tool.
+
+{/* TODO: Add screenshot showing the generated MCP JSON output */}
+{/* ![Generated MCP JSON](/img/ai-tools/generated-mcp-json.png) */}
+
+## Best practices
+
+- **Write detailed docstrings**: The AI uses docstrings to decide when and how to call your tool. Be specific about use cases and expected inputs/outputs.
+- **Keep UDFs focused**: Each tool should do one thing well
+- **Use descriptive parameter names**: This helps the AI understand what inputs are expected
+- **Return structured data**: JSON or tabular formats work best for AI consumption
