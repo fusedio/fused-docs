@@ -242,7 +242,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "workbench/file-explorer", label: "File Explorer" },
         { type: "doc", id: "workbench/canvas-catalog", label: "Canvas Catalog" },
         { type: "doc", id: "workbench/canvas-checkpoints", label: "Canvas Checkpoints" },
-
+        { type: "doc", id: "workbench/versions", label: "Versions" }
       ],
     },
 
