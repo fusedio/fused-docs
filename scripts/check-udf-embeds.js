@@ -54,13 +54,11 @@ function fetchUrl(url) {
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => {
         const body = Buffer.concat(chunks).toString('utf8');
-        const hasBadMarker = BAD_BODY_MARKERS.some((m) => body.includes(m));
-        const looksLikeHtml = body.trimStart().startsWith('<') || body.includes('<!');
         resolve({
           url,
           status: res.statusCode,
           body,
-          ok: res.statusCode === 200 && !hasBadMarker && looksLikeHtml,
+          ok: res.statusCode === 200 && !body.includes(BAD_BODY_MARKER) && (body.trimStart().startsWith('<') || body.includes('<!')),
         });
       });
     });
