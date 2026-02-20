@@ -58,7 +58,7 @@ function fetchUrl(url) {
           url,
           status: res.statusCode,
           body,
-          ok: res.statusCode === 200 && !body.includes(BAD_BODY_MARKER) && (body.trimStart().startsWith('<') || body.includes('<!')),
+          ok: res.statusCode === 200 && !BAD_BODY_MARKERS.some((m) => body.includes(m)) && (body.trimStart().startsWith('<') || body.includes('<!')),
         });
       });
     });
