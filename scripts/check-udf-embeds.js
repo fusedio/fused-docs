@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Pings UDF embed URLs (udf.ai and unstable.udf.ai fsh_*.html) from docs to ensure
- * they return HTML, not error payloads like {"detail":"Access token invalid..."}.
+ * they return HTML, not error payloads (invalid token, UDF not found, etc.).
  * Only scans docs/ — skips docs_backup_jan2026 and any other dirs outside docs/.
  */
 
@@ -13,7 +13,12 @@ const DOCS_DIR = 'docs';
 const SKIP_DIRS = new Set(['docs_backup_jan2026']);
 const UDF_EMBED_REGEX = /https:\/\/(?:udf\.ai|unstable\.udf\.ai)\/fsh_[a-zA-Z0-9]+\.html/g;
 const REQUEST_TIMEOUT_MS = 15000;
-const BAD_BODY_MARKER = 'Access token invalid';
+const BAD_BODY_MARKERS = [
+  'Access token invalid',
+  'UDF not found',
+  "'detail': 'UDF not found'",
+  '"detail":"UDF not found"',
+];
 
 function extractUdfEmbedUrls() {
   const urls = new Set();
