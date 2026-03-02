@@ -268,7 +268,8 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "workbench/account", label: "Account" },
         { type: "doc", id: "workbench/preferences", label: "Preferences" },
         { type: "doc", id: "workbench/free-tier", label: "Free Tier" },
-        { type: "doc", id: "workbench/jobs", label: "Jobs" }
+        { type: "doc", id: "workbench/jobs", label: "Jobs" },
+        { type: "doc", id: "workbench/tokens", label: "Shared Tokens" }
       ],
     },
 
