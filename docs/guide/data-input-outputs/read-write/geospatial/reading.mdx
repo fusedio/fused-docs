@@ -127,6 +127,58 @@ def udf(path: str = "s3://fused-sample/demo_data/buildings.parquet"):
     return gpd.read_parquet(path)
 ```
 
+### Large Geoparquet (.parquet with subset)
+
+Why not just use `gpd.read_parquet()`?
+- `gpd.read_parquet()` loads the ENTIRE file into memory before you can `.head()`
+- For large files (100MB+) this causes Out of Memory errors in a [realtime UDF run](/guide/working-with-udfs/fused-run)
+
+**Solution:** Use DuckDB to push LIMIT down to the read level so only
+n_rows are ever loaded into memory, then convert geometry from WKB to
+proper Shapely objects via DuckDB's spatial extension (ST_AsText).
+
+```python
+@fused.udf
+def udf(
+    path: str = "s3://us-west-2.opendata.source.coop/cholmes/overture/geoparquet-country-quad-2/CZ.parquet",
+    n_rows: int = 1000,
+):
+    import geopandas as gpd
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/9bad664/public/common/")
+
+    @fused.cache
+    def load_large_geoparquet(p, limit):
+        con = common.duckdb_connect()
+
+        # In this example, bucket is in us-west-2; set region so S3 requests don't use default us-east-1
+        con.sql("SET s3_region='us-west-2';")
+
+        # 1. Detect the geometry column (DuckDB reads it as BLOB/GEOMETRY)
+        col_info = con.sql(
+            f"SELECT column_name FROM (DESCRIBE SELECT * FROM read_parquet('{p}')) "
+            f"WHERE column_type IN ('GEOMETRY', 'BLOB', 'WKB_GEOMETRY')"
+        ).fetchall()
+        geom_col = col_info[0][0] if col_info else "geometry"
+
+        # 2. Read only `limit` rows and convert geometry BLOB -> WKT text
+        #    LIMIT is pushed down so only `limit` rows are ever in memory
+        df = con.sql(
+            f"SELECT *, ST_AsText({geom_col}) AS __wkt "
+            f"FROM read_parquet('{p}') LIMIT {limit}"
+        ).df()
+
+        # 3. Parse WKT into Shapely geometry objects and build GeoDataFrame
+        df[geom_col] = gpd.GeoSeries.from_wkt(df["__wkt"])
+        df = df.drop(columns=["__wkt"])
+        return gpd.GeoDataFrame(df, geometry=geom_col, crs=4326)
+
+    gdf = load_large_geoparquet(path, n_rows)
+    print(gdf.T)
+    return gdf
+```
+
+
 ### CSV with coordinates (.csv)
 
 ```python
