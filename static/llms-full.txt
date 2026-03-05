@@ -2022,6 +2022,56 @@ def udf(path: str = "s3://fused-sample/demo_data/buildings.parquet"):
     return gpd.read_parquet(path)
 ```
 
+### Large Geoparquet (.parquet with subset)
+
+Why not just use `gpd.read_parquet()`?
+- `gpd.read_parquet()` loads the ENTIRE file into memory before you can `.head()`
+- For large files (100MB+) this causes Out of Memory errors in a realtime UDF run
+
+**Solution:** Use DuckDB to push LIMIT down to the read level so only
+n_rows are ever loaded into memory, then convert geometry from WKB to
+proper Shapely objects via DuckDB's spatial extension (ST_AsText).
+
+```python
+@fused.udf
+def udf(
+    path: str = "s3://us-west-2.opendata.source.coop/cholmes/overture/geoparquet-country-quad-2/CZ.parquet",
+    n_rows: int = 1000,
+):
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/9bad664/public/common/")
+
+    @fused.cache
+    def load_large_geoparquet(p, limit):
+        con = common.duckdb_connect()
+
+        # In this example, bucket is in us-west-2; set region so S3 requests don't use default us-east-1
+        con.sql("SET s3_region='us-west-2';")
+
+        # 1. Detect the geometry column (DuckDB reads it as BLOB/GEOMETRY)
+        col_info = con.sql(
+            f"SELECT column_name FROM (DESCRIBE SELECT * FROM read_parquet('')) "
+            f"WHERE column_type IN ('GEOMETRY', 'BLOB', 'WKB_GEOMETRY')"
+        ).fetchall()
+        geom_col = col_info[0][0] if col_info else "geometry"
+
+        # 2. Read only `limit` rows and convert geometry BLOB -> WKT text
+        #    LIMIT is pushed down so only `limit` rows are ever in memory
+        df = con.sql(
+            f"SELECT *, ST_AsText() AS __wkt "
+            f"FROM read_parquet('') LIMIT "
+        ).df()
+
+        # 3. Parse WKT into Shapely geometry objects and build GeoDataFrame
+        df[geom_col] = gpd.GeoSeries.from_wkt(df["__wkt"])
+        df = df.drop(columns=["__wkt"])
+        return gpd.GeoDataFrame(df, geometry=geom_col, crs=4326)
+
+    gdf = load_large_geoparquet(path, n_rows)
+    print(gdf.T)
+    return gdf
+```
+
 ### CSV with coordinates (.csv)
 
 ```python
@@ -4311,7 +4361,9 @@ Control how long cached results stay valid.
 | UDF definition | `@fused.udf(cache_max_age="24h")` |
 | Direct call | `my_udf(cache_max_age="1h")` |
 | @fused.cache | `@fused.cache(cache_max_age="30m")` |
-| HTTPs endpoint | `udf.fused.io/token?cache_max_age=0` |
+| HTTPS endpoint | `udf.fused.io/token?cache_max_age=0` |
+
+**HTTPS only:** The endpoint accepts **seconds as a number** (e.g. `cache_max_age=10`). Python accepts human-readable formats like `10s`, `10m`, `24h`.
 
 **Priority:** Call-time param > `@fused.udf()` > default (90 days)
 
@@ -9026,14 +9078,13 @@ URL: https://docs.fused.io/python-sdk/api-reference/fused-cache
 ```python
 cache(
     func: Callable[..., Any] | None = None,
-    cache_max_age: str | int = DEFAULT_CACHE_MAX_AGE,
+    cache_max_age: str | int | None = None,
     cache_folder_path: str = "tmp",
     concurrent_lock_timeout: str | int = 120,
     cache_reset: bool | None = None,
     cache_storage: StorageStr | None = None,
     cache_key_exclude: Iterable[str] = None,
     cache_verbose: bool | None = None,
-    **kwargs: Any
 ) -> Callable[..., Any]
 ```
 
@@ -9061,19 +9112,16 @@ This function serves as a decorator that can be applied to any function to cache
 Use the `@cache` decorator to cache the return value of a function in a custom path.
 
 ```python
-@cache(path="/tmp/custom_path/")
+@fused.cache(cache_folder_path="/tmp/custom_path/")
 def expensive_function():
     # Function implementation goes here
     return result
 ```
 
-If the output of a cached function changes, for example if remote data is modified, it can be reset by running the function with the `cache_reset` keyword argument. Afterward, the argument can be cleared.
+If the output of a cached function changes, for example if remote data is modified, it can be reset by running the function with the `cache_reset` keyword argument when calling the function.
 
 ```python
-@cache(path="/tmp/custom_path/", cache_reset=True)
-def expensive_function():
-    # Function implementation goes here
-    return result
+expensive_function(cache_reset=True)
 ```
 
 ================================================================================
@@ -9093,22 +9141,12 @@ def udf():
     # Check if running in realtime or batch
     if fused.context.in_realtime():
         print("Running in realtime")
-    
-    # Get request headers
+    # Current UDF (raises if not in a UDF)
+    udf_obj = fused.context.this_udf()
     headers = fused.context.get_headers()
 ```
 
 ## Functions
-
-### get_headers
-
-```python
-get_headers() -> dict[str, str]
-```
-
-Get the request headers that were passed to the UDF.
-
-Returns a dictionary of header names to values for all headers passed in the HTTP request.
 
 ### get_header
 
@@ -9118,10 +9156,13 @@ get_header(name: str) -> str | None
 
 Get a specific request header by name (case-insensitive).
 
-**Parameters:**
-- **name** (`str`) – The header name to retrieve.
+### get_headers
 
-**Returns:** The header value, or `None` if not found.
+```python
+get_headers() -> dict[str, str]
+```
+
+Get the request headers that were passed to the UDF.
 
 ### get_recursion_factor
 
@@ -9131,8 +9172,6 @@ get_recursion_factor() -> int | None
 
 Get the recursion factor from the current context.
 
-Returns the recursion factor when running in a tiled context, or `None` otherwise.
-
 ### get_realtime_client_id
 
 ```python
@@ -9140,8 +9179,6 @@ get_realtime_client_id() -> str | None
 ```
 
 Get the realtime client ID from the current context.
-
-Returns the client ID when running in realtime mode, or `None` otherwise.
 
 ### get_user_email
 
@@ -9151,7 +9188,13 @@ get_user_email() -> str | None
 
 Get the user email from the current context.
 
-Returns the email of the authenticated user running the UDF, or `None` if not available.
+### in_batch
+
+```python
+in_batch() -> bool
+```
+
+Return True if the context is in a batch job.
 
 ### in_realtime
 
@@ -9159,19 +9202,15 @@ Returns the email of the authenticated user running the UDF, or `None` if not av
 in_realtime() -> bool
 ```
 
-Return `True` if the context is in a realtime job.
+Return True if the context is in a realtime job.
 
-Use this to conditionally execute code based on execution mode.
-
-### in_batch
+### this_udf
 
 ```python
-in_batch() -> bool
+this_udf() -> Udf
 ```
 
-Return `True` if the context is in a batch job.
-
-Use this to conditionally execute code based on execution mode.
+The UDF that is currently being run. Raises `ValueError("No UDF is currently being run.")` when not running inside a UDF.
 
 ### get_global_context
 
@@ -9180,8 +9219,6 @@ get_global_context() -> ExecutionContextProtocol | None
 ```
 
 Get the global execution context object.
-
-Returns the full context object for advanced use cases.
 
 ## Usage Example
 
@@ -9203,7 +9240,8 @@ def udf():
     # Log who is running this UDF
     user = fused.context.get_user_email()
     print(f"Running for user: ")
-    
+    # Access the running UDF object
+    current = fused.context.this_udf()
     return process_data(chunk_size)
 ```
 
@@ -12278,6 +12316,27 @@ URL: https://docs.fused.io/python-sdk/changelog
 
 # Changelog
 
+## v2.1.1 (2026-03-03)
+
+**Collapsible left sidebar**
+
+Want more coding space? Collapse the left panel!
+
+**Preview your Canvas in Catalog**
+
+Canvas Catalog now will show previews of your Canvas
+
+**Various bug fixes**
+
+Improved canvas stability, sticky notes formatting, AI responses, etc.
+
+**Improvements**
+- Profile page now show tokens usage
+- Experimental: Slack integration
+- Various canvas improvements
+- Various AI improvements
+- Various bug fixes
+
 ## v2.1.0 (2026-02-26)
 
 **🧠 Canvas-wide AI**
@@ -14035,7 +14094,7 @@ With this in mind, the App Builder enables users to build and run apps with serv
 - Call UDFs and cache responses
 - Share live apps
 
-<ReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench/walkthrough-videos/docs_rewrite/app_builder_edit4.mp4" width="100%" />
+<LazyReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/app_builder_edit5.mp4" width="100%" />
 
 ## Build apps
 
@@ -14145,7 +14204,7 @@ st.write(fused.run('fsh_1uQkWaPFfB2O7Qy1zzOHS9'))
 
 The App Builder settings menu includes options to generate a URL to share the app or embed it with an `<iframe>`.
 
-<ReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench/walkthrough-videos/docs_rewrite/app_builder_share_edit8.mp4" width="100%" />
+<ReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/app_builder_share_edit9.mp4" width="100%" />
 
 ### Shareable links
 The app is saved to Fused and referenced by a token, such as `https://www.fused.io/app/fsh_7hVSIymGijZ53YGmEs2EIM`.
@@ -14447,7 +14506,7 @@ With Canvas, you can:
 - Upload / Download Canvas via Workbench (Click the 3 dots next to Canvas name)
 - Delete Canvas (this doesn't delete the UDFs inside, only the Canvas)
 
-<ReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/canvas8.mp4" width="100%" />
+<ReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/canvas9.mp4" width="100%" />
 
 We are actively working on expanding Canvas features!
 
@@ -18041,5 +18100,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-03-03
+Generated automatically from Fused documentation. Last updated: 2026-03-05
 Total sections: 5
