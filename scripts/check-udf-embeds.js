@@ -12,7 +12,9 @@ const https = require('https');
 const DOCS_DIR = 'docs';
 const SKIP_DIRS = new Set(['docs_backup_jan2026']);
 const UDF_EMBED_REGEX = /https:\/\/(?:udf\.ai|unstable\.udf\.ai)\/fsh_[a-zA-Z0-9]+\.html/g;
-const REQUEST_TIMEOUT_MS = 15000;
+const REQUEST_TIMEOUT_MS = 30000;  // 30s — CI and cold starts can be slow
+const RETRIES = 1;                 // 2 attempts total per URL
+const RETRY_DELAY_MS = 2500;
 const BAD_BODY_MARKERS = [
   'Access token invalid',
   'UDF not found',
@@ -62,12 +64,24 @@ function fetchUrl(url) {
         });
       });
     });
-    req.on('error', (err) => resolve({ url, status: 0, body: '', ok: false, error: err.message }));
-    req.on('timeout', () => {
+    req.setTimeout(REQUEST_TIMEOUT_MS, () => {
       req.destroy();
       resolve({ url, status: 0, body: '', ok: false, error: 'timeout' });
     });
+    req.on('error', (err) => resolve({ url, status: 0, body: '', ok: false, error: err.message }));
   });
+}
+
+async function fetchWithRetries(url) {
+  for (let attempt = 1; attempt <= RETRIES + 1; attempt++) {
+    const result = await fetchUrl(url);
+    if (result.ok) return result;
+    if (attempt <= RETRIES) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+    } else {
+      return result;
+    }
+  }
 }
 
 async function main() {
@@ -77,7 +91,7 @@ async function main() {
     process.exit(0);
   }
   console.log(`🔗 Found ${urls.length} UDF embed URL(s) in ${DOCS_DIR}/\n`);
-  const results = await Promise.all(urls.map(fetchUrl));
+  const results = await Promise.all(urls.map(fetchWithRetries));
   const ok = results.filter((r) => r.ok);
   const bad = results.filter((r) => !r.ok);
   for (const r of ok) console.log(`  ✅ ${r.url}`);
