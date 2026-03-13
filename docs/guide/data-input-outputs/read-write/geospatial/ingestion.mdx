@@ -87,6 +87,133 @@ def udf(
     return common.table_to_tile(bounds, table)
 ```
 
+## The `_sample` File
+
+When `fused.ingest()` runs, it creates a folder of partitioned Parquet files alongside a small file called `_sample`:
+
+```
+s3://fused-asset/infra/building_msft_us/
+  ├── 0.parquet
+  ├── 1.parquet
+  ├── 2.parquet
+  ├── ...
+  └── _sample        ← spatial index
+```
+
+Each numbered Parquet file can contain multiple **row groups** (chunks). `_sample` is the spatial index that maps every chunk to its geographic extent so readers can skip irrelevant files entirely.
+
+---
+
+## What's inside `_sample`
+
+`_sample` is a Parquet file, but its table is **empty** (0 rows, 0 columns of data). The actual metadata is **base64-encoded Parquet** embedded in the file's schema key-value metadata under the key `fused:_metadata`.
+
+When decoded, the embedded metadata contains one row per chunk with **12 columns**:
+
+| Column | Type | Description |
+|---|---|---|
+| `file_id` | string | Which Parquet file (e.g. `0`, `1`, `99`) |
+| `chunk_id` | uint32 | Which row group within that file |
+| `bbox_minx` | float64 | Bounding box west edge (lon) |
+| `bbox_miny` | float64 | Bounding box south edge (lat) |
+| `bbox_maxx` | float64 | Bounding box east edge (lon) |
+| `bbox_maxy` | float64 | Bounding box north edge (lat) |
+| `sum_area` | float64 | Total geometry area (geographic) |
+| `sum_area_utm` | float64 | Total geometry area (UTM, sq meters) |
+| `sum_length` | float64 | Total geometry perimeter (geographic) |
+| `sum_length_utm` | float64 | Total geometry perimeter (UTM, meters) |
+| `num_coords` | int64 | Total number of coordinate pairs |
+| `num_rows` | int64 | Number of rows in the chunk |
+
+For example, `s3://fused-asset/infra/building_msft_us/_sample` contains 3,315 chunks across 325 files.
+
+---
+
+## Why it's useful
+
+Without `_sample`, reading a large ingested dataset would require scanning every Parquet file to find which chunks overlap the map viewport. With `_sample`, only the tiny index file is read first, then only the matching chunks are fetched.
+
+---
+
+## Reading `_sample` programmatically
+
+### 1. Read the spatial index
+
+```python showLineNumbers
+df = fused.get_chunks_metadata("s3://fused-asset/infra/building_msft_us/")
+```
+
+This decodes `_sample` and returns a **GeoDataFrame** (CRS: EPSG:4326) with **13 columns** — the 12 metadata columns above plus a `geometry` column containing Polygon bounding boxes constructed from the `bbox_*` values.
+
+### 2. Read a specific chunk
+
+```python showLineNumbers
+gdf = fused.get_chunk_from_table(
+    "s3://fused-asset/infra/building_msft_us/",
+    file_id=0,
+    chunk_id=0,
+)
+```
+
+This reads row group `0` from `0.parquet` and returns a GeoDataFrame with the actual data columns (e.g. `release`, `capture_dates_range`, `geometry`). Pass `columns=["geometry"]` to read only the geometry column.
+
+---
+
+## Reading with `_sample` in Workbench
+
+In [Workbench](/workbench/udf-builder/), double-clicking a `_sample` file generates a ready-to-run UDF:
+
+```python showLineNumbers
+@fused.udf
+def udf(bounds: fused.types.Bounds = None, preview: bool = False):
+    path = "s3://fused-asset/infra/building_msft_us/_sample"
+    use_columns = ["geometry"] if preview else None
+    common = fused.load(
+        "https://github.com/fusedio/udfs/tree/507b2a3/public/common/"
+    )
+    base_path = (
+        path.rsplit("/", maxsplit=1)[0]
+        if path.endswith("/_sample") or path.endswith("/_metadata")
+        else path
+    )
+    return common.table_to_tile(
+        bounds,
+        table=base_path,
+        use_columns=use_columns,
+        min_zoom=7,
+    )
+```
+
+---
+
+## How [`table_to_tile`](https://github.com/fusedio/udfs/blob/6fa75ac4450b4c44cc317475f47211114bb90766/public/common/common.py#L1305) works under the hood
+
+The full signature is:
+
+```python showLineNumbers
+table_to_tile(bounds, table, min_zoom=12, centorid_zoom_offset=0, use_columns=['geometry'], clip=False)
+```
+
+1. Estimates the current zoom level from `bounds`
+2. Calls `fused.get_chunks_metadata(table)` — reads `_sample`, decodes the embedded metadata, and returns a GeoDataFrame of chunk bounding boxes
+3. Filters to only chunks whose bounding box intersects the current viewport
+4. If the estimated zoom level is **at or above** `min_zoom`:
+   - For each matching `(file_id, chunk_id)` pair, calls `fused.get_chunk_from_table()` to read that row group
+   - If `use_columns` is set (e.g. `['geometry']`), only those columns are read; if `None`, all columns are read
+   - Concatenates results and spatially filters rows to the viewport
+   - If `z < min_zoom + centorid_zoom_offset`, replaces geometries with their centroids (useful for rendering points at intermediate zoom levels)
+   - If `clip=True`, clips geometries to the viewport boundary
+5. If the zoom level is **below** `min_zoom`: returns the chunk bounding boxes themselves as a lightweight preview instead of loading actual data
+
+---
+
+## Key things to note
+
+- The `_sample` (or `_metadata`) suffix is **stripped** in the Workbench UDF to derive the base table path before calling `table_to_tile`
+- `min_zoom` controls the zoom threshold — below it, only chunk bounding boxes are returned; at or above it, actual data is fetched. The Workbench UDF sets `min_zoom=7`; `table_to_tile` itself defaults to `min_zoom=12`
+- **Below `min_zoom`**, `table_to_tile` returns the chunk bounding boxes from the spatial index (all 13 metadata columns) as a preview — useful for inspecting how the data was partitioned
+- **At or above `min_zoom`**, it returns actual data rows spatially filtered to the viewport
+
 ## Common Ingestion Patterns
 
 ### Ingest a table from a URL
