@@ -1,0 +1,136 @@
+---
+id: security
+title: Best Practice for secure UDFs
+sidebar_label: Secure UDFs
+sidebar_position: 7
+---
+
+Treat [URL and shared-token](/guide/data-input-outputs/export-api/tokens-endpoints) inputs as untrusted. Keep datasets and credentials out of parameters unless you are building a narrow utility.
+
+## Secrets
+
+Never put passwords or API keys in UDF source. Add them in [secrets management](/guide/advanced-setup/secrets-management), then read them at runtime (for Snowflake, set names like `SNOWFLAKE_USER` and `SNOWFLAKE_PASSWORD` there—see [Databases](/guide/data-input-outputs/import-connection/databases#snowflake)).
+
+### Do not
+
+Hardcode credentials. Anyone with repo or UDF access can read them, and they leak in logs and diffs.
+
+```python {6-7} showLineNumbers
+@fused.udf
+def udf():
+    import snowflake.connector
+
+    conn = snowflake.connector.connect(
+        user="janedoe",
+        password="do-not-commit-this",
+        account="xy12345",
+        warehouse="COMPUTE_WH",
+        database="MY_DB",
+        schema="PUBLIC",
+    )
+    return conn.cursor().execute("SELECT 1").fetchone()
+```
+
+### Do
+
+Load secrets from Fused. Prefer `fused.secret("NAME")` (or `fused.secrets["NAME"]`) so values stay out of source control.
+
+```python {7-8} showLineNumbers
+@fused.udf
+def udf():
+    import snowflake.connector
+    import pandas as pd
+
+    conn = snowflake.connector.connect(
+        user=fused.secret("SNOWFLAKE_USER"),
+        password=fused.secret("SNOWFLAKE_PASSWORD"),
+        account="your_account_identifier",
+        warehouse="your_warehouse",
+        database="your_database",
+        schema="your_schema",
+    )
+    cursor = conn.cursor()
+    cursor.execute("SELECT CURRENT_VERSION()")
+    df = cursor.fetch_pandas_all()
+    cursor.close()
+    conn.close()
+    return df
+```
+
+## Narrow parameters
+
+Design the UDF API so callers cannot widen what the code reads or how it queries.
+
+| Prefer | Avoid |
+|--------|--------|
+| Typed arguments (`limit: int`, `state: str`) | Raw SQL strings from callers |
+| A fixed path or table inside the UDF for one-off pipelines | A generic `path` or `sql` parameter (hard to validate, cache, and reason about) |
+| Explicit options (`columns`, `order_by` chosen from a small set) | Free-form fragments spliced into queries |
+
+## DuckDB (and SQL generally)
+
+The same ideas apply to Postgres, Snowflake, BigQuery clients, etc.
+
+1. **Bind values** — use `?` placeholders (or the driver’s equivalent) and pass values as the second argument to `execute`, not f-strings or concatenation for user-controlled data.
+2. **Allowlist identifiers** — column and table names cannot be bound like values; check them against a fixed `set` (or similar) before putting them in the SQL text.
+
+Anti-pattern vs minimal safe read:
+
+```python {2} showLineNumbers
+# Bad: values spliced into the SQL string
+con.execute(f"SELECT * FROM read_parquet('{path}') WHERE id = '{user_id}'")
+```
+
+```python {2-5} showLineNumbers
+# Good: path and filter values are parameters; SQL shape is fixed
+con.execute(
+    "SELECT * FROM read_parquet(?) WHERE data_type = ?",
+    [path, data_type],
+)
+```
+
+Identifiers after validation:
+
+```python {5-6} showLineNumbers
+allowed = {"hex", "data_type", "count"}
+if column not in allowed:
+    raise ValueError("Unsupported column")
+# Safe to interpolate only because `column` was allowlisted
+query = f'SELECT "{column}" FROM read_parquet(?)'
+con.execute(query, [path])
+```
+
+## Do not parameterize the data source
+
+For a dedicated UDF, **hard-code** (or derive in code) the file or table so callers only choose things like row limits or filters.
+
+**Looser — `path` is an input** (only when you really need a reusable tool):
+
+```python {2} showLineNumbers
+@fused.udf
+def preview_parquet(path: str, number_rows_to_preview: int = 10):
+    import duckdb
+
+    con = duckdb.connect()
+    return con.execute(
+        "SELECT * FROM read_parquet(?) LIMIT ?",
+        [path, number_rows_to_preview],
+    ).df()
+```
+
+**Tighter — path stays inside the UDF:**
+
+```python {8} showLineNumbers
+@fused.udf
+def udf(number_rows_to_preview: int = 10):
+    import duckdb
+
+    path = "s3://fused-user/my-user/my_file.parquet"
+    con = duckdb.connect()
+    return con.execute(
+        "SELECT * FROM read_parquet(?) LIMIT ?",
+        [path, number_rows_to_preview],
+    ).df()
+```
+
+Predictable inputs improve safety and [caching](/guide/working-with-udfs/udf-best-practices/caching).
