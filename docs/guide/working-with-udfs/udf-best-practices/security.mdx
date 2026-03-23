@@ -5,7 +5,7 @@ sidebar_label: Secure UDFs
 sidebar_position: 7
 ---
 
-Fused UDFs give you a lot of flexibility in how you can build your UDFs. However, there are some best practices you should follow to ensure your UDFs are secure.
+Fused UDFs are flexible, but callers and shared links should be treated with the same care as any public API. The sections below cover secrets, parameters, SQL, paths, Canvas access, and optional passcodes.
 
 ## Use Secrets
 
@@ -13,7 +13,7 @@ Never put passwords or API keys in UDF source. Add them in [secrets management](
 
 **Do not: hardcode credentials**
 
-Hardcode credentials. Anyone with repo or UDF access can read them, and they leak in logs and diffs.
+Do **not** put real passwords or keys in UDF source. Anyone with repo or UDF access can read them, and they leak in logs and diffs.
 
 ```python {6-7} showLineNumbers
 @fused.udf
@@ -31,9 +31,9 @@ def udf():
     return conn.cursor().execute("SELECT 1").fetchone()
 ```
 
-**Do: load secrets from Secret Management**
+**Do: load secrets from secrets management**
 
-Load secrets from Fused. Prefer `fused.secret("NAME")` (or `fused.secrets["NAME"]`) so values stay out of source control.
+Read secrets at runtime with `fused.secret("NAME")` or `fused.secrets["NAME"]` so values stay out of source control.
 
 ```python {7-8} showLineNumbers
 @fused.udf
@@ -66,10 +66,18 @@ Design the UDF API so callers cannot widen what the code reads or how it queries
 | Typed arguments (`limit: int`, `state: str`) | Raw SQL strings from callers |
 | A fixed path or table inside the UDF for one-off pipelines | A generic `path` or `sql` parameter (hard to validate, cache, and reason about) |
 | Explicit options (`columns`, `order_by` chosen from a small set) | Free-form fragments spliced into queries |
+| Serializable **data** (JSON, CSV, numbers, …) | Untrusted pickle; `eval` / `exec` / `compile` on caller input |
+
+## Don’t run caller-supplied code
+
+Parameters should be **data**, not code from callers.
+
+- **`pickle.load` / `pickle.loads`** on untrusted bytes can execute arbitrary code. Do not unpickle caller-controlled input (or unvetted files).
+- **`eval` / `exec` / `compile`** on caller-supplied strings — Never. Same for other “run this string as code” patterns.
 
 ## DuckDB / SQL patterns
 
-1. **Values (IDs, filters, file paths, …)** — Don’t drop them into the SQL with an f-string or `+`. Write `?` where each value goes, then pass the real values in a list: `con.execute("... WHERE x = ?", [value])`. DuckDB treats those as **plain data**, not as extra SQL.
+1. **Values (IDs, filters, …)** — Don’t drop them into the SQL with an f-string or `+`. Write `?` where each value goes, then pass the real values in a list: `con.execute("... WHERE x = ?", [value])`. DuckDB treats those as **plain data**, not as extra SQL. For **paths**, fix or strictly validate them—see [Do not expose the data source as a parameter](#do-not-expose-the-data-source-as-a-parameter).
 2. **Column or table names** — You can’t use `?` for names—only for values. Pick allowed names in code (e.g. a Python `set`), reject anything else, then build the small part of the query that contains the name.
 
 (Same pattern in other databases; syntax may differ.)
@@ -122,6 +130,8 @@ def udf(column: str = "data_type"):
 ## Do not expose the data source as a parameter
 
 Prefer fixing file paths and table names in the UDF body instead of taking them as arguments. That narrows what the UDF can access and keeps behavior predictable.
+
+A `path` or URL argument lets callers redirect reads to **any** object your runtime can reach (another bucket, a different tenant’s prefix, local files, etc.) unless you maintain a strict allowlist—which is easy to get wrong. **Workbench does not treat path-like parameters as overridable run arguments by default**, to reduce accidental or malicious path substitution. Use fixed locations in code for normal UDFs; the looser `path` example below is only for intentional shared utilities.
 
 **Looser surface area — `path` as a parameter** (reasonable only for a reusable “preview any file”–style tool):
 
@@ -199,7 +209,7 @@ response = requests.get(
     "https://udf.ai/<YOUR_CANVAS_TOKEN>/my_udf.json",
     headers={"authorization": "fused-canvas-passcode <YOUR_PASSCODE>"}
 )
-``` 
+```
 
 ## See also
 
