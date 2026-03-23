@@ -54,7 +54,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/caching", label: "Efficient caching" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/storage", label: "Storage Options" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/version-control", label: "Working as a Team" },
-        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/security", label: "Writing secure UDFs" },
+        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/security", label: "Secure UDFs" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", label: "Geospatial processing" },
       ],
     },
