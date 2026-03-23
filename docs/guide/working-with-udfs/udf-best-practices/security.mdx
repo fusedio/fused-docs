@@ -11,7 +11,7 @@ Fused UDFs give you a lot of flexibility in how you can build your UDFs. However
 
 Never put passwords or API keys in UDF source. Add them in [secrets management](/guide/advanced-setup/secrets-management), then read them at runtime (for Snowflake, set names like `SNOWFLAKE_USER` and `SNOWFLAKE_PASSWORD` there—see [Databases](/guide/data-input-outputs/import-connection/databases#snowflake)).
 
-### Do not
+**Do not: hardcode credentials**
 
 Hardcode credentials. Anyone with repo or UDF access can read them, and they leak in logs and diffs.
 
@@ -31,7 +31,7 @@ def udf():
     return conn.cursor().execute("SELECT 1").fetchone()
 ```
 
-### Do
+**Do: load secrets from Secret Management**
 
 Load secrets from Fused. Prefer `fused.secret("NAME")` (or `fused.secrets["NAME"]`) so values stay out of source control.
 
@@ -69,12 +69,12 @@ Design the UDF API so callers cannot widen what the code reads or how it queries
 
 ## DuckDB / SQL patterns
 
-1. **Bind values** — use `?` placeholders (or the driver’s equivalent) and pass values as the second argument to `execute`, not f-strings or concatenation for user-controlled data.
-2. **Allowlist identifiers** — column and table names cannot be bound like values; check them against a fixed `set` (or similar) before putting them in the SQL text.
+1. **Values (IDs, filters, file paths, …)** — Don’t drop them into the SQL with an f-string or `+`. Write `?` where each value goes, then pass the real values in a list: `con.execute("... WHERE x = ?", [value])`. DuckDB treats those as **plain data**, not as extra SQL.
+2. **Column or table names** — You can’t use `?` for names—only for values. Pick allowed names in code (e.g. a Python `set`), reject anything else, then build the small part of the query that contains the name.
 
-(The same ideas apply to Postgres, Snowflake, BigQuery clients, etc.)
+(Same pattern in other databases; syntax may differ.)
 
-Anti-pattern vs safer UDF (same query shape, different handling of `path` and filter values):
+**Anti-pattern:**
 
 ```python {8} showLineNumbers
 @fused.udf
@@ -87,6 +87,8 @@ def udf(user_id: str = "abc"):
         f"SELECT * FROM read_parquet('{path}') WHERE id = '{user_id}'"
     ).df()
 ```
+
+**Safe:**
 
 ```python {8-9} showLineNumbers
 @fused.udf
@@ -101,7 +103,7 @@ def udf(data_type: str = "type_a"):
     ).df()
 ```
 
-Identifiers after validation:
+**Column name from an allowed list:**
 
 ```python {10-11} showLineNumbers
 @fused.udf
@@ -160,7 +162,7 @@ You can require a **canvas-wide passcode** in Canvas settings so viewers must en
 
 :::note Passcode Canvas is experimental
 
-Passcode Canvas is currently in experimental mode. You need to go to Preferences > Experimental Features and enable "Canvas passcode protection".
+Passcode Canvas is currently in experimental mode. You need to go to [Preferences](/workbench/preferences) > Experimental Features and enable "Canvas passcode protection".
 
 This passcode has no character requirement and can be edited by anyone in your Fused team.
 
