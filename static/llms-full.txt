@@ -4852,6 +4852,210 @@ Once warm, subsequent realtime calls execute within seconds. Instances stay warm
 
 ================================================================================
 
+## Security best practices for UDFs
+Path: guide/working-with-udfs/udf-best-practices/security.mdx
+URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/security
+
+Fused UDFs are flexible, but callers and shared links should be treated with the same care as any public API. The sections below cover secrets, parameters, SQL, paths, Canvas access, and optional passcodes.
+
+## Use Secrets
+
+Never put passwords or API keys in UDF source. Add them in secrets management, then read them at runtime (for Snowflake, set names like `SNOWFLAKE_USER` and `SNOWFLAKE_PASSWORD` there—see Databases).
+
+**Do not: hardcode credentials**
+
+Do **not** put real passwords or keys in UDF source. Anyone with repo or UDF access can read them, and they leak in logs and diffs.
+
+```python  showLineNumbers
+@fused.udf
+def udf():
+
+    conn = snowflake.connector.connect(
+        user="janedoe",
+        password="do-not-commit-this",
+        account="xy12345",
+        warehouse="COMPUTE_WH",
+        database="MY_DB",
+        schema="PUBLIC",
+    )
+    return conn.cursor().execute("SELECT 1").fetchone()
+```
+
+**Do: load secrets from secrets management**
+
+Read secrets at runtime with `fused.secret("NAME")` or `fused.secrets["NAME"]` so values stay out of source control.
+
+```python  showLineNumbers
+@fused.udf
+def udf():
+
+    conn = snowflake.connector.connect(
+        user=fused.secret("SNOWFLAKE_USER"),
+        password=fused.secret("SNOWFLAKE_PASSWORD"),
+        account="your_account_identifier",
+        warehouse="your_warehouse",
+        database="your_database",
+        schema="your_schema",
+    )
+    cursor = conn.cursor()
+    cursor.execute("SELECT CURRENT_VERSION()")
+    df = cursor.fetch_pandas_all()
+    cursor.close()
+    conn.close()
+    return df
+```
+
+## Narrow parameters
+
+Design the UDF API so callers cannot widen what the code reads or how it queries.
+
+| Prefer | Avoid |
+|--------|--------|
+| Typed arguments (`limit: int`, `state: str`) | Raw SQL strings from callers |
+| A fixed path or table inside the UDF for one-off pipelines | A generic `path` or `sql` parameter (hard to validate, cache, and reason about) |
+| Explicit options (`columns`, `order_by` chosen from a small set) | Free-form fragments spliced into queries |
+| Serializable **data** (JSON, CSV, numbers, …) | Untrusted pickle; `eval` / `exec` / `compile` on caller input |
+
+## Don’t run caller-supplied code
+
+Parameters should be **data**, not code from callers.
+
+- **`pickle.load` / `pickle.loads`** on untrusted bytes can execute arbitrary code. Do not unpickle caller-controlled input (or unvetted files).
+- **`eval` / `exec` / `compile`** on caller-supplied strings — Never. Same for other “run this string as code” patterns.
+
+## DuckDB / SQL patterns
+
+1. **Values (IDs, filters, …)** — Don’t drop them into the SQL with an f-string or `+`. Write `?` where each value goes, then pass the real values in a list: `con.execute("... WHERE x = ?", [value])`. DuckDB treats those as **plain data**, not as extra SQL. For **paths**, fix or strictly validate them—see Do not expose the data source as a parameter.
+2. **Column or table names** — You can’t use `?` for names—only for values. Pick allowed names in code (e.g. a Python `set`), reject anything else, then build the small part of the query that contains the name.
+
+(Same pattern in other databases; syntax may differ.)
+
+**Anti-pattern:**
+
+```python  showLineNumbers
+@fused.udf
+def udf(user_id: str = "abc"):
+
+    path = "s3://bucket/data.parquet"
+    con = duckdb.connect()
+    return con.execute(
+        f"SELECT * FROM read_parquet('') WHERE id = ''"
+    ).df()
+```
+
+**Safe:**
+
+```python  showLineNumbers
+@fused.udf
+def udf(data_type: str = "type_a"):
+
+    path = "s3://bucket/data.parquet"
+    con = duckdb.connect()
+    return con.execute(
+        "SELECT * FROM read_parquet(?) WHERE data_type = ?",
+        [path, data_type],
+    ).df()
+```
+
+**Column name from an allowed list:**
+
+```python  showLineNumbers
+@fused.udf
+def udf(column: str = "data_type"):
+
+    path = "s3://bucket/data.parquet"
+    con = duckdb.connect()
+    allowed = 
+    if column not in allowed:
+        raise ValueError("Unsupported column")
+    query = f'SELECT "" FROM read_parquet(?)'
+    return con.execute(query, [path]).df()
+```
+
+## Do not expose the data source as a parameter
+
+Prefer fixing file paths and table names in the UDF body instead of taking them as arguments. That narrows what the UDF can access and keeps behavior predictable.
+
+A `path` or URL argument lets callers redirect reads to **any** object your runtime can reach (another bucket, a different tenant’s prefix, local files, etc.) unless you maintain a strict allowlist—which is easy to get wrong. **Workbench does not treat path-like parameters as overridable run arguments by default**, to reduce accidental or malicious path substitution. Use fixed locations in code for normal UDFs; the looser `path` example below is only for internal shared utilities.
+
+**Looser surface area — `path` as a parameter** (reasonable only for a reusable “preview any file”–style tool):
+
+```python  showLineNumbers
+@fused.udf
+def preview_parquet(path: str, number_rows_to_preview: int = 10):
+
+    con = duckdb.connect()
+    return con.execute(
+        "SELECT * FROM read_parquet(?) LIMIT ?",
+        [path, number_rows_to_preview],
+    ).df()
+```
+
+**Tighter surface area — path fixed inside the UDF:**
+
+```python  showLineNumbers
+@fused.udf
+def udf(number_rows_to_preview: int = 10):
+
+    path = "s3://fused-user/my-user/my_file.parquet"
+    con = duckdb.connect()
+    return con.execute(
+        "SELECT * FROM read_parquet(?) LIMIT ?",
+        [path, number_rows_to_preview],
+    ).df()
+```
+
+Predictable inputs improve safety and caching.
+
+## Scope access with Canvas
+
+Access is managed **per canvas** (team vs public, share links, passcodes when enabled). Everyone who can open a canvas sees the same UDFs on it and the same rules for calling them over HTTPS.
+
+If you only want to expose **some** UDFs—or a **different** audience—use a **separate canvas**: keep the public or broadly shared work on one canvas, and move UDFs that need tighter or different access to another canvas with the right shared settings.
+
+## [Experimental] Protect endpoints with Canvas passcode
+
+You can require a **canvas-wide passcode** in Canvas settings so viewers must enter it before the canvas loads. UDFs shared from that canvas use the same protection when called through those shared links.
+
+[Image: Canvas settings: Passcode protection with Require passcode, set passcode field, and Save]
+
+Passcode Canvas is currently in experimental mode. You need to go to Preferences > Experimental Features and enable "Canvas passcode protection".
+
+This passcode has no character requirement and can be edited by anyone in your Fused team.
+
+### Accessing Canvas with passcode
+
+Anyone who opens the shared canvas link is prompted for the passcode before the canvas loads.
+
+### Accessing UDFs with passcode
+
+Opening a UDF as an API requires sending the passcode in an `Authorization` header:
+
+Curl request:
+
+```bash
+curl -s \
+  -H 'authorization: fused-canvas-passcode <YOUR_PASSCODE>' \
+  "https://udf.ai/<YOUR_CANVAS_TOKEN>/my_udf.json"
+```
+
+Python request:
+
+```python
+
+response = requests.get(
+    "https://udf.ai/<YOUR_CANVAS_TOKEN>/my_udf.json",
+    headers=
+)
+```
+
+## See also
+
+- Shared Tokens
+- Secrets Management
+
+================================================================================
+
 ## Storage Options
 Path: guide/working-with-udfs/udf-best-practices/storage.mdx
 URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/storage
@@ -5221,6 +5425,10 @@ my_udf.to_fused()
 # You can reload your UDF and see the updated metadata
 fused.load('my_udf').metadata
 ```
+
+## Security
+
+URL and tool inputs should be treated as untrusted: narrow parameters, validate identifiers, and bind query values. See Security best practices for UDFs.
 
 ## Debug UDFs
 
@@ -18371,5 +18579,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-03-23
+Generated automatically from Fused documentation. Last updated: 2026-03-24
 Total sections: 5
