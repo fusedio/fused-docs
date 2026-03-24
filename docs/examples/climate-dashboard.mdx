@@ -44,8 +44,9 @@ Fused is built around the concept of [User Defined Functions (UDFs)](/guide/gett
 
 ```python
 @fused.udf
-def udf(path: str = 's3://fused-asset/data/era5/t2m/datestr=2024-01-01/0.parquet'):
+def udf():
     import pandas as pd
+    path = "s3://fused-asset/data/era5/t2m/datestr=2024-01-01/0.parquet"
     df = pd.read_parquet(path, columns=['daily_mean'])
 
     return df.head()
@@ -86,15 +87,25 @@ import TabItem from '@theme/TabItem';
       def udf(
           month: str = "2024-01",
       ):
+          import re
           import duckdb
-          result = duckdb.sql(f"""
-            SELECT 
-                datestr::VARCHAR as datestr,
-                ROUND(AVG(daily_mean), 2) as daily_mean_temp
-            FROM 's3://fused-asset/data/era5/t2m/datestr={month}-*/*.parquet'
-            GROUP BY datestr
-            ORDER BY datestr
-          """).df()
+
+          if not re.fullmatch(r"\d{4}-\d{2}", month):
+              raise ValueError("month must be YYYY-MM")
+
+          path_glob = f"s3://fused-asset/data/era5/t2m/datestr={month}-*/*.parquet"
+          con = duckdb.connect()
+          result = con.execute(
+              """
+              SELECT 
+                  datestr::VARCHAR AS datestr,
+                  ROUND(AVG(daily_mean), 2) AS daily_mean_temp
+              FROM read_parquet(?)
+              GROUP BY datestr
+              ORDER BY datestr
+              """,
+              [path_glob],
+          ).df()
 
           # Mount is accessible by Fused UDFs / Workbench
           output_fp = fused.file_path(f"monthly_climate/{month}.pq")
@@ -209,19 +220,20 @@ We can now write a UDF that gets all the monthly data and aggregates it by month
 @fused.udf(cache_max_age='0s')
 def udf():
     import duckdb
-    
-    # Listing all files on our mount directory
+
     monthlys = fused.api.list(fused.file_path(f"monthly_climate/"))
-    file_list = "', '".join(monthlys)
-    
-    result = duckdb.sql(f"""
-       SELECT 
-           LEFT(datestr, 7) as month,
-           ROUND(AVG(daily_mean_temp), 2) as monthly_mean_temp
-       FROM read_parquet(['{file_list}'])
-       GROUP BY month
-       ORDER BY month
-    """).df()
+    con = duckdb.connect()
+    result = con.execute(
+        """
+        SELECT 
+            LEFT(datestr, 7) AS month,
+            ROUND(AVG(daily_mean_temp), 2) AS monthly_mean_temp
+        FROM read_parquet(?)
+        GROUP BY month
+        ORDER BY month
+        """,
+        [monthlys],
+    ).df()
 
     return result
 ```

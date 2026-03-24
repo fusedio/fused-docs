@@ -31,29 +31,30 @@ The following example uses a simple CSV of [311 calls](https://gist.githubuserco
 
 <details>
 <summary>Code</summary>
-```python showLineNumbers {13}
+```python showLineNumbers {11}
 @fused.udf
 def udf(
-    noise_311_link: str = "https://gist.githubusercontent.com/kashuk/670a350ea1f9fc543c3f6916ab392f62/raw/4c5ced45cc94d5b00e3699dd211ad7125ee6c4d3/NYC311_noise.csv",
     res: int = 9
 ):
+    noise_311_link = "https://gist.githubusercontent.com/kashuk/670a350ea1f9fc543c3f6916ab392f62/raw/4c5ced45cc94d5b00e3699dd211ad7125ee6c4d3/NYC311_noise.csv"
     # Load common utilities (includes duckdb helper)
     common = fused.load("https://github.com/fusedio/udfs/tree/b7637ee/public/common/")
     con = common.duckdb_connect()
 
     # Keep latitude and longitude (averaged per hex) alongside the hex count
-    qr = f"""
-    SELECT
-      h3_latlng_to_cell(lat, lng, {res}) AS hex,
-      COUNT(*) AS cnt,
-      AVG(lat) AS lat,
-      AVG(lng) AS lng
-    FROM read_csv_auto('{noise_311_link}')
-    WHERE lat IS NOT NULL AND lng IS NOT NULL
-    GROUP BY 1
-    """
-
-    df = con.sql(qr).df()
+    df = con.execute(
+        """
+        SELECT
+          h3_latlng_to_cell(lat, lng, ?) AS hex,
+          COUNT(*) AS cnt,
+          AVG(lat) AS lat,
+          AVG(lng) AS lng
+        FROM read_csv_auto(?)
+        WHERE lat IS NOT NULL AND lng IS NOT NULL
+        GROUP BY 1
+        """,
+        [res, noise_311_link],
+    ).df()
 
     # Debugging: print the resulting DataFrame schema
     print(df.T)
@@ -79,16 +80,19 @@ res: int = 9
 - Field to hexagonify  & Aggregation function (max 'population', avg 'income', mean 'elevation', etc.). In this example simply counting the number of calls per hex:
 ```python showLineNumbers
 # Keep latitude and longitude (averaged per hex) alongside the hex count
-qr = f"""
-SELECT
-    h3_latlng_to_cell(lat, lng, {res}) AS hex,
-    COUNT(*) AS cnt,
-    AVG(lat) AS lat,
-    AVG(lng) AS lng
-FROM read_csv_auto('{noise_311_link}')
-WHERE lat IS NOT NULL AND lng IS NOT NULL
-GROUP BY 1
-"""
+df = con.execute(
+    """
+    SELECT
+        h3_latlng_to_cell(lat, lng, ?) AS hex,
+        COUNT(*) AS cnt,
+        AVG(lat) AS lat,
+        AVG(lng) AS lng
+    FROM read_csv_auto(?)
+    WHERE lat IS NOT NULL AND lng IS NOT NULL
+    GROUP BY 1
+    """,
+    [res, noise_311_link],
+).df()
 ```
 
 ---
@@ -117,11 +121,10 @@ Link to UDF in [Fused Catalog](https://www.fused.io/workbench/catalog/census_to_
 
 <details>
 <summary>Code</summary>
-```python showLineNumbers {31}
+```python showLineNumbers {52}
 @fused.udf
 def udf(
     bounds: fused.types.Bounds = [-125.0, 24.0, -66.9, 49.0],
-    path: str = "s3://fused-asset/demos/catchment_analysis/simplified_acs_bg_ca_2022.parquet",
     min_hex_cell_res: int= 11, # Increase this if working with high res local data
     max_hex_cell_res: int= 4,
 ):
@@ -129,6 +132,7 @@ def udf(
     import geopandas as gpd
     
     common = fused.load("https://github.com/fusedio/udfs/tree/f430c25/public/common/")
+    path = "s3://fused-asset/demos/catchment_analysis/simplified_acs_bg_ca_2022.parquet"
     
     # Dynamic H3 resolution
     def dynamic_h3_res(b):
@@ -153,10 +157,10 @@ def udf(
     
     # Aggregate to parent hexagons and calculate percentages
     # In this case we're aggregating by sum
-    query = f"""
+    query = """
     WITH agg AS (
         SELECT 
-            h3_cell_to_parent(hex, {parent_res}) AS hex, 
+            h3_cell_to_parent(hex, ?) AS hex, 
             SUM(POP) AS POP
         FROM df_hex
         GROUP BY hex
@@ -168,8 +172,8 @@ def udf(
     FROM agg
     ORDER BY POP DESC
     """
-    
-    return con.sql(query).df()
+
+    return con.execute(query, [parent_res]).df()
 ```
 </details>
 
@@ -514,7 +518,7 @@ For vector data, use `.map()` to parallelize hexagonification:
 This method is for datasets < 100k vectors. Run in Single (viewport) mode, not Tiled.
 :::
 
-```python showLineNumbers {16,28}
+```python showLineNumbers {16,28,30}
 @fused.udf
 def udf(
     bounds: fused.types.Bounds = [8.4452104984018,41.76046948393174,8.903258920921276,42.053137175457145]
@@ -544,14 +548,17 @@ def hexagonify_udf(geometry, res: int = 12):
     gdf = common.to_gdf(geometry)
     gdf = common.gdf_to_hex(gdf[['geometry']], res=15)
     con = common.duckdb_connect()
-    df = con.sql(f"""
-        SELECT h3_cell_to_parent(hex, {res}) AS hex, 
+    df = con.execute(
+        """
+        SELECT h3_cell_to_parent(hex, ?) AS hex, 
                COUNT(1) AS cnt, 
                SUM(h3_cell_area(hex, 'm^2')) AS area
         FROM gdf
         GROUP BY 1
         ORDER BY 1
-    """).df()
+        """,
+        [res],
+    ).df()
     return df
 
 
