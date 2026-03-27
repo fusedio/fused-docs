@@ -948,7 +948,7 @@ Learn more about QGIS
 
 ================================================================================
 
-## Tokens & Endpoints
+## Tokens & endpoints
 Path: guide/data-input-outputs/export-api/tokens-endpoints.mdx
 URL: https://docs.fused.io/guide/data-input-outputs/export-api/tokens-endpoints
 
@@ -1121,11 +1121,11 @@ See Caching for more details.
 
 ================================================================================
 
-## Connecting the AI to Data
+## Connecting the AI to data
 Path: guide/data-input-outputs/import-connection/ai-data-connection.mdx
 URL: https://docs.fused.io/guide/data-input-outputs/import-connection/ai-data-connection
 
-# Connecting the AI to Data
+# Connecting the AI to data
 
 User Defined Tools let you use UDFs as tools to provide the AI with extra context about your data. This enables the AI to query your databases, search your documents, or interact with any data source you configure.
 
@@ -1423,12 +1423,14 @@ Set `user` and `password` in the Fused secrets management UI first.
 
 ```python showLineNumbers
 @fused.udf
-def udf(query: str = 'SELECT CURRENT_VERSION()'):
+def udf():
 
+    query = 'SELECT CURRENT_VERSION()'
+    
     try:
         conn = snowflake.connector.connect(
-            user=fused.secret('SNOWFLAKE_USER'),
-            password=fused.secret('SNOWFLAKE_PASSWORD'), 
+            user=fused.secrets['SNOWFLAKE_USER'],
+            password=fused.secrets['SNOWFLAKE_PASSWORD'], 
             account='your_account_identifier',
             warehouse='your_warehouse',
             database='your_database',
@@ -1553,6 +1555,14 @@ def udf(repo_name: str = "athasdev/athas"):
      
     return total_df
 ```
+
+## Allowlist Fused IPs
+
+If your database requires IP allowlisting, add the Fused IPs:
+- `44.230.70.117/32`
+- `52.42.164.181/32`
+
+Contact Fused for more information is required as `info@fused.io`
 
 ================================================================================
 
@@ -1683,15 +1693,15 @@ def udf(
 
 ================================================================================
 
-## Local Files
+## Local files
 Path: guide/data-input-outputs/import-connection/local-files.mdx
 URL: https://docs.fused.io/guide/data-input-outputs/import-connection/local-files
 
-# Local Files
+# Local files
 
 Quickly bring any local data into Fused.
 
-## Drag & Drop
+## Drag & drop
 
 Drop files directly into the File Explorer:
 
@@ -1707,7 +1717,7 @@ fused.api.upload("my_local_file.csv", "fd://my_data/file.csv")
 
 `fd://` is the Fused provisioned private S3 path for your team.
 
-## Optimize Data Loading
+## Optimize data loading
 
 **For files &lt; 1GB:** Use function caching to speed up loading:
 
@@ -2574,11 +2584,11 @@ See Cloud Storage for details on connecting your own buckets.
 
 ================================================================================
 
-## First UDF & Basics
+## First UDF & basics
 Path: guide/getting-started/first-udf-basics.mdx
 URL: https://docs.fused.io/guide/getting-started/first-udf-basics
 
-# First UDF & Basics
+# First UDF & basics
 
 ## Fused
 
@@ -2760,11 +2770,11 @@ For **dedicated jobs**, only the error summary is shown.
 
 ================================================================================
 
-## Workbench Intro
+## Workbench intro
 Path: guide/getting-started/workbench-intro.mdx
 URL: https://docs.fused.io/guide/getting-started/workbench-intro
 
-# Workbench Intro 
+# Workbench intro 
 
 Workbench is Fused's browser based IDE. 
 
@@ -4893,34 +4903,19 @@ Once warm, subsequent realtime calls execute within seconds. Instances stay warm
 
 ================================================================================
 
-## Security best practices for UDFs
+## Write UDFs securely
 Path: guide/working-with-udfs/udf-best-practices/security.mdx
 URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/security
 
 Fused UDFs are flexible, but callers and shared links should be treated with the same care as any public API. The sections below cover secrets, parameters, SQL, paths, Canvas access, and optional passcodes.
 
-## Use Secrets
+## Use secrets
 
 Never put passwords or API keys in UDF source. Add them in secrets management, then read them at runtime (for Snowflake, set names like `SNOWFLAKE_USER` and `SNOWFLAKE_PASSWORD` there—see Databases).
 
 **Do not: hardcode credentials**
 
 Do **not** put real passwords or keys in UDF source. Anyone with repo or UDF access can read them, and they leak in logs and diffs.
-
-```python  showLineNumbers
-@fused.udf
-def udf():
-
-    conn = snowflake.connector.connect(
-        user="janedoe",
-        password="do-not-commit-this",
-        account="xy12345",
-        warehouse="COMPUTE_WH",
-        database="MY_DB",
-        schema="PUBLIC",
-    )
-    return conn.cursor().execute("SELECT 1").fetchone()
-```
 
 **Do: load secrets from secrets management**
 
@@ -4931,8 +4926,8 @@ Read secrets at runtime with `fused.secret("NAME")` or `fused.secrets["NAME"]` s
 def udf():
 
     conn = snowflake.connector.connect(
-        user=fused.secret("SNOWFLAKE_USER"),
-        password=fused.secret("SNOWFLAKE_PASSWORD"),
+        user=fused.secrets["SNOWFLAKE_USER"],
+        password=fused.secrets["SNOWFLAKE_PASSWORD"],
         account="your_account_identifier",
         warehouse="your_warehouse",
         database="your_database",
@@ -4945,6 +4940,14 @@ def udf():
     conn.close()
     return df
 ```
+
+### Outputs, logs, and environment
+
+Use `fused.secrets` only inside the UDF (for example to open connections). **Do not** return or print those values.
+
+**`print` statements are also returned to users** — Anything you `print` is also shown to the user as run logs. Treat it like `return`: never print tokens, secret values, full request headers, or anything you would not return.
+
+**Secrets and environment variables** — Do not expose the secrets or environment variables: avoid returning or printing `os.environ`, listing every variable, or similar. Environment variables can include cloud credentials and Fused-managed secrets.
 
 ## Narrow parameters
 
@@ -4972,17 +4975,6 @@ Parameters should be **data**, not code from callers.
 (Same pattern in other databases; syntax may differ.)
 
 **Anti-pattern:**
-
-```python  showLineNumbers
-@fused.udf
-def udf(user_id: str = "abc"):
-
-    path = "s3://bucket/data.parquet"
-    con = duckdb.connect()
-    return con.execute(
-        f"SELECT * FROM read_parquet('') WHERE id = ''"
-    ).df()
-```
 
 **Safe:**
 
@@ -5097,7 +5089,7 @@ response = requests.get(
 
 ================================================================================
 
-## Storage Options
+## Storage options
 Path: guide/working-with-udfs/udf-best-practices/storage.mdx
 URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/storage
 
@@ -5144,11 +5136,11 @@ Error: No such file or directory: '/mnt/cache/'
 
 ================================================================================
 
-## Working as a Team
+## Working as a team
 Path: guide/working-with-udfs/udf-best-practices/version-control.mdx
 URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/version-control
 
-# Working as a Team
+# Working as a team
 
 Version control your UDFs with GitHub to share across your team and track changes over time.
 
@@ -12730,796 +12722,11 @@ URL: https://docs.fused.io/python-sdk/changelog
 
 # Changelog
 
-## v2.2.2 (2026-03-19)
+## v2.3.0 (2026-03-26)
 
-**Improvements**
-- UDFs don’t run when you open a canvas until it has been saved at least once
-- For slow saves, Workbench shows a warning instead of a blocking modal
-- Opening a canvas no longer auto-runs UDFs; the auto-run toggle is respected
-- For team-shared canvases, a warning explains that the share link can’t be opened in a new tab
-- Canvas renaming and saving improvements; duplicate name on upload is resolved automatically
-- [Experimental] Widgets: Map-H3 (emit on move, UTM pixel area, updates); bar chart (auto bottom margin from label length); JSON UI (edge animation, layout fixes); big number (auto shrink)
+**New Home page**
 
-**Bug fixes**
-- Canvas save state and save button state (including after zip upload) corrected
-- Opening the Version page no longer triggers UDF reruns
-- Checkpoint diff no longer includes README-only changes
-- Node toolbar appearing correctly and capture preview for canvas-rendered graphs fixed
-- UDF Table view: overlay no longer hides when changing filters
-
-**Upgrades**
-- DuckDB reverted to v1.4.3 due to a CRS/geometry issue in v1.5.0
-
-## v2.2.1 (2026-03-16)
-
-**Canvas-wide shared tokens**
-
-UDFs no longer use per-UDF access tokens; sharing is at the canvas level. The new format is as follows:
-
-- `fc_****` prefix for canvas tokens
-- `my_udf_name` for any UDFs in the canvas
-- `.parquet` extension for Parquet files
-
-Example:
-```python showLineNumbers
-https://udf.ai/fc_MY_CANVAS_TOKEN/my_udf_name.parquet
-```
-
-Previous `fsh_****` tokens remain supported but are deprecated.
-
-This will require you to share your canvas first. Read more about the new canvas tokens in the updated UDF as API guide.
-
-**Finer AI control in Canvas**
-
-- AI chat: Canvas will now show a prominent "AI is running" indicator allowing you to stop AI at any time.
-- OpenAI models updated to GPT-5.4
-
-**Improvements**
-- **fused.ingest**: GeoParquet 1.1 with optional bbox column
-- New toggle: Turn "Auto-run" for canvases OFF. When toggle is off, UDFs will NOT automatically run when the canvas is loaded or edited.
-- You can now duplicate UDFs & Sticky notes with `Cmd + D` or `Ctrl + D`
-- Checkpoint modal: better folder name validation
-- UDF execution failure now shows details
-- Canvas UI refinements: name save, share visibility, snapping edge handle
-- You can now resize multiple UDFs and sticky notes at the same time
-- [Experimental] Widgets: map-H3 component and map widget interaction fixes
-- [Experimental] Widgets: enhanced logging; text editing in studio nodes
-- [Experimental] Improved PR creation from checkpoints 
-
-**Bug fixes**
-- Fixed: UDFs not auto-running on canvas reload/refresh
-- UDF execution modal only when manually triggered
-- Team-scoped canvas tokens running correctly
-- Hidden UDFs will not be executed when the canvas is loaded or edited
-- Blocking modal when unsaved for a while, prompting download or checkpoint
-
-## v2.2.0 (2026-03-11)
-
-**Manual cache invalidation**
-
-Click "Invalidate" to manually reset the cache of any UDF.
-
-**[Experimental] Canvas version control**
-
-Version control your canvases through GitHub (experimental).
-
-**Improvements**
-- [Experimental] Auto invalidate cache when code and/or parameters from upstream UDFs changes
-- [Experimental] Widget UI Improvements: click edges to connect a new UDF in 1 click
-- Parameter cascading: Any UDF with parameters will automatically update downstream UDFs when the parameters changes
-- Capture button in collapsed left sidebar view
-- Restore canvas parameters from checkpoints
-- AI: UDF rename and chat naming, keyboard handling
-- Improved image pasting to canvas
-
-**Upgrades**
-- DuckDB v1.5.0
-
-**Bug fixes**
-- No confirmation modal when importing the initial canvas
-- Run timer when no UDF is running
-- Starting batch jobs from Workbench fixed
-
-## v2.1.1 (2026-03-03)
-
-**Collapsible left sidebar**
-
-Want more coding space? Collapse the left panel!
-
-**Preview your Canvas in Catalog**
-
-Canvas Catalog now will show previews of your Canvas
-
-**Various bug fixes**
-
-Improved canvas stability, sticky notes formatting, AI responses, etc.
-
-**Improvements**
-- Profile page now shows tokens usage
-- Experimental: Slack integration
-- Various canvas improvements
-- Various AI improvements
-- Various bug fixes
-
-## v2.1.0 (2026-02-26)
-
-**🧠 Canvas-wide AI**
-
-AI Chat now sees your whole Canvas & can search across all your UDFs!
-
-**⏯️ "Run" is now per UDF**
-
-We've removed the Run / Freeze button at the Canvas level, instead we now have a dedicated "Run" button for every UDF. 
-- UDFs don't run on any change anymore
-- Hiding a UDF (clicking the eye icon) will prevent it from running
-
-**🗒️ Sticky notes now support markdown!**
-
-Bullet points, italic, links, you can now do all of that in sticky notes!
-
-**Breaking Changes**
-- Removed "App Builder" from deprecated features. Fused Apps can still be toggled on under the "Experimental" tab in Preferences. This allows you to still build Fused Apps directly in canvas.
-
-**New Features**
-- Paste images directly in Canvas! 
-- AI can now create Canvas checkpoints.
-- Download zip button for shared apps.
-- Canvas preview images.
-- Sticky notes: color picker.
-- GPT 5.3 Codex model available in AI chat.
-- Changelog modal now shown in Workbench on new deployments.
-
-**Improvements**
-- Experimental: "JSON UI" renamed to "Widget" across the product.
-- Smarter detection of batch jobs & parallel runs in Workbench.
-- Batch & Parallel runs will not show a modal anymore when first opening a Canvas, instead simply be paused.
-- Canvas: improved helper lines with equal spacing & multi-selection support, outline node capture.
-- AI: auto compaction, improved error handling, streaming switched from WebSocket to SSE.
-- Default UDF runs are now `verbose=False`.
-- Fused tokens highlighted as primary in editor.
-
-**Bug Fixes**
-- App sharing, sidebar filtering, and UDF copying from shared canvases.
-- Python SDK: warning when ignoring `n_processes_per_worker` for local engine.
-- Various AI, Canvas & UDF bug fixes.
-
-## v2.0.4 (2026-02-18)
-
-**New Features**
-- Checkpoints can now be named! 
-
-**Improvements**
-- Canvas catalog now loads faster.
-- Canvas embed mode: JSON UI dropdowns fixed.
-- UDF argument type can be specified as strings (e.g. `"fused.types.Bounds"`).
-- Canvas general improvements.
-- Versions page cleanup.
-
-**Bug Fixes**
-- [Experimental] Prevent dropdown reset in JSON UI in share mode.
-- Map no longer gets blocked in certain cases.
-- Memory usage now shown properly in logs.
-- Copy UDF when adding from Command Palette.
-- Modal deduplication fixes.
-- Prevent "not logged in" flash while fetching access tokens.
-- Geometry now renders correctly in tables.
-- Catalog no longer appears on share page.
-- Canvas download without state fixed.
-- Batch job instance type now passed correctly from client.
-
-## v2.0.3 (2026-02-11)
-
-**New Features**
-
-- Directly ask the AI to search for any code across all your UDFs! (RAG over user UDFs and UDF indexer).
-- Support for Opus 4.6 in AI chat.
-- Canvas history for UDF renaming with undo/redo support.
-- Confirmation before deleting UDFs that have batch jobs or a map.
-
-**Improvements**
-- Better canvas auto-saving.
-- Preferences modal, canvas centering (like Fused Maps), and catalog background behavior.
-- Canvas memory optimization and modal display fixes.
-- AI: MCP adjustments, and RAG/chat touchups.
-
-**Bug Fixes**
-- Delete UDFs via autosave instead of individual deletes.
-- Re-opening canvas no longer makes team UDFs read-only.
-- H3 ingest: fallback logic to large instance.
-- Prevent infinite render loop in AI chat; fix chat history bug.
-- File explorer: tooltips display correctly.
-- Default collection can be created during partial sync.
-
-## v2.0.2 (2026-02-05)
-
-**New Features**
-- AI: Chat history button to jump to previous chats.
-
-**Improvements**
-- Checkpoint actions disabled while auto-saving.
-- Fewer unnecessary network requests.
-
-**Changes**
-- UDF Explorer and File Explorer removed from Canvas center sticky bar (still accessible in top left above UDF list).
-
-**Bug Fixes**
-- Canvas: UDF list scroll, app catalog tab switching, and general improvements.
-- Table widget: copying selected text no longer copies the whole UDF.
-- AI: Profile modal and chat text selection.
-- Various AI and Canvas bug fixes.
-
-## v2.0.1 (2026-02-03)
-
-Fast follow release to fix some issues with the new Canvas-first architecture.
-
-**Changes**
-- `@fused.udf(instance_type=...)` deprecated in favor of `@fused.udf(engine=...)`. The `engine` parameter accepts `'local'`, `'remote'`, `'realtime'`, or batch instance types (`'small'`, `'medium'`, `'large'`, `'m5.large'`, etc.).
-- Removed File Explorer and UDF Explorer from the Canvas lower sticky bar.
-- `JobPool.df()` renamed to `JobPool.logs_df()`. New `df()` is an alias for `collect()`.
-
-**Bug Fixes**
-- Fixed checkpoint restore layout and modal UI.
-- Fixed Canvas flickering and viewport change issues.
-- Fixed multi-select rerun behavior.
-- History size now configurable in Preferences.
-- Various AI and Canvas bug fixes.
-
-## v2.0.0 (2026-02-02)
-
-This is a major release introducing a new Canvas-first architecture. UDFs now live inside Canvases, with a simplified Workbench layout and updated `fused-py` API.
-
-**Breaking Changes**
-- UDFs now belong to a Canvas. UDFs calling `fused.load()` or `fused.run()` to UDFs outside the current Canvas will fail. See Migration below.
-- `fused.run(udf, var=1)` is now `my_udf(var=1)`.
-- `fused.submit(my_udf, arg_list)` is now `my_udf.map(arg_list)`.
-
-**New Features**
-- **Canvas-first architecture:** Every UDF now lives inside a Canvas. Think of Canvases as folders and UDFs as files.
-- **Auto-save:** UDFs save automatically as you edit. No more manual saves.
-- **Checkpoints:** Save snapshots of your Canvas state and restore them anytime.
-- **Undo support:** Accidentally delete a UDF? Press `Cmd+Z` (`Ctrl+Z` on Windows/Linux) to bring it back.
-- **Copy/Paste UDFs:** `Cmd+C` any UDF and `Cmd+V` to paste it into any Canvas.
-- **Multi-tab Workbench:** Open multiple Canvases in separate browser tabs.
-
-**Improvements**
-- Unified Workbench layout: Canvas, Map, and Code Editor now share a single view.
-- Simplified navigation: Jobs, Tokens, and Preferences moved under Account (top right).
-- Canvas catalog now accessible from the Fused logo (top left).
-- Sharing a Canvas automatically embeds your current view.
-- AI now thinks before implementing inline changes.
-
-**Deprecations**
-- App Builder is deprecated. Still accessible under Account → Preferences → Deprecated.
-
-### Migration
-
-**What happens to my existing UDFs?**
-- UDFs already in a Canvas → No change.
-- Standalone UDFs → Moved to a `default` Canvas.
-- UDFs in multiple Canvases → Each Canvas now has its own independent copy.
-
-**Fixing cross-Canvas UDF calls:**
-
-If you have UDFs calling `fused.load()` or `fused.run()` to UDFs in other Canvases:
-1. **Copy the UDF** into the current Canvas, or
-2. **Load from GitHub:** `fused.load("https://github.com/...")` (see load methods), or
-
-## v1.30.1 (2026-01-22)
-
-**New Features**
-- Experimental: Fused Apps can be added to canvas.
-- Experimental: JSON-Render UI can be added to canvas.
-- `Udf.get_access_token` function.
-
-**Improvements**
-- Various canvas improvements.
-- AI tools run in the Workbench.
-
-**Bug Fixes**
-- Workbench will prevent editing in multiple tabs that could result in unintended changes.
-- Fixed flickering of the canvas sidebar.
-- Some canvas nodes (batch jobs and others) will have opaque backgrounds to make them easier to read.
-- Fixed auto retry of ingestion batch jobs.
-- Fixed UDFs losing position in canvas.
-- Fixed a bug where batch jobs would take longer to start.
-- Fixed a bug where inline diffs could overlap.
-- Fixed a bug where stdout (results panel) could fail to show for some UDFs.
-
-## v1.30.0 (2026-01-14)
-
-**New Features**
-- You can Command-click (Ctrl-click on Windows/Linux) on output from UDF to navigate to the line of code that produced that output.
-- Added an API to get the currently executing UDF.
-- `n_processes_per_worker` supports different return types.
-- AI settings have been overhauled. Old profile prompts can be retrieved from the Preferences page.
-- Job results will show timeline of starting the job in the Jobs Page
-- File explorer has a separate play/pause state.
-
-**Improvements**
-- Tile UDFs won't show multiple "Large data" warnings.
-- Fixes for ingesting large string columns.
-- `fused.submit` will not run the current UDF recursively.
-- Many bug fixes included in this release.
-- Many improvements to UDF connections (edges) and messaging in Canvas.
-
-## v1.29.0 (2025-12-18)
-
-**New Features:**
-- Winter holiday decorations are now added at the top of the Workbench page (this can be disabled in
-  the preferences page.)
-- `fused.submit` supports `n_processes_per_worker` to batch work together when calling realtime
-  instances.
-- Experimental: A passcode can be set on a shared canvas.
-
-**Improvements:**
-- Canvas UDF list has been redesigned to keep the UI more consistent and discoverable.
-- Canvas catalog will be cached locally.
-- Workbench Tokens and Preferences pages now show as modals above your currently opened page.
-- Upgraded DuckDB to v1.4.3.
-- Batch jobs page shows run time, shows exact memory and disk usage, and Fused will keep track
-  of additional status information about batch jobs.
-- "Fix" prompts for AI now quickly show a few options.
-- Various AI and canvas interface improvements.
-- `fused.ingest` accepts a job name, which will be shown on the batch jobs page.
-
-**Bug Fixes:**
-- Fixed a bug where 0 byte and unusually nanmed objects could not be deleted through the file explorer
-- Optimized memory usage when ingesting raster data.
-- Batch jobs page is more accurate about errors in logs.
-- Fixed a bug with using arrow keys to navigate on the canvas page.
-- Fixed a bug with passing some numpy types in `fused.submit`.
-- File Explorer will always show the file preview, even when the canvas or map builder is paused.
-
-## v1.28.0 (2025-12-08)
-
-**New Features:**
-- Jobs page in Workbench now shows metrics, progress, and what UDF was run.
-- Batch jobs will now be named after the UDF being run, by default.
-- Raster outputs now support float and various integer types for PNG and JPG output. Values are assumed to be 0-1 for float and `min-max` for each integer type.
-- Significantly improved the performance of loading large datasets in Workbench.
-
-**Improvements:**
-- Workbench now supports `job://` style URLs for batch job IDs.
-- Various improvements to ingesting H3 datasets.
-- Improved the suggestion and code results shown in the AI chat.
-- Performance improvements in Workbench code editor.
-- Show progress bar from fused.submit in batch jobs
-
-**Bug Fixes:**
-- Various Canvas bug fixes.
-- Don't show duplicate status of AI on canvas nodes.
-- Fixed an issue where certain UDF responses could be truncated.
-- Batch jobs can be run with more parameters being optional.
-- Batch jobs with multiple parameters will not incorrectly be cached.
-- Shared canvas pages will not have the AI profile selector.
-- Fixed an issue where team UDFs may be `load`ed inadvertently instead of a user's own UDF.
-- Fixed a visual bug with the Add Billing button.
-- Sticky notes in Canvas will not show as loading.
-- Fixed situations where code performance profile would not be sent back to Workbench when lots of `print` statements were run.
-
-## v1.27.0 (2025-11-24)
-
-**New Features:**
-- Added Gemini 3 model to AI options.
-- Added `fused.h3.run_ingest_raster_to_h3` allowing for raster ingestion into H3 cells.
-- Batch jobs started from Workbench will be named after the UDF they were started from. They can also have the disk size specified.
-
-**Improvements:**
-
-Batch jobs:
-- We began overhauling the jobs list page in Workbench. It should be more performant, show additional instance-related details, and fix bugs where previously selected jobs would be shown.
-- Renaming a UDF will show a confirmation modal.
-- On-prem batch jobs will have access to the calling user's email address.
-- Adjusted the default disk sizes for batch jobs.
-
-Canvas:
-- Canvas features have been moved to their own section of the preferences page.
-- Canvas shows an indicator when a UDF will not trigger another UDF because it is unsaved.
-- Added new Canvas search interface.
-- Added a dedicated docs page with examples of Canvas
-
-Code Editor:
-- AI code changes can be partially accepted/rejected.
-
-**Bug Fixes:**
-- The code editor gutter will no longer flash forever when loading some UDFs.
-- Fixed bugs with batch jobs with unusual settings not being runnable and not being cancelable, and with batch jobs in GCP.
-- Fixed bugs with canvas not connecting UDF nodes, looping rerunning UDFs, or showing incorrect UDF run states.
-- When running multiple UDFs from Workbench, you will not have to individually cancel running batch jobs if batch job UDFs are selected.
-- Fixed various UI and navigation bugs in Workbench.
-- Max data auto load limit will be applied to tile UDF requests.
-- Adjusted AI prompts.
-
-## v1.26.3 (2025-11-19)
-
-**Bug Fixes:**
-- Fixed a bug calling shared token UDFs in Fused Apps.
-
-## v1.26.2 (2025-11-17)
-
-**New Features:**
-- You can filter for UDFs in the canvas UDF list.
-- Currently open UDFs will show in omnisearch.
-- Updated available AI models.
-
-**Improvements:**
-- Canvas outlines have been improved.
-- Added a Switch repository button to the version page.
-- Batch jobs default to a larger disk size.
-- DuckDB upgraded to v1.4.2.
-- Improved performance of rendering some HTML responses in Workbench.
-
-**Bug Fixes:**
-- Fixed a bug with calling `fused.submit` in a loop.
-- Fixed passing environment variables to batch jobs running in GCP.
-- Fixed a layout shift in omnisearch.
-- Fixed running some async UDFs.
-
-## v1.26.1 (2025-11-13)
-
-**Improvements:**
-- Added package `whitebox-workflows`.
-
-**Bug Fixes:**
-- Profile page debug tabs are condensed into a single debug tab.
-- Removed some more unused debug information from canvas exports.
-- Adjusted `fused.submit` sleep times when running more tasks than workers.
-- Improved performance of file explorer in Firefox.
-- Fixed bugs where AI diffs could lock up the page.
-- Fixed bugs where AI diffs could disappear without being accepted.
-- Fixed bugs with AI queries against loaded data when the UDF had been renamed.
-- Changed Canvas drag behavior.
-- Fixed the code timing profile not appearing.
-
-## v1.26.0 (2025-11-12)
-
-**New Features:**
-- AI can run queries against loaded data using DuckDB in Explain mode.
-- UDFs can send parameters to other UDFs, which will appear as edges and can trigger runs.
-- New experimental option for "floating" edges in canvas.
-- New experimental snap-to-guideline in canvas.
-- Hovering over a UDF in canvas will show a code preview.
-- New enterprise deployment mode.
-
-**Improvements:**
-- HTML output of UDFs in Canvas is adjusted to be easier to see.
-- Workbench will show a message if duplicate UDF names or IDs are loaded.
-- Simplified the UDF conflict modal when possible.
-- GCP environments now support more and larger instance types (M3).
-- GCP batch jobs support caching.
-- "Reset" in Workbench will also reset parameters on UDFs.
-- Map visualization settings now support AI changes.
-- Workbench will now cache UDF content locally.
-- UDF share URLs can now have the output format specified using a file extension.
-- UDF name changes will be saved immediately.
-- Added GLM-4.6 model option.
-- Adjusted how raster (image) data will render in Canvas.
-
-**Bug Fixes:**
-- Fixed bugs with inline diffs generated by AI.
-- URLs highlighted in Workbench will include parts after `&`.
-- Fixed bugs with collapsing content in the UDF list in canvas.
-- Fixed bugs with starting batch jobs in GCP.
-- Fixed `all_succeeded` in `fused.submit` with batch jobs.
-- Fixed bugs with importing UDFs from GitHub having conflicts.
-- Restored table view in file explorer.
-- Fixed a bug with the map visualization preset button not applying, and with clicking off the form.
-- Fixed a bug with public UDF tokens not navigating to the catalog.
-- Canvas save-all should be faster.
-- Fixed bugs with finished or failed batch jobs appearing as In Progress.
-- Disabled `tqdm` progress bar output in batch jobs.
-- Fixed possible recursion storm with batch jobs.
-- AI prompts from Canvas will switch to the Build profile.
-- Canvas will not draw edges from a UDF to itself.
-- Fixed being able to remove a shared token from Workbench when the token is no longer valid.
-- Fixed batch jobs incorrectly showing as running in canvas.
-- Fixed Reset to GitHub not resetting some state.
-- Fixed the versions page causing UDFs to re-run.
-- Fixed scaling issues with some API calls.
-- Fixed Workbench switching pages under some modals.
-- `fd` paths will be resolved in Workbench and replaced with the appropriate `s3` (or other) URL.
-- Removed some unused debug information from canvas exports.
-- Fixed the Omnisearch input getting focus after closing a modal.
-
-## v1.25.1 (2025-10-29)
-
-**New Features:**
-- Experimental relationships (edges) between canvas nodes, allowing for creating a new UDF from an existing data UDF, seeing the data relationships between UDFs, and triggering a chain of UDFs.
-
-**Improvements:**
-- Canvas nodes will show "Rendering" when waiting for the browser.
-- AI chat can now see the list of functions and UDFs.
-- AI chat can call a tool to execute the UDF itself.
-- AI chat now features exacto models.
-- Workbench will ask to confirm if you leave the tab while a save is in progress.
-- UDF Explorer in canvas now includes open shared URL button.
-- Code folding is now configured to not fold the `udf` function.
-- Random UDF names are chosen from a larger pool.
-- Improved performance of loading UDF endpoints.
-- HTML output used in Canvas will default to having some additional code and styling added.
-- `Xarray` upgraded to 2025.10.01.
-- Parameters passed to `fused.run` will be more consistently serialized.
-
-**Bug Fixes:**
-- Adjusted the UI for paused canvas.
-- UDF actions in canvas will look the same as the rest of the app.
-- Adjusted Hyparquet link location.
-- Fixed deleting S3 directories with many objects.
-- Fixed save all UDFs when names conflict.
-- UDF favorites can be saved in the cloud.
-- AI chat will have more consistent ordering of context items.
-- AI model selected for inline edits will be persisted.
-- Fixed bugs with UDFs showing as "running" in canvas even though they were not actually running.
-- Fixed bugs where the UDF Explorer listing would get truncated for users with many UDFs.
-- Canvas will not reorder nodes in shared mode.
-- Fixed an error when running UDFs with many lines of code and the profiler option was on.
-- Fixed "remove" being disabled on some UDFs on canvas.
-- Canvas sticky notes being removed will result in them being deleted permanently.
-- UDFs deleted from settings will be deleted from Workbench too.
-- Fixed a bug where UDFs called within a UDF called from a shared token would themselves not be able to call UDFs by name.
-- Fixed the error message when an invalid `cache_max_age` value was passed.
-
-## v1.25.0 (2025-10-22)
-
-**New Features:**
-- Workbench now auto-analyzes error messages from UDFs & suggest an AI fix
-- Added `fused.context` API for accessing advanced parts of the UDF request.
-- Added Claude Haiku model support.
-- UDFs can now be favorited in Workbench.
-
-**Improvements:**
-- Shared tokens will now use `udf.ai`.
-- Shared token URLs now default to HTML when no format is specified.
-- UDF list in canvas shows the UDF status.
-- Results panel will no longer pop-up in canvas.
-- Workbench's UDF Explorer will now open quicker with cached UDFs.
-- `fused.run` will serialize more values for passing to UDFs.
-- Canvas has a new auto-arrange feature.
-- Workbench pages such as jobs list and file explorer are now modal overlays.
-- Run/Freeze button has moved from the results panel back to the Canvas panel.
-- Adjusted how AI finishes responses, adding new summaries and auto-naming.
-- Dataset index now includes column statistics.
-- Workbench table view now shows records count.
-- Canvas now supports Parameter-type messages sent to/from UDFs.
-- *Reset* button in Workbench now resets parameters set on UDFs.
-- `fused.cache` no longer takes (potentially changed) variables into account that are defined outside of the function body
-- Improvement for caching of "nested UDFs" (a udf defined in the code and run by the main udf UDF), to not consider the full code but only the code used by that nested UDF
-
-**Bug Fixes:**
-- Fixed various bugs with the canvas editor and canvas share mode.
-- Fixed various bugs with the AI panel's context selection menu and send button.
-- Fixed local engine cache when loading UDFs with `fused.load`.
-- Fixed job details scrolling to top when new logs were available.
-- Fixed showing many toast messages when saving a canvas.
-- Shared tokens and batch jobs will now load UDFs the same as how they would when run by their original author.
-- Fixed some broken Omnisearch shortcuts.
-- `fused.submit` UDF and arguments are not longer required to be positional.
-- Prevented infinite recursion when determing the cache key for `fused.cache`.
-- Fixed using an incorrect Git path to fetch content from community repos.
-- AI thinking now supports auto-scroll.
-- AI panel persists the prompt when changing model.
-- Fixed a bug where some `print` statements could result in logs that error'd when sending back to Workbench.
-- Adjusted how many UDFs are returned from the server to Workbench at once.
-
-## v1.24.5 (2025-10-13)
-
-**New Features:**
-- You can now directly paste context items into AI chat with text like `[@my_other_udf]`.
-- It is now possible to retrieve header values from within UDFs.
-
-**Improvements:**
-- Improved feedback that a UDF is running in Workbench.
-- The default AI profiles in Workbench have been renamed to "Fast", "Explain", and "Smart".
-- Enabled nesting of UDFs under certain circumstances.
-- File explorer is now shown above the currently open page.
-- Upgraded DuckDB to v1.4.1.
-- Workbench will show cached UDF Explorer data until it is refreshed.
-- `Cmd+Shift+F` is now bound to toggle code folding.
-
-**Bug Fixes:**
-- Smoothed out the experience working with Canvas. Many bugs, keyboard shortcuts, UI elements, and interactions were adjusted.
-- Collections were renamed to Canvas in a few places.
-- Fixed a bug when opening Workbench with an AI prompt provided in the URL.
-- Fixed a bug with opening pull requests on the public UDF repo from within Workbench.
-- Adjusted the AI prompts in Workbench.
-- UDF details page now shows code first.
-- Adjusted versions page styling.
-- Fixed the changes modal empty state styling.
-- Uploaded UDFs will no longer inherit version control metadata.
-- It is no longer possible to hide the Canvas in the Canvas page.
-- Upload modal will now open data with file opener UDFs.
-- `Udf.to_fused` is now more robust for flaky network situations.
-- Fixed bugs where saving UDFs would not break the Canvas cache.
-
-## v1.24.4 (2025-10-06)
-
-**New Features:**
-
-- Drag & Drop upload of files anywhere in Canvas view! 
-
-**Improvements:**
-
-- `fused.submit` now supports `instance_type` parameter.
-- Workbench will remember which page you were on before switching to some tabs, so you can go back.
-- Returning numpy arrays with 4 or more dimensions will be truncated to 3 dimensions for PNG visualization.
-- Supervisor profile is available without enabling an experimental feature.
-
-**Bug Fixes:**
-
-- Various bug fixes for Canvas UI.
-- Workbench will clean up old AI chats from your browser.
-- Fixed `fused.api.job_get_exec_time`.
-- Fixed fetching a single result for large (batch) UDF runs.
-- `fused.run` will pass `cache_max_age` for large jobs.
-
-## v1.24.3 (2025-10-03)
-
-**New Features:**
-
-- Sticky notes are supported in canvas view.
-- Canvas view now has an auto-arrange button.
-- It is possible to start AI changes directly from the canvas view.
-
-**Improvements:**
-
-- Improved how UDF context is passed to AI chat, and removed Rename from default tools.
-- File Explorer will open files in the canvas view instead of the UDF builder view.
-- Fused-py will prefer `npy` format for numpy arrays.
-- UDFs can be deleted from the settings modal.
-
-**Bug Fixes:**
-
-- Fixed UI layout bugs in canvas view and AI chat.
-- Fixed bugs with starting ingest jobs.
-- Fixed bugs with AI auto-retry.
-
-## v1.24.2 (2025-10-01)
-
-**New Features:**
-
-- Added Claude Sonnet 4.5 model.
-- Canvas mode has a UDF selection list in its home view.
-- AI chats can continue in the background.
-
-**Improvements:**
-
-- Improved highlighting of syntax errors in Workbench.
-- Improved highlighting of UDF execution errors in Workbench.
-- Adjusted the design of omnisearch at the top panel of Workbench.
-- Batch jobs in Workbench run based on cache_max_age.
-- Various canvas UI improvements.
-- Upgraded package `arraylake`, and added `icechunk`.
-
-**Bug Fixes:**
-
-- Fixed pending changes still showing after switching UDFs.
-- Fixed an issue with saving UDFs and shared tokens slowing down.
-- Fixed stale data being cached locally when importing a canvas (collection).
-- Fixed an issue where UDF renames would incorrect choose to show the "duplicate UDF name" modal.
-
-## v1.24.0 (2025-09-29)
-
-**New Features:**
-
-- Canvas view now default in Workbench!
-- UDF are now only shared to "Team" by default rather than "Public"
-
-**Improvements:**
-
-Canvas View:
-- Ability to share Canvas in a single click
-- Added Team / Public sharing options for Canvas (default to Team)
-- Easily see if your Canvas was successfully run or failed
-- Simplified 2 panel layout: Jump between code & AI on the left and Canvas on the right 
-- Hide / Show UDFs 
-
-AI Chat:
-- Much better support for multiple AI chats running at the same time in different UDFs
-- Improvements to Experimental Supervisor mode
-- Adding inline diff view to code changes made by AI
-- Improved charting ability in AI chat
-
-Workbench:
-- Added S3 policy tab to profile modal
-
-Dependencies:
-- Update `pyogrio` to 0.11
-- Update `duckdb` to 1.4.0
-
-**Bug Fixes:**
-
-- Fixed bug in Version tab 
-
-## v1.23.0 (2025-09-18)
-
-**New Features:**
-
-- New experimental "Supervisor" mode in AI chat, which features more Workbench capabilities and enhanced search capabilities. Different tools in Supervisor mode can be turned on and off in the AI chat settings.
-- Workbench can now run UDFs in batch mode when `instance_type` is set on `@fused.udf()`.
-- AI changes now show an inline diff in the code editor.
-
-**Improvements:**
-
-- Many UDF actions can now be done directly inside Canvas.
-- Improvements to prompts and automatic suggestions in AI chat.
-- You can now stop dictation and send by clicking the send button in AI chat.
-- HTML view in Workbench will again show UDF output as it will be embedded.
-- AI chat settings page has been visually updated to be easier to follow.
-- Added "Fold all code" and "Unfold all code" actions in the search bar, and Workbench will now remember what code blocks were folded in a UDF.
-- *Inline AI* and *Auto share on save* are now general preferenecs, rather than experimental.
-
-**Bug Fixes:**
-
-- Provided more informative warning messages in the Python SDK.
-- Allowed non-authenticated users to retrieve public UDFs.
-- Fixed JSON serialization of GeoDataFrames without geometry columns.
-- Fixed `/public` UDF page.
-- AI chat will scroll to bottom more consistently.
-- AI chat will show tool calls in thinking blocks.
-- Backend-informed autocomplete is re-enabled.
-
-**API Changes:**
-
-- Removed deprecated `job` function.
-- Made batch job logs more concise.
-- Upgraded DuckDB to v1.4.0.
-
-## v1.22.8 (2025-09-11)
-
-**Bug Fixes:**
-- Fixed passing a parameter named `url` to `fused.run`.
-- Fixed data table filter interactions with overflow and fullscreen, and fixed min/max labels.
-- Fixes for the view changes modal and fixed a crash when duplicating UDFs.
-- Fixed an issue where large error messages could cause no useful information to appear.
-- Fixed an issue where GitHub PR information would not synchronize well.
-- Fixed Workbench not showing a UDF was running and improved it to show the elapsed time.
-
-## v1.22.7 (2025-09-09)
-
-**New Features:**
-
-- Experimental: Dataset discovery in AI chat.
-- New Kimi K2 model added to AI chat.
-
-**Improvements:**
-
-AI & Chat:
-- Improved AI chat window with better error handling and scrollback/redo functionality.
-- AI can now fetch datasets via tools and S3 URLs in chat are now clickable.
-- Better context management and the context size is now shown.
-- Model selector synchronizes with profile model selector.
-
-Workbench:
-- Enhanced version control with improved diff viewer and more prominent titles.
-- Auto-save UDFs after commit creation and when resolving stale UDFs.
-- Enhanced data table with improved copy functionality, date filtering/sorting, and better header responsiveness.
-- File UDFs now duplicate instead of showing conflict modals for better UX.
-- Better UDF management with streamlined rename handling and duplicate detection.
-- Theme fixes and UI improvements across the interface.
-
-Data & Datasets:
-- UTF-8 encoding by default for HTML data returns.
-- Improved dataset sorting and search functionality.
-
-**Bug Fixes:**
-
-- Fixed serialization errors for UDFs returning interval categories with better error messages.
-- Resolved UDF conflict modal issues and improved saving from action buttons.
-- Improved UI performance when renaming UDFs, and in the AI chat.
-- Corrected UDF icon display on hover in version pages.
-- Fixed slider component thumb positioning.
-- Fixed various canvas and UI stability issues.
-
-**API Changes:**
-
-- Polling-based UDF execution now enabled by default for `fused.run()`.
-- Single serialization output format parameter in UDF run URLs, via `format`. Backward compatibility maintained for `dtype_out_vector/raster` parameters.
-
-## v1.22.6 (2025-09-02)
-
-**New Features:**
-
-Re-Launching udf.ai! Let anyone talk to your data!
+Workebcnh now has a new Home page! 
 
 Learn how to connect your own data or analysis here
 
@@ -15875,7 +15082,7 @@ Data teams frequently encounter silos when looking to share and reuse code snipp
 - Delete a UDF you created yourself
 - Upload UDFs from JSON ot ZIP files
 
-<ReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/udf_catalog_edit10.mp4" width="100%" />
+<ReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/udf_catalog_edit11.mp4" width="100%" />
 
 ## Add a UDF
 
@@ -15902,7 +15109,7 @@ Open the UDF Explorer by Clicking "UDF Explorer". Search UDFs by name, sort them
 
 If GitHub integration is enabled on your Workbench, you can paste the link of any UDF from GitHub to open it. This allows you to open a UDF from any branch or revision from GitHub.
 
-<ReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/import_udf_from_github_edit8.mp4" width="100%" />
+<LazyReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/import_udf_from_github_edit9.mp4" width="100%" />
 
 ## UDF profile
 
@@ -15928,7 +15135,7 @@ Once you write a UDF, you can use the Push to GitHub button in Fused Workbench t
 
 To add a UDF to the community repository, select community from the dropdown before creating a pull request.
 
-<ReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/push_udf_to_github_edit10.mp4" width="100%" />
+<LazyReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/push_udf_to_github_edit11.mp4" width="100%" />
 
 Note that once the UDF is committed to the main branch of the repo, you can expect to wait up to 3 minutes for it to deploy and appear in the UDF Explorer.
 
@@ -18621,5 +17828,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-03-24
+Generated automatically from Fused documentation. Last updated: 2026-03-27
 Total sections: 5
