@@ -1,0 +1,250 @@
+---
+id: agents
+title: Building UDFs for Agents
+sidebar_label: Building for Agents
+sidebar_position: 8
+---
+
+import CodeBlock from "@theme/CodeBlock";
+
+UDFs work naturally as tools for LLM agents — they're HTTP endpoints with typed parameters, structured outputs, and no deployment step. But agents have specific constraints: limited context windows, a 120s execution limit, and no tolerance for ambiguous interfaces. This guide covers patterns for designing UDFs that agents can call reliably and efficiently.
+
+:::tip Exposing UDFs to agents
+This guide is about **building** agent-friendly UDFs. For how to **expose** them via MCP JSON and AI profiles, see [Connecting AI to Data](/guide/data-input-outputs/import-connection/ai-data-connection).
+:::
+
+## Keep execution fast
+
+Agents call UDFs sequentially — each call blocks the reasoning loop. A UDF that takes 30s means the agent is idle for 30s, and that compounds across every step of a workflow.
+
+**Precompute and read from storage, don't recompute on each call:**
+
+<CodeBlock language="python" title="Prefer reading pre-aggregated results" showLineNumbers>
+{`@fused.udf
+def udf(region_fips: str = "06"):
+    """
+    Returns pre-aggregated population statistics by county for a given state.
+    Reads from pre-processed parquet, not live Census API.
+    """
+    import pandas as pd
+    df = pd.read_parquet(f"s3://my-bucket/census/state={region_fips}/summary.parquet")
+    return df`}
+</CodeBlock>
+
+**Cache expensive setup** with [`@fused.cache`](/guide/working-with-udfs/udf-best-practices/caching) — model loading, large file reads, and API auth are good candidates.
+
+**Keep the 120s limit in mind.** If a task regularly approaches that ceiling, it's a sign the UDF is doing too much live work. Move computation upstream and have the UDF serve results from storage.
+
+For cold start behavior and execution limits, see [Run UDFs efficiently](/guide/working-with-udfs/udf-best-practices/realtime).
+
+## Keep I/O small
+
+LLM context windows are narrow. A UDF returning 50,000 rows doesn't just fail to help — it actively degrades the agent by flooding its context.
+
+**Return aggregates and summaries, not raw data:**
+
+<CodeBlock
+  language="python"
+  className="code-block-no-copy"
+  title="Anti-pattern — returns too much data"
+  showLineNumbers
+>{`@fused.udf
+def udf(state: str = "CA"):
+    import pandas as pd
+    df = pd.read_parquet("s3://my-bucket/census/raw.parquet")
+    return df[df["state"] == state]  # Could be millions of rows`}</CodeBlock>
+
+```python title="Preferred — return a summary"
+@fused.udf
+def udf(state: str = "CA", top_n: int = 10):
+    """
+    Returns the top N counties by population for a given state.
+    Use top_n to control how many results are returned (default: 10).
+    """
+    import pandas as pd
+    df = pd.read_parquet("s3://my-bucket/census/raw.parquet")
+    return (
+        df[df["state"] == state]
+        .groupby("county")["population"]
+        .sum()
+        .nlargest(top_n)
+        .reset_index()
+    )
+```
+
+**Add a `limit` or `top_n` parameter** whenever the result size could vary. Agents can pass a smaller value when they only need a quick answer.
+
+**Pass file paths, not file contents.** When an agent needs to send data to a UDF for processing, have it pass an S3/GCS path — not inline data:
+
+```python
+@fused.udf
+def udf(input_path: str, output_path: str):
+    """
+    Runs demographic enrichment on a CSV of addresses stored at input_path.
+    Writes results to output_path and returns a summary of the enrichment.
+    """
+    import pandas as pd
+    df = pd.read_csv(input_path)
+    # ... processing ...
+    df.to_parquet(output_path)
+    return {"rows_processed": len(df), "output_path": output_path}
+```
+
+The UDF does the heavy lifting internally. The agent only sees the summary.
+
+## Design for the question, not the data
+
+The LLM decides which UDF to call based on its docstring. A vague docstring leads to wrong calls; a good one leads to correct ones on the first try.
+
+**Write docstrings that answer: what does this UDF answer, and when should an agent use it?**
+
+<CodeBlock
+  language="python"
+  className="code-block-no-copy"
+  title="Anti-pattern — vague docstring and opaque params"
+  showLineNumbers
+>{`@fused.udf
+def udf(q: str, yr: int = 2023, lim: int = 5):
+    """
+    Gets data.
+    """
+    ...`}</CodeBlock>
+
+```python title="Preferred — clear docstring, descriptive params"
+@fused.udf
+def udf(search_query: str, year: int = 2023, top_n: int = 5):
+    """
+    Searches census demographic data using a natural language query.
+    Returns the top N matching counties with population and income data.
+
+    Use this when the user asks about population, demographics, or income
+    for a specific area or region.
+
+    Args:
+        search_query: Plain text search (e.g. "counties near Los Angeles")
+        year: Census year to query (2020-2023)
+        top_n: Number of results to return
+    """
+    ...
+```
+
+**Use descriptive parameter names** (`region_fips`, `start_date`, `metric_name`) — not abbreviations (`r`, `d1`, `m`).
+
+**Provide sensible defaults** so agents can call the UDF without specifying every parameter. A UDF with no defaults forces the agent to guess.
+
+**Harden the surface area.** Agents should only control what they genuinely need to vary. Everything else — table names, file paths, internal SQL structure — should be hardcoded. This prevents both misuse and prompt injection:
+
+```python
+@fused.udf
+def udf(state_fips: str = "06", year: int = 2023):
+    """Returns median household income by county for a given state and year."""
+    import duckdb
+    # Table name and schema are hardcoded — not agent-controlled
+    result = duckdb.query(
+        f"SELECT county, median_income FROM census_income "
+        f"WHERE state_fips = '{state_fips}' AND year = {year}"
+    ).df()
+    return result
+```
+
+For more on parameter narrowing, see [Write UDFs securely](/guide/working-with-udfs/udf-best-practices/security).
+
+## Three patterns for agent UDFs
+
+### Pattern A: Data query
+
+The most common pattern. The agent calls the UDF to answer a factual question and uses the response to reason further.
+
+- Returns a small dict or DataFrame (< ~20 rows)
+- Field names are self-explanatory
+- Call via `.json` endpoint
+
+```python
+@fused.udf
+def udf(county_fips: str = "06037", year: int = 2023):
+    """
+    Returns population and median income for a specific US county.
+    Use when the user asks about demographics for a named county.
+    """
+    ...
+    return {"county": "Los Angeles", "population": 9829544, "median_income": 71358, "year": 2023}
+```
+
+Agent call: `GET /fc_TOKEN/udf.json?county_fips=06037`
+
+---
+
+### Pattern B: Visualization
+
+The UDF returns a chart, map, or HTML page. The agent doesn't parse the output — it passes the URL back to the user.
+
+- Make it parameterizable via query strings (`?region=CA&metric=income`)
+- Use `.png` for images, `.html` for interactive maps or charts
+- Return type: PNG bytes, HTML string, or a URL to a rendered output
+
+```python
+@fused.udf
+def udf(state_fips: str = "06", metric: str = "median_income"):
+    """
+    Returns a choropleth map image showing the selected metric by county
+    for the given state. Pass the image URL directly to the user.
+
+    metric options: "median_income", "population", "poverty_rate"
+    """
+    import matplotlib.pyplot as plt
+    # ... build map ...
+    return png_bytes
+```
+
+Agent response to user: _"Here's the income map for California: [URL]"_ — no parsing needed.
+
+---
+
+### Pattern C: Action / trigger
+
+The UDF kicks off a long-running job (ingestion, report generation, batch processing) and returns immediately with a job reference. The agent doesn't wait for completion.
+
+```python
+@fused.udf
+def udf(dataset: str = "census_2023", region: str = "CA"):
+    """
+    Triggers a batch ingestion job for the specified dataset and region.
+    Returns immediately with a job ID. Use the job ID with the
+    check_job_status UDF to monitor progress.
+
+    Do NOT use this to fetch data — use query_census_data instead.
+    """
+    import uuid
+    job_id = str(uuid.uuid4())
+    # Enqueue the job (e.g. write to a queue, trigger a step function)
+    enqueue_batch_job(dataset=dataset, region=region, job_id=job_id)
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "message": f"Ingestion job started for {dataset} / {region}",
+    }
+```
+
+:::warning Don't block on long jobs
+A synchronous UDF that waits for a 5-minute job to complete burns compute and risks hitting the 120s timeout. Design action UDFs to fire-and-forget, then provide a separate status-check UDF if the agent needs to follow up.
+:::
+
+For batch patterns, see [Scaling out UDFs](/guide/working-with-udfs/udf-best-practices/scaling-out).
+
+## Security
+
+Agents execute with the parameters they're given. Treat every agent-supplied parameter as untrusted input:
+
+- Never accept free-form SQL, table names, or file paths as agent-controlled parameters
+- Hardcode sensitive connection details — never expose them as params
+- Validate and constrain inputs (e.g. an allowlist of valid `metric` values)
+
+See [Write UDFs securely](/guide/working-with-udfs/udf-best-practices/security) for full guidance.
+
+## See also
+
+- [Connecting AI to Data](/guide/data-input-outputs/import-connection/ai-data-connection) — expose UDFs as tools via MCP JSON
+- [Write UDFs securely](/guide/working-with-udfs/udf-best-practices/security)
+- [Run UDFs efficiently](/guide/working-with-udfs/udf-best-practices/realtime)
+- [Efficient caching](/guide/working-with-udfs/udf-best-practices/caching)
+- [Scaling out UDFs](/guide/working-with-udfs/udf-best-practices/scaling-out)
