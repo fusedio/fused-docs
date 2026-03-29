@@ -256,6 +256,51 @@ A synchronous UDF that waits for a 5-minute job to complete burns compute and ri
 
 For batch patterns, see [Scaling out UDFs](/guide/working-with-udfs/udf-best-practices/scaling-out).
 
+---
+
+### Pattern D: Unit processing
+
+Some UDFs do fast, bounded work on a single input — rasterize a vector file, convert a CSV to partitioned Parquet, clip a raster to a bounding box. Each call completes well within the time limit, but an agent can fan out many calls in parallel to process an entire dataset.
+
+```python
+@fused.udf
+def convert_to_parquet(input_path: str, output_prefix: str, partition_by: str = "region"):
+    """
+    Converts a single CSV file to a partitioned Parquet dataset.
+    Returns the output path and row count on success.
+
+    input_path: S3 or GCS path to the source CSV
+    output_prefix: S3 or GCS prefix where partitioned parquet will be written
+    partition_by: column name to partition by (default: "region")
+    """
+    import pandas as pd
+    df = pd.read_csv(input_path)
+    out = f"{output_prefix}/{df[partition_by].iloc[0]}.parquet"
+    df.to_parquet(out, index=False)
+    return {"rows": len(df), "output_path": out}
+```
+
+The agent calls this once per file and collects the results. Because each call is independent and fast, many can run in parallel without hitting the [120s limit](/guide/working-with-udfs/udf-best-practices/realtime#limits).
+
+This is different from Pattern C: the agent gets a result it can act on immediately rather than waiting for a background job to complete. Keep each unit small — if a single file takes minutes to process, switch to Pattern C instead.
+
+## Organize your canvas for agents
+
+All UDFs on a canvas are exposed together through a single canvas token (`fc_XXX`). This means every endpoint on that canvas is available to any agent you give the token to.
+
+**Group agent-facing UDFs on a dedicated canvas.** Keep data query, visualization, and unit processing UDFs together on one canvas that you're comfortable sharing. Move large batch jobs, internal utilities, or anything you don't want agents to trigger to a separate canvas.
+
+```
+Canvas A (agent-facing)         Canvas B (internal)
+─────────────────────────────   ──────────────────────────────
+get_county_demographics         run_full_etl_pipeline
+render_county_choropleth        rebuild_vector_index
+convert_to_parquet              reprocess_historical_data
+check_ingestion_status
+```
+
+This lets you share the Canvas A token freely — with agents, in MCP JSON configs, in documentation — without worrying about exposing heavy or destructive operations. See [Tokens & endpoints](/guide/data-input-outputs/export-api/tokens-endpoints) for how to manage canvas access.
+
 ## Security
 
 Agents execute with the parameters they're given. Treat every agent-supplied parameter as untrusted input:
