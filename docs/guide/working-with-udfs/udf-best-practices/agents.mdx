@@ -284,6 +284,104 @@ The agent calls this once per file and collects the results. Because each call i
 
 This is different from Pattern C: the agent gets a result it can act on immediately rather than waiting for a background job to complete. Keep each unit small — if a single file takes minutes to process, switch to Pattern C instead.
 
+## Build for chaining
+
+Agents rarely call a single UDF in isolation. They build pipelines — the output of one call becomes the input of the next. A few patterns make UDFs much easier to chain reliably.
+
+### Accept any readable format as input
+
+If your UDF accepts a `path` parameter, don't hardcode `pd.read_parquet(path)`. Agents may pass CSVs, GeoJSON files, or other formats depending on what a prior step produced. Detect the format and read accordingly:
+
+```python
+@fused.udf
+def analyze_locations(path: str, value_col: str = "score"):
+    """
+    Analyzes location data from the file at path.
+    Accepts Parquet, CSV, or GeoJSON.
+    """
+    import geopandas as gpd
+    import pandas as pd
+
+    if path.endswith(".parquet"):
+        df = gpd.read_parquet(path)
+    elif path.endswith((".json", ".geojson")):
+        df = gpd.read_file(path)
+    elif path.endswith(".csv"):
+        df = pd.read_csv(path)
+    else:
+        try:
+            df = gpd.read_parquet(path)
+        except Exception:
+            df = gpd.read_file(path)
+    ...
+```
+
+A UDF that crashes on CSV input when the agent passes one breaks the whole pipeline. Accept what the agent might reasonably give you.
+
+### Add `output_path` and `save_to_file` parameters
+
+Agents chain UDFs by passing the output of one as the input to another. The cleanest way to do this is via a stable S3 path — not by passing a live UDF URL as input to the next call (which causes the receiver to fetch HTML or GeoJSON and try to parse it as Parquet).
+
+Give every analysis or transformation UDF an `output_path` and `save_to_file` parameter:
+
+```python
+@fused.udf
+def transform_data(
+    path: str,
+    # ... task-specific params ...
+    output_path: str = "",
+    save_to_file: bool = False,
+    overwrite: bool = False,
+):
+    """
+    Transforms the dataset at path.
+    If save_to_file=true, writes the result to output_path on S3
+    and returns a status object with the output_path — suitable for chaining.
+    Otherwise returns the result directly.
+    """
+    import geopandas as gpd
+
+    gdf = process(path)
+
+    if save_to_file and output_path:
+        if not overwrite and file_exists(output_path):
+            return [{"status": "skipped", "output_path": output_path, "reason": "already exists"}]
+        gdf.to_parquet(output_path)
+        return [{"status": "success", "output_path": output_path, "rows": len(gdf)}]
+
+    return gdf
+```
+
+When called with `save_to_file=true`, the agent reads the `output_path` from the response and passes it to the next UDF. When called without it, the agent gets the data directly. Both modes work with the same UDF.
+
+### Name output columns explicitly — don't inherit from input
+
+If your UDF aggregates or transforms a column, name the output column after what it _represents_, not where it came from. An aggregated count stored in a column called `latitude` (because that was the `value_col` parameter) will confuse both agents and humans downstream.
+
+```python
+# ❌ Output column inherits the input column name — "latitude" actually means "count"
+gdf = aggregate(df, value_col="latitude", agg="count")
+# → columns: ["hex", "latitude", "geometry"]
+
+# ✅ Rename to reflect what the column actually contains
+gdf = aggregate(df, value_col="latitude", agg="count")
+gdf = gdf.rename(columns={"latitude": "count"})
+# → columns: ["hex", "count", "geometry"]
+```
+
+If you want to let callers name the output column, add an `output_col` parameter with a sensible default:
+
+```python
+@fused.udf
+def aggregate_by_hex(path: str, value_col: str, agg: str = "count", output_col: str = ""):
+    result_col = output_col or agg
+    gdf = ...  # aggregate
+    gdf = gdf.rename(columns={value_col: result_col})
+    return gdf
+```
+
+---
+
 ## Organize your canvas for agents
 
 All UDFs on a canvas are exposed together through a single canvas token (`fc_XXX`). This means every endpoint on that canvas is available to any agent you give the token to.
