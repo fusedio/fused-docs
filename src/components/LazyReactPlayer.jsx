@@ -1,40 +1,16 @@
-import React, { useEffect, useRef, useState } from 'react';
-import ReactPlayer from 'react-player';
+import React from 'react';
 
-const LazyReactPlayer = ({ className, playing, ...props }) => {
-  const [isVisible, setIsVisible] = useState(false);
-  const playerRef = useRef(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        setIsVisible(entry.isIntersecting);
-      },
-      {
-        threshold: 0.2,
-        rootMargin: '0px',
-      }
-    );
-
-    if (playerRef.current) {
-      observer.observe(playerRef.current);
-    }
-
-    return () => {
-      if (playerRef.current) {
-        observer.unobserve(playerRef.current);
-      }
-    };
-  }, []);
-
-  const shouldPlay = Boolean(playing && isVisible);
-
+const LazyReactPlayer = ({ url, loop, controls = true, muted = true, wrapperStyle, ...props }) => {
   return (
-    <div ref={playerRef} className={className}>
-      <ReactPlayer
-        {...props}
-        className={className}
-        playing={shouldPlay}
+    <div className="video__wrapper" style={wrapperStyle}>
+      <video
+        src={url}
+        preload="metadata"
+        controls={controls}
+        muted={muted}
+        loop={loop}
+        playsInline
+        style={{ width: '100%', height: '100%', display: 'block' }}
       />
     </div>
   );
