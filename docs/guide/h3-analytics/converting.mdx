@@ -420,7 +420,7 @@ The ingestion runs these steps in parallel via [`.map()`](/python-sdk/api-refere
 3. **overview**: Create aggregated overview files
 
 Override execution with:
-- `engine`: Specify execution engine (e.g., `"small"`, `"medium"`, `"c2-standard-4"`)
+- `engine`: Specify execution engine (e.g., `"small"`, `"medium"`, `"c2-standard-4"`). Use `extract_engine`, `partition_engine` and `overview_engine` to specify the execution engine for only a single step.
 - `max_workers` and `worker_concurrency`: Control parallelism
 
 #### Running on GCP
@@ -435,6 +435,34 @@ def udf():
         engine="c2-standard-60",  # Compute workers
     )
 ```
+
+#### Planning the ingestion
+
+Before running a full ingestion, you can estimate how large the output dataset will be and how much memory each pipeline step (extract, partition, overview) is likely to need. That helps you confirm the dataset is not unexpectedely huge and pick one of the [engines](/python-sdk/api-reference/udf#map) required to run the ingestion.
+
+The community UDF `ingest_raster_to_h3_planning` prints an estimate of the output size and per-step memory requirements. Pass the same keyword arguments you would pass to [`run_ingest_raster_to_h3`](/python-sdk/api-reference/h3#run_ingest_raster_to_h3) for the real ingestion (except `output_path` and keywords controlling the execution/engine):
+
+```python showLineNumbers
+@fused.udf(cache_max_age=0)
+def udf():
+    input_path = "s3://fused-asset/data/nyc_dem.tif"
+
+    planner = fused.load("https://github.com/fusedio/udfs/tree/5b410e6/community/max/ingest_raster_to_h3_planning/")
+    plan = planner(
+        # pass the same arguments you would pass to the actual ingestion
+        input_path,
+        metrics=["avg"],
+    )
+    return plan
+```
+
+The UDF prints a breakdown of inferred or explicit resolutions, expected numbers of output files, row groups, and rows per file, plus per-step job counts and conservative memory estimates with suggested instance sizes when the workload is too heavy for a small realtime run. 
+
+If the output suggests to use a specific instance (e.g. "Consider using an 'r5.2xlarge' instance") for a certain step, you can either still use the default settings (which will first run on realtime, and then retry on a 'large' instance), or either specify the recommended instance specifically with e.g. `partition_engine='r5.2xlarge'`.
+
+:::info More than 20 input files
+If you point at more than twenty source files, the planner will use only the first twenty file to estimate the extent of the dataset. Pass `bounds` (minx, miny, maxx, maxy) if the full extent matters.
+:::
 
 ---
 
