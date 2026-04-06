@@ -180,6 +180,16 @@ const sidebars: SidebarsConfig = {
         "examples/sharing-canvas-dashboards",
       ],
     },
+
+    // Agents
+    {
+      type: "category",
+      label: "Agents",
+      collapsible: false,
+      items: [
+        "examples/overture-buildings-agents",
+      ],
+    },
   ],
 
   // ============================================
