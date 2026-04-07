@@ -141,6 +141,16 @@ const sidebars: SidebarsConfig = {
       ],
     },
 
+    // Agentic Workflows
+    {
+      type: "category",
+      label: "Agentic Workflows",
+      collapsible: false,
+      items: [
+        "examples/overture-buildings-agents",
+      ],
+    },
+
     // H3 Analytics
     {
       type: "category",
@@ -180,6 +190,7 @@ const sidebars: SidebarsConfig = {
         "examples/sharing-canvas-dashboards",
       ],
     },
+
   ],
 
   // ============================================
