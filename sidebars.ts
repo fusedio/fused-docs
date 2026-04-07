@@ -111,6 +111,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/advanced-setup/secrets-management", label: "Secrets management" },
         { type: "doc", id: "guide/advanced-setup/dependencies", label: "Dependencies" },
         { type: "doc", id: "guide/advanced-setup/on-prem-setup", label: "On-prem setup" },
+        { type: "doc", id: "guide/advanced-setup/encrypted-s3-bucket", label: "Encrypted S3 Bucket" },
       ],
     },
 
