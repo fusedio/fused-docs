@@ -1,0 +1,77 @@
+---
+id: encrypted-s3-bucket
+title: Connecting an Encrypted S3 Bucket
+sidebar_label: Encrypted S3 Bucket
+sidebar_position: 7
+description: Grant Fused access to an SSE-KMS encrypted S3 bucket by configuring KMS and bucket policies.
+---
+
+# Connecting an Encrypted S3 Bucket
+
+If your S3 buckets use server-side encryption with AWS KMS (SSE-KMS), the Fused role in your account needs access to both the bucket **and** the KMS key. The KMS key must reside in the same region as the bucket.
+
+## 1. Add a KMS key policy statement
+
+In the AWS KMS console, add the following statement to the key policy of the KMS key used by the bucket. Replace `<FUSED_ACCOUNT>` and `<FUSED_ROLE_NAME>` with the values provided by your Fused solutions engineer.
+
+```json
+{
+  "Sid": "AllowCrossAccountUseOfKMS",
+  "Effect": "Allow",
+  "Principal": {
+    "AWS": "arn:aws:iam::<FUSED_ACCOUNT>:role/<FUSED_ROLE_NAME>"
+  },
+  "Action": [
+    "kms:Decrypt",
+    "kms:Encrypt",
+    "kms:GenerateDataKey*",
+    "kms:DescribeKey"
+  ],
+  "Resource": "*"
+}
+```
+
+## 2. Add an S3 bucket policy statement
+
+In the S3 console, add the following statement to the bucket policy. Replace `<FUSED_ACCOUNT>`, `<FUSED_ROLE_NAME>`, and `<BUCKET_NAME>` with your values.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::<FUSED_ACCOUNT>:role/<FUSED_ROLE_NAME>"
+      },
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::<BUCKET_NAME>",
+        "arn:aws:s3:::<BUCKET_NAME>/*"
+      ]
+    }
+  ]
+}
+```
+
+:::note
+If you only need Fused to **read** from the bucket (not write), you can scope the `Action` down to `["s3:GetObject", "s3:ListBucket"]` instead of `s3:*`.
+:::
+
+## 3. Verify access
+
+Once both policies are saved, your Fused solutions engineer can confirm connectivity. You can also verify from a UDF:
+
+```python
+@fused.udf
+def udf():
+    import s3fs
+    fs = s3fs.S3FileSystem()
+    return fs.ls("s3://<BUCKET_NAME>/")
+```
+
+## See also
+
+- [On-Prem Setup](/guide/advanced-setup/on-prem-setup) — overview of on-premise deployment
+- [Secrets Management](/guide/advanced-setup/secrets-management) — store credentials securely
+- [Write UDFs securely](/guide/working-with-udfs/udf-best-practices/security) — best practices for handling sensitive data
