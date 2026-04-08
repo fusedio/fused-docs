@@ -1,47 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react';
-import ReactPlayer from 'react-player';
+import React from 'react';
 
-const LazyReactPlayer = (props) => {
-  const [isVisible, setIsVisible] = useState(false);
-  const playerRef = useRef(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        // When the player comes into view, mark it as visible
-        setIsVisible(entry.isIntersecting);
-      },
-      {
-        // Start loading when 20% of the player is visible
-        threshold: 0.2,
-        // Root margin can be adjusted if needed
-        rootMargin: '0px',
-      }
-    );
-
-    if (playerRef.current) {
-      observer.observe(playerRef.current);
-    }
-
-    return () => {
-      if (playerRef.current) {
-        observer.unobserve(playerRef.current);
-      }
-    };
-  }, []);
-
-  // Only play the video when it's visible, regardless of the playing prop
-  // This ensures videos don't autoplay until scrolled into view
-  const shouldPlay = isVisible;
-
+const LazyReactPlayer = ({ url, loop, controls = true, muted = true, wrapperStyle, ...props }) => {
   return (
-    <div ref={playerRef}>
-      <ReactPlayer
-        {...props}
-        playing={shouldPlay}
+    <div className="video__wrapper" style={wrapperStyle}>
+      <video
+        src={url}
+        preload="metadata"
+        controls={controls}
+        muted={muted}
+        loop={loop}
+        playsInline
+        style={{ width: '100%', height: '100%', display: 'block' }}
       />
     </div>
   );
 };
 
-export default LazyReactPlayer; 
+export default LazyReactPlayer;
