@@ -2,7 +2,7 @@
 
 Fused is a serverless data platform where Python functions called **UDFs** (User Defined Functions) run in the cloud and are instantly accessible as HTTP endpoints. You can call any UDF with a simple GET request and get back structured data — no SDK, no setup required.
 
-This document teaches you how to discover, call, and chain Fused UDFs as tools.
+This document teaches you how to discover, call, and chain Fused UDFs as tools. For building charts and visualizations from UDF data, see `WIDGET.md`.
 
 ---
 
@@ -14,8 +14,8 @@ These rules apply to every interaction. Never violate them:
 2. **Never retry the same failing call without changing something** — read the error, fix the parameter or format, then retry
 3. **When chaining UDFs, parse the JSON from step 1 first** — extract the value you need, then construct step 2's URL. Do not pass a live UDF URL as an input to another UDF
 4. **Share `.html` and `.png` URLs with the user as links — do not try to parse them**
-5. **Do not assume parameter names or column names** — verify against the UDF's documented parameters or use an inspection UDF if one is available
-6. **Do not call a UDF broader than necessary** — prefer a county-scoped call over a country-scoped one when the user's question is local
+5. **Do not assume parameter names or column names** — verify against the `.api.json` endpoint first
+6. **Do not call a UDF broader than necessary** — prefer a scoped call over a full-dataset call when the user's question is local
 
 ---
 
@@ -45,9 +45,15 @@ These rules apply to every interaction. Never violate them:
 
 ## Discovering UDFs
 
-The available UDFs for a canvas are listed in the **Available UDFs on This Canvas** section at the bottom of this document. The canvas token and UDF names are provided by the user when they share this skill with you.
+Fetch the canvas API index to see all available UDFs, their parameters, and descriptions:
 
-Do not attempt to discover UDFs dynamically — use only what is documented in this file.
+```
+GET https://udf.ai/fc_<TOKEN>.api.json
+```
+
+This returns an OpenAPI 3.0 spec. Each path under `paths` is a UDF. Read the `description`, `parameters` (name, type, default, required), and `operationId` for each one before making calls.
+
+**Always read the spec before calling.** Do not guess parameter names or assume a UDF exists — verify against the spec.
 
 ---
 
@@ -134,8 +140,8 @@ Results are cached by default (90 days). To force a fresh run:
 | `400` | Missing or wrong parameter type | Read the error message, fix the parameter name or type, retry |
 | `401` | Missing or invalid auth token | Add or correct the `Authorization: Bearer` header |
 | `403` | Canvas token wrong or canvas is private | Verify the canvas token; use an access token for private canvases |
-| `404` | UDF name not found | Check the UDF name against the canvas index or this document's canvas section |
-| `422` | Input data processing error | Check the input data format, path, or column names; use an inspection UDF if available |
+| `404` | UDF name not found | Check the UDF name against `.api.json` |
+| `422` | Input data processing error | Check the input data format, path, or column names |
 | `429` | Rate limited | Wait briefly and retry; do not fan out too many parallel requests |
 | `500` | UDF execution error | Check parameters and input data; report the error to the user if it persists |
 
@@ -143,8 +149,8 @@ Results are cached by default (90 days). To force a fresh run:
 
 ## How to Decide Which UDF to Call
 
-1. Read the **purpose** statements of all UDFs in the canvas section below
-2. Match the user's task to the closest purpose
+1. Fetch `.api.json` and read the `description` of each UDF
+2. Match the user's task to the closest description
 3. Check you have all required parameters — if not, see if another UDF can supply them
 4. If the task requires data from multiple UDFs, chain them (see below)
 5. When uncertain, prefer the UDF with the most specific match over a general one
@@ -206,16 +212,11 @@ Use `.png` for raster tiles, `.mvt` for vector tiles. These are for display only
 
 ### Verify inputs before processing
 
-Before calling an analysis UDF with a file path or column name parameter, call a lightweight inspection UDF first (if the canvas provides one) to confirm the file exists, check row count, and identify exact column names. This avoids 422 errors from typos, wrong casing, or missing files.
-
-```bash
-GET /fc_TOKEN/inspect_file.json?path=s3://bucket/data.parquet
-→ [{"column": "latitude", "dtype": "float64", "total_rows": 25600}, ...]
-```
+Before calling an analysis UDF with a file path or column name parameter, call a lightweight inspection UDF first (if the canvas provides one) to confirm the file exists, check row count, and identify exact column names.
 
 ### Prefer stable file paths over live UDF URLs as inputs
 
-Always pass a stable S3 or GCS path rather than the URL of another live UDF. Passing a live endpoint URL as input creates a fragile chain — the receiving UDF will fetch the URL and may fail trying to parse it as the format it expects.
+Always pass a stable S3 or GCS path rather than the URL of another live UDF.
 
 ```
 # Fragile: UDF B fetches UDF A's live URL, gets unexpected content type
@@ -228,64 +229,13 @@ GET /udf_a.json?...&save_to_file=true&output_path=s3://bucket/result.parquet
 GET /udf_b.json?path=s3://bucket/result.parquet
 ```
 
-If a UDF supports `save_to_file` and `output_path` parameters, use them to persist intermediate results and create a clean handoff between steps.
-
-### Reading `save_to_file` responses
-
-When a UDF saves its result to cloud storage, it returns a status object with an `output_path` field. Extract that path and pass it directly as the `path` parameter to the next UDF:
-
-```json
-{"status": "success", "output_path": "s3://bucket/result.parquet", "rows": 1240}
-```
-
 ### Use `.json` to extract values, visual formats only for display
 
-```bash
+```
 # Extract a value to use in the next call
 GET /fc_TOKEN/some_udf.json?param=value
-→ [{"id": "abc", "score": 0.92, "lat": 37.8, "lng": -122.4}]
+→ [{"id": "abc", "score": 0.92}]
 
 # Share a rendered result with the user — do not parse this
 GET /fc_TOKEN/some_udf.html?param=value   ← give this URL to the user
 ```
-
----
-
-## Available UDFs on This Canvas
-
-> Canvas token: `fc_{YOUR_TOKEN}`
-> Base URL: `https://udf.ai/fc_{YOUR_TOKEN}/`
-
----
-
-### `{udf_name}`
-
-**Purpose:** {One sentence — what question does this UDF answer or what task does it perform?}
-
-**When to use:** {What user request or situation should trigger this UDF? Be specific about what distinguishes it from other UDFs on this canvas.}
-
-**Parameters:**
-
-| Name | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `param1` | `str` | yes | — | {what this parameter controls} |
-| `param2` | `int` | no | `10` | {what this parameter controls} |
-
-**Returns:** {Describe the output — what fields/columns are in the response, what they mean, what units}
-
-**Example call:**
-```
-GET https://udf.ai/fc_{YOUR_TOKEN}/{udf_name}.json?param1=example_value
-```
-
-**Example response:**
-```json
-{
-  "field1": "value",
-  "field2": 42
-}
-```
-
----
-
-*(Add one block per UDF on the canvas)*
