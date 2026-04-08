@@ -15,24 +15,17 @@ This guide is about **building** agent-friendly UDFs. For how to **expose** them
 
 ## Name your UDFs explicitly
 
-In Python, every UDF is written as `def udf():` — but the function name becomes part of the HTTP endpoint URL (`/fc_TOKEN/udf_name.json`). Give your UDFs descriptive names so agents (and humans) know exactly what they're calling.
+The function must always be called `udf` — Workbench requires it. Use a comment at the top of the file to give the UDF a descriptive name:
 
-<CodeBlock
-  language="python"
-  className="code-block-no-copy"
-  title="Anti-pattern — endpoint becomes /fc_TOKEN/udf.json"
-  showLineNumbers
->{`@fused.udf
-def udf(state_fips: str = "06"):
-    ...`}</CodeBlock>
+```python title="Always use def udf() — name it with a comment"
+# get_county_population
 
-```python title="Preferred — endpoint becomes /fc_TOKEN/get_county_population.json"
 @fused.udf
-def get_county_population(state_fips: str = "06"):
+def udf(state_fips: str = "06"):
     ...
 ```
 
-This matters because agents choose tools by name and description. `get_county_population` is immediately useful; `udf` is not.
+This matters because agents choose tools by name and description. `get_county_population` is immediately useful; leaving the comment blank or vague is not.
 
 ## Keep execution fast
 
@@ -41,8 +34,10 @@ Agents call UDFs sequentially — each call blocks the reasoning loop. A UDF tha
 **Precompute and read from storage, don't recompute on each call:**
 
 <CodeBlock language="python" title="Prefer reading pre-aggregated results" showLineNumbers>
-{`@fused.udf
-def get_state_population_summary(state_fips: str = "06"):
+{`# get_state_population_summary
+
+@fused.udf
+def udf(state_fips: str = "06"):
     """
     Returns pre-aggregated population statistics by county for a given state.
     Reads from pre-processed parquet, not live Census API.
@@ -67,15 +62,19 @@ LLM context windows are narrow. A UDF returning 50,000 rows doesn't just fail to
   className="code-block-no-copy"
   title="Anti-pattern — returns too much data"
   showLineNumbers
->{`@fused.udf
-def get_census_data(state: str = "CA"):
+>{`# get_census_data
+
+@fused.udf
+def udf(state: str = "CA"):
     import pandas as pd
     df = pd.read_parquet("s3://my-bucket/census/raw.parquet")
     return df[df["state"] == state]  # Could be millions of rows`}</CodeBlock>
 
 ```python title="Preferred — return a summary"
+# get_top_counties_by_population
+
 @fused.udf
-def get_top_counties_by_population(state: str = "CA", top_n: int = 10):
+def udf(state: str = "CA", top_n: int = 10):
     """
     Returns the top N counties by population for a given state.
     Use top_n to control how many results are returned (default: 10).
@@ -96,8 +95,10 @@ def get_top_counties_by_population(state: str = "CA", top_n: int = 10):
 **Pass file paths, not file contents.** When an agent needs to send data to a UDF for processing, have it pass an [S3](/guide/data-input-outputs/import-connection/cloud-storage) or [GCS](/guide/data-input-outputs/import-connection/cloud-storage) path — not inline data:
 
 ```python
+# enrich_address_file
+
 @fused.udf
-def enrich_address_file(input_path: str, output_path: str):
+def udf(input_path: str, output_path: str):
     """
     Runs demographic enrichment on a CSV of addresses stored at input_path.
     Writes results to output_path and returns a summary of the enrichment.
@@ -125,16 +126,20 @@ The LLM decides which UDF to call based on its docstring. A vague docstring lead
   className="code-block-no-copy"
   title="Anti-pattern — vague docstring and opaque params"
   showLineNumbers
->{`@fused.udf
-def search_data(q: str, yr: int = 2023, lim: int = 5):
+>{`# search_data
+
+@fused.udf
+def udf(q: str, yr: int = 2023, lim: int = 5):
     """
     Gets data.
     """
     ...`}</CodeBlock>
 
 ```python title="Preferred — clear docstring, descriptive params"
+# search_census_demographics
+
 @fused.udf
-def search_census_demographics(search_query: str, year: int = 2023, top_n: int = 5):
+def udf(search_query: str, year: int = 2023, top_n: int = 5):
     """
     Searches census demographic data using a natural language query.
     Returns the top N matching counties with population and income data.
@@ -157,8 +162,10 @@ def search_census_demographics(search_query: str, year: int = 2023, top_n: int =
 **Harden the surface area.** Agents should only control what they genuinely need to vary. Everything else — table names, file paths, internal SQL structure — should be hardcoded. This prevents both misuse and prompt injection:
 
 ```python
+# get_county_income
+
 @fused.udf
-def get_county_income(state_fips: str = "06", year: int = 2023):
+def udf(state_fips: str = "06", year: int = 2023):
     """Returns median household income by county for a given state and year."""
     import duckdb
     # Table name and schema are hardcoded — not agent-controlled
@@ -183,8 +190,10 @@ The most common pattern. The agent calls the UDF to answer a factual question an
 - Call via `.json` endpoint
 
 ```python
+# get_county_demographics
+
 @fused.udf
-def get_county_demographics(county_fips: str = "06037", year: int = 2023):
+def udf(county_fips: str = "06037", year: int = 2023):
     """
     Returns population and median income for a specific US county.
     Use when the user asks about demographics for a named county.
@@ -206,8 +215,10 @@ The UDF returns a chart, map, or HTML page. The agent doesn't parse the output �
 - Return type: PNG bytes, HTML string, or a URL to a rendered output
 
 ```python
+# render_county_choropleth
+
 @fused.udf
-def render_county_choropleth(state_fips: str = "06", metric: str = "median_income"):
+def udf(state_fips: str = "06", metric: str = "median_income"):
     """
     Returns a choropleth map image showing the selected metric by county
     for the given state. Pass the image URL directly to the user.
@@ -230,8 +241,10 @@ For how to serve tiles and HTML from UDFs, see [Tokens & endpoints](/guide/data-
 The UDF kicks off a long-running job (ingestion, report generation, batch processing) and returns immediately with a job reference. The agent doesn't wait for completion.
 
 ```python
+# trigger_census_ingestion
+
 @fused.udf
-def trigger_census_ingestion(dataset: str = "census_2023", region: str = "CA"):
+def udf(dataset: str = "census_2023", region: str = "CA"):
     """
     Triggers a batch ingestion job for the specified dataset and region.
     Returns immediately with a job ID. Use the job ID with the
@@ -263,8 +276,10 @@ For batch patterns, see [Scaling out UDFs](/guide/working-with-udfs/udf-best-pra
 Some UDFs do fast, bounded work on a single input — rasterize a vector file, convert a CSV to partitioned Parquet, clip a raster to a bounding box. Each call completes well within the time limit, but an agent can fan out many calls in parallel to process an entire dataset.
 
 ```python
+# convert_to_parquet
+
 @fused.udf
-def convert_to_parquet(input_path: str, output_prefix: str, partition_by: str = "region"):
+def udf(input_path: str, output_prefix: str, partition_by: str = "region"):
     """
     Converts a single CSV file to a partitioned Parquet dataset.
     Returns the output path and row count on success.
@@ -293,8 +308,10 @@ Agents rarely call a single UDF in isolation. They build pipelines — the outpu
 If your UDF accepts a `path` parameter, don't hardcode `pd.read_parquet(path)`. Agents may pass CSVs, GeoJSON files, or other formats depending on what a prior step produced. Detect the format and read accordingly:
 
 ```python
+# analyze_locations
+
 @fused.udf
-def analyze_locations(path: str, value_col: str = "score"):
+def udf(path: str, value_col: str = "score"):
     """
     Analyzes location data from the file at path.
     Accepts Parquet, CSV, or GeoJSON.
@@ -325,8 +342,10 @@ Agents chain UDFs by passing the output of one as the input to another. The clea
 Give every analysis or transformation UDF an `output_path` and `save_to_file` parameter:
 
 ```python
+# transform_data
+
 @fused.udf
-def transform_data(
+def udf(
     path: str,
     # ... task-specific params ...
     output_path: str = "",
@@ -372,8 +391,10 @@ gdf = gdf.rename(columns={"latitude": "count"})
 If you want to let callers name the output column, add an `output_col` parameter with a sensible default:
 
 ```python
+# aggregate_by_hex
+
 @fused.udf
-def aggregate_by_hex(path: str, value_col: str, agg: str = "count", output_col: str = ""):
+def udf(path: str, value_col: str, agg: str = "count", output_col: str = ""):
     result_col = output_col or agg
     gdf = ...  # aggregate
     gdf = gdf.rename(columns={value_col: result_col})
