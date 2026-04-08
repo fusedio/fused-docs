@@ -1,7 +1,9 @@
+import useBaseUrl from "@docusaurus/useBaseUrl";
 import React, { useCallback, useEffect, useState } from "react";
 import styles from "./ClickZoomImage.module.css";
 
 type Props = {
+  /** Path under `static/`, e.g. `/img/guide/foo.png` (baseUrl is applied for PR previews). */
   src: string;
   alt: string;
   className?: string;
@@ -30,6 +32,7 @@ function MagnifyIcon(): React.ReactElement {
  */
 export default function ClickZoomImage({ src, alt, className }: Props): React.ReactElement {
   const [open, setOpen] = useState(false);
+  const resolvedSrc = useBaseUrl(src);
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -58,7 +61,7 @@ export default function ClickZoomImage({ src, alt, className }: Props): React.Re
         aria-label={`Enlarge image: ${alt}`}
       >
         <span className={styles.thumbInner}>
-          <img src={src} alt={alt} className={styles.thumbImg} />
+          <img src={resolvedSrc} alt={alt} className={styles.thumbImg} />
           <span className={styles.zoomHint} aria-hidden="true">
             <MagnifyIcon />
           </span>
@@ -73,7 +76,7 @@ export default function ClickZoomImage({ src, alt, className }: Props): React.Re
           onClick={close}
         >
           <img
-            src={src}
+            src={resolvedSrc}
             alt=""
             className={styles.full}
             onClick={(e) => e.stopPropagation()}
