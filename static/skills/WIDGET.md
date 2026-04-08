@@ -2,22 +2,26 @@
 
 Widgets are JSON UI components that query UDF output via SQL and render as charts, tables, maps, or input controls. You create one by appending a `?widget=` JSON object to a canvas share URL.
 
+> **Always output widget URLs in a code block, never as a markdown link.** The user copies the URL and pastes it into their browser. Markdown links and HTML anchors both mangle the encoding and will fail.
+
 ---
 
 ## Core pattern
 
 ```
-https://fused.io/share/fc_<canvas_token>?widget={
-  "type": "<widget-type>",
-  "props": {
-    "sql": "SELECT ... FROM {{udf_name}}",
-    "title": "Chart title"
-  }
-}
+https://www.fused.io/share/fc_<canvas_token>?widget={%22type%22:%20%22bar-chart%22,%20%22props%22:%20{%22sql%22:%20%22SELECT%20...%20FROM%20{{udf_name}}%22,%20%22title%22:%20%22Chart%20title%22}}
 ```
 
+Encoding rule: replace `"` with `%22` and spaces with `%20`. Leave everything else — `{`, `}`, `:`, `,`, `[`, `]` — as literal characters. The browser handles the rest when the URL is pasted.
+
+```python
+encoded = json_string.replace('"', '%22').replace(' ', '%20')
+```
+
+**Always output widget URLs as plain text (in a code block), not as markdown links.** Markdown link syntax `[text](url)` mangles the literal `{` and `}` characters.
+
 - The canvas token (`fc_...`) comes from the user's canvas URL.
-- `{{udf_name}}` references the output of a UDF on that canvas — replace `udf_name` with the actual UDF name.
+- `{{udf_name}}` references the output of a UDF on that canvas — replace `udf_name` with the actual UDF name (case-sensitive).
 - The SQL runs in-browser via DuckDB over the UDF's output.
 
 ---
@@ -27,7 +31,8 @@ https://fused.io/share/fc_<canvas_token>?widget={
 1. **Find out what UDFs are on the canvas** — fetch `https://udf.ai/fc_<token>.api.json` to see UDF names and parameters.
 2. **Sample the data** — call `https://udf.ai/fc_<token>/<udf_name>.json` to see exact column names (case-sensitive).
 3. **Write the SQL** — alias columns to match what the component expects (e.g. `label` and `value` for charts).
-4. **Build the widget JSON** and append it to `https://fused.io/share/fc_<token>?widget=<JSON>`.
+4. **Encode the widget JSON** — only encode `"` → `%22` and space → `%20`. Keep all other characters literal.
+5. **Append to the share URL** as `?widget=<encoded-json>`.
 
 ---
 
@@ -48,14 +53,24 @@ Always alias: `SELECT store_name AS label, avg_rating AS value ...`
 ## Examples
 
 **Bar chart — top 10 stores by rating:**
-```
-https://fused.io/share/fc_<token>?widget={
+
+Widget JSON (before encoding):
+```json
+{
   "type": "bar-chart",
   "props": {
-    "sql": "SELECT S_NAME AS label, avg_rating AS value FROM {{join_store_infos}} ORDER BY value DESC LIMIT 10",
-    "title": "Top 10 stores by rating"
+    "sql": "SELECT S_NAME AS label, avg_rating AS value FROM {{join_store_infos}} ORDER BY avg_rating DESC LIMIT 10",
+    "title": "Top 10 Best Performing Stores",
+    "barColor": "#f59e0b",
+    "rotateLabels": true,
+    "showValues": true
   }
 }
+```
+
+Encoded URL (only `"` → `%22`, space → `%20`):
+```
+https://www.fused.io/share/fc_<token>?widget={%22type%22:%20%22bar-chart%22,%20%22props%22:%20{%22sql%22:%20%22SELECT%20S_NAME%20AS%20label,%20avg_rating%20AS%20value%20FROM%20{{join_store_infos}}%20ORDER%20BY%20avg_rating%20DESC%20LIMIT%2010%22,%20%22title%22:%20%22Top%2010%20Best%20Performing%20Stores%22,%20%22barColor%22:%20%22#f59e0b%22,%20%22rotateLabels%22:%20true,%20%22showValues%22:%20true}}
 ```
 
 **Line chart — time series:**
