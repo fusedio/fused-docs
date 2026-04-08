@@ -1,0 +1,204 @@
+---
+id: widgets
+title: Widgets
+sidebar_label: Widgets [Experimental] 
+sidebar_position: 7
+---
+
+# Widgets [Experimental]
+
+:::info Enable Widgets
+Widgets are an experimental feature and need to be turned on before you can use them:
+
+1. Click your profile and go to **Preferences**.
+2. Open the **Experimental features** tab.
+3. Toggle **Widget nodes** on.
+:::
+
+Widgets are interactive, declarative UI nodes you can drop onto the Fused canvas. Unlike UDFs that run Python, widgets are defined in JSON — no code required. They can be inputs (sliders, dropdowns, text inputs) that drive parameters across the canvas, or outputs (charts, maps, tables, big numbers) that display live data from any UDF. Every widget is shareable as a standalone URL, embeddable anywhere, and fully accessible to AI for generation and editing.
+
+With Widgets, you can:
+
+- **Drive UDFs with inputs** — Sliders, dropdowns, and text inputs broadcast values to every UDF on the canvas.
+- **Visualize UDF output** — Output widgets render charts, tables, maps, and KPIs from any UDF.
+- **Query with SQL** — Widgets run SQL over UDF results in-browser via DuckDB WASM.
+- **Dynamically generate interactive UI** — Pass valid widget JSON via a URL parameter to update the UI on the fly (see [Anatomy of a Widget URL](#anatomy-of-a-widget-url)).
+
+![Widgets overview](/img/widgets/widgets-overview.gif)
+
+*Changes in the input widget make all the downstream UDFs and output widgets re-run.*
+
+## Structure of a Widget
+
+Every widget is a small JSON object with two required keys: `type` and `props`.
+
+```json
+{
+  "type": "<widget-type>",
+  "props": {
+    "sql": "SELECT ... FROM {{my_udf}} WHERE value > $my_param",
+    "title": "My Chart",
+    "param": "my_param"
+  }
+}
+```
+
+See all the available widget types in the [Available Widgets](#available-widgets) section below.
+
+## How to create and use a Widget
+
+### Step 1: Drop a Widget Node
+
+In the Fused Workbench canvas, click the **Widget** icon in the toolbar to add one, then click it to open the JSON editor in the right panel.
+
+```json
+{
+  "type": "<widget-type>",
+  "props": { ... }
+}
+```
+
+### Step 2: Connect it to a UDF
+
+<details>
+<summary>Show the <code>orders_df</code> UDF code</summary>
+
+```python
+@fused.udf
+def udf(selected_option: str = "orders"):
+    import pandas as pd
+    import numpy as np
+    from datetime import datetime, timedelta
+
+    np.random.seed(42)
+    end_date = datetime.now()
+    dates = [end_date - timedelta(days=i) for i in range(29, -1, -1)]
+
+    df = pd.DataFrame({
+        "date": [d.strftime("%Y-%m-%d") for d in dates],
+        "orders": np.random.randint(50, 300, size=30),
+        "revenue": np.round(np.random.uniform(500, 5000, size=30), 2)
+    })
+
+    col = selected_option if selected_option in ("orders", "revenue") else "orders"
+    return df[["date", col]].rename(columns={col: "value"})
+```
+
+</details>
+
+Two things to do:
+
+1. Write the widget SQL to query the UDF output table (here `orders_df`).
+2. Connect the `orders_df` UDF node to the widget node with an edge.
+
+![Connect a UDF to a widget](/img/widgets/connect-udf-to-widget.gif)
+
+Example (bar chart) — [Try it out](https://unstable.fused.io/canvas/fc_1bHh5W6D1Yk6smpCeUuWPy?bounds=7506%2C825%2C8905%2C1761):
+
+```json
+{
+  "type": "bar-chart",
+  "props": {
+    "sql": "SELECT date AS label, value FROM {{orders_df}} ORDER BY label",
+    "title": "Metric Per Day",
+    "barColor": "#E8FF59",
+    "rotateLabels": true
+  }
+}
+```
+
+:::tip
+The UDF must be on the same canvas. The name inside `{{ }}` must match a UDF name present in the Canvas exactly (case-sensitive).
+:::
+
+## Anatomy of a Widget URL
+
+Every widget URL follows a predictable structure that makes it easy to share, embed, and programmatically manipulate:
+
+![Widget URL anatomy](/img/widgets/widget-url-anatomy.png)
+
+URL structure breakdown:
+
+- **`share_token`**: A unique identifier that scopes access to your canvas and its UDFs.
+- **`?widget={JSON}`**: An optional query parameter that overrides the entire widget definition — pass any valid widget JSON to render a different visualization, query, or layout on the same underlying data without touching the canvas. AI agents can use this to generate new widgets and return modified URLs instantly.
+
+:::note
+The base share URL (`https://fused.io/share/<share_token>`) can access all UDFs in the shared canvas.
+:::
+
+### Example: Line Chart
+
+The `?widget=` param makes the URL a lightweight experiment surface for both humans and AI. You can tweak the SQL in the URL, reload, and see the result instantly.
+
+```json
+https://fused.io/share/fc_...?widget={
+  "type": "line-chart",
+  "props": {
+    "sql": "SELECT date AS label, value FROM {{orders_df}} ORDER BY label",
+    "title": "Time Series",
+    "showArea": true,
+    "curveType": "smooth"
+  }
+}
+```
+
+The `{{orders_df}}` reference still resolves to the UDF on your canvas — the share token carries the canvas context. Only the widget rendering config changes.
+
+Open this in a browser to get a live, interactive widget — the chart renders data from your Fused UDF. [Try it out](https://unstable.fused.io/share/fc_1bHh5W6D1Yk6smpCeUuWPy?widget={%20%22type%22:%20%22line-chart%22,%20%22props%22:%20{%20%22sql%22:%20%22SELECT%20date%20AS%20label,%20value%20FROM%20{{orders_df}}%20ORDER%20BY%20label%22,%20%22title%22:%20%22Time%20Series%22,%20%22showArea%22:%20true,%20%22curveType%22:%20%22smooth%22%20}%20}) →
+
+## Sharing a Widget from Canvas
+
+When you share a specific widget from a canvas, you will get a URL like:
+
+```
+https://fused.io/share/<share_token>/<widget_name>?...
+```
+
+You can still override the widget by appending a `widget` query parameter and passing widget JSON.
+
+:::info
+When the base URL includes a specific widget path (for example, `/orders_widget`), the `?widget=` override is scoped. It can only query UDFs that are connected to that widget node in the canvas. It does not have access to every UDF in the shared canvas.
+:::
+
+
+<iframe
+  src="https://unstable.fused.io/share/fc_1bHh5W6D1Yk6smpCeUuWPy/orders_widget?selected_option=orders"
+  width="100%"
+  height="500px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+*When you share a widget URL, Fused automatically appends all canvas parameters as query parameters so the shared view can be reproduced exactly.* [Try it out →](https://unstable.fused.io/share/fc_1bHh5W6D1Yk6smpCeUuWPy/orders_widget?selected_option=orders)
+
+
+## Available Widgets
+
+[See a live example →](https://unstable.fused.io/canvas/fc_1IlPjYnRgK5cmhwRlbOnLr?embed=false&outline=false&code=true&bounds=-940%2C922%2C-200%2C1483)
+
+| Category | Widget | Description | Key Features / Notes |
+| --- | --- | --- | --- |
+| Input | `slider` | Numeric range control | `min`, `max`, `step`, `defaultValue`, binds to `param` |
+| Input | `input` | Free-text input field | Syncs with canvas param |
+| Input | `dropdown` | Select menu | Static options OR dynamic via DuckDB SQL (`label`, `value`), supports search |
+| Input | `button` | Clickable trigger | Increments a canvas param on click |
+| Input | `code-editor` | Multi-language editor | Supports Python, SQL, JSON, Markdown; syncs content to a param |
+| Input | `form` | Input container | Wraps inputs and submits as one object |
+| Input | `map-bounds` | Interactive map viewport | Emits `[west, south, east, north]` bounds |
+| Input | `map-h3` | H3-based map input | Emits H3 hex cell; supports resolution, k-ring, multi-coordinates |
+| Output | `bar-chart` | Bar chart via SQL | `label` + `value`, sorting, animation, layout options |
+| Output | `line-chart` | Time-series chart | Supports multi-series (`series` column), zoom, curves |
+| Output | `big-number` | KPI display | Prefix/suffix, compact format |
+| Output | `sql-table` | Data table | Sortable, filterable |
+| Output | `text` | Static/dynamic text | Supports markdown + variants (`h1`, `muted`, etc.) |
+| Output | `image` | Image display | URL or base64 |
+| Output | `fused-map` | Full interactive map | Supports multiple layer types, tooltips, legends, basemaps |
+| Output | `render` | Meta widget | Renders widgets dynamically from JSON |
+
+<iframe
+  src="https://unstable.fused.io/canvas/fc_1IlPjYnRgK5cmhwRlbOnLr?embed=false&outline=false&code=true&bounds=-940%2C922%2C-200%2C1483"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>

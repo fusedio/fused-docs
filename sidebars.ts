@@ -71,6 +71,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/stac", label: "STAC catalogs" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/gee", label: "Google Earth Engine" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/ai-data-connection", label: "Connecting AI to Data" },
+        { type: "doc", id: "guide/data-input-outputs/import-connection/widgets", label: "Widgets" },
       ],
     },
 
@@ -111,6 +112,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/advanced-setup/secrets-management", label: "Secrets management" },
         { type: "doc", id: "guide/advanced-setup/dependencies", label: "Dependencies" },
         { type: "doc", id: "guide/advanced-setup/on-prem-setup", label: "On-prem setup" },
+        { type: "doc", id: "guide/advanced-setup/encrypted-s3-bucket", label: "Encrypted S3 Bucket" },
       ],
     },
 
@@ -138,6 +140,16 @@ const sidebars: SidebarsConfig = {
         "examples/maxar-satellite-imagery",
         "examples/site-selection-analysis",
         "examples/currency-prediction",
+      ],
+    },
+
+    // Agentic Workflows
+    {
+      type: "category",
+      label: "Agentic Workflows",
+      collapsible: false,
+      items: [
+        "examples/overture-buildings-agents",
       ],
     },
 
@@ -180,6 +192,7 @@ const sidebars: SidebarsConfig = {
         "examples/sharing-canvas-dashboards",
       ],
     },
+
   ],
 
   // ============================================
