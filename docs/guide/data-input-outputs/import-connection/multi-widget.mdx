@@ -1,0 +1,128 @@
+---
+id: multi-widget
+title: Multi-Component Widget
+sidebar_label: Multi-Component Widget [Experimental]
+sidebar_position: 8
+---
+
+# Multi-Component Widget [Experimental]
+
+:::info Enable Widgets
+Multi-component widgets build on the experimental [Widgets](/guide/data-input-outputs/import-connection/widgets) feature, which must be enabled first:
+
+1. Click your profile and go to **Preferences**.
+2. Open the **Experimental features** tab.
+3. Toggle **Widget nodes** on.
+:::
+
+A single widget node can hold multiple widgets — sliders, charts, tables, text, maps — stacked or laid out together. You wrap them in a `div` with `children`. [Try it out →](https://unstable.fused.io/canvas/fc_37tFyp2b187Mi6HxBar2J6?bounds=2655%2C498%2C4237%2C2348)
+
+## How it works
+
+Use a `div` as the root container type and list each widget inside its `children` array — the structure is just a wrapper with standard CSS for layout.
+
+```json
+{
+  "type": "div",
+  "props": {
+    "style": "display: flex; flex-direction: column; gap: 16px; padding: 16px;"
+  },
+  "children": [
+    { "type": "slider",    "props": { } },
+    { "type": "bar-chart", "props": { } },
+    { "type": "sql-table", "props": { } }
+  ]
+}
+```
+
+- `type: "div"` — a container, not a visual widget. It just groups children.
+- `props.style` — standard CSS. Use `flex-direction: column` for a vertical stack, `row` for side-by-side.
+- `children` — an ordered array of widget definitions `{ type, props }`. Each child is a full widget. For the full list of supported widgets, see the [available widget](/guide/data-input-outputs/import-connection/widgets#available-widgets).
+
+:::tip
+You can nest a `div` inside another `div` for more complex layouts.
+:::
+
+## Wiring widgets together
+
+An input widget publishes a value via `param`. Any sibling widget reads it as `$param` inside its `sql`. Change the input widget value → siblings re-query → the UI updates in sync.
+
+In the `multi_widget` JSON below, the slider declares `"param": "top_n"`, and both the bar chart and the SQL table use `LIMIT $top_n` — that's the dependency. Click the widget icon, paste it in, then [connect the widget to the `my_udf` UDF](/guide/data-input-outputs/import-connection/widgets#step-2-connect-it-to-a-udf).
+
+<details>
+<summary>Show the <code>my_udf</code> UDF code</summary>
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
+    import pandas as pd
+
+    @fused.cache
+    def load_data(file_path):
+        return pd.read_parquet(file_path)
+
+    df = load_data(path)
+    return df
+```
+
+</details>
+
+<details>
+<summary>Show the multi-widget JSON</summary>
+
+```json
+{
+  "type": "div",
+  "props": {
+    "style": "display: flex; flex-direction: column; gap: 16px; padding: 16px;"
+  },
+  "children": [
+    {
+      "type": "slider",
+      "props": {
+        "label": "Top N most expensive locations",
+        "param": "top_n",
+        "min": 1,
+        "max": 20,
+        "step": 1,
+        "defaultValue": 15
+      }
+    },
+    {
+      "type": "bar-chart",
+      "props": {
+        "title": "Top N Most Expensive Locations (Avg Price)",
+        "sql": "SELECT neighbourhood_cleansed as label, ROUND(AVG(price_in_dollar), 2) as value FROM {{my_udf}} GROUP BY neighbourhood_cleansed ORDER BY value DESC LIMIT $top_n",
+        "barColor": "#E8FF59",
+        "barOpacity": 1,
+        "barRadius": 4,
+        "hoverColor": "#ffffff",
+        "showGrid": true,
+        "rotateLabels": true,
+        "horizontal": false,
+        "showValues": true,
+        "sort": "none",
+        "xAxisFontSize": 11,
+        "yAxisFontSize": 11,
+        "beginAtZero": true,
+        "animationMs": 300
+      }
+    },
+    {
+      "type": "sql-table",
+      "props": {
+        "title": "Number of Reviews for Top N Locations",
+        "sql": "SELECT neighbourhood_cleansed AS Neighbourhood, ROUND(AVG(price_in_dollar), 2) AS Avg_Price, CAST(SUM(number_of_reviews) AS INTEGER) AS Total_Reviews FROM {{my_udf}} WHERE neighbourhood_cleansed IN (SELECT neighbourhood_cleansed FROM {{my_udf}} GROUP BY neighbourhood_cleansed ORDER BY AVG(price_in_dollar) DESC LIMIT $top_n) GROUP BY neighbourhood_cleansed ORDER BY Avg_Price DESC"
+      }
+    }
+  ]
+}
+```
+
+</details>
+
+### Result
+
+Changing the slider, every widget using `$param` (here `$top_n`) updates instantly — the bar chart and SQL table re-render in sync with the slider value.
+
+![Multi-widget slider updating chart and table](/img/widgets/multi-widget-slider.gif)
