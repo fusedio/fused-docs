@@ -1,0 +1,138 @@
+---
+id: securing-shared-tokens
+title: Securing Shared Tokens
+sidebar_label: Securing Shared Tokens
+sidebar_position: 3
+---
+
+# Securing Shared Tokens
+
+Fused shared tokens can be set to either **public** or **team-only** access. You should set the token access depending on your use case, and the sensitivity of the data you are sharing.
+
+Shared tokens are set on the canvas level. Every UDF on the canvas will inherit the access level of the canvas.
+
+## Scoping access with canvases
+
+Access is managed **per canvas** ([team vs public](/workbench/udf-builder/canvas#share-modal) and share links). [Canvas passcode](/guide/working-with-udfs/udf-best-practices/security#experimental-protect-endpoints-with-canvas-passcode) is an extra gate that exists only for **publicly shared** canvases. Everyone who can open a canvas sees the same UDFs on it and the same rules for calling them over HTTPS.
+
+If you only want to expose **some** UDFs—or a **different** audience—use a **separate canvas**: keep public or broadly shared work on one canvas, and move UDFs that need tighter access to another canvas with **team-only** sharing.
+
+## Public Access {#public-access}
+
+Public access means that the token is accessible by anyone. This is useful if you want to share your data publicly without requiring authentication.
+
+If you set the token to public access, anyone can access the token and use it to call the UDFs on the canvas, so you should only set a token to public access if you are sharing non-sensitive data.
+
+## Team Access
+
+Team access means the canvas and its UDF endpoints are available only to members of your team (unless you add a separate, time-limited session token for a specific use case). Use this when the data should not be callable by anonymous HTTPS clients using the canvas token alone.
+
+For team-only canvases, you can generate a **session token** when you need a time-limited credential — for example to embed a UDF URL in an external page or application.
+
+Session tokens are short-lived tokens that need to be explicitly generated. By default, a shared token that is set to team access will not have a session token. In this case, the shared token will be available to team members only.
+
+Add the session token as a `fused_session_token` [query parameter](/guide/data-input-outputs/export-api/tokens-endpoints#passing-parameters) on the **UDF HTTPS URL** (same host and path as a normal canvas call, for example `https://udf.ai/fc_<CANVAS_TOKEN>/<udf_name>.json`). Because session tokens are short-lived, they are safe to use in embedded links.
+
+## Setting the Access Level
+
+To set the access level of a shared token, click the Share button in the top right corner of the canvas.
+
+Then, select the access level you want to set for the token.
+
+![Share modal](/img/guide/share_modal.png)
+
+## Session Tokens
+
+This diagram shows the authentication flow for a team-only shared token with a session token, embedded in an external application.
+
+<ClickZoomImage src="/img/guide/session_token.png" alt="Authentication flow for team-only canvas with session token in an external app" />
+
+1. An authenticated user requests a page from an external application that embeds a team-only shared token.
+2. The external application’s backend calls the Fused API to **mint a session token**, authenticated with a Fused Service Account.
+3. Fused verifies the service account and returns a temporary session token.
+4. External application generates the embedded UDF URL with the session token and passes it to the user's browser.
+5. User's browser requests the UDF shared token link with the session token.
+
+## Creating a Fused Service Account {#fused-service-accounts}
+
+A Fused Service Account can be used to generate a session token. You can generate a service account in the Fused Workbench under Preferences.
+
+1. Open the Preferences page in the Fused Workbench.
+2. Enable Service Accounts under Experimental Features.
+3. In the Service Accounts section, click the "Create Service Account" button.
+4. Give the service account a name and click "Create".
+
+:::important
+Your service account token will be shown only once, so make sure to copy it to a secure location. Never share your service account token publicly or commit it to version control.
+:::
+
+## Generating a Session Token
+
+### From Workbench
+
+[`fused.api.session_token()`](/python-sdk/api-reference/api#session_token) can be called from a UDF running in Workbench. It returns a short-lived token (default `"1h"`) you can pass as `fused_session_token` on UDF HTTPS URLs for that canvas—useful when you do not want to set up a service account yet.
+
+To mint session tokens from **your own backend** (for example for embeds in a product), use a [Fused Service Account](#fused-service-accounts) and the HTTP API below.
+
+```python showLineNumbers
+token = fused.api.session_token(session_max_age="1h").session_token
+
+url = "https://www.udf.ai/fc_XXX/my_udf/run/tiles/{z}/{x}/{y}"
+url += f"&fused_session_token={token}"
+```
+
+### From your backend (service account)
+
+Once you have a Fused Service Account, you can generate a session token using the Fused HTTP API from your backend server.
+
+```python showLineNumbers
+import requests
+import os
+
+# Your canvas token
+canvas_token = "fc_abcdef1234567890"
+
+# Get the service account token from the environment variable or other secure source
+fused_service_account_token = os.getenv("FUSED_SERVICE_ACCOUNT_TOKEN")
+
+# Pass the service account token to the Fused server in the Authorization header
+headers = {
+    "Authorization": f"fused-service-token {fused_service_account_token}",
+    "Content-Type": "application/json",
+}
+
+# Set the TTL for the session token
+payload = {
+    "ttl": 60 * 60 # 1 hour
+}
+
+# Make the request to the Fused server
+req = requests.post(f"https://www.fused.io/server/v1/session_token/by-access-token/{canvas_token}", headers=headers, json=payload)
+
+# Extract the session token from the response
+session_token = req.json()["session_token"]
+```
+
+The session token will be valid for the duration of the TTL you set.
+
+## Using a Session Token
+
+Once you have a session token, append `fused_session_token` to the UDF URL like any other query parameter. The path must still include the **canvas token** and **UDF name** (see [Tokens & endpoints](/guide/data-input-outputs/export-api/tokens-endpoints)).
+
+```python showLineNumbers
+# Canvas token, UDF name, and session token (from the minting step above)
+canvas_token = "fc_abcdef1234567890"
+udf_name = "my_udf"
+session_token = "835b249b-d3ac-4a2d-8f7c-43d0805464c9:1744065600:abcdefghijklmnopqrstuvwxyz1234567890"
+
+# Example: JSON output — add other params with &
+udf_url = f"https://udf.ai/{canvas_token}/{udf_name}.json?fused_session_token={session_token}"
+```
+
+Use that URL in iframes, map tile layers, or `fetch` from the browser.
+
+## See also
+
+- [Write UDFs securely](/guide/working-with-udfs/udf-best-practices/security) — SQL, parameters, secrets, and [experimental canvas passcodes](/guide/working-with-udfs/udf-best-practices/security#experimental-protect-endpoints-with-canvas-passcode) (publicly shared canvases only)
+- [Tokens & endpoints](/guide/data-input-outputs/export-api/tokens-endpoints)
+- [Canvas — Share modal](/workbench/udf-builder/canvas#share-modal)

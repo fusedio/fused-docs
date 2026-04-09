@@ -91,13 +91,12 @@ Once both policies are saved, your Fused solutions engineer can confirm connecti
 ```python
 @fused.udf
 def udf():
-
-    fs = s3fs.S3FileSystem()
-    return fs.ls("s3://<BUCKET_NAME>/")
+    return fused.api.list("s3://<BUCKET_NAME>/")
 ```
 
 ## See also
 
+- Cloud storage — connect S3 and GCS buckets to Fused
 - On-Prem Setup — overview of on-premise deployment
 - Secrets Management — store credentials securely
 - Write UDFs securely — best practices for handling sensitive data
@@ -274,7 +273,7 @@ URL: https://docs.fused.io/guide/advanced-setup/on-prem-setup
 
 # On-Prem Setup
 
-Fused offers an on-premise deployment option for enterprise customers who need to keep data behind their own firewall. An on-prem deployment gives you the full Fused platform — Workbench, the Python SDK, HTTP endpoints, and serverless UDF execution — running entirely inside your AWS account.
+Fused offers an on-premise deployment option for enterprise customers who need to keep data behind their own firewall. An on-prem deployment gives you the full Fused platform — Workbench, the Python SDK, HTTPS endpoints, and serverless UDF execution — running entirely inside your AWS account.
 
 ## Benefits
 
@@ -723,6 +722,137 @@ Learn more about QGIS
 
 ================================================================================
 
+## Securing Shared Tokens
+Path: guide/data-input-outputs/export-api/securing-shared-tokens.mdx
+URL: https://docs.fused.io/guide/data-input-outputs/export-api/securing-shared-tokens
+
+# Securing Shared Tokens
+
+Fused shared tokens can be set to either **public** or **team-only** access. You should set the token access depending on your use case, and the sensitivity of the data you are sharing.
+
+Shared tokens are set on the canvas level. Every UDF on the canvas will inherit the access level of the canvas.
+
+## Scoping access with canvases
+
+Access is managed **per canvas** (team vs public and share links). Canvas passcode is an extra gate that exists only for **publicly shared** canvases. Everyone who can open a canvas sees the same UDFs on it and the same rules for calling them over HTTPS.
+
+If you only want to expose **some** UDFs—or a **different** audience—use a **separate canvas**: keep public or broadly shared work on one canvas, and move UDFs that need tighter access to another canvas with **team-only** sharing.
+
+## Public Access 
+
+Public access means that the token is accessible by anyone. This is useful if you want to share your data publicly without requiring authentication.
+
+If you set the token to public access, anyone can access the token and use it to call the UDFs on the canvas, so you should only set a token to public access if you are sharing non-sensitive data.
+
+## Team Access
+
+Team access means the canvas and its UDF endpoints are available only to members of your team (unless you add a separate, time-limited session token for a specific use case). Use this when the data should not be callable by anonymous HTTPS clients using the canvas token alone.
+
+For team-only canvases, you can generate a **session token** when you need a time-limited credential — for example to embed a UDF URL in an external page or application.
+
+Session tokens are short-lived tokens that need to be explicitly generated. By default, a shared token that is set to team access will not have a session token. In this case, the shared token will be available to team members only.
+
+Add the session token as a `fused_session_token` query parameter on the **UDF HTTPS URL** (same host and path as a normal canvas call, for example `https://udf.ai/fc_<CANVAS_TOKEN>/<udf_name>.json`). Because session tokens are short-lived, they are safe to use in embedded links.
+
+## Setting the Access Level
+
+To set the access level of a shared token, click the Share button in the top right corner of the canvas.
+
+Then, select the access level you want to set for the token.
+
+[Image: Share modal]
+
+## Session Tokens
+
+This diagram shows the authentication flow for a team-only shared token with a session token, embedded in an external application.
+
+<ClickZoomImage src="/img/guide/session_token.png" alt="Authentication flow for team-only canvas with session token in an external app" />
+
+1. An authenticated user requests a page from an external application that embeds a team-only shared token.
+2. The external application’s backend calls the Fused API to **mint a session token**, authenticated with a Fused Service Account.
+3. Fused verifies the service account and returns a temporary session token.
+4. External application generates the embedded UDF URL with the session token and passes it to the user's browser.
+5. User's browser requests the UDF shared token link with the session token.
+
+## Creating a Fused Service Account 
+
+A Fused Service Account can be used to generate a session token. You can generate a service account in the Fused Workbench under Preferences.
+
+1. Open the Preferences page in the Fused Workbench.
+2. Enable Service Accounts under Experimental Features.
+3. In the Service Accounts section, click the "Create Service Account" button.
+4. Give the service account a name and click "Create".
+
+Your service account token will be shown only once, so make sure to copy it to a secure location. Never share your service account token publicly or commit it to version control.
+
+## Generating a Session Token
+
+### From Workbench
+
+`fused.api.session_token()` can be called from a UDF running in Workbench. It returns a short-lived token (default `"1h"`) you can pass as `fused_session_token` on UDF HTTPS URLs for that canvas—useful when you do not want to set up a service account yet.
+
+To mint session tokens from **your own backend** (for example for embeds in a product), use a Fused Service Account and the HTTP API below.
+
+```python showLineNumbers
+token = fused.api.session_token(session_max_age="1h").session_token
+
+url = "https://www.udf.ai/fc_XXX/my_udf/run/tiles///"
+url += f"&fused_session_token="
+```
+
+### From your backend (service account)
+
+Once you have a Fused Service Account, you can generate a session token using the Fused HTTP API from your backend server.
+
+```python showLineNumbers
+
+# Your canvas token
+canvas_token = "fc_abcdef1234567890"
+
+# Get the service account token from the environment variable or other secure source
+fused_service_account_token = os.getenv("FUSED_SERVICE_ACCOUNT_TOKEN")
+
+# Pass the service account token to the Fused server in the Authorization header
+headers = ",
+    "Content-Type": "application/json",
+}
+
+# Set the TTL for the session token
+payload = 
+
+# Make the request to the Fused server
+req = requests.post(f"https://www.fused.io/server/v1/session_token/by-access-token/", headers=headers, json=payload)
+
+# Extract the session token from the response
+session_token = req.json()["session_token"]
+```
+
+The session token will be valid for the duration of the TTL you set.
+
+## Using a Session Token
+
+Once you have a session token, append `fused_session_token` to the UDF URL like any other query parameter. The path must still include the **canvas token** and **UDF name** (see Tokens & endpoints).
+
+```python showLineNumbers
+# Canvas token, UDF name, and session token (from the minting step above)
+canvas_token = "fc_abcdef1234567890"
+udf_name = "my_udf"
+session_token = "835b249b-d3ac-4a2d-8f7c-43d0805464c9:1744065600:abcdefghijklmnopqrstuvwxyz1234567890"
+
+# Example: JSON output — add other params with &
+udf_url = f"https://udf.ai//.json?fused_session_token="
+```
+
+Use that URL in iframes, map tile layers, or `fetch` from the browser.
+
+## See also
+
+- Write UDFs securely — SQL, parameters, secrets, and experimental canvas passcodes (publicly shared canvases only)
+- Tokens & endpoints
+- Canvas — Share modal
+
+================================================================================
+
 ## Tokens & endpoints
 Path: guide/data-input-outputs/export-api/tokens-endpoints.mdx
 URL: https://docs.fused.io/guide/data-input-outputs/export-api/tokens-endpoints
@@ -1045,21 +1175,7 @@ The bucket must enable the following CORS settings to allow uploading files from
 
 #### Encrypted S3 Buckets
 
-To connect an encrypted S3 bucket, access to both the bucket and the KMS key is required. The KMS key must be in the same region as the bucket.
-
-Configure KMS policy:
-
-```json
-,
-  "Action": [
-    "kms:Decrypt",
-    "kms:Encrypt",
-    "kms:GenerateDataKey*",
-    "kms:DescribeKey"
-  ],
-  "Resource": "*"
-}
-```
+If your bucket uses server-side encryption with AWS KMS (SSE-KMS), additional KMS and bucket policy configuration is required. See Connecting an Encrypted S3 Bucket for full step-by-step instructions.
 
 ### Google Cloud Storage (GCS)
 
@@ -1195,42 +1311,79 @@ Connect Fused to external databases like Snowflake and BigQuery.
 
 ## Snowflake
 
-Set `user` and `password` in the Fused secrets management UI first.
+### 1. Allowlist Fused IPs in Snowflake
+
+If your Snowflake account has a network policy, you must allowlist the Fused IPs before connections will work:
+- `44.230.70.117/32`
+- `52.42.164.181/32`
+
+To add them, run the following SQL in Snowflake (or ask your Snowflake admin):
+
+```sql
+CREATE NETWORK RULE fused_ips
+  TYPE = IPV4
+  VALUE_LIST = ('44.230.70.117', '52.42.164.181')
+  MODE = INGRESS;
+
+ALTER NETWORK POLICY your_network_policy
+  ADD ALLOWED_IP_LIST = ('44.230.70.117', '52.42.164.181');
+```
+
+### 2. Set up a Snowflake user for Fused
+
+You can use an existing Snowflake user or create a dedicated one. Either way, make sure the user has a role and warehouse assigned.
+
+To create a new user:
+
+```sql
+CREATE USER fused_user
+  PASSWORD = 'a_strong_password'
+  DEFAULT_ROLE = your_role
+  DEFAULT_WAREHOUSE = your_warehouse;
+
+GRANT ROLE your_role TO USER fused_user;
+```
+
+If using an existing user, verify they have the necessary role and warehouse:
+
+```sql
+ALTER USER existing_user SET DEFAULT_ROLE = your_role DEFAULT_WAREHOUSE = your_warehouse;
+GRANT ROLE your_role TO USER existing_user;
+```
+
+Your account identifier looks like `orgname-accountname` or `xy12345.us-east-1`. You can find it in **Snowflake > Admin > Accounts**, or by running `SELECT CURRENT_ACCOUNT()`.
+
+### 3. Store credentials in Fused secrets
+
+Add `SNOWFLAKE_USER` and `SNOWFLAKE_PASSWORD` in the Fused secrets management UI. Use the user’s password or a programmatic access token (PAT) for `SNOWFLAKE_PASSWORD`—the Python connector accepts either.
+
+### 4. Connect from a UDF
 
 ```python showLineNumbers
 @fused.udf
 def udf():
 
     query = 'SELECT CURRENT_VERSION()'
-    
-    try:
-        conn = snowflake.connector.connect(
-            user=fused.secrets['SNOWFLAKE_USER'],
-            password=fused.secrets['SNOWFLAKE_PASSWORD'], 
-            account='your_account_identifier',
-            warehouse='your_warehouse',
-            database='your_database',
-            schema='your_schema'
-        )
-        
-        # Execute query and return as DataFrame
-        cursor = conn.cursor()
-        cursor.execute(query)
-        
-        # Use pandas to read directly from cursor
-        df = cursor.fetch_pandas_all()
-        
-        cursor.close()
-        conn.close()
-        
-        return df
-        
-    except Exception as e:
-        print(f"Snowflake connection failed: ")
-        raise
+
+    conn = snowflake.connector.connect(
+        user=fused.secrets['SNOWFLAKE_USER'],
+        password=fused.secrets['SNOWFLAKE_PASSWORD'],
+        account='your_account_identifier',
+        warehouse='your_warehouse',
+        database='your_database',
+        schema='your_schema'
+    )
+
+    cursor = conn.cursor()
+    cursor.execute(query)
+    df = cursor.fetch_pandas_all()
+    cursor.close()
+    conn.close()
+
+    return df
 ```
 
-Read more about Snowflake's authentication.
+Read more about Snowflake's Python connector.
 
 ---
 
@@ -1331,14 +1484,6 @@ def udf(repo_name: str = "athasdev/athas"):
      
     return total_df
 ```
-
-## Allowlist Fused IPs
-
-If your database requires IP allowlisting, add the Fused IPs:
-- `44.230.70.117/32`
-- `52.42.164.181/32`
-
-Contact Fused for more information is required as `info@fused.io`
 
 ================================================================================
 
@@ -1522,6 +1667,101 @@ job = fused.ingest(
 
 job.run_batch()
 ```
+
+================================================================================
+
+## Widgets
+Path: guide/data-input-outputs/import-connection/widgets.mdx
+URL: https://docs.fused.io/guide/data-input-outputs/import-connection/widgets
+
+# Widgets [Experimental]
+
+Widgets are an experimental feature and need to be turned on before you can use them:
+
+1. Click your profile and go to **Preferences**.
+2. Open the **Experimental features** tab.
+3. Toggle **Widget nodes** on.
+
+Widgets are interactive, declarative UI nodes you can drop onto the Fused canvas. Unlike UDFs that run Python, widgets are defined in JSON — no code required. They can be inputs (sliders, dropdowns, text inputs) that drive parameters across the canvas, or outputs (charts, maps, tables, big numbers) that display live data from any UDF. Every widget is shareable as a standalone URL, embeddable anywhere, and fully accessible to AI for generation and editing.
+
+With Widgets, you can:
+
+- **Drive UDFs with inputs** — Sliders, dropdowns, and text inputs broadcast values to every UDF on the canvas.
+- **Visualize UDF output** — Output widgets render charts, tables, maps, and KPIs from any UDF.
+- **Query with SQL** — Widgets run SQL over UDF results in-browser via DuckDB WASM.
+- **Dynamically generate interactive UI** — Pass valid widget JSON via a URL parameter to update the UI on the fly (see Anatomy of a Widget URL).
+
+[Image: Widgets overview]
+
+*Changes in the input widget make all the downstream UDFs and output widgets re-run.*
+
+## Structure of a Widget
+
+Every widget is a small JSON object with two required keys: `type` and `props`.
+
+```json
+} WHERE value > $my_param",
+    "title": "My Chart",
+    "param": "my_param"
+  }
+}
+```
+
+See all the available widget types in the Available Widgets section below.
+
+## How to create and use a Widget
+
+### Step 1: Drop a Widget Node
+
+In the Fused Workbench canvas, click the **Widget** icon in the toolbar to add one, then click it to open the JSON editor in the right panel.
+
+```json
+
+}
+```
+
+### Step 2: Connect it to a UDF
+
+```python
+@fused.udf
+def udf(selected_option: str = "orders"):
+
+    from datetime import datetime, timedelta
+
+    np.random.seed(42)
+    end_date = datetime.now()
+    dates = [end_date - timedelta(days=i) for i in range(29, -1, -1)]
+
+    df = pd.DataFrame()
+
+    col = selected_option if selected_option in ("orders", "revenue") else "orders"
+    return df[["date", col]].rename(columns=)
+```
+
+*When you share a widget URL, Fused automatically appends all canvas parameters as query parameters so the shared view can be reproduced exactly.* Try it out →
+
+## Available Widgets
+
+See a live example →
+
+| Category | Widget | Description | Key Features / Notes |
+| --- | --- | --- | --- |
+| Input | `slider` | Numeric range control | `min`, `max`, `step`, `defaultValue`, binds to `param` |
+| Input | `input` | Free-text input field | Syncs with canvas param |
+| Input | `dropdown` | Select menu | Static options OR dynamic via DuckDB SQL (`label`, `value`), supports search |
+| Input | `button` | Clickable trigger | Increments a canvas param on click |
+| Input | `code-editor` | Multi-language editor | Supports Python, SQL, JSON, Markdown; syncs content to a param |
+| Input | `form` | Input container | Wraps inputs and submits as one object |
+| Input | `map-bounds` | Interactive map viewport | Emits `[west, south, east, north]` bounds |
+| Input | `map-h3` | H3-based map input | Emits H3 hex cell; supports resolution, k-ring, multi-coordinates |
+| Output | `bar-chart` | Bar chart via SQL | `label` + `value`, sorting, animation, layout options |
+| Output | `line-chart` | Time-series chart | Supports multi-series (`series` column), zoom, curves |
+| Output | `big-number` | KPI display | Prefix/suffix, compact format |
+| Output | `sql-table` | Data table | Sortable, filterable |
+| Output | `text` | Static/dynamic text | Supports markdown + variants (`h1`, `muted`, etc.) |
+| Output | `image` | Image display | URL or base64 |
+| Output | `fused-map` | Full interactive map | Supports multiple layer types, tooltips, legends, basemaps |
+| Output | `render` | Meta widget | Renders widgets dynamically from JSON |
 
 ================================================================================
 
@@ -4068,6 +4308,367 @@ result = my_udf(name="hello")
 
 ================================================================================
 
+## Building UDFs for Agents
+Path: guide/working-with-udfs/udf-best-practices/agents.mdx
+URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/agents
+
+Fused gives you a uniquely fast path from data to agent tool. Write a Python function that joins datasets from any source — FTP servers, one-time CSV downloads, internal APIs, legacy databases, files someone emailed you — do any processing you need, and click **Share → Open API** to instantly expose it as an MCP server. No infrastructure, no deployment, no waiting.
+
+An agent calls a UDF the same way any HTTP client does:
+
+```
+GET https://udf.ai/fc_TOKEN/get_county_demographics.json?county_fips=06037
+```
+
+```json
+
+```
+
+The key to making this work well is keeping UDFs focused: return small, structured results rather than raw datasets. Agents work best when each tool call gives them a precise answer, not a table they have to reason over. UDFs also have a 120s execution limit — another reason to precompute and serve summaries rather than doing heavy work at call time. This guide covers how to design UDFs that agents can discover, call, and chain reliably.
+
+## Three patterns for agent UDFs
+
+### Pattern A: Data query
+
+The most common pattern. The agent calls the UDF to answer a factual question and uses the response to reason further.
+
+- Returns a small dict or DataFrame (< ~20 rows)
+- Field names are self-explanatory
+- Call via `.json` endpoint
+
+```python
+# get_county_demographics
+
+@fused.udf
+def udf(county_fips: str = "06037", year: int = 2023):
+    """
+    Returns population and median income for a specific US county.
+    Use when the user asks about demographics for a named county.
+    """
+    ...
+    return 
+```
+
+Agent call: `GET /fc_TOKEN/get_county_demographics.json?county_fips=06037`
+
+---
+
+### Pattern B: Action / trigger
+
+The UDF kicks off a long-running job (ingestion, report generation, batch processing) and returns immediately with a job reference. The agent doesn't wait for completion.
+
+```python
+# trigger_census_ingestion
+
+@fused.udf
+def udf(dataset: str = "census_2023", region: str = "CA"):
+    """
+    Triggers a batch ingestion job for the specified dataset and region.
+    Returns immediately with a job ID. Use the job ID with the
+    check_ingestion_status UDF to monitor progress.
+
+    Do NOT use this to fetch data — use get_county_demographics instead.
+    """
+
+    job_id = str(uuid.uuid4())
+    enqueue_batch_job(dataset=dataset, region=region, job_id=job_id)
+    return  / ",
+    }
+```
+
+A synchronous UDF that waits for a 5-minute job to complete burns compute and risks hitting the 120s timeout. Design action UDFs to fire-and-forget, then provide a separate status-check UDF if the agent needs to follow up.
+
+For batch patterns, see Scaling out UDFs.
+
+---
+
+### Pattern C: Unit processing
+
+Some UDFs do fast, bounded work on a single input — convert a CSV to Parquet, clip a raster to a bounding box, enrich a single address. Each call completes well within the time limit, but an agent can fan out many calls in parallel to process an entire dataset.
+
+```python
+# convert_to_parquet
+
+@fused.udf
+def udf(input_path: str, output_prefix: str, partition_by: str = "region"):
+    """
+    Converts a single CSV file to a partitioned Parquet dataset.
+    Returns the output path and row count on success.
+
+    input_path: S3 or GCS path to the source CSV
+    output_prefix: S3 or GCS prefix where partitioned parquet will be written
+    partition_by: column name to partition by (default: "region")
+    """
+
+    df = pd.read_csv(input_path)
+    out = f"/.parquet"
+    df.to_parquet(out, index=False)
+    return 
+```
+
+The agent calls this once per file and collects the results. Because each call is independent and fast, many can run in parallel without hitting the 120s limit.
+
+This is different from Pattern B: the agent gets a result it can act on immediately rather than waiting for a background job to complete. Keep each unit small — if a single file takes minutes to process, switch to Pattern B instead.
+
+---
+
+## Name your UDFs explicitly
+
+The function must always be called `udf` — Workbench requires it. Use a comment at the top of the file to give the UDF a descriptive name:
+
+```python title="Always use def udf() — name it with a comment"
+# get_county_population
+
+@fused.udf
+def udf(state_fips: str = "06"):
+    ...
+```
+
+This matters because agents choose tools by name and description. `get_county_population` is immediately useful; leaving the comment blank or vague is not.
+
+## Keep execution fast
+
+Agents call UDFs sequentially — each call blocks the reasoning loop. A UDF that takes 30s means the agent is idle for 30s, and that compounds across every step of a workflow.
+
+**Precompute and read from storage, don't recompute on each call:**
+
+**Cache expensive setup** with `@fused.cache` — model loading, large file reads, and API auth are good candidates.
+
+**Keep the 120s limit in mind.** If a task regularly approaches that ceiling, it's a sign the UDF is doing too much live work. Move computation upstream and have the UDF serve results from storage. For jobs that genuinely need more time, see Pattern B: Action / trigger above.
+
+## Keep I/O small
+
+LLM context windows are narrow. A UDF returning 50,000 rows doesn't just fail to help — it actively degrades the agent by flooding its context.
+
+**Return aggregates and summaries, not raw data:**
+
+```python title="Preferred — return a summary"
+# get_top_counties_by_population
+
+@fused.udf
+def udf(state: str = "CA", top_n: int = 10):
+    """
+    Returns the top N counties by population for a given state.
+    Use top_n to control how many results are returned (default: 10).
+    """
+
+    df = pd.read_parquet("s3://my-bucket/census/raw.parquet")
+    return (
+        df[df["state"] == state]
+        .groupby("county")["population"]
+        .sum()
+        .nlargest(top_n)
+        .reset_index()
+    )
+```
+
+**Add a `limit` or `top_n` parameter** whenever the result size could vary. Agents can pass a smaller value when they only need a quick answer.
+
+**Pass file paths, not file contents.** When an agent needs to send data to a UDF for processing, have it pass an S3 or GCS path — not inline data:
+
+```python
+# enrich_address_file
+
+@fused.udf
+def udf(input_path: str, output_path: str = ""):
+    """
+    Runs demographic enrichment on a CSV of addresses stored at input_path.
+    Writes results to output_path and returns a summary of the enrichment.
+
+    input_path: S3 or GCS path to a CSV with an 'address' column
+    output_path: S3 or GCS path where enriched parquet will be written
+    """
+
+    df = pd.read_csv(input_path)
+    # ... processing ...
+    df.to_parquet(output_path)
+    return 
+```
+
+The UDF does the heavy lifting internally. The agent only sees the summary. For reading and writing files from cloud storage, see the dedicated guide.
+
+## Design for the question, not the data
+
+The LLM decides which UDF to call based on its docstring. A vague docstring leads to wrong calls; a good one leads to correct ones on the first try.
+
+**Write docstrings that answer: what does this UDF answer, and when should an agent use it?**
+
+```python title="Preferred — clear docstring, descriptive params"
+# search_census_demographics
+
+@fused.udf
+def udf(search_query: str, year: int = 2023, top_n: int = 5):
+    """
+    Searches census demographic data using a natural language query.
+    Returns the top N matching counties with population and income data.
+
+    Use this when the user asks about population, demographics, or income
+    for a specific area or region.
+
+    Args:
+        search_query: Plain text search (e.g. "counties near Los Angeles")
+        year: Census year to query (2020-2023)
+        top_n: Number of results to return
+    """
+    ...
+```
+
+**Use descriptive parameter names** (`region_fips`, `start_date`, `metric_name`) — not abbreviations (`r`, `d1`, `m`).
+
+**Provide sensible defaults** so agents can call the UDF without specifying every parameter. A UDF with no defaults forces the agent to guess.
+
+**Harden the surface area.** Agents should only control what they genuinely need to vary. Everything else — table names, file paths, internal SQL structure — should be hardcoded. This prevents both misuse and prompt injection. See Write UDFs securely for full guidance.
+
+## Build for chaining
+
+Agents rarely call a single UDF in isolation. They build pipelines — the output of one call becomes the input of the next. A few patterns make UDFs much easier to chain reliably.
+
+### Accept any readable format as input
+
+If your UDF accepts a `path` parameter, don't hardcode `pd.read_parquet(path)`. Agents may pass CSVs, GeoJSON files, or other formats depending on what a prior step produced. Detect the format and read accordingly:
+
+```python
+# analyze_locations
+
+@fused.udf
+def udf(path: str, value_col: str = "score"):
+    """
+    Analyzes location data from the file at path.
+    Accepts Parquet, CSV, or GeoJSON.
+    """
+
+    if path.endswith(".parquet"):
+        df = gpd.read_parquet(path)
+    elif path.endswith((".json", ".geojson")):
+        df = gpd.read_file(path)
+    elif path.endswith(".csv"):
+        df = pd.read_csv(path)
+    else:
+        try:
+            df = gpd.read_parquet(path)
+        except Exception:
+            df = gpd.read_file(path)
+    ...
+```
+
+A UDF that crashes on CSV input when the agent passes one breaks the whole pipeline. Accept what the agent might reasonably give you.
+
+### Add `output_path` and `save_to_file` parameters
+
+Agents chain UDFs by passing the output of one as the input to another. The cleanest way to do this is via a stable S3 path — not by passing a live UDF URL as input to the next call (which causes the receiver to fetch HTML or GeoJSON and try to parse it as Parquet).
+
+Give every analysis or transformation UDF an `output_path` and `save_to_file` parameter:
+
+```python
+# transform_data
+
+@fused.udf
+def udf(
+    path: str,
+    # ... task-specific params ...
+    output_path: str = "",
+    save_to_file: bool = False,
+    overwrite: bool = False,
+):
+    """
+    Transforms the dataset at path.
+    If save_to_file=true, writes the result to output_path on S3
+    and returns a status object with the output_path — suitable for chaining.
+    Otherwise returns the result directly.
+    """
+
+    gdf = process(path)
+
+    if save_to_file and output_path:
+        if not overwrite and file_exists(output_path):
+            return []
+        gdf.to_parquet(output_path)
+        return []
+
+    return gdf
+```
+
+When called with `save_to_file=true`, the agent reads the `output_path` from the response and passes it to the next UDF. When called without it, the agent gets the data directly. Both modes work with the same UDF.
+
+### Name output columns explicitly — don't inherit from input
+
+If your UDF aggregates or transforms a column, name the output column after what it _represents_, not where it came from. An aggregated count stored in a column called `latitude` (because that was the `value_col` parameter) will confuse both agents and humans downstream.
+
+```python
+# ❌ Output column inherits the input column name — "latitude" actually means "count"
+gdf = aggregate(df, value_col="latitude", agg="count")
+# → columns: ["hex", "latitude", "geometry"]
+
+# ✅ Rename to reflect what the column actually contains
+gdf = aggregate(df, value_col="latitude", agg="count")
+gdf = gdf.rename(columns=)
+# → columns: ["hex", "count", "geometry"]
+```
+
+If you want to let callers name the output column, add an `output_col` parameter with a sensible default:
+
+```python
+# aggregate_by_hex
+
+@fused.udf
+def udf(path: str, value_col: str, agg: str = "count", output_col: str = ""):
+    result_col = output_col or agg
+    gdf = ...  # aggregate
+    gdf = gdf.rename(columns=)
+    return gdf
+```
+
+---
+
+## Expose your canvas to agents
+
+### Share via MCP
+
+Click **Share → Open API** in Workbench to generate an MCP-compatible endpoint for your canvas. AI tools (Claude, Cursor, VS Code with MCP extensions) can connect to this endpoint directly and discover your UDFs as callable tools.
+
+**Only visible UDFs are included.** UDFs that are hidden in Workbench are excluded from the MCP endpoint. Use this to keep helper UDFs, internal utilities, or anything you don't want agents to call directly out of the tool list — they'll still run when called by other UDFs, they just won't be surfaced.
+
+### Organize your canvas
+
+All UDFs on a canvas are exposed together through a single canvas token (`fc_XXX`). Group agent-facing UDFs on a dedicated canvas and move large batch jobs or internal utilities to a separate one:
+
+```
+Canvas A (agent-facing)         Canvas B (internal)
+─────────────────────────────   ──────────────────────────────
+get_county_demographics         run_full_etl_pipeline
+convert_to_parquet              rebuild_vector_index
+check_ingestion_status          reprocess_historical_data
+```
+
+This lets you share the Canvas A token freely — in MCP configs, in documentation, with external agents — without worrying about exposing heavy or destructive operations. See Tokens & endpoints for how to manage canvas access.
+
+### Build visualizations with Widgets
+
+UDFs return data — they're not the right place for charts or maps. For visualizations, use Widgets: JSON UI components that run SQL over UDF output and render as bar charts, line charts, maps, and more. An agent can construct a Widget URL from any UDF on the canvas without modifying the UDF itself.
+
+## Security
+
+Agents execute with the parameters they're given. Treat every agent-supplied parameter as untrusted input:
+
+- Never accept free-form SQL, table names, or file paths as agent-controlled parameters
+- Hardcode sensitive connection details — never expose them as params
+- Validate and constrain inputs (e.g. an allowlist of valid `metric` values)
+
+See Write UDFs securely for full guidance.
+
+## See also
+
+- Widgets — build charts and maps from UDF output
+- Connecting AI to Data — MCP JSON configs and AI profiles
+- Write UDFs securely
+- Run UDFs efficiently
+- Efficient caching
+- Scaling out UDFs
+- Cloud storage
+- Tokens & endpoints
+
+================================================================================
+
 ## Scaling Out UDFs
 Path: guide/working-with-udfs/udf-best-practices/batch-jobs.mdx
 URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/scaling-out
@@ -4707,7 +5308,7 @@ Fused does not charge for cold start time.
 Path: guide/working-with-udfs/udf-best-practices/security.mdx
 URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/security
 
-Fused UDFs are flexible, but callers and shared links should be treated with the same care as any public API. The sections below cover secrets, parameters, SQL, paths, Canvas access, and optional passcodes.
+Fused UDFs are flexible, but callers and shared links should be treated with the same care as any public API. The sections below cover secrets, parameters, SQL, paths, and optional canvas passcodes. For **public vs team-only** sharing, session tokens, and HTTPS access rules, see Securing shared tokens.
 
 ## Use secrets
 
@@ -4840,30 +5441,19 @@ def udf(number_rows_to_preview: int = 10):
 
 Predictable inputs improve safety and caching.
 
-## Scope access with Canvas
+## Canvas access and shared tokens 
 
-Access is managed **per canvas** (team vs public, share links, passcodes when enabled). Everyone who can open a canvas sees the same UDFs on it and the same rules for calling them over HTTPS.
-
-If you only want to expose **some** UDFs—or a **different** audience—use a **separate canvas**: keep the public or broadly shared work on one canvas, and move UDFs that need tighter or different access to another canvas with the right shared settings.
-
-To grant temporary access to all UDFs on a canvas without sharing a permanent link, use `fused.api.session_token()` from within the Fused workbench. It returns a short-lived token (default `"1h"`) that authorizes calls to any UDF on that canvas.
-
-Pass the token as a `fused_session_token` query parameter on any UDF HTTPS call from that canvas:
-
-```python
-token = fused.api.session_token(session_max_age="1h").session_token
-
-url = "https://www.udf.ai/fc_XXX/my_udf/run/tiles///"
-url += f"&fused_session_token="
-```
+How **public** and **team-only** canvas sharing work, when to split UDFs across canvases, and how **session tokens** (Workbench or service account) apply to UDF URLs are documented in Securing shared tokens.
 
 ## [Experimental] Protect endpoints with Canvas passcode
 
-You can require a **canvas-wide passcode** in Canvas settings so viewers must enter it before the canvas loads. UDFs shared from that canvas use the same protection when called through those shared links.
+You can require a **canvas-wide passcode** in Canvas settings so viewers must enter it before the canvas loads. **Canvas passcode is only available for canvases that are shared publicly** (not team-only). UDFs on those canvases use the same protection when called through shared links.
 
 [Image: Canvas settings: Passcode protection with Require passcode, set passcode field, and Save]
 
 Passcode Canvas is currently in experimental mode. You need to go to Preferences > Experimental Features and enable "Canvas passcode protection".
+
+Canvas passcode is only offered when the canvas is set to **public** sharing, not **team-only** (see Securing shared tokens).
 
 This passcode has no character requirement and can be edited by anyone in your Fused team.
 
@@ -4895,8 +5485,10 @@ response = requests.get(
 
 ## See also
 
+- Securing shared tokens — public vs team-only, session tokens, service accounts
 - Shared Tokens
 - Secrets Management
+- Encrypted S3 Bucket — connect SSE-KMS encrypted buckets
 
 ================================================================================
 
@@ -12673,6 +13265,46 @@ URL: https://docs.fused.io/python-sdk/changelog
 
 # Changelog
 
+## v2.4.0 (2026-04-07)
+
+**UDF folders**
+
+UDFs on the canvas can be grouped into folders, simply by selecting multiple UDFs and clicking "Create Folder".
+
+**Automatic session tokens for Team canvases**
+
+Workbench now automatically creates a session token for UDFs in Team-scoped canvases, so shared UDFs are always accessible without manual token setup.
+
+**Canvas UDF endpoint — build an MCP Server from any Canvas**
+
+Public canvases now expose an endpoint that lists all visible UDFs (after creating a shared canvas token). This makes it straightforward to turn any canvas into an MCP Server.
+
+**Improvements**
+
+- [Experimental] Widgets: Map Widget — deck.gl hybrid rendering, tooltip/color updates, and hex-tile polish
+- [Experimental] Widgets: line chart and more chart types; switch layouts from a dropdown via `render`; SQL-backed widgets use a higher automatic row limit
+- [Experimental] Widgets: editor and AI tweaks; `$param` references included in share URLs and param discovery
+- Shared canvases support session tokens end-to-end; canvas passcode is generally available
+- Session tokens in the canvas workflow; streamlined top bar
+- Faster canvas cold start when catalog refresh can be skipped safely
+- UDFs can return DataFrames with columns of fixed-shape NumPy arrays
+- Quota exceeded errors surface clearly in the UI
+- Glass-style loading overlay while UDFs run; overlay when copying GitHub-linked canvases
+- UDF file endpoints: `.html` extension is optional
+
+**Bug fixes**
+
+- Fixed: share tokens and `collection_id` when running UDFs from Workbench or shared links
+- Fixed: keyboard delete / shortcuts on the canvas
+- Fixed: focus when wiring new connected UDFs; share-canvas sidebar behavior
+- Fixed: UDF folder and sticky-note UI (rename, width, tags, alpha)
+- Fixed: Home page upload popover layering
+- Fixed: parquet file registration when a UDF output schema changes
+- Fixed: widgets on shared canvases get correct catalog/collection context
+- Fixed: extension matching for UDF URLs
+- Fixed: cache invalidation and cache lookup on Basic tier
+- Fixed: Jobs modal and blurred overlay behavior
+
 ## v2.3.1 (2026-03-31)
 
 **[Experimental] Shareable Widgets**
@@ -17780,5 +18412,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-04-07
+Generated automatically from Fused documentation. Last updated: 2026-04-08
 Total sections: 5
