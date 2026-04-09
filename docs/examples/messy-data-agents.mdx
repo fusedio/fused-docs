@@ -1,0 +1,247 @@
+---
+id: messy-data-agents
+title: Join and Expose Messy Data to AI Agents
+sidebar_label: Join messy data for AI Agents
+sidebar_position: 15
+---
+
+This example shows how to join data scattered across Snowflake, Google Sheets, and S3 into a single Fused pipeline, then expose the combined result to AI agents so they can answer business questions across all sources at once.
+
+<div style={{position: 'relative', paddingBottom: '56.25%', height: 0}}>
+<iframe
+  src="https://www.loom.com/embed/d4183e4cfdee42cb835ac793eddd2da3"
+  frameBorder="0"
+  allowFullScreen
+  style={{position: 'absolute', top: 0, left: 0, width: '100%', height: '100%'}}
+/>
+</div>
+
+*Walkthrough: Letting AI agents talk to your data no matter where it's from. [Try the Canvas](https://unstable.fused.io/canvas/fc_3NzqyeXDOMTNZ5pm1Sm1v8?bounds=699%2C2148%2C1480%2C3744) →*
+
+Real-world data rarely lives in one place. Supplier lists sit in Snowflake, store metadata in Google Sheets, and review scores land in S3 as CSVs. Manually consolidating these sources before every analysis is slow and brittle. With Fused, you can join disparate datasets inside a UDF pipeline and expose the combined result to AI agents — no manual consolidation required.
+
+## Building the canvas
+
+### 1. Connect multiple data sources
+
+Each data source is loaded by its own UDF in the Canvas. Fused can pull data from virtually anywhere — a database, a spreadsheet, a file on S3 — and the examples below are just three of the many connectors you can use.
+
+#### Snowflake — supplier records
+
+The `all_suppliers` UDF reads supplier records (name, address, phone, account balance) from Snowflake's [TPCH_SF1 sample dataset](https://docs.snowflake.com/en/user-guide/sample-data-tpch) — anyone with a Snowflake account can reproduce this. Store your Snowflake credentials using `fused.secrets[]` so the UDF can authenticate. See the [Snowflake guide](/guide/data-input-outputs/import-connection/databases/#snowflake) for setup details.
+
+<details>
+<summary>Show UDF code</summary>
+
+```python
+@fused.udf
+def udf(limit: int = 100):
+    import snowflake.connector
+
+    conn = snowflake.connector.connect(
+        user="DEMO_APP_USER",  # change this to your user id
+        password=fused.secrets["snowflake_demo_access_token"],  # make sure to have this secret set in Fused Secrets
+        account="DINFVZH-WOB67667",
+        warehouse="COMPUTE_WH",
+        database="SNOWFLAKE_SAMPLE_DATA",
+        schema="TPCH_SF1",
+    )
+
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM SUPPLIER LIMIT %s;", (limit,))
+    results = cur.fetch_pandas_all()
+    cur.close()
+    conn.close()
+    return results
+```
+
+</details>
+
+#### Google Sheets — customer feedback
+
+In this example, we imagine that our suppliers feedback information comes from another team in our organization that's going in the field and therefore only inputs data through a Google Sheets.
+
+The `suppliers_feedback_gdrive` UDF reads customer feedback per supplier (ratings, sentiment, NPS, audit results) from a public Google Sheet. Replace `sheet_id` with your own sheet's ID. The sheet must be shared publicly for now (Share → Anyone with the link).
+
+<details>
+<summary>Show UDF code</summary>
+
+```python
+@fused.udf
+def udf(
+    sheet_id: str = "1_utccObv7uSk-Ew92Yu3tW3roYCaZ8Shn3xhMelk24A",  # replace with your sheet ID
+    sheet_name: str = "supplier_feedback"  # replace with your sheet name
+):
+    import pandas as pd
+
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
+    df = pd.read_csv(url)
+    return df
+```
+
+</details>
+
+#### AWS S3 — store locations CSV
+
+The `supplier_locations_csv` UDF reads physical store/facility locations (coordinates, store type, staff headcount, capacity) from a CSV on S3. To use your own data, update the S3 path. See the [S3 reading guide](/guide/data-input-outputs/import-connection/cloud-storage#reading-from-s3) for more details.
+
+<details>
+<summary>Show UDF code</summary>
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    path = 's3://fused-asset/demos/supplier_customer_joining/supplier_locations.csv'  # Demo data available on public Fused bucket
+    df = pd.read_csv(path)
+
+    col_map = {c.lower(): c for c in df.columns}
+    lat_col = col_map.get('latitude') or col_map.get('lat')
+    lon_col = col_map.get('longitude') or col_map.get('lon') or col_map.get('lng')
+
+    geometry = [Point(xy) for xy in zip(df[lon_col], df[lat_col])]
+    gdf = gpd.GeoDataFrame(df, geometry=geometry, crs='EPSG:4326')
+    return gdf
+```
+
+</details>
+
+### 2. Join datasets in Python
+
+A downstream UDF (`join_store_infos`) uses [`fused.load()`](/python-sdk/api-reference/fused-load) — which loads a UDF by name so you can call it from another UDF — to pull data from the three sources:
+
+```python
+suppliers_udf = fused.load("all_suppliers")
+feedback_udf  = fused.load("suppliers_feedback_gdrive")
+locations_udf = fused.load("supplier_locations_csv")
+
+df_sup = suppliers_udf()  # When no parameters are passed this executes all_suppliers UDF with its defaults
+df_fb  = feedback_udf()
+df_loc = locations_udf()
+```
+
+The data arrives with different column names and ID formats across sources — Snowflake uses an integer `S_SUPPKEY`, the Google Sheet has prefixed strings like `S00000001` or `SUPP-3`, and the CSV uses `SUP0000001`. The join UDF normalizes all of these to a common integer key, then merges the three DataFrames into a single GeoDataFrame.
+
+The joined result exposes filtering parameters (rating, sentiment, NPS, store type, staff headcount) that an agent can set directly.
+
+<details>
+<summary>Show join UDF code</summary>
+
+```python
+@fused.udf
+def udf(
+    num_reviews_min: float = 0,
+    num_reviews_max: float = 9999,
+    avg_rating_min: float = 0.0,
+    avg_rating_max: float = 5.0,
+    sentiment: str = "All",
+    nps_min: float = -100.0,
+    nps_max: float = 100.0,
+    store_type: str = "All",
+    staff_headcount_min: float = 0,
+    staff_headcount_max: float = 9999,
+):
+    import pandas as pd
+    import geopandas as gpd
+    import re
+
+    suppliers_udf = fused.load("all_suppliers")
+    feedback_udf  = fused.load("suppliers_feedback_gdrive")
+    locations_udf = fused.load("supplier_locations_csv")
+
+    df_sup = suppliers_udf()
+    df_fb  = feedback_udf()
+    df_loc = locations_udf()
+
+    # Normalize supplier IDs to a plain integer join key
+    def extract_int(s):
+        m = re.search(r"\d+", str(s))
+        return int(m.group()) if m else None
+
+    df_sup["_join_key"] = df_sup["S_SUPPKEY"].astype(int)
+    df_fb["_join_key"]  = df_fb["supplier_id"].apply(extract_int)
+    df_loc["_join_key"] = df_loc["supplier_ref"].apply(extract_int)
+
+    # Merge all three on the common key
+    df_merged = (
+        df_sup
+        .merge(df_fb,  on="_join_key", how="left", suffixes=("", "_fb"))
+        .merge(df_loc, on="_join_key", how="left", suffixes=("", "_loc"))
+    )
+    df_merged = df_merged.drop(columns=["_join_key", "S_ADDRESS"])
+
+    gdf = gpd.GeoDataFrame(df_merged, geometry="geometry", crs="EPSG:4326")
+
+    # Apply filters
+    mask = (
+        (gdf["num_reviews"].fillna(0) >= num_reviews_min) &
+        (gdf["num_reviews"].fillna(0) <= num_reviews_max) &
+        (gdf["avg_rating"].fillna(0) >= avg_rating_min) &
+        (gdf["avg_rating"].fillna(0) <= avg_rating_max) &
+        (gdf["net_promoter_score"].fillna(0) >= nps_min) &
+        (gdf["net_promoter_score"].fillna(0) <= nps_max) &
+        (gdf["staff_headcount"].fillna(0) >= staff_headcount_min) &
+        (gdf["staff_headcount"].fillna(0) <= staff_headcount_max)
+    )
+    if sentiment != "All":
+        mask &= gdf["sentiment"].str.lower() == sentiment.lower()
+    if store_type != "All":
+        mask &= gdf["store_type"] == store_type
+
+    return gdf[mask]
+```
+
+</details>
+
+### 3. Expose the joined data as an MCP tool
+
+The Canvas publishes the joined result as an agent-callable endpoint via its OpenAPI specification. The tool description tells the agent what data is available and what parameters it accepts.
+
+The OpenAPI spec only lists UDFs that are **visible** on the canvas — hidden UDFs will not appear in the spec. You can still call hidden UDFs directly, but agents won't discover them through the API listing. This lets you control exactly which tools an agent can see.
+
+<div style={{textAlign: "center", marginBottom: "20px"}}>
+  <img
+    src="https://fused-magic.s3.us-west-2.amazonaws.com/changelog_assets/v2_4_0/changelog_v2_4_0.gif"
+    alt="Canvas OpenAPI specification for agents"
+    style={{width: "600px", height: "auto", maxWidth: "100%"}}
+  />
+</div>
+
+### 4. Connect an AI agent
+
+Once the Canvas is shared and its OpenAPI spec is available, you can connect an AI agent to it. Here's how to set up Claude Code:
+
+1. **Teach Claude Code about Fused.** Paste the [Fused skills](https://github.com/fusedio/fused-docs/tree/main/static/skills) into Claude Code so it understands how to interact with Fused endpoints. Tell it: "always use these skills when working with Fused."
+2. **Give it the OpenAPI spec.** In the Canvas, click **Share** → **OpenAPI** and copy the `.api.json` URL (it looks like `https://udf.ai/fc_<your_token>.api.json`). Paste it into Claude Code so the agent knows which tools are available and what parameters they accept.
+3. **Ask questions.** The agent can now query the combined dataset directly.
+
+<div style={{textAlign: "center", marginBottom: "20px"}}>
+  <img
+    src="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/messy-data-agents-claude-code.gif"
+    alt="Using the Fused API in Claude Code"
+    style={{width: "600px", height: "auto", maxWidth: "100%"}}
+  />
+</div>
+
+For more details, see the [Expose your Canvas to agents](/guide/working-with-udfs/udf-best-practices/agents/#expose-your-canvas-to-agents) guide.
+
+### 5. Ask business questions
+
+Once connected, an AI agent can query the combined dataset directly. For example:
+
+- *"Which stores have the highest ratings?"*
+- *"Show me the bottom-performing suppliers."*
+- *"Compare average review scores across regions."*
+
+The agent draws answers from all three sources at once — no manual data wrangling needed.
+
+## Try it out
+
+Open the [Fused Canvas](https://unstable.fused.io/canvas/fc_3NzqyeXDOMTNZ5pm1Sm1v8?bounds=699%2C2148%2C1480%2C3744) to explore the live pipeline. The Canvas connects to all three data sources, joins them, and exposes the result to an AI agent — ready for you to query.
+
+:::tip Get the OpenAPI spec for your own Canvas
+First, make a copy of the Canvas. Then follow the [Share Modal guide](/workbench/udf-builder/canvas#share-modal) to publish it. Once shared, click **Share** → **OpenAPI** to get the OpenAPI specification you can hand to any AI agent.
+:::
