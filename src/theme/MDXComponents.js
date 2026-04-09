@@ -4,6 +4,7 @@ import ReactPlayer from "react-player";
 import LazyReactPlayer from "@site/src/components/LazyReactPlayer";
 import Tag from "@site/src/components/Tag";
 import ClickZoomImage from "@site/src/components/ClickZoomImage";
+import CanvasIframe from "@site/src/components/CanvasIframe";
 
 export default {
   ...MDXComponents,
@@ -11,4 +12,5 @@ export default {
   ReactPlayer,
   Tag,
   ClickZoomImage,
+  CanvasIframe,
 };
