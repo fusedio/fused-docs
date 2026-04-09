@@ -72,6 +72,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/gee", label: "Google Earth Engine" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/ai-data-connection", label: "Connecting AI to Data" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/widgets", label: "Widgets" },
+        { type: "doc", id: "guide/data-input-outputs/import-connection/render-widget", label: "Render Widget + AI" },
       ],
     },
 
@@ -150,6 +151,7 @@ const sidebars: SidebarsConfig = {
       collapsible: false,
       items: [
         "examples/overture-buildings-agents",
+        "examples/messy-data-agents",
       ],
     },
 
