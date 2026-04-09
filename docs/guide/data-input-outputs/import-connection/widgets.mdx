@@ -146,6 +146,111 @@ The `{{orders_df}}` reference still resolves to the UDF on your canvas — the s
 
 Open this in a browser to get a live, interactive widget — the chart renders data from your Fused UDF. [Try it out](https://unstable.fused.io/share/fc_1bHh5W6D1Yk6smpCeUuWPy?widget={%20%22type%22:%20%22line-chart%22,%20%22props%22:%20{%20%22sql%22:%20%22SELECT%20date%20AS%20label,%20value%20FROM%20{{orders_df}}%20ORDER%20BY%20label%22,%20%22title%22:%20%22Time%20Series%22,%20%22showArea%22:%20true,%20%22curveType%22:%20%22smooth%22%20}%20}) →
 
+## AI driven Widget
+
+This section uses the `render` widget type — a wrapper widget that takes any other widget definition as input and displays it on the canvas. Because it wraps other widgets, it can layer on an AI panel and a live JSON editor, letting you iterate on the inner widget without leaving the canvas.
+
+With the `render` widget, you can:
+
+- **Wrap any widget** — pass an inner `{ type, props }` definition and render it at runtime.
+- **Edit live with AI** — prompt the built-in AI panel to rewrite the inner definition in place.
+- **Tweak JSON inline** — open the optional JSON editor to change SQL, chart type, or styling without leaving the canvas.
+
+### Structure of a Render Widget
+
+A render widget is always a two-layer schema:
+
+- The **outer shell** is `{ "type": "render", "props": { ... } }`.
+- The **inner definition** is the widget you want to display, stored under `props.defaultValue` as `{ "type": "…", "props": { … } }`.
+
+```json
+{
+  "type": "render",
+  "props": {
+    "defaultValue": {
+      "type": "<inner-widget-type>",
+      "props": { }
+    },
+    "showEditor": true,
+    "aiBuilderMode": "enabled",
+    "aiPanel": "right"
+  }
+}
+```
+
+### How to create and use a Render Widget
+
+Click the widget icon to create a new widget node, then paste in the JSON below. Once you [connect the widget to the `my_udf` UDF](#step-2-connect-it-to-a-udf), the render widget will display a bar chart with an AI panel and code editor.
+
+<details>
+<summary>Show the <code>my_udf</code> UDF code</summary>
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
+    import pandas as pd
+
+    @fused.cache
+    def load_data(file_path):
+        return pd.read_parquet(file_path)
+
+    df = load_data(path)
+    return df
+```
+
+</details>
+
+<details>
+<summary>Show the render widget JSON</summary>
+
+```json
+{
+  "type": "render",
+  "props": {
+    "defaultValue": {
+      "type": "bar-chart",
+      "props": {
+        "sql": "SELECT neighbourhood_cleansed as label, ROUND(AVG(price_in_dollar), 2) as value FROM {{my_udf}} GROUP BY neighbourhood_cleansed ORDER BY value DESC LIMIT 10",
+        "title": "Top 10 Most Expensive Neighbourhoods"
+      }
+    },
+    "showEditor": true,
+    "editorCollapsed": false,
+    "aiBuilderMode": "enabled",
+    "aiPanel": "right"
+  }
+}
+```
+
+</details>
+
+### Editing with AI
+
+With `aiBuilderMode: "enabled"`, you can describe what you want in plain English (for example, *"switch this to a line chart"* or *"add a filter for price > 100"*), and the AI rewrites the inner `{ type, props }` definition for you. Use `aiPanel` to place the panel (`"right"`, `"left"`, `"top"`, or `"bottom"`).
+
+![AI panel rewriting render widget config from a prompt](/img/widgets/render-widget-ai-prompt.gif)
+
+*Prompting the AI panel to change the chart type to a line chart — the widget updates in real time.* [Try it out →](https://unstable.fused.io/canvas/fc_15tsijBQ8tPM5T2X4r09vP?bounds=846%2C-408%2C2964%2C1270)
+
+:::note
+The AI edits the inner `defaultValue` definition only — the outer `render` shell stays the same. This means you can iterate on chart type, SQL, or styling without touching the widget container itself.
+:::
+
+### Available props
+
+| Prop | Type | Default | What it does |
+| --- | --- | --- | --- |
+| `defaultValue` | object or string | *(required)* | The widget definition to render, or a `"$param"` reference |
+| `showEditor` | boolean | `false` | Show/hide the JSON editor panel |
+| `editorCollapsed` | boolean | `true` | Whether the editor starts collapsed |
+| `editorHeight` | number | auto | Fixed editor height in pixels |
+| `aiBuilderMode` | `"enabled"` / `"disabled"` | `"disabled"` | Toggle the AI assistant |
+| `aiPanel` | `"top"` / `"bottom"` / `"left"` / `"right"` | `"bottom"` | AI panel position |
+| `allowedWidgetTypes` | string | `"all"` | Comma-separated list of permitted widget types |
+| `style` | string | — | Inline CSS for the outer container |
+
+For the full list of widgets you can nest inside `render`, see the [available widgets](#available-widgets).
+
 ## Sharing a Widget from Canvas
 
 When you share a specific widget from a canvas, you will get a URL like:
