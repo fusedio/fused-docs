@@ -153,6 +153,7 @@ const sidebars: SidebarsConfig = {
       items: [
         "examples/overture-buildings-agents",
         "examples/messy-data-agents",
+        "examples/airbnb-explore-on-the-fly",
       ],
     },
 
