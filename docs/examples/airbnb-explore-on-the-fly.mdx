@@ -1,0 +1,105 @@
+---
+id: airbnb-explore-on-the-fly
+title: Letting Anyone Explore Airbnb on the Fly
+sidebar_label: Explore Airbnb on the fly
+sidebar_position: 16
+---
+
+This example shows how to load, visualize, and interactively explore Airbnb listing data from San Francisco — roughly 7,000 points covering locations, property types, occupancy, reviews, and pricing — using a Fused Canvas with an AI-powered chat widget that lets anyone ask questions and reshape the visualization in real time.
+
+<div style={{position: 'relative', paddingBottom: '56.25%', height: 0}}>
+<iframe
+  src="https://www.loom.com/embed/5b201deb4b1245f99de1da08a8198cef"
+  frameBorder="0"
+  allowFullScreen
+  style={{position: 'absolute', top: 0, left: 0, width: '100%', height: '100%'}}
+/>
+</div>
+
+*Walkthrough: Exploring Airbnb data with a Fused AI widget. [Try the Canvas](https://www.fused.io/canvas/fc_5SyzybeWalreHjKfpAymBL?outline=false&bounds=1096%2C-674%2C2648%2C1204)*
+
+Airbnb publishes detailed listing data for cities around the world, but exploring it usually means downloading CSVs and writing one-off scripts. With Fused, you can load the dataset into a Canvas, visualize it on a map, and attach an AI chat widget so anyone — technical or not — can ask questions and get instant visual answers.
+
+## Building the canvas
+
+### 1. Load the Airbnb dataset
+
+The `airbnb_data` UDF reads a Parquet file containing ~7,000 San Francisco Airbnb listings from S3. Each row includes the listing's location, neighbourhood, property type, occupancy, review scores, and pricing. The data is cached so subsequent runs load instantly.
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+
+    @fused.cache
+    def load_data():
+        return pd.read_parquet("s3://fused-sample/demo_data/airbnb_listings_sf.parquet")
+
+    df = load_data()
+    print(df.head())
+    print(df.dtypes)
+    print(df.shape)
+    return df
+```
+
+### 2. Connect a render widget to visualize the data
+
+The `airbnb_data` UDF returns a DataFrame. To visualize it, we [connect it to a widget](/guide/data-input-outputs/import-connection/widgets#step-2-connect-it-to-a-udf) by drawing an edge from the UDF node to the widget node in the Canvas.
+
+We use a [`render` widget](/guide/data-input-outputs/import-connection/widgets#ai-driven-widget) here because it wraps any chart type and layers on an AI panel — so users can modify the visualization with natural language without touching JSON. In this example we plot a bar chart of the top 15 neighbourhoods by average price:
+
+```json
+{
+  "type": "render",
+  "props": {
+    "defaultValue": {
+      "type": "bar-chart",
+      "props": {
+        "sql": "SELECT neighbourhood_cleansed as label, ROUND(AVG(price_in_dollar), 2) as value FROM {{airbnb_data}} GROUP BY neighbourhood_cleansed ORDER BY value DESC LIMIT 15",
+        "title": "Top 15 Neighbourhoods"
+      }
+    },
+    "aiBuilderMode": "enabled",
+    "aiPanel": "right"
+  }
+}
+```
+
+Notice the `{{airbnb_data}}` in the SQL — this is the [widget template syntax](/guide/data-input-outputs/import-connection/widgets#structure-of-a-widget). Because the widget is connected to the `airbnb_data` UDF via an edge, the name inside `{{ }}` resolves automatically to that UDF's output. You just reference the UDF by name and the widget handles the rest.
+
+- **`aiBuilderMode: "enabled"`** — activates the built-in [AI panel](/guide/data-input-outputs/import-connection/widgets#editing-with-ai) so users can describe changes in natural language.
+- **`aiPanel: "right"`** — positions the AI chat on the right side of the widget.
+
+:::tip What you can ask the AI widget
+The AI panel rewrites the inner widget definition based on your prompt. Try things like:
+- *"Switch to a pie chart of property types"*
+- *"Show a histogram of review scores"*
+- *"Map the most expensive listings"*
+- *"Show average price by room type as a horizontal bar chart"*
+
+See the [AI-driven widget guide](/guide/data-input-outputs/import-connection/widgets#ai-driven-widget) for all available props and widget types.
+:::
+
+### 3. Explore the data interactively
+
+With the AI panel enabled, anyone can reshape the visualization without writing code. Ask for ratings distributions, price comparisons across neighbourhoods, occupancy trends — the AI rewrites the widget definition on the fly, and the chart updates instantly. This turns a static dashboard into a conversational data exploration tool.
+
+<div style={{textAlign: "center", marginBottom: "20px"}}>
+  <img
+    src="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/ai-chat-chart-4x.gif"
+    alt="AI chat modifying a chart in real time"
+    style={{width: "600px", height: "auto", maxWidth: "100%"}}
+  />
+</div>
+
+### 4. Share with anyone
+
+The Canvas can be shared as a link or as a standalone widget. [Share the full Canvas](/workbench/udf-builder/canvas#share-modal) for the complete experience (map + widget + AI chat), or share just the widget for a focused, embeddable view that anyone can interact with — no Fused account required.
+
+## Try it out
+
+Open the [Fused Canvas](https://www.fused.io/canvas/fc_5SyzybeWalreHjKfpAymBL?outline=false&bounds=1096%2C-674%2C2648%2C1204) to explore the live Airbnb dataset, or go straight to the [interactive widget](https://www.fused.io/share/fc_5SyzybeWalreHjKfpAymBL/widget_2) to ask questions directly.
+
+:::tip Make it your own
+Clone the Canvas to customize it. Swap the data source, change the default chart, or adjust the AI panel position. See the [Widgets guide](/guide/data-input-outputs/import-connection/widgets#available-props) for the full list of `render` widget props.
+:::
