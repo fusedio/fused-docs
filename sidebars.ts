@@ -130,21 +130,6 @@ const sidebars: SidebarsConfig = {
   // EXAMPLES SIDEBAR
   // ============================================
   examplesSidebar: [
-    // Use Cases & Demos
-    {
-      type: "category",
-      label: "Use Cases & Demos",
-      collapsible: false,
-      items: [
-        "examples/zonal-stats",
-        "examples/ais-dark-vessels",
-        "examples/climate-dashboard",
-        "examples/maxar-satellite-imagery",
-        "examples/site-selection-analysis",
-        "examples/currency-prediction",
-      ],
-    },
-
     // Agentic Workflows
     {
       type: "category",
@@ -153,6 +138,32 @@ const sidebars: SidebarsConfig = {
       items: [
         "examples/overture-buildings-agents",
         "examples/messy-data-agents",
+      ],
+    },
+
+    // Data & Scraping
+    {
+      type: "category",
+      label: "Data & Scraping",
+      collapsible: false,
+      items: [
+        "examples/web-scraping",
+        "examples/pdf-scraping",
+      ],
+    },
+
+    // Geospatial
+    {
+      type: "category",
+      label: "Geospatial",
+      collapsible: false,
+      items: [
+        "examples/zonal-stats",
+        "examples/ais-dark-vessels",
+        "examples/climate-dashboard",
+        "examples/maxar-satellite-imagery",
+        "examples/site-selection-analysis",
+        "examples/currency-prediction",
       ],
     },
 
@@ -168,17 +179,6 @@ const sidebars: SidebarsConfig = {
         "guide/h3-analytics/joining",
         "guide/h3-analytics/resolution-guide",
         "guide/h3-analytics/visualization",
-      ],
-    },
-
-    // Data & Scraping
-    {
-      type: "category",
-      label: "Data & Scraping",
-      collapsible: false,
-      items: [
-        "examples/web-scraping",
-        "examples/pdf-scraping",
       ],
     },
 
