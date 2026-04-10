@@ -152,6 +152,7 @@ const sidebars: SidebarsConfig = {
       collapsible: false,
       items: [
         "examples/overture-buildings-agents",
+        "examples/google-calendar-meetings",
         "examples/messy-data-agents",
       ],
     },
