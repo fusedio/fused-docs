@@ -108,7 +108,7 @@ Example (bar chart) — [Try it out](https://unstable.fused.io/canvas/fc_1bHh5W6
 ```
 
 :::tip
-The UDF must be on the same canvas. The name inside `{{ }}` must match a UDF name present in the Canvas exactly (case-sensitive).
+The UDF must be on the same canvas. The name inside `{{ }}` must match a UDF name present in the canvas exactly (case-sensitive).
 :::
 
 ## Anatomy of a Widget URL
@@ -146,6 +146,111 @@ The `{{orders_df}}` reference still resolves to the UDF on your canvas — the s
 
 Open this in a browser to get a live, interactive widget — the chart renders data from your Fused UDF. [Try it out](https://unstable.fused.io/share/fc_1bHh5W6D1Yk6smpCeUuWPy?widget={%20%22type%22:%20%22line-chart%22,%20%22props%22:%20{%20%22sql%22:%20%22SELECT%20date%20AS%20label,%20value%20FROM%20{{orders_df}}%20ORDER%20BY%20label%22,%20%22title%22:%20%22Time%20Series%22,%20%22showArea%22:%20true,%20%22curveType%22:%20%22smooth%22%20}%20}) →
 
+## AI driven Widget
+
+This section uses the `render` widget type — a wrapper widget that takes any other widget definition as input and displays it on the canvas. Because it wraps other widgets, it can layer on an AI panel and a live JSON editor, letting you iterate on the inner widget without leaving the canvas.
+
+With the `render` widget, you can:
+
+- **Wrap any widget** — pass an inner `{ type, props }` definition and render it at runtime.
+- **Edit live with AI** — prompt the built-in AI panel to rewrite the inner definition in place.
+- **Tweak JSON inline** — open the optional JSON editor to change SQL, chart type, or styling without leaving the canvas.
+
+### Structure of a Render Widget
+
+A render widget is always a two-layer schema:
+
+- The **outer shell** is `{ "type": "render", "props": { ... } }`.
+- The **inner definition** is the widget you want to display, stored under `props.defaultValue` as `{ "type": "…", "props": { … } }`.
+
+```json
+{
+  "type": "render",
+  "props": {
+    "defaultValue": {
+      "type": "<inner-widget-type>",
+      "props": { }
+    },
+    "showEditor": true,
+    "aiBuilderMode": "enabled",
+    "aiPanel": "right"
+  }
+}
+```
+
+### How to create and use a Render Widget
+
+Click the widget icon to create a new widget node, then paste in the JSON below. Once you [connect the widget to the `my_udf` UDF](#step-2-connect-it-to-a-udf), the render widget will display a bar chart with an AI panel and code editor.
+
+<details>
+<summary>Show the <code>my_udf</code> UDF code</summary>
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
+    import pandas as pd
+
+    @fused.cache
+    def load_data(file_path):
+        return pd.read_parquet(file_path)
+
+    df = load_data(path)
+    return df
+```
+
+</details>
+
+<details>
+<summary>Show the render widget JSON</summary>
+
+```json
+{
+  "type": "render",
+  "props": {
+    "defaultValue": {
+      "type": "bar-chart",
+      "props": {
+        "sql": "SELECT neighbourhood_cleansed as label, ROUND(AVG(price_in_dollar), 2) as value FROM {{my_udf}} GROUP BY neighbourhood_cleansed ORDER BY value DESC LIMIT 10",
+        "title": "Top 10 Most Expensive Neighbourhoods"
+      }
+    },
+    "showEditor": true,
+    "editorCollapsed": false,
+    "aiBuilderMode": "enabled",
+    "aiPanel": "right"
+  }
+}
+```
+
+</details>
+
+### Editing with AI
+
+With `aiBuilderMode: "enabled"`, you can describe what you want in plain English (for example, *"switch this to a line chart"* or *"add a filter for price > 100"*), and the AI rewrites the inner `{ type, props }` definition for you. Use `aiPanel` to place the panel (`"right"`, `"left"`, `"top"`, or `"bottom"`).
+
+![AI panel rewriting render widget config from a prompt](/img/widgets/render-widget-ai-prompt.gif)
+
+*Prompting the AI panel to change the chart type to a line chart — the widget updates in real time.* [Try it out →](https://unstable.fused.io/canvas/fc_15tsijBQ8tPM5T2X4r09vP?bounds=846%2C-408%2C2964%2C1270)
+
+:::note
+The AI edits the inner `defaultValue` definition only — the outer `render` shell stays the same. This means you can iterate on chart type, SQL, or styling without touching the widget container itself.
+:::
+
+### Available props
+
+| Prop | Type | Default | What it does |
+| --- | --- | --- | --- |
+| `defaultValue` | object or string | *(required)* | The widget definition to render, or a `"$param"` reference |
+| `showEditor` | boolean | `false` | Show/hide the JSON editor panel |
+| `editorCollapsed` | boolean | `true` | Whether the editor starts collapsed |
+| `editorHeight` | number | auto | Fixed editor height in pixels |
+| `aiBuilderMode` | `"enabled"` / `"disabled"` | `"disabled"` | Toggle the AI assistant |
+| `aiPanel` | `"top"` / `"bottom"` / `"left"` / `"right"` | `"bottom"` | AI panel position |
+| `allowedWidgetTypes` | string | `"all"` | Comma-separated list of permitted widget types |
+| `style` | string | — | Inline CSS for the outer container |
+
+For the full list of widgets you can nest inside `render`, see the [available widgets](#available-widgets).
+
 ## Sharing a Widget from Canvas
 
 When you share a specific widget from a canvas, you will get a URL like:
@@ -174,6 +279,8 @@ When the base URL includes a specific widget path (for example, `/orders_widget`
 
 ## Available Widgets
 
+[See a live example →](https://unstable.fused.io/canvas/fc_1IlPjYnRgK5cmhwRlbOnLr?embed=false&outline=false&code=true&bounds=-940%2C922%2C-200%2C1483)
+
 | Category | Widget | Description | Key Features / Notes |
 | --- | --- | --- | --- |
 | Input | `slider` | Numeric range control | `min`, `max`, `step`, `defaultValue`, binds to `param` |
@@ -192,3 +299,127 @@ When the base URL includes a specific widget path (for example, `/orders_widget`
 | Output | `image` | Image display | URL or base64 |
 | Output | `fused-map` | Full interactive map | Supports multiple layer types, tooltips, legends, basemaps |
 | Output | `render` | Meta widget | Renders widgets dynamically from JSON |
+
+<iframe
+  src="https://unstable.fused.io/canvas/fc_1IlPjYnRgK5cmhwRlbOnLr?embed=false&outline=false&code=true&bounds=-940%2C922%2C-200%2C1483"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+## Multi-Component Widgets
+
+A single widget node can hold multiple widgets — sliders, charts, tables, text, maps — stacked or laid out together. You wrap them in a `div` with `children`.
+
+Use a `div` as the root container type and list each widget inside its `children` array — the structure is just a wrapper with standard CSS for layout.
+
+```json
+{
+  "type": "div",
+  "props": {
+    "style": "display: flex; flex-direction: column; gap: 16px; padding: 16px;"
+  },
+  "children": [
+    { "type": "slider",    "props": { ... } },
+    { "type": "bar-chart", "props": { ... } },
+    { "type": "sql-table", "props": { ... } }
+  ]
+}
+```
+
+- `type: "div"` — a container, not a visual widget. It just groups children.
+- `props.style` — standard CSS. Use `flex-direction: column` for a vertical stack, `row` for side-by-side.
+- `children` — an ordered array of widget definitions `{ type, props }`. Each child is a full widget. For the full list of supported widgets, see the [available widgets](#available-widgets).
+
+:::tip
+You can nest a `div` inside another `div` for more complex layouts.
+:::
+
+### Combining input & output components
+
+Multiple components can also work together inside a single widget:
+- An input component (like a slider) publishes a value through `param`
+- An output component (like a chart) can read that value with `$param`
+
+This lets you build interactive widgets with both inputs and outputs in a single widget.
+
+### Example
+
+When the slider changes, every widget using `$param` (here `$top_n`) updates instantly — the bar chart and SQL table re-render in sync with the slider value. [Try it out →](https://unstable.fused.io/canvas/fc_37tFyp2b187Mi6HxBar2J6?bounds=2655%2C498%2C4237%2C2348)
+
+
+<details>
+<summary>Show the <code>my_udf</code> UDF code</summary>
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
+    import pandas as pd
+
+    @fused.cache
+    def load_data(file_path):
+        return pd.read_parquet(file_path)
+
+    df = load_data(path)
+    return df
+```
+
+</details>
+
+<details>
+<summary>Show the multi-widget JSON</summary>
+
+```json
+{
+  "type": "div",
+  "props": {
+    "style": "display: flex; flex-direction: column; gap: 16px; padding: 16px;"
+  },
+  "children": [
+    {
+      "type": "slider",
+      "props": {
+        "label": "Top N most expensive locations",
+        "param": "top_n",
+        "min": 1,
+        "max": 20,
+        "step": 1,
+        "defaultValue": 15
+      }
+    },
+    {
+      "type": "bar-chart",
+      "props": {
+        "title": "Top N Most Expensive Locations (Avg Price)",
+        "sql": "SELECT neighbourhood_cleansed as label, ROUND(AVG(price_in_dollar), 2) as value FROM {{my_udf}} GROUP BY neighbourhood_cleansed ORDER BY value DESC LIMIT $top_n",
+        "barColor": "#E8FF59",
+        "barOpacity": 1,
+        "barRadius": 4,
+        "hoverColor": "#ffffff",
+        "showGrid": true,
+        "rotateLabels": true,
+        "horizontal": false,
+        "showValues": true,
+        "sort": "none",
+        "xAxisFontSize": 11,
+        "yAxisFontSize": 11,
+        "beginAtZero": true,
+        "animationMs": 300
+      }
+    },
+    {
+      "type": "sql-table",
+      "props": {
+        "title": "Number of Reviews for Top N Locations",
+        "sql": "SELECT neighbourhood_cleansed AS Neighbourhood, ROUND(AVG(price_in_dollar), 2) AS Avg_Price, CAST(SUM(number_of_reviews) AS INTEGER) AS Total_Reviews FROM {{my_udf}} WHERE neighbourhood_cleansed IN (SELECT neighbourhood_cleansed FROM {{my_udf}} GROUP BY neighbourhood_cleansed ORDER BY AVG(price_in_dollar) DESC LIMIT $top_n) GROUP BY neighbourhood_cleansed ORDER BY Avg_Price DESC"
+      }
+    }
+  ]
+}
+```
+
+</details>
+
+
+![Multi-widget slider updating chart and table](/img/widgets/multi-widget-slider.gif)

@@ -56,6 +56,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/storage", label: "Storage Options" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/version-control", label: "Working as a Team" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", label: "Geospatial processing" },
+        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/agents", label: "Building for Agents" },
       ],
     },
 
@@ -96,6 +97,7 @@ const sidebars: SidebarsConfig = {
       collapsible: false,
       items: [
         { type: "doc", id: "guide/data-input-outputs/export-api/tokens-endpoints", label: "Tokens & endpoints" },
+        { type: "doc", id: "guide/data-input-outputs/export-api/securing-shared-tokens", label: "Securing Shared Tokens" },
         { type: "doc", id: "guide/data-input-outputs/export-api/download", label: "Download" },
         { type: "doc", id: "guide/data-input-outputs/export-api/geospatial-export", label: "Geospatial Integration" },
       ],
@@ -151,6 +153,7 @@ const sidebars: SidebarsConfig = {
       items: [
         "examples/overture-buildings-agents",
         "examples/google-calendar-meetings",
+        "examples/messy-data-agents",
       ],
     },
 
