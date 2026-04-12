@@ -1,0 +1,281 @@
+---
+id: audit-logs
+title: Audit Logs
+sidebar_label: Audit Logs
+sidebar_position: 5
+---
+
+# `fused.api.log` -- Audit Logs
+
+`fused.api.log()` retrieves audit logs for UDF executions. Every time a UDF runs, the system records metadata about the execution including which UDF ran, who ran it, how long it took, and any stdout/stderr output.
+
+## Function Signature
+
+```python
+fused.api.log(
+    id: str | None = None,
+    *,
+    udf_id: str | None = None,
+    udf_name: str | None = None,
+    shared_token: str | None = None,
+    exec_env: bool = False,
+    distinct: bool = False,
+    distinct_type: Literal["names", "ids"] | None = None,
+    start_timestamp: str | None = None,
+    end_timestamp: str | None = None,
+    limit: int = 100,
+    scan_forward: bool = True,
+    page_token: str | None = None,
+    max_records_to_scan: int = 1000,
+) -> dict[str, Any]
+```
+
+## Parameters
+
+### Filters
+
+Only **one** of `id`, `udf_id`, `udf_name`, or `shared_token` may be specified. If none are provided, logs for the authenticated user are returned.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `id` | `str \| None` | `None` | Fetch a single audit log record by its unique ID. When set, all other filters are ignored. |
+| `udf_id` | `str \| None` | `None` | Filter logs by the UDF's unique ID (UUID). |
+| `udf_name` | `str \| None` | `None` | Filter logs by UDF slug/name. |
+| `shared_token` | `str \| None` | `None` | Filter logs by shared token (for UDFs accessed via shared links). |
+| `exec_env` | `bool` | `False` | If `True`, scope logs to the authenticated user's execution environment rather than their user email. Useful for team/org-level queries. |
+
+### Distinct Queries
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `distinct` | `bool` | `False` | If `True`, return one record per unique UDF (deduplicated), keeping the most recent execution for each. Requires `distinct_type`. |
+| `distinct_type` | `"names" \| "ids" \| None` | `None` | When `distinct=True`: `"names"` deduplicates by `udf_name`, `"ids"` deduplicates by `udf_id`. |
+
+### Time Range
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `start_timestamp` | `str \| None` | `None` | Inclusive start of the time range (ISO 8601 format, e.g. `"2025-04-01T00:00:00+00:00"`). |
+| `end_timestamp` | `str \| None` | `None` | Inclusive end of the time range (ISO 8601 format). |
+
+### Pagination & Ordering
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `limit` | `int` | `100` | Maximum records per page (max 300). Used for regular (non-distinct) queries. |
+| `scan_forward` | `bool` | `True` | `True` = oldest first, `False` = newest first. |
+| `page_token` | `str \| None` | `None` | Pagination token from a previous response's `next_page_token`. |
+| `max_records_to_scan` | `int` | `1000` | Maximum raw records the server scans before deduplicating (max 5000). Only used for distinct queries. |
+
+## Return Value
+
+All calls return a dictionary with this structure:
+
+```python
+{
+    "items": [...],          # List of audit log records
+    "limit": 100,            # The limit used
+    "next_page_token": "..." # Pagination token, or None if no more pages
+}
+```
+
+> **Note:** Distinct queries always return `next_page_token: None` -- the server handles internal pagination and returns the full deduplicated result in one response.
+
+## Audit Log Record Fields
+
+Each record in `items` is a dictionary with these fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `str` | Unique record ID (UUID). |
+| `timestamp` | `str` | ISO 8601 timestamp of the execution. |
+| `exec_env_id` | `str` | Execution environment ID. |
+| `user_id` | `str` | User ID who triggered the execution. |
+| `user_email` | `str` | User email who triggered the execution. |
+| `udf_id` | `str` | UDF unique ID. |
+| `udf_name` | `str` | UDF slug/name. |
+| `execution_engine` | `str` | Engine used (e.g. `"realtime"`). |
+| `execution_time` | `float` | Execution duration in seconds. `None` if the execution didn't complete. |
+| `cache` | `bool` | `True` if result was served from cache, `False` if not. |
+| `stdout` | `str` | Captured standard output from the UDF execution. |
+| `stderr` | `str` | Captured standard error from the UDF execution. Non-empty typically indicates a failure. |
+| `udf_data` | `str` | The UDF code/payload that was executed. |
+| `shared_token` | `str` | Shared token, if the UDF was accessed via a shared link. |
+| `client_ip` | `str` | IP address of the caller. |
+
+All fields except `id` and `timestamp` may be absent or `None` depending on the execution context.
+
+## Query Modes
+
+### 1. All Logs for Authenticated User
+
+Returns logs associated with your user email.
+
+```python
+result = fused.api.log()
+```
+
+### 2. Logs Scoped to Execution Environment
+
+Returns logs for all users in your execution environment (team/org level).
+
+```python
+result = fused.api.log(exec_env=True)
+```
+
+### 3. Lookup by Record ID
+
+Fetch a single record directly.
+
+```python
+result = fused.api.log(id="<audit-record-uuid>")
+```
+
+### 4. Filter by UDF ID
+
+```python
+result = fused.api.log(udf_id="<udf-uuid>")
+```
+
+### 5. Filter by UDF Name
+
+```python
+result = fused.api.log(udf_name="my_udf")
+```
+
+### 6. Filter by Shared Token
+
+```python
+result = fused.api.log(shared_token="<token>")
+```
+
+### 7. Distinct UDF Names
+
+One record per unique UDF name, most recent execution kept.
+
+```python
+result = fused.api.log(distinct=True, distinct_type="names")
+```
+
+### 8. Distinct UDF IDs
+
+One record per unique UDF ID, most recent execution kept.
+
+```python
+result = fused.api.log(distinct=True, distinct_type="ids")
+```
+
+### 9. Distinct Queries Scoped to Execution Environment
+
+Combine `exec_env=True` with distinct queries.
+
+```python
+result = fused.api.log(distinct=True, distinct_type="names", exec_env=True)
+result = fused.api.log(distinct=True, distinct_type="ids", exec_env=True)
+```
+
+## Pagination
+
+Regular (non-distinct) queries support pagination via `next_page_token`:
+
+```python
+all_items = []
+page_token = None
+
+while True:
+    result = fused.api.log(limit=300, scan_forward=False, page_token=page_token)
+    all_items.extend(result["items"])
+    page_token = result.get("next_page_token")
+    if not page_token:
+        break
+```
+
+## Recipes
+
+### Recently Used UDFs (Last 7 Days)
+
+```python
+import fused
+import pandas as pd
+from datetime import datetime, timedelta, timezone
+
+all_names = {}
+now = datetime.now(timezone.utc)
+
+for days_ago in range(7):
+    window_start = (now - timedelta(days=days_ago + 1)).isoformat()
+    window_end = (now - timedelta(days=days_ago)).isoformat()
+
+    result = fused.api.log(
+        distinct=True,
+        distinct_type="names",
+        start_timestamp=window_start,
+        end_timestamp=window_end,
+        max_records_to_scan=5000,
+    )
+    for record in result.get("items", []):
+        name = record.get("udf_name")
+        if name and (
+            name not in all_names
+            or record.get("timestamp", "") > all_names[name].get("timestamp", "")
+        ):
+            all_names[name] = record
+
+df = pd.DataFrame(list(all_names.values()))
+```
+
+### Failing UDFs (Last 7 Days)
+
+```python
+import fused
+import pandas as pd
+from datetime import datetime, timedelta, timezone
+
+all_items = []
+now = datetime.now(timezone.utc)
+
+for days_ago in range(7):
+    window_start = (now - timedelta(days=days_ago + 1)).isoformat()
+    window_end = (now - timedelta(days=days_ago)).isoformat()
+    page_token = None
+
+    while True:
+        result = fused.api.log(
+            start_timestamp=window_start,
+            end_timestamp=window_end,
+            limit=300,
+            scan_forward=False,
+            page_token=page_token,
+        )
+        all_items.extend(result.get("items", []))
+        page_token = result.get("next_page_token")
+        if not page_token or len(all_items) >= 5000:
+            break
+
+df = pd.DataFrame(all_items)
+df["has_error"] = df["stderr"].fillna("").str.strip().astype(bool)
+df["incomplete"] = df["execution_time"].isna()
+failing = df[df["has_error"] | df["incomplete"]]
+
+summary = (
+    failing.groupby("udf_name")
+    .agg(
+        failure_count=("id", "count"),
+        last_failure=("timestamp", "max"),
+        sample_error=("stderr", "first"),
+    )
+    .sort_values("failure_count", ascending=False)
+    .reset_index()
+)
+```
+
+## Limits & Caveats
+
+| Constraint | Value |
+|---|---|
+| Max `limit` per page | 300 |
+| Max `max_records_to_scan` | 5000 |
+| Distinct query pagination | Not supported (single response) |
+| `stderr` population | Only from UDF-level Python errors; infrastructure failures (timeouts, Lambda crashes) may not populate `stderr` |
+| `execution_time` = `None` | Indicates the execution record was never updated (possible crash/timeout) |
+| Large `stdout`/`stderr`/`udf_data` | Transparently stored in S3 and resolved server-side when >= 100 KB |

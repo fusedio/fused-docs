@@ -107,39 +107,36 @@ def udf():
 Path: guide/advanced-setup/environment-variables.mdx
 URL: https://docs.fused.io/guide/advanced-setup/secrets-management
 
-Save constants to an `.env` file to make them available to UDFs as environment variables. You should use the secrets manager for sensitive information like API keys.
+Fused provides a built-in secrets manager to securely store and access sensitive credentials like API keys, database passwords, and tokens. Secrets are encrypted in the Fused backend and scoped to your account or organization.
 
-First, run a File UDF that sets variables in an `.env` file in the `/mnt/cache/` directory.
+## Storing secrets
 
-```py
+In Workbench, go to **Preferences** and find the **Secrets** section. Click **"+ Add new secret"** to add a key-value pair.
+
+[Image: secrets management]
+
+## Accessing secrets in UDFs
+
+Use `fused.secrets` to retrieve stored secrets by name:
+
+```python
+
 @fused.udf
 def udf():
-    env_vars = """
-    MY_ENV_VAR=123
-    """
+    api_key = fused.secrets["OPENAI_API_KEY"]
 
-    # Path to .env file in disk file system
-    env_file_path = '/mnt/cache/.env'
-
-    # Write the environment variables to the .env file
-    with open(env_file_path, 'w') as file:
-        file.write(env_vars)
+    client = openai.OpenAI(api_key=api_key)
+    ...
 ```
 
-Now, any UDF can load the values from `.env` as environment variables with the `load_dotenv` and access them with os.getenv.
+## Security notes
 
-```py
-@fused.udf
-def udf():
-    from dotenv import load_dotenv
+- Secrets are stored encrypted in the Fused backend.
+- Any secrets added to Fused are accessible by anyone in your team.
+- Never print or return secret values from UDFs — anyone calling the UDF could otherwise read them.
+- Use `fused.secrets` instead of `.env` files to keep credentials out of your codebase.
 
-    # Load environment variable
-    env_file_path = '/mnt/cache/.env'
-    load_dotenv(env_file_path, override=True)
-
-    # Access environment variable
-    print(f"Updated MY_ENV_VAR: ")
-```
+For more on writing UDFs securely, see Security best practices.
 
 ================================================================================
 
@@ -150,11 +147,11 @@ URL: https://docs.fused.io/guide/advanced-setup/git-integration
 Github integration allows you to:
 - Commit your code to Fused public & community repositories for anyone to use!
 - Saving & Versioning of UDFs
-- Collaboration across teams (for Professional users)
+- Collaboration across teams (for Developer, Professional and Enterprise users)
 
 ## Connecting your own repositories
 
-<Tag color="#3399ff">Professional and Enterprise</Tag> _Integrating private repositories is accessible to organizations with a Fused Professional & Enterprise subscription (see Plans)._
+<Tag color="#3399ff">Developer, Professional and Enterprise</Tag> _Integrating private repositories is accessible to organizations with a Fused Developer, Professional & Enterprise subscription (see Plans)._
 
 Fused Github integration plugs directly into your own repositories.
 
@@ -485,6 +482,281 @@ df = con.sql("""
 | Large datasets | **Partitioned GeoParquet** | Use `fused.ingest()` |
 
 For large datasets (&gt;1GB), use `fused.ingest()` to create optimized, partitioned files.
+
+================================================================================
+
+## Audit Logs
+Path: guide/data-input-outputs/export-api/audit-logs.mdx
+URL: https://docs.fused.io/guide/data-input-outputs/export-api/audit-logs
+
+# `fused.api.log` -- Audit Logs
+
+`fused.api.log()` retrieves audit logs for UDF executions. Every time a UDF runs, the system records metadata about the execution including which UDF ran, who ran it, how long it took, and any stdout/stderr output.
+
+## Function Signature
+
+```python
+fused.api.log(
+    id: str | None = None,
+    *,
+    udf_id: str | None = None,
+    udf_name: str | None = None,
+    shared_token: str | None = None,
+    exec_env: bool = False,
+    distinct: bool = False,
+    distinct_type: Literal["names", "ids"] | None = None,
+    start_timestamp: str | None = None,
+    end_timestamp: str | None = None,
+    limit: int = 100,
+    scan_forward: bool = True,
+    page_token: str | None = None,
+    max_records_to_scan: int = 1000,
+) -> dict[str, Any]
+```
+
+## Parameters
+
+### Filters
+
+Only **one** of `id`, `udf_id`, `udf_name`, or `shared_token` may be specified. If none are provided, logs for the authenticated user are returned.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `id` | `str \| None` | `None` | Fetch a single audit log record by its unique ID. When set, all other filters are ignored. |
+| `udf_id` | `str \| None` | `None` | Filter logs by the UDF's unique ID (UUID). |
+| `udf_name` | `str \| None` | `None` | Filter logs by UDF slug/name. |
+| `shared_token` | `str \| None` | `None` | Filter logs by shared token (for UDFs accessed via shared links). |
+| `exec_env` | `bool` | `False` | If `True`, scope logs to the authenticated user's execution environment rather than their user email. Useful for team/org-level queries. |
+
+### Distinct Queries
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `distinct` | `bool` | `False` | If `True`, return one record per unique UDF (deduplicated), keeping the most recent execution for each. Requires `distinct_type`. |
+| `distinct_type` | `"names" \| "ids" \| None` | `None` | When `distinct=True`: `"names"` deduplicates by `udf_name`, `"ids"` deduplicates by `udf_id`. |
+
+### Time Range
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `start_timestamp` | `str \| None` | `None` | Inclusive start of the time range (ISO 8601 format, e.g. `"2025-04-01T00:00:00+00:00"`). |
+| `end_timestamp` | `str \| None` | `None` | Inclusive end of the time range (ISO 8601 format). |
+
+### Pagination & Ordering
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `limit` | `int` | `100` | Maximum records per page (max 300). Used for regular (non-distinct) queries. |
+| `scan_forward` | `bool` | `True` | `True` = oldest first, `False` = newest first. |
+| `page_token` | `str \| None` | `None` | Pagination token from a previous response's `next_page_token`. |
+| `max_records_to_scan` | `int` | `1000` | Maximum raw records the server scans before deduplicating (max 5000). Only used for distinct queries. |
+
+## Return Value
+
+All calls return a dictionary with this structure:
+
+```python
+
+```
+
+> **Note:** Distinct queries always return `next_page_token: None` -- the server handles internal pagination and returns the full deduplicated result in one response.
+
+## Audit Log Record Fields
+
+Each record in `items` is a dictionary with these fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `str` | Unique record ID (UUID). |
+| `timestamp` | `str` | ISO 8601 timestamp of the execution. |
+| `exec_env_id` | `str` | Execution environment ID. |
+| `user_id` | `str` | User ID who triggered the execution. |
+| `user_email` | `str` | User email who triggered the execution. |
+| `udf_id` | `str` | UDF unique ID. |
+| `udf_name` | `str` | UDF slug/name. |
+| `execution_engine` | `str` | Engine used (e.g. `"realtime"`). |
+| `execution_time` | `float` | Execution duration in seconds. `None` if the execution didn't complete. |
+| `cache` | `bool` | `True` if result was served from cache, `False` if not. |
+| `stdout` | `str` | Captured standard output from the UDF execution. |
+| `stderr` | `str` | Captured standard error from the UDF execution. Non-empty typically indicates a failure. |
+| `udf_data` | `str` | The UDF code/payload that was executed. |
+| `shared_token` | `str` | Shared token, if the UDF was accessed via a shared link. |
+| `client_ip` | `str` | IP address of the caller. |
+
+All fields except `id` and `timestamp` may be absent or `None` depending on the execution context.
+
+## Query Modes
+
+### 1. All Logs for Authenticated User
+
+Returns logs associated with your user email.
+
+```python
+result = fused.api.log()
+```
+
+### 2. Logs Scoped to Execution Environment
+
+Returns logs for all users in your execution environment (team/org level).
+
+```python
+result = fused.api.log(exec_env=True)
+```
+
+### 3. Lookup by Record ID
+
+Fetch a single record directly.
+
+```python
+result = fused.api.log(id="<audit-record-uuid>")
+```
+
+### 4. Filter by UDF ID
+
+```python
+result = fused.api.log(udf_id="<udf-uuid>")
+```
+
+### 5. Filter by UDF Name
+
+```python
+result = fused.api.log(udf_name="my_udf")
+```
+
+### 6. Filter by Shared Token
+
+```python
+result = fused.api.log(shared_token="<token>")
+```
+
+### 7. Distinct UDF Names
+
+One record per unique UDF name, most recent execution kept.
+
+```python
+result = fused.api.log(distinct=True, distinct_type="names")
+```
+
+### 8. Distinct UDF IDs
+
+One record per unique UDF ID, most recent execution kept.
+
+```python
+result = fused.api.log(distinct=True, distinct_type="ids")
+```
+
+### 9. Distinct Queries Scoped to Execution Environment
+
+Combine `exec_env=True` with distinct queries.
+
+```python
+result = fused.api.log(distinct=True, distinct_type="names", exec_env=True)
+result = fused.api.log(distinct=True, distinct_type="ids", exec_env=True)
+```
+
+## Pagination
+
+Regular (non-distinct) queries support pagination via `next_page_token`:
+
+```python
+all_items = []
+page_token = None
+
+while True:
+    result = fused.api.log(limit=300, scan_forward=False, page_token=page_token)
+    all_items.extend(result["items"])
+    page_token = result.get("next_page_token")
+    if not page_token:
+        break
+```
+
+## Recipes
+
+### Recently Used UDFs (Last 7 Days)
+
+```python
+
+from datetime import datetime, timedelta, timezone
+
+all_names = 
+now = datetime.now(timezone.utc)
+
+for days_ago in range(7):
+    window_start = (now - timedelta(days=days_ago + 1)).isoformat()
+    window_end = (now - timedelta(days=days_ago)).isoformat()
+
+    result = fused.api.log(
+        distinct=True,
+        distinct_type="names",
+        start_timestamp=window_start,
+        end_timestamp=window_end,
+        max_records_to_scan=5000,
+    )
+    for record in result.get("items", []):
+        name = record.get("udf_name")
+        if name and (
+            name not in all_names
+            or record.get("timestamp", "") > all_names[name].get("timestamp", "")
+        ):
+            all_names[name] = record
+
+df = pd.DataFrame(list(all_names.values()))
+```
+
+### Failing UDFs (Last 7 Days)
+
+```python
+
+from datetime import datetime, timedelta, timezone
+
+all_items = []
+now = datetime.now(timezone.utc)
+
+for days_ago in range(7):
+    window_start = (now - timedelta(days=days_ago + 1)).isoformat()
+    window_end = (now - timedelta(days=days_ago)).isoformat()
+    page_token = None
+
+    while True:
+        result = fused.api.log(
+            start_timestamp=window_start,
+            end_timestamp=window_end,
+            limit=300,
+            scan_forward=False,
+            page_token=page_token,
+        )
+        all_items.extend(result.get("items", []))
+        page_token = result.get("next_page_token")
+        if not page_token or len(all_items) >= 5000:
+            break
+
+df = pd.DataFrame(all_items)
+df["has_error"] = df["stderr"].fillna("").str.strip().astype(bool)
+df["incomplete"] = df["execution_time"].isna()
+failing = df[df["has_error"] | df["incomplete"]]
+
+summary = (
+    failing.groupby("udf_name")
+    .agg(
+        failure_count=("id", "count"),
+        last_failure=("timestamp", "max"),
+        sample_error=("stderr", "first"),
+    )
+    .sort_values("failure_count", ascending=False)
+    .reset_index()
+)
+```
+
+## Limits & Caveats
+
+| Constraint | Value |
+|---|---|
+| Max `limit` per page | 300 |
+| Max `max_records_to_scan` | 5000 |
+| Distinct query pagination | Not supported (single response) |
+| `stderr` population | Only from UDF-level Python errors; infrastructure failures (timeouts, Lambda crashes) may not populate `stderr` |
+| `execution_time` = `None` | Indicates the execution record was never updated (possible crash/timeout) |
+| Large `stdout`/`stderr`/`udf_data` | Transparently stored in S3 and resolved server-side when >= 100 KB |
 
 ================================================================================
 
@@ -1738,6 +2010,31 @@ def udf(selected_option: str = "orders"):
     return df[["date", col]].rename(columns=)
 ```
 
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
+
+    @fused.cache
+    def load_data(file_path):
+        return pd.read_parquet(file_path)
+
+    df = load_data(path)
+    return df
+```
+
+```json
+} GROUP BY neighbourhood_cleansed ORDER BY value DESC LIMIT 10",
+        "title": "Top 10 Most Expensive Neighbourhoods"
+      }
+    },
+    "showEditor": true,
+    "editorCollapsed": false,
+    "aiBuilderMode": "enabled",
+    "aiPanel": "right"
+  }
+}
+```
+
 *When you share a widget URL, Fused automatically appends all canvas parameters as query parameters so the shared view can be reproduced exactly.* Try it out →
 
 ## Available Widgets
@@ -1762,6 +2059,84 @@ See a live example →
 | Output | `image` | Image display | URL or base64 |
 | Output | `fused-map` | Full interactive map | Supports multiple layer types, tooltips, legends, basemaps |
 | Output | `render` | Meta widget | Renders widgets dynamically from JSON |
+
+## Multi-Component Widgets
+
+A single widget node can hold multiple widgets — sliders, charts, tables, text, maps — stacked or laid out together. You wrap them in a `div` with `children`.
+
+Use a `div` as the root container type and list each widget inside its `children` array — the structure is just a wrapper with standard CSS for layout.
+
+```json
+,
+  "children": [
+     },
+     },
+     }
+  ]
+}
+```
+
+- `type: "div"` — a container, not a visual widget. It just groups children.
+- `props.style` — standard CSS. Use `flex-direction: column` for a vertical stack, `row` for side-by-side.
+- `children` — an ordered array of widget definitions ``. Each child is a full widget. For the full list of supported widgets, see the available widgets.
+
+You can nest a `div` inside another `div` for more complex layouts.
+
+### Combining input & output components
+
+Multiple components can also work together inside a single widget:
+- An input component (like a slider) publishes a value through `param`
+- An output component (like a chart) can read that value with `$param`
+
+This lets you build interactive widgets with both inputs and outputs in a single widget.
+
+### Example
+
+When the slider changes, every widget using `$param` (here `$top_n`) updates instantly — the bar chart and SQL table re-render in sync with the slider value. Try it out →
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
+
+    @fused.cache
+    def load_data(file_path):
+        return pd.read_parquet(file_path)
+
+    df = load_data(path)
+    return df
+```
+
+```json
+,
+  "children": [
+    
+    },
+    } GROUP BY neighbourhood_cleansed ORDER BY value DESC LIMIT $top_n",
+        "barColor": "#E8FF59",
+        "barOpacity": 1,
+        "barRadius": 4,
+        "hoverColor": "#ffffff",
+        "showGrid": true,
+        "rotateLabels": true,
+        "horizontal": false,
+        "showValues": true,
+        "sort": "none",
+        "xAxisFontSize": 11,
+        "yAxisFontSize": 11,
+        "beginAtZero": true,
+        "animationMs": 300
+      }
+    },
+    } WHERE neighbourhood_cleansed IN (SELECT neighbourhood_cleansed FROM } GROUP BY neighbourhood_cleansed ORDER BY AVG(price_in_dollar) DESC LIMIT $top_n) GROUP BY neighbourhood_cleansed ORDER BY Avg_Price DESC"
+      }
+    }
+  ]
+}
+```
+
+</details>
+
+[Image: Multi-widget slider updating chart and table]
 
 ================================================================================
 
@@ -5445,17 +5820,11 @@ Predictable inputs improve safety and caching.
 
 How **public** and **team-only** canvas sharing work, when to split UDFs across canvases, and how **session tokens** (Workbench or service account) apply to UDF URLs are documented in Securing shared tokens.
 
-## [Experimental] Protect endpoints with Canvas passcode
+## Protect endpoints with Canvas passcode
 
 You can require a **canvas-wide passcode** in Canvas settings so viewers must enter it before the canvas loads. **Canvas passcode is only available for canvases that are shared publicly** (not team-only). UDFs on those canvases use the same protection when called through shared links.
 
 [Image: Canvas settings: Passcode protection with Require passcode, set passcode field, and Save]
-
-Passcode Canvas is currently in experimental mode. You need to go to Preferences > Experimental Features and enable "Canvas passcode protection".
-
-Canvas passcode is only offered when the canvas is set to **public** sharing, not **team-only** (see Securing shared tokens).
-
-This passcode has no character requirement and can be edited by anyone in your Fused team.
 
 ### Accessing Canvas with passcode
 
@@ -6027,6 +6396,83 @@ Quick links for geospatial workflows in Fused.
 ================================================================================
 
 # EXAMPLES
+
+## Letting Anyone Explore Airbnb on the Fly
+Path: examples/airbnb-explore-on-the-fly.mdx
+URL: https://docs.fused.io/examples/airbnb-explore-on-the-fly
+
+This example shows how to load, visualize, and interactively explore Airbnb listing data from San Francisco — roughly 7,000 points covering locations, property types, occupancy, reviews, and pricing — using a Fused Canvas with an AI-powered chat widget that lets anyone ask questions and reshape the visualization in real time.
+
+*Walkthrough: Exploring Airbnb data with a Fused AI widget. Try the Canvas*
+
+Airbnb publishes detailed listing data for cities around the world, but exploring it usually means downloading CSVs and writing one-off scripts. With Fused, you can load the dataset into a Canvas, visualize it on a map, and attach an AI chat widget so anyone — technical or not — can ask questions and get instant visual answers.
+
+## Building the canvas
+
+### 1. Load the Airbnb dataset
+
+The `airbnb_data` UDF reads a Parquet file containing ~7,000 San Francisco Airbnb listings from S3. Each row includes the listing's location, neighbourhood, property type, occupancy, review scores, and pricing. The data is cached so subsequent runs load instantly.
+
+```python
+@fused.udf
+def udf():
+
+    @fused.cache
+    def load_data():
+        return pd.read_parquet("s3://fused-sample/demo_data/airbnb_listings_sf.parquet")
+
+    df = load_data()
+    print(df.head())
+    print(df.dtypes)
+    print(df.shape)
+    return df
+```
+
+### 2. Connect a render widget to visualize the data
+
+The `airbnb_data` UDF returns a DataFrame. To visualize it, we connect it to a widget by drawing an edge from the UDF node to the widget node in the Canvas.
+
+We use a `render` widget here because it wraps any chart type and layers on an AI panel — so users can modify the visualization with natural language without touching JSON. In this example we plot a bar chart of the top 15 neighbourhoods by average price:
+
+```json
+} GROUP BY neighbourhood_cleansed ORDER BY value DESC LIMIT 15",
+        "title": "Top 15 Neighbourhoods"
+      }
+    },
+    "aiBuilderMode": "enabled",
+    "aiPanel": "right"
+  }
+}
+```
+
+Notice the `}` in the SQL — this is the widget template syntax. Because the widget is connected to the `airbnb_data` UDF via an edge, the name inside `}` resolves automatically to that UDF's output. You just reference the UDF by name and the widget handles the rest.
+
+- **`aiBuilderMode: "enabled"`** — activates the built-in AI panel so users can describe changes in natural language.
+- **`aiPanel: "right"`** — positions the AI chat on the right side of the widget.
+
+The AI panel rewrites the inner widget definition based on your prompt. Try things like:
+- *"Switch to a pie chart of property types"*
+- *"Show a histogram of review scores"*
+- *"Map the most expensive listings"*
+- *"Show average price by room type as a horizontal bar chart"*
+
+See the AI-driven widget guide for all available props and widget types.
+
+### 3. Explore the data interactively
+
+With the AI panel enabled, anyone can reshape the visualization without writing code. Ask for ratings distributions, price comparisons across neighbourhoods, occupancy trends — the AI rewrites the widget definition on the fly, and the chart updates instantly. This turns a static dashboard into a conversational data exploration tool.
+
+### 4. Share with anyone
+
+The Canvas can be shared as a link or as a standalone widget. Share the full Canvas for the complete experience (map + widget + AI chat), or share just the widget for a focused, embeddable view that anyone can interact with — no Fused account required.
+
+## Try it out
+
+Open the Fused Canvas to explore the live Airbnb dataset, or go straight to the interactive widget to ask questions directly.
+
+Clone the Canvas to customize it. Swap the data source, change the default chart, or adjust the AI panel position. See the Widgets guide for the full list of `render` widget props.
+
+================================================================================
 
 ## AIS Dark Vessel Detection
 Path: examples/ais-dark-vessels.mdx
@@ -7240,6 +7686,258 @@ Based on the prediction make a dashboard that gives me a recommendation for each
 
 ================================================================================
 
+## Will You Be Late to Your Meetings?
+Path: examples/google-calendar-meetings.mdx
+URL: https://docs.fused.io/examples/google-calendar-meetings
+
+This example shows how to connect Google Calendar to a Fused pipeline that calculates travel time between appointments and flags meetings you're likely to be late for — then exposes the result to AI agents like Claude.
+
+*Walkthrough: Checking whether you'll make your meetings on time using Fused and Claude. Try the Canvas →*
+
+Knowing your next meeting starts in 30 minutes doesn't help if the commute takes 45. Calendar apps show times but ignore the real world — where you are, how long it takes to get between locations, and whether the gap between back-to-back meetings is actually enough. With Fused, you can pull your Google Calendar events, compute routing and travel times, and surface schedule conflicts to an AI agent.
+
+## Building the canvas
+
+### 1. Pull events from Google Calendar
+
+[Image: Fetching Google Calendar events in Fused Canvas]
+
+The `gcal_today_events` UDF connects to the Google Calendar API and loads the day's events — meetings, blocks, and appointments — into a DataFrame with titles, start/end times, and locations.
+
+Setting `cache_max_age=0` disables caching so the UDF always pulls the latest calendar data on every run — ensuring real-time updates when you reschedule meetings.
+
+```python
+@fused.udf(cache_max_age=0)
+def udf(
+    calendar_url="https://calendar.google.com/calendar/u/3?cid=bWF4LmZ1c2VkLnRlc3RpbmdAZ21haWwuY29t",  # replace with your calendar URL
+    date: str = "2026-04-08",  # replace with your date or leave empty for today
+):
+
+    from datetime import datetime
+    from urllib.parse import urlparse, parse_qs
+
+    google_api_key = fused.secrets["google_maps_api"]  # set in Fused Secrets
+
+    parsed_url = urlparse(calendar_url)
+    cid_param = parse_qs(parsed_url.query).get("cid", [None])[0]
+    if not cid_param:
+        return pd.DataFrame()
+
+    calendar_id = base64.b64decode(cid_param).decode("utf-8")
+
+    if date:
+        today = datetime.strptime(date, "%Y-%m-%d").date()
+    else:
+        today = datetime.utcnow().date()
+    time_min = datetime.combine(today, datetime.min.time()).isoformat() + "Z"
+    time_max = datetime.combine(today, datetime.max.time()).isoformat() + "Z"
+
+    url = f"https://www.googleapis.com/calendar/v3/calendars//events"
+    params = 
+
+    response = requests.get(url, params=params)
+    data = response.json()
+    events = data.get("items", [])
+    if not events:
+        return pd.DataFrame("]})
+
+    event_list = []
+    for event in events:
+        event_list.append().get("dateTime", event.get("start", ).get("date")),
+            "end": event.get("end", ).get("dateTime", event.get("end", ).get("date")),
+            "description": event.get("description", ""),
+            "location": event.get("location", ""),
+        })
+
+    return pd.DataFrame(event_list)
+```
+
+```python
+@fused.udf(cache_max_age=0)
+def udf(date: str = "2026-04-08"):
+
+    from geopy.geocoders import Nominatim
+
+    gcal = fused.load("gcal_today_events")
+    data = gcal(date=date)
+
+    @fused.cache
+    def geocode_location(location):
+        if not location or not str(location).strip():
+            return None, None
+        geocoder = Nominatim(user_agent="fused_geocoder")
+        result = geocoder.geocode(str(location), timeout=10)
+        time.sleep(0.2)
+        if result:
+            return result.latitude, result.longitude
+        return None, None
+
+    lats, lons = [], []
+    for location in data["location"].fillna(""):
+        lat, lon = geocode_location(location)
+        lats.append(lat)
+        lons.append(lon)
+
+    data["latitude"] = lats
+    data["longitude"] = lons
+    return data
+```
+
+```python
+@fused.udf
+def udf(date: str = "2026-04-08"):
+    """
+    Computes driving routes between consecutive meetings on a given day.
+
+    Returns a GeoDataFrame with one row per consecutive meeting pair, including
+    route geometry, distance, duration, and on-time status.
+    """
+
+    from shapely.geometry import LineString
+    from datetime import datetime
+
+    geocode = fused.load("gcal_events_geocode")
+    meetings_df = geocode(date=date)
+
+    meetings_df = meetings_df[
+        (meetings_df["latitude"].notna()) & (meetings_df["longitude"].notna())
+    ].reset_index(drop=True)
+
+    google_maps_api = fused.secrets["google_maps_api"]  # set in Fused Secrets
+
+    def format_time_range(start_str, end_str):
+        start_time = datetime.fromisoformat(start_str.replace("Z", "+00:00")).strftime("%H:%M")
+        end_time = datetime.fromisoformat(end_str.replace("Z", "+00:00")).strftime("%H:%M")
+        return f" - "
+
+    @fused.cache()
+    def get_route(origin_lat, origin_lon, dest_lat, dest_lon):
+        url = "https://routes.googleapis.com/directions/v2:computeRoutes"
+        headers = 
+        payload = }},
+            "destination": }},
+            "travelMode": "DRIVE",
+            "routingPreference": "TRAFFIC_AWARE",
+        }
+        response = requests.post(url, headers=headers, json=payload)
+        data = response.json()
+        if "routes" in data and len(data["routes"]) > 0:
+            return data["routes"][0]
+        return None
+
+    def decode_polyline(encoded, origin_lon, origin_lat, dest_lon, dest_lat):
+
+        coords = polyline.decode(encoded)
+        return [(lon, lat) for lat, lon in coords]
+
+    routes_data = []
+    for i in range(len(meetings_df) - 1):
+        origin = meetings_df.iloc[i]
+        destination = meetings_df.iloc[i + 1]
+
+        route = get_route(
+            origin["latitude"], origin["longitude"],
+            destination["latitude"], destination["longitude"],
+        )
+        if route:
+            if "polyline" in route and "encodedPolyline" in route["polyline"]:
+                geometry_coords = decode_polyline(
+                    route["polyline"]["encodedPolyline"],
+                    origin["longitude"], origin["latitude"],
+                    destination["longitude"], destination["latitude"],
+                )
+            else:
+                geometry_coords = [
+                    (origin["longitude"], origin["latitude"]),
+                    (destination["longitude"], destination["latitude"]),
+                ]
+
+            routes_data.append()
+
+    routes_gdf = gpd.GeoDataFrame(routes_data, geometry="geometry", crs="EPSG:4326")
+
+    def parse_end_minutes(time_range):
+        end = time_range.split(" - ")[1].strip()
+        h, m = map(int, end.split(":"))
+        return h * 60 + m
+
+    def parse_start_minutes(time_range):
+        start = time_range.split(" - ")[0].strip()
+        h, m = map(int, start.split(":"))
+        return h * 60 + m
+
+    def parse_duration_seconds(duration_str):
+        return int(str(duration_str).replace("s", "").strip())
+
+    routes_gdf["gap_minutes"] = (
+        routes_gdf["to_time"].apply(parse_start_minutes)
+        - routes_gdf["from_time"].apply(parse_end_minutes)
+    )
+    routes_gdf["travel_minutes"] = routes_gdf["duration"].apply(
+        lambda d: round(parse_duration_seconds(d) / 60)
+    )
+    routes_gdf["buffer_minutes"] = routes_gdf["gap_minutes"] - routes_gdf["travel_minutes"]
+    routes_gdf["status"] = routes_gdf["buffer_minutes"].apply(
+        lambda b: "On Time" if b is not None and b >= 0 else "Will Be Late"
+    )
+
+    return routes_gdf
+```
+
+</details>
+
+### 3. Expose to an AI agent
+
+Only the final `nyc_meeting_routes` UDF is made **visible** on the Canvas — the upstream `gcal_today_events` and `gcal_events_geocode` UDFs are hidden. This means the agent only sees the schedule analysis tool, not the intermediate geocoding or calendar-fetching steps. The agent gets a clean interface: it can query meeting routes and lateness status without needing to understand the pipeline internals.
+
+[Image: Only visible UDFs appear in OpenAPI]
+
+Return only a small amount of data from the exposed UDF so the agent's context isn't overloaded.
+
+The Canvas publishes the visible UDF as an agent-callable endpoint via its OpenAPI specification. See Expose your Canvas to agents for details.
+
+[Image: Canvas OpenAPI specification for agents]
+
+### 4. Connect an AI agent
+
+Once the Canvas is shared and its OpenAPI spec is available, you can connect an AI agent to it. Here's how to set up Claude Code:
+
+1. **Teach Claude Code about Fused.** Paste the Fused skills into Claude Code so it understands how to interact with Fused endpoints. Tell it: "always use these skills when working with Fused."
+2. **Give it the OpenAPI spec.** In the Canvas, click **Share** → **OpenAPI** and copy the `.api.json` URL (it looks like `https://udf.ai/fc_<your_token>.api.json`). Paste it into Claude Code so the agent knows which tools are available and what parameters they accept.
+3. **Ask questions.** The agent can now query the schedule analysis directly:
+
+- *"Will I make all my meetings on time today?"*
+- *"Which meeting am I most likely to be late to?"*
+- *"How much buffer do I have between my 2pm and 3pm?"*
+
+[Image: Querying the Fused API with Claude Code]
+
+### 5. Adjust and re-check
+
+After editing your calendar in Google Calendar — moving a meeting, adding buffer time — re-run the pipeline to verify the updated schedule works. Because `cache_max_age=0` is set on the calendar and geocoding UDFs, the pipeline always pulls the latest events from Google Calendar. 
+
+## Build it yourself
+
+To run this with your own calendar you need:
+
+**Google Maps API** — for geocoding and routing:
+1. Get an API key from the Google Cloud Console
+2. Enable the Routes API and Calendar API
+In Fused Workbench, go to **Preferences** → **Environment** → **Secrets management** (docs) and add your API key with the name **`google_maps_api`**. The pipeline references it as `fused.secrets["google_maps_api"]`.
+
+**Google Calendar** — must be publicly accessible:
+1. Open Google Calendar → click **⋮** next to your calendar → **Settings and sharing**
+2. Under **Access permissions**, check **Make available to public**
+3. Copy the **Calendar ID** (under *Integrate calendar*) and paste it into the `calendar_url` parameter of the `gcal_today_events` UDF in the Canvas
+
+## Try it out
+
+Open the Fused Canvas to explore the live pipeline. It connects to Google Calendar, calculates travel time between your events, and flags conflicts — ready for you to query with an AI agent.
+
+First, make a copy of the Canvas. Then follow the Share Modal guide to publish it. Once shared, click **Share** → **OpenAPI** to get the OpenAPI specification you can hand to any AI agent.
+
+================================================================================
+
 ## Maxar Satellite Imagery
 Path: examples/maxar-satellite-imagery.mdx
 URL: https://docs.fused.io/examples/maxar-satellite-imagery
@@ -7577,6 +8275,166 @@ If you want to go a bit further you could:
 - Explore the Best Practices to make the most of UDFs or learn handy tips to use Workbench as its fullest
 - Go more in depth with "File" & "Tile" modes in Workbench
 - Dive into the different ways Fused allows you to use caching to improve performance
+
+================================================================================
+
+## Join and Expose Messy Data to AI Agents
+Path: examples/messy-data-agents.mdx
+URL: https://docs.fused.io/examples/messy-data-agents
+
+This example shows how to join data scattered across Snowflake, Google Sheets, and S3 into a single Fused pipeline, then expose the combined result to AI agents so they can answer business questions across all sources at once.
+
+*Walkthrough: Letting AI agents talk to your data no matter where it's from. Try the Canvas →*
+
+Real-world data rarely lives in one place. Supplier lists sit in Snowflake, store metadata in Google Sheets, and review scores land in S3 as CSVs. Manually consolidating these sources before every analysis is slow and brittle. With Fused, you can join disparate datasets inside a UDF pipeline and expose the combined result to AI agents — no manual consolidation required.
+
+## Building the canvas
+
+### 1. Connect multiple data sources
+
+Each data source is loaded by its own UDF in the Canvas. Fused can pull data from virtually anywhere — a database, a spreadsheet, a file on S3 — and the examples below are just three of the many connectors you can use.
+
+#### Snowflake — supplier records
+
+The `all_suppliers` UDF reads supplier records (name, address, phone, account balance) from Snowflake's TPCH_SF1 sample dataset — anyone with a Snowflake account can reproduce this. Store your Snowflake credentials using `fused.secrets[]` so the UDF can authenticate. See the Snowflake guide for setup details.
+
+```python
+@fused.udf
+def udf(limit: int = 100):
+
+    conn = snowflake.connector.connect(
+        user="DEMO_APP_USER",  # change this to your user id
+        password=fused.secrets["snowflake_demo_access_token"],  # make sure to have this secret set in Fused Secrets
+        account="DINFVZH-WOB67667",
+        warehouse="COMPUTE_WH",
+        database="SNOWFLAKE_SAMPLE_DATA",
+        schema="TPCH_SF1",
+    )
+
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM SUPPLIER LIMIT %s;", (limit,))
+    results = cur.fetch_pandas_all()
+    cur.close()
+    conn.close()
+    return results
+```
+
+```python
+@fused.udf
+def udf(
+    sheet_id: str = "1_utccObv7uSk-Ew92Yu3tW3roYCaZ8Shn3xhMelk24A",  # replace with your sheet ID
+    sheet_name: str = "supplier_feedback"  # replace with your sheet name
+):
+
+    url = f"https://docs.google.com/spreadsheets/d//gviz/tq?tqx=out:csv&sheet="
+    df = pd.read_csv(url)
+    return df
+```
+
+```python
+@fused.udf
+def udf():
+
+    from shapely.geometry import Point
+
+    path = 's3://fused-asset/demos/supplier_customer_joining/supplier_locations.csv'  # Demo data available on public Fused bucket
+    df = pd.read_csv(path)
+
+    col_map = 
+    lat_col = col_map.get('latitude') or col_map.get('lat')
+    lon_col = col_map.get('longitude') or col_map.get('lon') or col_map.get('lng')
+
+    geometry = [Point(xy) for xy in zip(df[lon_col], df[lat_col])]
+    gdf = gpd.GeoDataFrame(df, geometry=geometry, crs='EPSG:4326')
+    return gdf
+```
+
+```python
+@fused.udf
+def udf(
+    num_reviews_min: float = 0,
+    num_reviews_max: float = 9999,
+    avg_rating_min: float = 0.0,
+    avg_rating_max: float = 5.0,
+    sentiment: str = "All",
+    nps_min: float = -100.0,
+    nps_max: float = 100.0,
+    store_type: str = "All",
+    staff_headcount_min: float = 0,
+    staff_headcount_max: float = 9999,
+):
+
+    suppliers_udf = fused.load("all_suppliers")
+    feedback_udf  = fused.load("suppliers_feedback_gdrive")
+    locations_udf = fused.load("supplier_locations_csv")
+
+    df_sup = suppliers_udf()
+    df_fb  = feedback_udf()
+    df_loc = locations_udf()
+
+    # Normalize supplier IDs to a plain integer join key
+    def extract_int(s):
+        m = re.search(r"\d+", str(s))
+        return int(m.group()) if m else None
+
+    df_sup["_join_key"] = df_sup["S_SUPPKEY"].astype(int)
+    df_fb["_join_key"]  = df_fb["supplier_id"].apply(extract_int)
+    df_loc["_join_key"] = df_loc["supplier_ref"].apply(extract_int)
+
+    # Merge all three on the common key
+    df_merged = (
+        df_sup
+        .merge(df_fb,  on="_join_key", how="left", suffixes=("", "_fb"))
+        .merge(df_loc, on="_join_key", how="left", suffixes=("", "_loc"))
+    )
+    df_merged = df_merged.drop(columns=["_join_key", "S_ADDRESS"])
+
+    gdf = gpd.GeoDataFrame(df_merged, geometry="geometry", crs="EPSG:4326")
+
+    # Apply filters
+    mask = (
+        (gdf["num_reviews"].fillna(0) >= num_reviews_min) &
+        (gdf["num_reviews"].fillna(0) <= num_reviews_max) &
+        (gdf["avg_rating"].fillna(0) >= avg_rating_min) &
+        (gdf["avg_rating"].fillna(0) <= avg_rating_max) &
+        (gdf["net_promoter_score"].fillna(0) >= nps_min) &
+        (gdf["net_promoter_score"].fillna(0) <= nps_max) &
+        (gdf["staff_headcount"].fillna(0) >= staff_headcount_min) &
+        (gdf["staff_headcount"].fillna(0) <= staff_headcount_max)
+    )
+    if sentiment != "All":
+        mask &= gdf["sentiment"].str.lower() == sentiment.lower()
+    if store_type != "All":
+        mask &= gdf["store_type"] == store_type
+
+    return gdf[mask]
+```
+
+### 4. Connect an AI agent
+
+Once the Canvas is shared and its OpenAPI spec is available, you can connect an AI agent to it. Here's how to set up Claude Code:
+
+1. **Teach Claude Code about Fused.** Paste the Fused skills into Claude Code so it understands how to interact with Fused endpoints. Tell it: "always use these skills when working with Fused."
+2. **Give it the OpenAPI spec.** In the Canvas, click **Share** → **OpenAPI** and copy the `.api.json` URL (it looks like `https://udf.ai/fc_<your_token>.api.json`). Paste it into Claude Code so the agent knows which tools are available and what parameters they accept.
+3. **Ask questions.** The agent can now query the combined dataset directly.
+
+For more details, see the Expose your Canvas to agents guide.
+
+### 5. Ask business questions
+
+Once connected, an AI agent can query the combined dataset directly. For example:
+
+- *"Which stores have the highest ratings?"*
+- *"Show me the bottom-performing suppliers."*
+- *"Compare average review scores across regions."*
+
+The agent draws answers from all three sources at once — no manual data wrangling needed.
+
+## Try it out
+
+Open the Fused Canvas to explore the live pipeline. The Canvas connects to all three data sources, joins them, and exposes the result to an AI agent — ready for you to query.
+
+First, make a copy of the Canvas. Then follow the Share Modal guide to publish it. Once shared, click **Share** → **OpenAPI** to get the OpenAPI specification you can hand to any AI agent.
 
 ================================================================================
 
@@ -10929,7 +11787,7 @@ def udf():
 
 ## See also
 
-- Environment Variables for runtime configuration
+- Secrets Management for storing and managing secrets
 - Cloud Storage for connecting to cloud providers
 
 ================================================================================
@@ -13265,7 +14123,37 @@ URL: https://docs.fused.io/python-sdk/changelog
 
 # Changelog
 
+## v2.4.1 (2026-04-09)
+
+**Google Drive integration**
+
+Files stored in Google Drive can now be accessed directly from Workbench.
+
+**AI edit confirmation**
+
+When AI suggests code edits in the editor, you can now review and confirm them before they are applied.
+
+**Improvements**
+
+- [Experimental] Widgets: URL query params now sync with param broadcasts in shared Widget mode
+- [Experimental] Widgets: improved loading style when a UDF is running inside a Widget
+- Toolbar dropdowns now open on click instead of hover
+- Chart UX: improved zoom stability and donut legend cleanup
+- Duplicate now works for errored UDFs; default UDF description removed
+- Real-time UDF log streaming improvements
+- You can now clone a Canvas from a Shared Canvas 
+
+**Bug fixes**
+
+- Fixed: [Experimental] Widgets: dropdown not rendering in fullscreen mode
+- Fixed: download data option no longer shown in the toolbar
+- Fixed: node toolbar hover behavior reverted to avoid accidental triggers
+
 ## v2.4.0 (2026-04-07)
+
+**Canvas UDF endpoint — build an MCP Server from any Canvas**
+
+Public canvases now expose an endpoint that lists all visible UDFs (after creating a shared canvas token). This makes it straightforward to turn any canvas into an MCP Server.
 
 **UDF folders**
 
@@ -13274,10 +14162,6 @@ UDFs on the canvas can be grouped into folders, simply by selecting multiple UDF
 **Automatic session tokens for Team canvases**
 
 Workbench now automatically creates a session token for UDFs in Team-scoped canvases, so shared UDFs are always accessible without manual token setup.
-
-**Canvas UDF endpoint — build an MCP Server from any Canvas**
-
-Public canvases now expose an endpoint that lists all visible UDFs (after creating a shared canvas token). This makes it straightforward to turn any canvas into an MCP Server.
 
 **Improvements**
 
@@ -18412,5 +19296,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-04-08
+Generated automatically from Fused documentation. Last updated: 2026-04-12
 Total sections: 5
