@@ -165,7 +165,6 @@ const sidebars: SidebarsConfig = {
         "examples/climate-dashboard",
         "examples/maxar-satellite-imagery",
         "examples/site-selection-analysis",
-        "examples/currency-prediction",
       ],
     },
 
