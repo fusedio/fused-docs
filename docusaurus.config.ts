@@ -242,7 +242,6 @@ const config: Config = {
           { to: "/examples/creating-charts", from: ["/tutorials/Analytics%20&%20Dashboard/interactive-graphs", "/tutorials/Analytics & Dashboard/interactive-graphs", "/guide/working-with-udfs/building-outputs/charts", "/examples/building-outputs/charts", "/examples/interactive-charts", "/examples/vibe-chart-building"] },
           { to: "/guide/data-input-outputs/import-connection/ai-data-connection", from: ["/tutorials/Analytics%20&%20Dashboard/let-anyone-talk-to-your-data", "/tutorials/Analytics & Dashboard/let-anyone-talk-to-your-data", "/guide/data-input-outputs/export-api/mcp-servers"] },
           { to: "/examples/creating-charts", from: ["/tutorials/Analytics%20&%20Dashboard/stack-overflow-surveys", "/tutorials/Analytics & Dashboard/stack-overflow-surveys"] },
-          { to: "/examples/currency-prediction", from: ["/tutorials/Analytics%20&%20Dashboard/currency-trading", "/tutorials/Analytics & Dashboard/currency-trading"] },
           
           // Data Science & AI tutorials
           { to: "/examples/zonal-stats", from: ["/tutorials/Data%20Science%20&%20AI/discover_data", "/tutorials/Data Science & AI/discover_data", "/examples/data-exploration"] },
