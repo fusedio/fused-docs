@@ -72,6 +72,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/stac", label: "STAC catalogs" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/gee", label: "Google Earth Engine" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/ai-data-connection", label: "Connecting AI to Data" },
+        { type: "doc", id: "guide/data-input-outputs/export-api/slack", label: "Slack [Experimental]" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/widgets", label: "Widgets" },
       ],
     },
@@ -101,7 +102,6 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/data-input-outputs/export-api/download", label: "Download" },
         { type: "doc", id: "guide/data-input-outputs/export-api/geospatial-export", label: "Geospatial Integration" },
         { type: "doc", id: "guide/data-input-outputs/export-api/audit-logs", label: "Audit Logs" },
-        { type: "doc", id: "guide/data-input-outputs/export-api/slack", label: "Slack [Experimental]" },
       ],
     },
 
