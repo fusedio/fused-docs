@@ -238,6 +238,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "python-sdk/api-reference/fused-run", label: "fused.run" },
         { type: "doc", id: "python-sdk/api-reference/fused-run-async", label: "fused.run_async" },
         { type: "doc", id: "python-sdk/api-reference/fused-submit", label: "fused.submit" },
+        { type: "doc", id: "python-sdk/api-reference/job2-ai", label: "job2.ai" },
       ],
     },
   ],
