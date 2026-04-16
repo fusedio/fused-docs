@@ -71,6 +71,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/data-input-outputs/import-connection/databases", label: "Databases" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/stac", label: "STAC catalogs" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/gee", label: "Google Earth Engine" },
+        { type: "doc", id: "guide/data-input-outputs/import-connection/using-ai-inside-udf", label: "Using AI inside a UDF" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/ai-data-connection", label: "Connecting AI to Data" },
         { type: "doc", id: "guide/data-input-outputs/export-api/slack", label: "Slack [Experimental]" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/widgets", label: "Widgets" },
