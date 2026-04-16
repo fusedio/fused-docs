@@ -117,6 +117,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/advanced-setup/dependencies", label: "Dependencies" },
         { type: "doc", id: "guide/advanced-setup/on-prem-setup", label: "On-prem setup" },
         { type: "doc", id: "guide/advanced-setup/encrypted-s3-bucket", label: "Encrypted S3 Bucket" },
+        { type: "doc", id: "guide/advanced-setup/using-ai-inside-udf", label: "Using AI inside a UDF" },
       ],
     },
 
@@ -238,7 +239,6 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "python-sdk/api-reference/fused-run", label: "fused.run" },
         { type: "doc", id: "python-sdk/api-reference/fused-run-async", label: "fused.run_async" },
         { type: "doc", id: "python-sdk/api-reference/fused-submit", label: "fused.submit" },
-        { type: "doc", id: "python-sdk/api-reference/job2-ai", label: "job2.ai" },
       ],
     },
   ],
