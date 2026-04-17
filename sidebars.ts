@@ -289,9 +289,9 @@ const sidebars: SidebarsConfig = {
       items: [
         { type: "doc", id: "workbench/profile", label: "Profile" },
         { type: "doc", id: "workbench/preferences", label: "Preferences" },
+        { type: "doc", id: "workbench/integrations-secrets", label: "Integrations & Secrets" },
         { type: "doc", id: "workbench/free-tier", label: "Free Tier" },
-        { type: "doc", id: "workbench/jobs", label: "Jobs" },
-        { type: "doc", id: "workbench/tokens", label: "Shared Tokens" }
+        { type: "doc", id: "workbench/jobs", label: "Job logs" },
       ],
     },
 
