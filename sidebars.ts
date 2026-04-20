@@ -268,19 +268,6 @@ const sidebars: SidebarsConfig = {
       ],
     },
 
-    // UDF Builder
-    {
-      type: "category",
-      label: "UDF Builder",
-      collapsible: false,
-      items: [
-        { type: "doc", id: "workbench/udf-builder/udf-builder", label: "Overview" },
-        { type: "doc", id: "workbench/udf-builder/navigation", label: "Map Navigation" },
-        { type: "doc", id: "workbench/udf-builder/map", label: "Map View" },
-        { type: "doc", id: "workbench/udf-builder/styling", label: "Map Layer Styling" },
-      ],
-    },
-
     // Account
     {
       type: "category",
@@ -292,6 +279,19 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "workbench/integrations-secrets", label: "Integrations & Secrets" },
         { type: "doc", id: "workbench/free-tier", label: "Free Tier" },
         { type: "doc", id: "workbench/jobs", label: "Job logs" },
+      ],
+    },
+
+        // UDF Builder
+    {
+      type: "category",
+      label: "UDF Builder",
+      collapsible: false,
+      items: [
+        { type: "doc", id: "workbench/udf-builder/udf-builder", label: "Overview" },
+        { type: "doc", id: "workbench/udf-builder/navigation", label: "Map Navigation" },
+        { type: "doc", id: "workbench/udf-builder/map", label: "Map View" },
+        { type: "doc", id: "workbench/udf-builder/styling", label: "Map Layer Styling" },
       ],
     },
 
