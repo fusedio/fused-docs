@@ -26,7 +26,7 @@ One solution is **Cloud Optimized formats**: Data lives in the cloud but also le
 - **On the cloud** so dataset size doesn't matter (AWS S3, Google Cloud Storage, etc.)
 - **Partitioned** (broken down into smaller pieces that are fast to retrieve so we can load only sections of the dataset we need)
 
-This makes it fast to read for any UDF, so developing in [Workbench UDF Builder](/workbench/udf-builder/) & [running UDFs](/guide/working-with-udfs/udf-best-practices/realtime) is a lot faster & responsive!
+This makes it fast to read for any UDF, so developing in [Map Builder](/workbench/udf-builder/) & [running UDFs](/guide/working-with-udfs/udf-best-practices/realtime) is a lot faster & responsive!
 
 ### When is ingestion needed?
 
@@ -126,6 +126,119 @@ df = fused.get_chunks_metadata("s3://fused-asset/infra/building_msft_us/")
 This returns a GeoDataFrame with one row per chunk, including `file_id`, `chunk_id`, bounding box coordinates, and a `geometry` column.
 
 In [File Explorer](/workbench/file-explorer/), double-clicking a `_sample` file automatically generates a ready-to-run UDF that reads the ingested table.
+
+---
+
+### Reading Ingested Metadata
+
+[`fused.get_chunks_metadata()`](/python-sdk/api-reference/fused-get-chunks-metadata) reads the spatial index of an [ingested table](/guide/data-input-outputs/read-write/geospatial/ingestion/#ingest-geospatial-table-data) and returns one row per chunk, each with its bounding box and a `file_id` / `chunk_id` pair. You can spatially filter those rows by an area of interest to find exactly which chunks you need, then read only those — skipping the rest of the dataset entirely.
+
+The example below uses [Overture Maps](https://overturemaps.org/) buildings to show how to read only a subset of data for a small area. [Try it on Fused Canvas →](https://unstable.fused.io/canvas/fc_17TeJLzhH83TLBJ9ZpvKoR?bounds=-571%2C-1530%2C2715%2C1777)
+
+**Step 1 — Read the chunk index**
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    release: str = "2025-05-21-0",
+    theme: str = "buildings",
+    type: str = "building",
+    part: str = "0",
+):
+    path = f"s3://us-west-2.opendata.source.coop/fused/overture/{release}/theme={theme}/type={type}/part={part}/"
+    return fused.get_chunks_metadata(path)
+```
+
+<CellOutput>
+{`   file_id  chunk_id  bbox_minx    bbox_miny    bbox_maxx   bbox_maxy  sum_area  sum_area_utm  sum_length  sum_length_utm  num_coords  num_rows                                           geometry
+0        0         0 -179.999997  -77.957735  -174.003021 -13.186333  0.000634  7.316589e+06   23.933553    2.570967e+06      401045     64540  POLYGON ((-174.003 -77.957, -174.003 -13.186...))
+1        0         1 -178.125000  -76.543210  -158.234567 -12.008123  0.001123  9.821432e+06   31.402345    3.212345e+06      589123     92692  POLYGON ((-178.125 -76.543, -158.234 -12.008...))
+...
+[5593 rows x 13 columns]`}
+</CellOutput>
+
+`file_id` and `chunk_id` are the coordinates you pass to `fused.get_chunk_from_table()` to read a specific chunk — everything else is metadata to help you filter.
+
+**Step 2 — Filter by AOI**
+
+Pass a bounding box and intersect it with the chunk geometries to find which `file_id` / `chunk_id` pairs overlap your area of interest.
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-122.42, 37.77, -122.40, 37.79],
+    release: str = "2025-05-21-0",
+    theme: str = "buildings",
+    type: str = "building",
+    part: str = "0",
+):
+    from shapely.geometry import box
+
+    path = f"s3://us-west-2.opendata.source.coop/fused/overture/{release}/theme={theme}/type={type}/part={part}/"
+    chunks_meta = fused.get_chunks_metadata(path)
+    aoi = box(*bounds)
+    return chunks_meta[chunks_meta.intersects(aoi)]
+```
+
+<details>
+<summary>Output</summary>
+
+<CellOutput>
+{`     file_id  chunk_id  bbox_minx   bbox_miny  bbox_maxx  bbox_maxy  ...  num_rows
+3900      13        18  -122.4295   37.760100 -122.3749  37.805500  ...     61522
+
+[1 rows x 13 columns]`}
+</CellOutput>
+
+</details>
+
+**Step 3 — Read only the matching chunks**
+
+Use the `file_id` and `chunk_id` from Step 2 with [`fused.get_chunk_from_table()`](/python-sdk/api-reference/fused-get-chunk-from-table) to fetch just the data you need. Chunks are bounding-box aligned, so `gpd.clip()` trims the result to the exact AOI boundary.
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-122.42, 37.77, -122.40, 37.79],
+    release: str = "2025-05-21-0",
+    theme: str = "buildings",
+    type: str = "building",
+    part: str = "0",
+):
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.geometry import box
+
+    path = f"s3://us-west-2.opendata.source.coop/fused/overture/{release}/theme={theme}/type={type}/part={part}/"
+    chunks_meta = fused.get_chunks_metadata(path)
+    aoi = box(*bounds)
+    matching = chunks_meta[chunks_meta.intersects(aoi)]
+
+    dfs = [
+        fused.get_chunk_from_table(path, file_id=int(row["file_id"]), chunk_id=int(row["chunk_id"]))
+        for _, row in matching.iterrows()
+    ]
+    result = pd.concat(dfs, ignore_index=True)
+
+    aoi_gdf = gpd.GeoDataFrame(geometry=[aoi], crs="EPSG:4326")
+    return gpd.clip(result, aoi_gdf)
+```
+
+<details>
+<summary>Output (3255 rows)</summary>
+
+<CellOutput>
+{`                                 id                                           geometry  version  height  has_parts  is_underground  ...
+0  08b2830828153fff020073713d3cd4a1  POLYGON ((-122.41984 37.77234, -122.41996 37.7...       0     9.4      False           False  ...
+1  08b283082802cfff0200ccbbaf50ad9d  POLYGON ((-122.41975 37.77242, -122.41995 37.7...       0     8.0      False           False  ...
+2  08b283082802cfff02007ae55da4a9d8  POLYGON ((-122.41949 37.77263, -122.41961 37.7...       0    20.4      False           False  ...
+3  08b283082802cfff0200eee9ca53d63d  POLYGON ((-122.41982 37.77278, -122.41975 37.7...       0    17.2      False           False  ...
+4  08b283082802cfff020073713d3cd4a2  POLYGON ((-122.41901 37.77290, -122.41923 37.7...       0     NaN      False           False  ...
+
+[3255 rows x 24 columns]`}
+</CellOutput>
+
+</details>
 
 ---
 

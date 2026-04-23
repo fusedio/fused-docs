@@ -57,6 +57,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/version-control", label: "Working as a Team" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", label: "Geospatial processing" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/agents", label: "Building for Agents" },
+        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/debugging-playbook", label: "Debugging playbook" },
       ],
     },
 
@@ -268,19 +269,6 @@ const sidebars: SidebarsConfig = {
       ],
     },
 
-    // UDF Builder
-    {
-      type: "category",
-      label: "UDF Builder",
-      collapsible: false,
-      items: [
-        { type: "doc", id: "workbench/udf-builder/udf-builder", label: "Overview" },
-        { type: "doc", id: "workbench/udf-builder/navigation", label: "Map Navigation" },
-        { type: "doc", id: "workbench/udf-builder/map", label: "Map View" },
-        { type: "doc", id: "workbench/udf-builder/styling", label: "Map Layer Styling" },
-      ],
-    },
-
     // Account
     {
       type: "category",
@@ -292,6 +280,19 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "workbench/integrations-secrets", label: "Integrations & Secrets" },
         { type: "doc", id: "workbench/free-tier", label: "Free Tier" },
         { type: "doc", id: "workbench/jobs", label: "Job logs" },
+      ],
+    },
+
+        // UDF Builder
+    {
+      type: "category",
+      label: "UDF Builder",
+      collapsible: false,
+      items: [
+        { type: "doc", id: "workbench/udf-builder/udf-builder", label: "Overview" },
+        { type: "doc", id: "workbench/udf-builder/navigation", label: "Map Navigation" },
+        { type: "doc", id: "workbench/udf-builder/map", label: "Map View" },
+        { type: "doc", id: "workbench/udf-builder/styling", label: "Map Layer Styling" },
       ],
     },
 
