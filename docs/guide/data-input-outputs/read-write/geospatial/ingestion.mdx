@@ -131,7 +131,7 @@ In [File Explorer](/workbench/file-explorer/), double-clicking a `_sample` file 
 
 ### Reading Ingested Metadata
 
-[`fused.get_chunks_metadata()`](/python-sdk/api-reference/fused-get-chunks-metadata) reads the spatial index of an ingested table and returns one row per chunk, each with its bounding box and a `file_id` / `chunk_id` pair. You can spatially filter those rows by an area of interest to find exactly which chunks you need, then read only those — skipping the rest of the dataset entirely.
+[`fused.get_chunks_metadata()`](/python-sdk/api-reference/fused-get-chunks-metadata) reads the spatial index of an [ingested table](/guide/data-input-outputs/read-write/geospatial/ingestion/#ingest-geospatial-table-data) and returns one row per chunk, each with its bounding box and a `file_id` / `chunk_id` pair. You can spatially filter those rows by an area of interest to find exactly which chunks you need, then read only those — skipping the rest of the dataset entirely.
 
 The example below uses [Overture Maps](https://overturemaps.org/) buildings to show how to read only a subset of data for a small area. [Try it on Fused Canvas →](https://unstable.fused.io/canvas/fc_17TeJLzhH83TLBJ9ZpvKoR?bounds=-571%2C-1530%2C2715%2C1777)
 
@@ -166,22 +166,18 @@ Pass a bounding box and intersect it with the chunk geometries to find which `fi
 ```python showLineNumbers
 @fused.udf
 def udf(
+    bounds: fused.types.Bounds = [-122.42, 37.77, -122.40, 37.79],
     release: str = "2025-05-21-0",
     theme: str = "buildings",
     type: str = "building",
     part: str = "0",
-    aoi_west: float = -122.42,
-    aoi_south: float = 37.77,
-    aoi_east: float = -122.40,
-    aoi_north: float = 37.79,
 ):
-    import geopandas as gpd
     from shapely.geometry import box
 
     path = f"s3://us-west-2.opendata.source.coop/fused/overture/{release}/theme={theme}/type={type}/part={part}/"
     chunks_meta = fused.get_chunks_metadata(path)
-    aoi = gpd.GeoDataFrame(geometry=[box(aoi_west, aoi_south, aoi_east, aoi_north)], crs="EPSG:4326")
-    return chunks_meta[chunks_meta.intersects(aoi.geometry.iloc[0])]
+    aoi = box(*bounds)
+    return chunks_meta[chunks_meta.intersects(aoi)]
 ```
 
 <details>
@@ -203,14 +199,11 @@ Use the `file_id` and `chunk_id` from Step 2 with [`fused.get_chunk_from_table()
 ```python showLineNumbers
 @fused.udf
 def udf(
+    bounds: fused.types.Bounds = [-122.42, 37.77, -122.40, 37.79],
     release: str = "2025-05-21-0",
     theme: str = "buildings",
     type: str = "building",
     part: str = "0",
-    aoi_west: float = -122.42,
-    aoi_south: float = 37.77,
-    aoi_east: float = -122.40,
-    aoi_north: float = 37.79,
 ):
     import geopandas as gpd
     import pandas as pd
@@ -218,7 +211,7 @@ def udf(
 
     path = f"s3://us-west-2.opendata.source.coop/fused/overture/{release}/theme={theme}/type={type}/part={part}/"
     chunks_meta = fused.get_chunks_metadata(path)
-    aoi = box(aoi_west, aoi_south, aoi_east, aoi_north)
+    aoi = box(*bounds)
     matching = chunks_meta[chunks_meta.intersects(aoi)]
 
     dfs = [
@@ -235,31 +228,14 @@ def udf(
 <summary>Output (3255 rows)</summary>
 
 <CellOutput>
-{`id                          object
-geometry                  geometry
-bbox                        object
-version                      int32
-sources                     object
-level                      float64
-subtype                     object
-class                       object
-height                     float64
-names                       object
-has_parts                     bool
-is_underground                bool
-num_floors                 float64
-num_floors_underground     float64
-min_height                 float64
-min_floor                  float64
-facade_color                object
-facade_material             object
-roof_material               object
-roof_shape                  object
-roof_direction             float64
-roof_orientation            object
-roof_color                  object
-roof_height                float64
-dtype: object`}
+{`                                 id                                           geometry  version  height  has_parts  is_underground  ...
+0  08b2830828153fff020073713d3cd4a1  POLYGON ((-122.41984 37.77234, -122.41996 37.7...       0     9.4      False           False  ...
+1  08b283082802cfff0200ccbbaf50ad9d  POLYGON ((-122.41975 37.77242, -122.41995 37.7...       0     8.0      False           False  ...
+2  08b283082802cfff02007ae55da4a9d8  POLYGON ((-122.41949 37.77263, -122.41961 37.7...       0    20.4      False           False  ...
+3  08b283082802cfff0200eee9ca53d63d  POLYGON ((-122.41982 37.77278, -122.41975 37.7...       0    17.2      False           False  ...
+4  08b283082802cfff020073713d3cd4a2  POLYGON ((-122.41901 37.77290, -122.41923 37.7...       0     NaN      False           False  ...
+
+[3255 rows x 24 columns]`}
 </CellOutput>
 
 </details>
