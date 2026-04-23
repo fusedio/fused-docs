@@ -116,36 +116,50 @@ def child_udf():
     return data
 ```
 
-### Workbench: Widget-driven cache invalidation
+### Widgets trigger cache invalidation
 
-In Workbench, **changing a default parameter in an upstream UDF does not auto-invalidate the downstream cache**. Default param changes are static code edits — the downstream UDF doesn't "see" them unless it re-runs with new inputs.
+A [widget node](/guide/data-input-outputs/import-connection/widgets) bound to a param broadcasts its selected value at runtime when the user changes it. This causes the receiving UDF — and any downstream UDFs sharing that param — to re-execute, auto-invalidating their caches.
 
-```python
-# Upstream UDF — changing "Name_25" to something else won't invalidate downstream
-@fused.udf
-def udf(name: str = "Name_25"):
-    import pandas as pd
-    return pd.DataFrame({"greeting": [f"Hello, {name}!"]})
+Widget node (dropdown):
 
-# Downstream UDF — its cached result stays stale even after upstream default changes
-@fused.udf
-def udf(name: str = "Name_20"):
-    parent_udf = fused.load("upstream_udf")
-    return parent_udf(name=name)
+```json
+{
+  "type": "dropdown",
+  "props": {
+    "label": "Pick a name",
+    "param": "selected_name",
+    "options": [
+      { "value": "Name_10", "label": "Name 10" },
+      { "value": "Name_25", "label": "Name 25" },
+      { "value": "Name_99", "label": "Name 99" }
+    ]
+  }
+}
 ```
 
-**Adding a Widget changes this.** When a [widget](/workbench/widget-builder) (e.g. a dropdown) is bound to a param, it broadcasts the selected value at runtime via canvas message. This re-executes both the upstream and any downstream UDFs that share that param — effectively auto-invalidating their caches.
+Upstream UDF receiving the widget param:
 
 ```python
-# Widget (name_picker dropdown) broadcasts selected_name →
-# upstream re-executes → downstream re-executes automatically
 @fused.udf
 def udf(selected_name: str = "Name_25"):
     import pandas as pd
     return pd.DataFrame({"greeting": [f"Hello, {selected_name}!"]})
 ```
 
-**To manually flush cache in Workbench:** right-click a UDF node and select **Clear Cache**, or pass `cache_max_age=0` at call time.
+Downstream UDF — also re-executes when the widget changes:
+
+```python
+@fused.udf
+def udf(selected_name: str = "Name_25"):
+    parent_udf = fused.load("upstream_udf")
+    return parent_udf(selected_name=selected_name)
+```
+
+Output when `Name_50` is selected:
+
+| greeting |
+|----------|
+| Hello, Name_50! |
 
 [Try this example on Workbench →](https://unstable.fused.io/canvas/fc_5M6Ag2R9xr3fvghVgurFmr?bounds=-625%2C-101%2C2149%2C2171)
 
