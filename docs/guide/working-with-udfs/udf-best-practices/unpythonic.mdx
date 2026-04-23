@@ -1,0 +1,119 @@
+---
+id: unpythonic
+title: Un-pythonic aspects of Fused
+sidebar_label: Un-pythonic aspects
+sidebar_position: 10
+---
+
+Fused UDFs look like Python functions but run in a managed, distributed environment. That environment imposes a few constraints that feel unusual if you're used to writing standard Python scripts.
+
+## Imports must be inside the UDF
+
+In regular Python you put imports at the top of the file. In a Fused UDF they must go **inside** the function body:
+
+```python
+# Wrong — import at module level
+import pandas as pd
+
+@fused.udf
+def udf():
+    return pd.DataFrame({"a": [1, 2, 3]})
+```
+
+```python
+# Correct
+@fused.udf
+def udf():
+    import pandas as pd
+    return pd.DataFrame({"a": [1, 2, 3]})
+```
+
+Why: Fused serializes and ships your UDF function to a remote worker. Only the function body travels — the surrounding module scope does not. Any name referenced at module level won't exist on the worker when the function runs.
+
+## All logic must live inside the UDF
+
+Helper functions, constants, and any other names used by your UDF must be defined inside it. Nothing from the outer scope is available on the worker.
+
+This won't work:
+
+```python
+import pandas as pd
+
+def load_data(path):
+    return pd.read_csv(path)
+
+@fused.udf
+def udf(path):
+    df = load_data(path)   # load_data is not in scope on the worker
+    df["author"] = "my_name"
+    return df
+```
+
+Move everything inside:
+
+```python
+@fused.udf
+def udf(path):
+    import pandas as pd
+
+    def load_data(path):
+        return pd.read_csv(path)
+
+    df = load_data(path)
+    df["author"] = "my_name"
+    return df
+```
+
+:::tip
+Wrapping a helper in [`@fused.cache`](/guide/working-with-udfs/udf-best-practices/caching#fusedcache) inside the UDF is the idiomatic way to avoid re-running expensive work on every call.
+:::
+
+## PEP 8 line-length and style conventions are relaxed
+
+PEP 8 was written for scripts and libraries — code that lives in files, is reviewed in editors, and is run locally. UDF code is written in Workbench, executed remotely, and is often short and self-contained. Strict PEP 8 compliance (79-character line limits, import ordering, etc.) is not enforced or expected.
+
+Write readable code, but don't let a linter's module-level rules get in the way of the UDF's structure.
+
+## Return types are limited
+
+UDFs must return a value that Fused can serialize and send back to the caller. Anything that can't be serialized — a file handle, a database connection, an arbitrary class instance — will fail at return time. See [Return values](/guide/working-with-udfs/writing-udfs#return-values) for the full list of supported types.
+
+## Avoid `multiprocessing` — use `udf.map()` instead
+
+`multiprocessing` is not reliable inside Fused — the sandbox environment restricts forking. Generators and `yield` are also not supported, since Fused must serialize the return value before sending it back to the caller, and a lazy iterator can't be serialized mid-stream.
+
+The idiomatic alternative for both is [`udf.map()`](/guide/working-with-udfs/udf-best-practices/scaling-out), which fans work out across Fused workers:
+
+```python
+pool = my_udf.map(list_of_inputs)
+pool.wait()
+results = pool.df()
+```
+
+See [Scaling out UDFs](/guide/working-with-udfs/udf-best-practices/scaling-out).
+
+## `@fused.udf` changes the calling convention
+
+Decorating a function with `@fused.udf` turns it into a `Udf` object — calling `udf()` is no longer a plain function call. Depending on context it becomes an HTTP request, a job submission, or a cached tile lookup. The original function body still runs, but the mechanics around it are completely different from a normal Python function.
+
+## `fused.load()` instead of `import`
+
+Reusing a UDF from another file or team member requires `fused.load()` with a URL or token string rather than a Python import:
+
+```python
+other_udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/DuckDB_H3_Example")
+```
+
+## Type annotations control routing, not just documentation
+
+In standard Python, type annotations are hints — they don't affect runtime behavior. In Fused, annotating a parameter with [`fused.types.Bounds`](/python-sdk/api-reference/fused-types#bounds) changes *how and when* the UDF is invoked: what bounding box is passed and how the UDF is called from the map. Choosing the wrong annotation changes the execution model, not just the type checker output.
+
+## No `pip install` inside a UDF
+
+You can't run `pip install` from inside a UDF body. Packages must already be available in the Fused runtime environment. To add a package that isn't pre-installed, see [Install your own dependencies](/guide/advanced-setup/dependencies#beta-install-your-own-dependencies).
+
+## See also
+
+- [Writing UDFs](/guide/working-with-udfs/writing-udfs)
+- [Efficient caching](/guide/working-with-udfs/udf-best-practices/caching)
+- [Scaling out UDFs](/guide/working-with-udfs/udf-best-practices/scaling-out)
