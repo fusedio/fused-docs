@@ -881,12 +881,12 @@ Learn more about Felt
 
 ## Kepler
 
-Kepler is an open source tool for visualizing large geospatial datasets. The Fused UDF Builder provides direct integration with Kepler.
+Kepler is an open source tool for visualizing large geospatial datasets. The Fused Map Builder provides direct integration with Kepler.
 
 ### Usage
 
 1. Create a UDF that returns vector data
-2. In the UDF Builder, click "Open in Kepler.gl" on the top-right menu
+2. In the Map Builder, click "Open in Kepler.gl" on the top-right menu
 3. Wait for data transfer and click "Open in Kepler.gl" in the bottom-right
 
 This opens your data directly in Kepler for advanced visualization and analysis.
@@ -1061,20 +1061,21 @@ Your service account token will be shown only once, so make sure to copy it to a
 
 ### From Workbench
 
-`fused.api.session_token()` can be called from a UDF running in Workbench. It returns a short-lived token (default `"1h"`) you can pass as `fused_session_token` on UDF HTTPS URLs for that canvas—useful when you do not want to set up a service account yet.
+Team-scoped canvases require a session token for external access. When you click the **Share** button, Workbench automatically generates a session token for each UDF you want to share — just choose an expiration duration. You can generate multiple session tokens with different expiration times, and each token will expire independently.
 
-To mint session tokens from **your own backend** (for example for embeds in a product), use a Fused Service Account and the HTTP API below.
+Session tokens are created for the **whole canvas**. Any session token created can be used to access any other UDF & Widget in the same canvas.
 
-```python showLineNumbers
-token = fused.api.session_token(session_max_age="1h").session_token
+The generated URL will look like:
 
-url = "https://www.udf.ai/fc_XXX/my_udf/run/tiles///"
-url += f"&fused_session_token="
 ```
+https://www.fused.io/share/<canvas_token>/<udf_name>?fused_session_token=<session_token>
+```
+
+<img src="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/session-token-gif.gif" alt="Generating a session token in Workbench" />
 
 ### From your backend (service account)
 
-Once you have a Fused Service Account, you can generate a session token using the Fused HTTP API from your backend server.
+To mint session tokens programmatically from **your own backend** (for example for embeds in a product), use a Fused Service Account and the HTTP API below.
 
 ```python showLineNumbers
 
@@ -1122,6 +1123,26 @@ Use that URL in iframes, map tile layers, or `fetch` from the browser.
 - Write UDFs securely — SQL, parameters, secrets, and experimental canvas passcodes (publicly shared canvases only)
 - Tokens & endpoints
 - Canvas — Share modal
+
+================================================================================
+
+## Slack
+Path: guide/data-input-outputs/export-api/slack.mdx
+URL: https://docs.fused.io/guide/data-input-outputs/export-api/slack
+
+# Slack [Experimental]
+
+Let anyone in your team talk to your Canvas with a Slack Bot!
+
+This is an experimental feature. Enable it in **Preferences** by toggling on the Slack integration.
+
+Check your Fused home page — the **Integrations** panel shows whether Slack is connected for your team.
+
+## One-time setup
+
+If your Integrations panel already shows **SYNCED**, skip this section to avoid disrupting your team's existing connection.
+
+## Adding a new Canvas to Slack
 
 ================================================================================
 
@@ -1408,6 +1429,129 @@ Paste this configuration into your profile settings to enable the tool.
 - **Keep UDFs focused**: Each tool should do one thing well
 - **Use descriptive parameter names**: This helps the AI understand what inputs are expected
 - **Return structured data**: JSON or tabular formats work best for AI consumption
+
+================================================================================
+
+## Airtable Integration
+Path: guide/data-input-outputs/import-connection/airtable.mdx
+URL: https://docs.fused.io/guide/data-input-outputs/import-connection/airtable
+
+# Airtable Integration
+
+Read and write Airtable records from Fused UDFs using OAuth-managed tokens. No API keys need to be saved or hardcoded — Fused handles the token refresh automatically.
+
+## Prerequisites
+
+- A Fused account on a paid plan (execution environment required) and an Airtable account.
+
+## Setup
+
+### 1. Enable the feature flag
+
+In the Fused workbench, open **Settings > Experimental Features** and toggle **Airtable integration** on.
+
+### 2. Connect your Airtable account
+
+Open **Settings > Integrations & Secrets**, find the Airtable section, and click **Connect**. You will be redirected to Airtable to authorize access. During the authorization flow you can choose to either grant access to **all bases** or select **specific bases**. Once you confirm, you will be redirected back to the workbench.
+
+## Finding your base ID
+
+Every Airtable base has an ID that starts with `app`. To find it:
+
+1. Open the base in the Airtable web app.
+2. Look at the URL — it follows the pattern `https://airtable.com/appXXXXXXXXXXXXXX/...`. The `appXXXXXXXXXXXXXX` segment is your base ID.
+
+Alternatively, after connecting, you can list all accessible bases programmatically:
+
+```python
+@fused.udf()
+def udf():
+
+    at = fused.api.airtable_connect()
+    for base in at.list_bases():
+        print(base["id"], base["name"])
+```
+
+## Examples
+
+### List bases
+
+```python
+@fused.udf()
+def udf():
+
+    at = fused.api.airtable_connect()
+    bases = at.list_bases()
+    for base in bases:
+        print(base["id"], base["name"])
+```
+
+### Read records
+
+Use `list_records` to read all records from a table. It automatically paginates through all pages. Extra keyword arguments are forwarded as query parameters to the Airtable List Records endpoint.
+
+```python
+@fused.udf()
+def udf():
+
+    at = fused.api.airtable_connect(base_id="appXXXXXXXXXXXXXX")
+    records = at.list_records(
+        "Tasks",
+        view="Grid view",
+        filterByFormula=" = 'Done'",
+        maxRecords=100,
+    )
+
+    rows = [ for r in records]
+    return pd.DataFrame(rows)
+```
+
+### Create records
+
+Use `create_records` to insert new rows. Each record should be a dict with a `"fields"` key. Airtable allows up to 10 records per request.
+
+```python
+@fused.udf()
+def udf():
+
+    at = fused.api.airtable_connect(base_id="appXXXXXXXXXXXXXX")
+    created = at.create_records("Tasks", [
+        },
+        },
+    ])
+    for r in created:
+        print(r["id"])
+```
+
+### Update records
+
+Use `update_records` to patch existing records (PATCH semantics — only the specified fields are changed). Each record must include an `"id"` and a `"fields"` dict.
+
+```python
+@fused.udf()
+def udf():
+
+    at = fused.api.airtable_connect(base_id="appXXXXXXXXXXXXXX")
+    at.update_records("Tasks", [
+        },
+    ])
+```
+
+### Delete records
+
+Use `delete_records` to remove records by ID. Airtable allows up to 10 record IDs per request.
+
+```python
+@fused.udf()
+def udf():
+
+    at = fused.api.airtable_connect(base_id="appXXXXXXXXXXXXXX")
+    at.delete_records("Tasks", ["recAAAAAAAAAAAA", "recBBBBBBBBBBBB"])
+```
+
+## Disconnecting
+
+To revoke the integration, go to **Settings > Integrations & Secrets**, find the Airtable section, and click **Disconnect**. This removes stored tokens from both the Fused server and Secrets Manager.
 
 ================================================================================
 
@@ -1942,6 +2086,40 @@ job.run_batch()
 
 ================================================================================
 
+## Using AI inside a UDF
+Path: guide/data-input-outputs/import-connection/using-ai-inside-udf.mdx
+URL: https://docs.fused.io/guide/data-input-outputs/import-connection/using-ai-inside-udf
+
+You can call large language models directly from inside a UDF with `job2.ai`. No API keys or token management — Fused handles authentication through your account.
+
+Every call to `ai.run()` counts against your AI token quota. Track your usage on the Profile page in Workbench.
+
+## Talk to AI from a UDF
+
+```python
+@fused.udf
+def udf():
+    from job2 import ai
+    from job2.ai import AiModel
+
+    response = ai.run(
+        prompt="Summarize the key benefits of vector databases.",
+        system_prompt="You are a concise technical writer. Answer in 1 sentence",
+        model=AiModel.GPT_OSS_120B,
+    )
+    return response.text
+```
+
+Vector databases enable fast similarity search on high‑dimensional embeddings, scale efficiently with billions of vectors, support real‑time updates and hybrid filtering, and integrate seamlessly with AI/ML pipelines for semantic retrieval and recommendation tasks.
+
+</details>
+
+`job2` is available in the Fused runtime — no installation required. The default model is `AiModel.GPT_OSS_120B`, an open-source model suitable for most tasks. Pass a `system_prompt` to shape persona and constraints. `ai.run()` also supports OpenAI-style tool calling, where `tools` and `tool_handler` use the same mechanism that powers user-defined tools in AI Chat.
+
+Wrap `ai.run()` in a `@fused.cache`-decorated helper during development so identical prompts don't re-spend tokens on every run.
+
+================================================================================
+
 ## Widgets
 Path: guide/data-input-outputs/import-connection/widgets.mdx
 URL: https://docs.fused.io/guide/data-input-outputs/import-connection/widgets
@@ -2039,8 +2217,6 @@ def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
 
 ## Available Widgets
 
-See a live example →
-
 | Category | Widget | Description | Key Features / Notes |
 | --- | --- | --- | --- |
 | Input | `slider` | Numeric range control | `min`, `max`, `step`, `defaultValue`, binds to `param` |
@@ -2058,7 +2234,11 @@ See a live example →
 | Output | `text` | Static/dynamic text | Supports markdown + variants (`h1`, `muted`, etc.) |
 | Output | `image` | Image display | URL or base64 |
 | Output | `fused-map` | Full interactive map | Supports multiple layer types, tooltips, legends, basemaps |
-| Output | `render` | Meta widget | Renders widgets dynamically from JSON |
+| Output | `widget-builder` | Meta widget | Renders widgets dynamically from JSON |
+| Output | `iframe` | Embedded web page | Pass any URL — a video, GIF, image, or web page |
+
+}
+></iframe> */}
 
 ## Multi-Component Widgets
 
@@ -2160,7 +2340,7 @@ One solution is **Cloud Optimized formats**: Data lives in the cloud but also le
 - **On the cloud** so dataset size doesn't matter (AWS S3, Google Cloud Storage, etc.)
 - **Partitioned** (broken down into smaller pieces that are fast to retrieve so we can load only sections of the dataset we need)
 
-This makes it fast to read for any UDF, so developing in Workbench UDF Builder & running UDFs is a lot faster & responsive!
+This makes it fast to read for any UDF, so developing in Map Builder & running UDFs is a lot faster & responsive!
 
 ### When is ingestion needed?
 
@@ -2258,6 +2438,53 @@ df = fused.get_chunks_metadata("s3://fused-asset/infra/building_msft_us/")
 This returns a GeoDataFrame with one row per chunk, including `file_id`, `chunk_id`, bounding box coordinates, and a `geometry` column.
 
 In File Explorer, double-clicking a `_sample` file automatically generates a ready-to-run UDF that reads the ingested table.
+
+---
+
+### Reading Ingested Metadata
+
+`fused.get_chunks_metadata()` reads the spatial index of an ingested table and returns one row per chunk, each with its bounding box and a `file_id` / `chunk_id` pair. You can spatially filter those rows by an area of interest to find exactly which chunks you need, then read only those — skipping the rest of the dataset entirely.
+
+The example below uses Overture Maps buildings to show how to read only a subset of data for a small area. Try it on Fused Canvas →
+
+**Step 1 — Read the chunk index**
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    release: str = "2025-05-21-0",
+    theme: str = "buildings",
+    type: str = "building",
+    part: str = "0",
+):
+    path = f"s3://us-west-2.opendata.source.coop/fused/overture//theme=/type=/part=/"
+    return fused.get_chunks_metadata(path)
+```
+
+`file_id` and `chunk_id` are the coordinates you pass to `fused.get_chunk_from_table()` to read a specific chunk — everything else is metadata to help you filter.
+
+**Step 2 — Filter by AOI**
+
+Pass a bounding box and intersect it with the chunk geometries to find which `file_id` / `chunk_id` pairs overlap your area of interest.
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-122.42, 37.77, -122.40, 37.79],
+    release: str = "2025-05-21-0",
+    theme: str = "buildings",
+    type: str = "building",
+    part: str = "0",
+):
+    from shapely.geometry import box
+
+    path = f"s3://us-west-2.opendata.source.coop/fused/overture//theme=/type=/part=/"
+    chunks_meta = fused.get_chunks_metadata(path)
+    aoi = box(*bounds)
+    return chunks_meta[chunks_meta.intersects(aoi)]
+```
+
+</details>
 
 ---
 
@@ -5003,6 +5230,10 @@ Click **Share → Open API** in Workbench to generate an MCP-compatible endpoint
 
 **Only visible UDFs are included.** UDFs that are hidden in Workbench are excluded from the MCP endpoint. Use this to keep helper UDFs, internal utilities, or anything you don't want agents to call directly out of the tool list — they'll still run when called by other UDFs, they just won't be surfaced.
 
+[Image: Only visible UDFs appear in OpenAPI]
+
+In the example above, the top canvas exposes all three UDFs to the agent, while the bottom canvas hides the two upstream UDFs and surfaces only the final analysis tool. Hiding intermediate steps keeps the agent's tool list focused on the UDFs that answer questions directly.
+
 ### Organize your canvas
 
 All UDFs on a canvas are exposed together through a single canvas token (`fc_XXX`). Group agent-facing UDFs on a dedicated canvas and move large batch jobs or internal utilities to a separate one:
@@ -5386,7 +5617,7 @@ return gdf[gdf.geometry.intersects(bounds_geom)]  # Filter after
 
 ## Monitor your cache usage
 
-See how much caching is saving you in the **Account** page in Workbench. The usage dashboard shows cache hits vs actual compute across different time ranges.
+See how much caching is saving you in the **Profile** page in Workbench. The usage dashboard shows cache hits vs actual compute across different time ranges.
 
 [Image: Cache usage in Account page]
 
@@ -5395,6 +5626,183 @@ See how much caching is saving you in the **Account** page in Workbench. The usa
 - Data ingestion — for large datasets, ingest to Parquet/GeoParquet instead of caching
 - Running UDFs — calling UDFs
 - `Udf` API reference — full API details
+
+================================================================================
+
+## Debugging playbook
+Path: guide/working-with-udfs/udf-best-practices/debugging-playbook.mdx
+URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/debugging-playbook
+
+Practical techniques for diagnosing and fixing UDFs — from slow code to failed parallel jobs.
+
+## Use the inline profiler
+
+Workbench includes a built-in line-by-line profiler. After a run, each line shows its execution time and hit count — no instrumentation needed.
+
+[Image: Workbench inline profiler showing per-line timing]
+
+Things to look for:
+- A slow I/O call dominating total runtime
+- A loop body running far more times than expected
+- A `@fused.cache` function showing a cache miss on every run
+
+## print intermediate results
+
+`print()` output appears directly in the Workbench results panel. Drop prints wherever you need to track what's happening:
+
+```python
+print(f"task_id= got value=")
+```
+
+Anything you `print()` is visible to anyone calling your UDF — don't print secrets, credentials, or environment variables. See Write UDFs securely for guidance.
+
+## Bust the cache
+
+Cached results can mask bugs — a fix won't appear until the cache is invalidated. There are two independent caches:
+
+| Cache | Cleared by |
+|-------|-----------|
+| UDF cache | `cache=False` at call time, or `cache_max_age="0s"` on the UDF |
+| Workbench cache | **Clear cache** button in the Workbench toolbar |
+
+**Clear cache** only clears the Workbench-level cache. Calls via the HTTP endpoint use a separate cache. See Each execution context has its own cache.
+
+Disable the UDF cache at call time:
+
+```python
+pool = flaky_task.map(task_ids, cache=False)
+```
+
+Or permanently during development:
+
+```python
+@fused.udf(cache_max_age="0s")
+def udf(): ...
+```
+
+Force-reset a `@fused.cache` function:
+
+```python
+@fused.cache(cache_reset=True)
+def load_data(path): ...
+```
+
+## Debug parallel runs
+
+`udf.map()` returns a `JobPool`. If any jobs fail, calling `.df()` will raise — use the pool's inspection API instead to understand what happened across all jobs.
+
+The examples below use `flaky_task` — a UDF that sleeps 2s and raises a `ValueError` on ~50% of runs. Try it out →
+
+```python
+@fused.udf(cache_max_age="0s")
+def udf(task_id: int = 0):
+
+    time.sleep(2)
+    value = int(np.random.default_rng().integers(0, 10))
+
+    if value % 2 == 0:
+        raise ValueError(f"task_id= failed! Got even number: ")
+
+    return pd.DataFrame()
+```
+
+### Start small
+
+Before scaling to hundreds of inputs, test with 2–3 first. Change `n_tasks` directly in Workbench — once it works at small scale, increase it:
+
+```python
+flaky_task = fused.load("flaky_task")
+pool = flaky_task.map(list(range(n_tasks)), cache=False)  # try n_tasks=2 first
+pool.wait()
+```
+
+Now use the pool to inspect what happened.
+
+### Check overall status
+
+`pool.status()` returns a count of outcomes. `all_succeeded()` and `any_failed()` give quick boolean checks:
+
+```python
+pool.status()
+# status
+# success    5
+# error      1
+# Name: count, dtype: int64
+
+pool.all_succeeded()  # False
+pool.any_failed()     # True
+```
+
+### Inspecting errors
+
+`first_error()` gives you the first failure with full detail — the fastest way to triage. `errors()` returns the list of all failures:
+
+```python
+pool.first_error()
+# Run #3
+# 
+# The UDF returned the following error in line 22:
+# ValueError: task_id=3 failed! Got even number: 8
+
+pool.errors()
+# [UdfRuntimeError: Run #3 ...]
+```
+
+### Check per-job timing
+
+`times()` returns per-job durations — useful for spotting outliers or hung jobs:
+
+```python
+pool.times()
+# [timedelta(seconds=2, microseconds=565825),
+#  timedelta(seconds=2, microseconds=580730),
+#  timedelta(seconds=4, microseconds=352142),
+#  timedelta(seconds=2, microseconds=507098),
+#  timedelta(seconds=2, microseconds=561703),
+#  timedelta(seconds=9, microseconds=824293)]
+```
+
+### Inspect every result
+
+`results(return_exceptions=True)` returns one entry per job — a DataFrame on success, an exception on failure:
+
+```python
+mixed = pool.results(return_exceptions=True)
+
+# task 0: DataFrame shape=(1, 3)
+# task 1: DataFrame shape=(1, 3)
+# task 2: DataFrame shape=(1, 3)
+# task 3: UdfRuntimeError: task_id=3 failed! Got even number: 8
+# task 4: DataFrame shape=(1, 3)
+# task 5: DataFrame shape=(1, 3)
+```
+
+<img
+  src="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/workbench-debugging-multiprocess.gif"
+  alt="Workbench showing parallel job results with mixed success and error outcomes"
+/>
+
+### Retry failed jobs
+
+`pool.retry()` re-runs only the failed jobs without restarting the whole batch:
+
+```python
+if pool.any_failed():
+    pool.retry()
+    pool.wait()
+
+pool.status()
+# status
+# success    6
+# Name: count, dtype: int64
+```
+
+## See also
+
+- Efficient caching
+- Scaling out UDFs
+- JobPool (class)
+- Run UDFs efficiently
 
 ================================================================================
 
@@ -6115,7 +6523,7 @@ Fused supports a wide range of parameter types for UDFs. Parameters without a sp
 | `fused.types.TileGDF` (Legacy) | GeoDataFrame with x/y/z tile columns | Bbox array or GeoJSON |
 | `fused.types.ViewportGDF` (Legacy) | GeoDataFrame for viewport (no x/y/z) | Bbox array or GeoJSON |
 
-The UDF Builder runs the UDF as a Map Tile if the first parameter is typed as `fused.types.Bounds`.
+The Map Builder runs the UDF as a Map Tile if the first parameter is typed as `fused.types.Bounds`.
 
 ### `pd.DataFrame` as JSON
 
@@ -6194,7 +6602,7 @@ do not apply to `numpy.ndarray`, and numpy arrays as return value are supported 
 
 ## Save UDFs
 
-UDFs exported from the UDF Builder or saved locally are formatted as a `.zip` file containing associated files with the UDFs code, `utils` Module, metadata, and `README.md`.
+UDFs exported from the Map Builder or saved locally are formatted as a `.zip` file containing associated files with the UDFs code, `utils` Module, metadata, and `README.md`.
 
 ```
 └── Sample_UDF
@@ -6234,7 +6642,7 @@ URL and tool inputs should be treated as untrusted: narrow parameters, validate 
 
 ## Debug UDFs
 
-#### UDF builder
+#### UDF Builder
 
 A common approach to debug UDFs is to show intermediate results in the UDF Builder runtime panel with `print` statements.
 
@@ -6427,11 +6835,11 @@ def udf():
     return df
 ```
 
-### 2. Connect a render widget to visualize the data
+### 2. Connect a Widget Builder to visualize the data
 
 The `airbnb_data` UDF returns a DataFrame. To visualize it, we connect it to a widget by drawing an edge from the UDF node to the widget node in the Canvas.
 
-We use a `render` widget here because it wraps any chart type and layers on an AI panel — so users can modify the visualization with natural language without touching JSON. In this example we plot a bar chart of the top 15 neighbourhoods by average price:
+We use a `widget-builder` here because it wraps any chart type and layers on an AI panel — so users can modify the visualization with natural language without touching JSON. In this example we plot a bar chart of the top 15 neighbourhoods by average price:
 
 ```json
 } GROUP BY neighbourhood_cleansed ORDER BY value DESC LIMIT 15",
@@ -6469,7 +6877,7 @@ The Canvas can be shared as a link or as a standalone widget. Share the full Can
 
 Open the Fused Canvas to explore the live Airbnb dataset, or go straight to the interactive widget to ask questions directly.
 
-Clone the Canvas to customize it. Swap the data source, change the default chart, or adjust the AI panel position. See the Widgets guide for the full list of `render` widget props.
+Clone the Canvas to customize it. Swap the data source, change the default chart, or adjust the AI panel position. See the Widgets guide for the full list of `widget-builder` props.
 
 ================================================================================
 
@@ -6669,9 +7077,9 @@ We're going to use the Microsoft Planetary Computer Sentinel-1 Ground Range Dete
 - Images are in Cloud Optimized Geotiff giving us tiled images that load even faster
 - Examples of how to access the data so most of our work will be copy pasta
 
-    Most of the following section was written in Workbench's UDF Builder rather than in Jupyter Notebooks.
+    Most of the following section was written in Workbench's Map Builder rather than in Jupyter Notebooks.
 
-    We'll have the code in code blocks, you can run these anywhere but as we're looking at images, it's helpful to have UDF Builders' live map updated as you write your code.
+    We'll have the code in code blocks, you can run these anywhere but as we're looking at images, it's helpful to have Map Builders' live map updated as you write your code.
 
 Let's start with a basic UDF just returning our area of interest:
 
@@ -7377,7 +7785,7 @@ def udf(
     return filtered_ais_df
 ```
 
-In workbench UDF builder we can now see the output of both of our UDF:
+In workbench Map Builder we can now see the output of both of our UDF:
 
 [Image: Notebook run remote print]
 
@@ -7860,11 +8268,9 @@ def udf(date: str = "2026-04-08"):
 
 Only the final `nyc_meeting_routes` UDF is made **visible** on the Canvas — the upstream `gcal_today_events` and `gcal_events_geocode` UDFs are hidden. This means the agent only sees the schedule analysis tool, not the intermediate geocoding or calendar-fetching steps. The agent gets a clean interface: it can query meeting routes and lateness status without needing to understand the pipeline internals.
 
-[Image: Only visible UDFs appear in OpenAPI]
-
 Return only a small amount of data from the exposed UDF so the agent's context isn't overloaded.
 
-The Canvas publishes the visible UDF as an agent-callable endpoint via its OpenAPI specification. See Expose your Canvas to agents for details.
+The Canvas publishes the visible UDF as an agent-callable endpoint via its OpenAPI specification. See Expose your Canvas to agents for how visible vs. hidden UDFs map to the OpenAPI tool list.
 
 [Image: Canvas OpenAPI specification for agents]
 
@@ -8688,6 +9094,360 @@ Now that you have a DataFrame you can explore how to build on top:
 
 ================================================================================
 
+## Points of Interest Site Selection
+Path: examples/poi-site-selection-dashboard.mdx
+URL: https://docs.fused.io/examples/poi-site-selection-dashboard
+
+This example builds an interactive site selection dashboard that answers: **"What amenities and income levels surround a given address within a certain travel time?"**
+
+We'll chain together multiple UDFs on a Canvas to geocode an address, compute a travel-time boundary (isochrone), pull Points of Interest from Overture Maps and median income from the US Census, aggregate everything into H3 hexagons, and display the results on a map with interactive Widgets.
+
+[[Image: POI Site Selection Dashboard]](https://unstable.fused.io/workbench/max/Dashboard_Overture_Census_Isochrone)
+
+*Interactive dashboard showing POI density, isochrones, and income distribution for San Francisco. Try it out ->*
+
+## How to run
+
+Open the Canvas, fill in the **Travel Settings** form (address, travel mode, POI category, travel time), and click **Submit**. The dashboard re-runs and shows a map with hexagons colored by POI density, the isochrone boundary, and the geocoded location for the address you entered, along with a bar chart of income distribution across the area.
+
+## What we're building
+
+The dashboard chains multiple UDFs together using `fused.load()` — geocoding an address, computing an isochrone (travel-time boundary), querying Overture Maps POIs, pulling Census ACS income data, and aggregating everything into H3 hexagons for visualization.
+
+```mermaid
+flowchart LR
+    A["Type an address"] --> B["Geocode to lat/lng"]
+    B --> C["Calculate isochrone"]
+    C --> D["Get POIs from Overture Maps"]
+    C --> E["Get income from US Census"]
+    D --> F["Convert to H3 hexagons"]
+    E --> F
+    F --> G["Dashboard"]
+
+    style A fill:#2d4a6f,stroke:#4a82c4,color:#fff
+    style G fill:#1a6b4a,stroke:#2dbf7e,color:#fff
+```
+
+We convert POIs, census polygons, and the isochrone into H3 hexagons so that every cell covers the same area, making counts and averages directly comparable across the map.
+
+### What is an isochrone?
+
+An isochrone is a polygon that represents all the area reachable from a point within a given travel time. A 15-minute driving isochrone around a store shows everywhere a customer could drive from in 15 minutes. Different travel modes (walking, cycling, driving) produce very different shapes — walking isochrones are small and roughly circular, while driving ones stretch along highways.
+
+We use the open-source Valhalla routing engine to compute these.
+
+## Step 1: Get the Area of Interest
+
+We first define the area of interest to geocode the address to get coordinates, then compute an isochrone around that point.
+
+### Geocode the address
+
+The `geocode_point` UDF takes a plain-text address and returns a point geometry using Nominatim, the geocoder behind OpenStreetMap.
+
+```python showLineNumbers
+@fused.udf
+def udf(manual_address: str = "401 Haltom Rd, Fort Worth, TX 76117, USA"):  # Change this to any address
+
+    from geopy.geocoders import Nominatim
+    from shapely.geometry import Point
+
+    geolocator = Nominatim(user_agent="fused_geocoding_udf")
+    result = geolocator.geocode(manual_address)
+
+    if result:
+        df = pd.DataFrame()
+        gdf = gpd.GeoDataFrame(
+            df,
+            geometry=[Point(result.longitude, result.latitude)],
+            crs="EPSG:4326"
+        )
+        return gdf
+```
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    manual_address: str = 'Manhattan, New York, NY',
+    time_steps: str = '15',  # Travel time in minutes
+    costing: str = 'truck',  # Travel mode: pedestrian, bicycle, auto
+):
+    # Load and run the geocode UDF to get coordinates
+    geocode_udf = fused.load("geocode_point")
+    geocoded = geocode_udf(manual_address=manual_address, engine='local')
+    lat = geocoded.lat.values[0]
+    lng = geocoded.lng.values[0]
+
+    # Pass coordinates to the Valhalla isochrone UDF
+    isochrone_udf = fused.load('latlng_isochrone_simplified')
+    gdf = isochrone_udf(lat=lat, lng=lng, costing=costing, time_steps=time_steps)
+    return gdf
+```
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    lat: float = 34.0522,
+    lng: float = -118.2437,
+    costing: str = "bicycle",
+    time_steps: str = "15",
+):
+
+    steps = [int(t.strip()) for t in time_steps.split(",")]
+
+    @fused.cache
+    def _get_isochrone(lat, lng, costing, time_steps_tuple):
+        url = "https://valhalla1.openstreetmap.de/isochrone"
+        params = ],
+            "contours": [ for t in list(time_steps_tuple)],
+            "costing": costing,
+            "polygons": 1,
+        }
+        response = requests.post(url, json=params)
+        response.raise_for_status()
+        return gpd.GeoDataFrame.from_features(response.json())
+
+    gdf = _get_isochrone(lat, lng, costing, tuple(steps))
+    gdf["contour_minutes"] = gdf["contour"].astype(int)
+    return gdf
+```
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    manual_address: str = 'Manhattan, New York, NY',
+    poi_category: str = "cafe",  # Change to: restaurant, grocery, school, park, etc.
+    time_steps: str = '5',
+    costing: str = 'pedestrian',
+    overture_release: str = "2026-02-18-0",  # Overture Maps release version
+):
+    # Get the isochrone boundary to determine the search area
+    parent_udf = fused.load('isochrone_chosen_site_overture')
+    result = parent_udf(
+        time_steps=time_steps,
+        costing=costing,
+        manual_address=manual_address,
+    )
+
+    # Query Overture Maps POIs within the isochrone bounding box
+    overture_udf = fused.load("Overture_Maps_Example")
+    gdf = overture_udf(
+        bounds=list(result.total_bounds),
+        release=overture_release,
+        theme="places",
+    )
+
+    # Filter by selected POI category
+    if gdf is not None and poi_category != "all":
+        if "categories" in gdf.columns:
+            gdf = gdf[gdf["categories"].apply(
+                lambda x: poi_category in str(x).lower() if x is not None else False
+            )]
+
+    return gdf
+```
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    manual_address: str = 'Manhattan, New York, NY',
+    costing: str = "auto",
+    time_steps: str = "15",
+    census_variable: str = "Median Household Income in the Past 12 Months (in 2022 Inflation-Adjusted Dollars)",  # Swap for any ACS variable
+    year: int = 2022,
+):
+
+    # Get the isochrone boundary
+    iso_udf = fused.load("isochrone_chosen_site_overture")
+    df_iso = iso_udf(manual_address=manual_address, costing=costing, time_steps=time_steps)
+
+    # Load Census ACS block groups from a community UDF
+    acs = fused.load("https://github.com/fusedio/udfs/tree/c9bc8a2/community/sina/Census_ACS_5yr/")
+    df_acs = acs(bounds=df_iso.total_bounds, year=year, census_variable=census_variable)
+
+    df_acs["orig_area"] = df_acs.geometry.area
+
+    # Clip census block groups to the isochrone boundary
+    iso_union = df_iso.dissolve().geometry.values[0]
+    iso_gdf = gpd.GeoDataFrame(geometry=[iso_union], crs=df_iso.crs)
+    result = gpd.overlay(df_acs, iso_gdf, how="intersection")
+    return result
+```
+
+```python showLineNumbers
+@fused.udf
+def udf(manual_address: str = 'Manhattan, New York, NY', time_steps: str = '15', costing: str = 'truck'):
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/507b2a3/public/common/")
+
+    parent_udf = fused.load('isochrone_chosen_site_overture')
+    result = parent_udf(time_steps=time_steps, costing=costing, manual_address=manual_address)
+
+    gdf = common.gdf_to_hex(result[['geometry', 'contour']], res=9)
+    gdf = gdf[['hex']].drop_duplicates()
+    return gdf
+```
+
+```python showLineNumbers
+@fused.udf
+def udf(hex_res: int = 9, poi_category: str = "cafe", manual_address: str = "Manhattan, New York, NY",
+        time_steps: str = "10", costing: str = "pedestrian", overture_release: str = "2026-02-18-0"):
+    common = fused.load("https://github.com/fusedio/udfs/tree/9bad664/public/common/")
+    con = common.duckdb_connect()
+
+    query_pois = fused.load("query_overture_pois")
+    gdf = query_pois(manual_address=manual_address, poi_category=poi_category,
+                     time_steps=time_steps, costing=costing, overture_release=overture_release, preview=False, engine='local')
+
+    gdf['lat'] = gdf.geometry.y
+    gdf['lon'] = gdf.geometry.x
+    df_simple = gdf[['lat', 'lon']].copy()
+
+    result = con.sql(f"""
+        SELECT h3_latlng_to_cell(lat, lon, ) as hex, COUNT(*) as count_pois
+        FROM df_simple
+        GROUP BY hex
+        ORDER BY count_pois DESC
+    """).df()
+    return result
+```
+
+```python showLineNumbers
+@fused.udf
+def udf(manual_address: str = 'Manhattan, New York, NY', costing: str = 'auto', time_steps: str = '15',
+        census_variable: str = 'Median Household Income in the Past 12 Months (in 2022 Inflation-Adjusted Dollars)',
+        year: int = 2022):
+    parent_udf = fused.load('iso_census_intersect')
+    result = parent_udf(manual_address=manual_address, costing=costing, time_steps=time_steps,
+                        census_variable=census_variable, year=year, engine='local')
+
+    del result["GEOID"]
+
+    common = fused.load("https://github.com/fusedio/udfs/tree/507b2a3/public/common/")
+    hex_gdf = common.gdf_to_hex(result, res=9)
+    hex_gdf.rename(columns=, inplace=True)
+    hex_gdf = hex_gdf[hex_gdf['median_income_12_months'] >= 0]
+    return hex_gdf[['hex', 'median_income_12_months']]
+```
+
+```python showLineNumbers
+@fused.udf
+def udf(manual_address: str = "Manhattan, NY", poi_category: str = "cafe",
+        time_steps: str = "5", costing: str = "pedestrian", overture_release: str = "2026-02-18-0"):
+    common = fused.load("https://github.com/fusedio/udfs/tree/507b2a3/public/common/")
+    con = common.duckdb_connect()
+
+    isochrone_hex_df = fused.load("isochrone_to_hex_overture")(
+        manual_address=manual_address, time_steps=time_steps, costing=costing)
+    poi_df = fused.load("pois_to_hex")(
+        manual_address=manual_address, poi_category=poi_category,
+        time_steps=time_steps, costing=costing, overture_release=overture_release)
+    census_df = fused.load("iso_census_to_hex")(
+        manual_address=manual_address, costing=costing, time_steps=time_steps)
+
+    merged_df = con.sql("""
+        WITH poi_dedup AS (
+            SELECT hex, SUM(count_pois) AS count_pois FROM poi_df GROUP BY hex
+        ),
+        census_dedup AS (
+            SELECT hex, AVG(median_income_12_months) AS median_income_12_months FROM census_df GROUP BY hex
+        )
+        SELECT i.hex, p.count_pois, c.median_income_12_months
+        FROM isochrone_hex_df i
+        LEFT JOIN poi_dedup p ON i.hex = p.hex
+        LEFT JOIN census_dedup c ON i.hex = c.hex
+    """).df()
+    return merged_df
+```
+
+```json showLineNumbers
+,
+  "children": [
+    , ]}},
+    , ,
+        , , ]}},
+    },
+    , , ]}},
+    , , , , ]}}
+  ]
+}
+```
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    time_steps: str='20',
+    costing: str='auto',
+    poi_category: str='cafe',
+    overture_release: str='2026-02-18-0',
+    manual_address: str = 'San Francisco',
+):
+
+    # Load merged POI + Census hex data
+    merge_udf = fused.load('merge_poi_census_data')
+    poi_hex_data = merge_udf(
+        manual_address=manual_address, poi_category=poi_category,
+        time_steps=time_steps, costing=costing,
+        overture_release=overture_release, engine='local')
+    dynamic_col = f"number of '' POIs"
+    poi_hex_data = poi_hex_data.rename(columns=)
+    poi_hex_data[dynamic_col] = poi_hex_data[dynamic_col].fillna(0)
+
+    # Load isochrone boundary and geocoded point
+    isochrone_gdf = fused.load("isochrone_chosen_site_overture")(
+        manual_address=manual_address, time_steps=time_steps, costing=costing)
+    geocoded_gdf = fused.load("geocode_point")(
+        manual_address=manual_address, engine='local')
+
+    # Build deck.gl layers and render as HTML
+    map_utils = fused.load("https://github.com/fusedio/udfs/tree/3ada22d/community/milind/map_utils/")
+    layers = [
+        }},
+        ) + Census (H3 Hex)",
+         "config": , "opacity": 0.9}}},
+        }},
+    ]
+    return map_utils.deckgl_layers(layers=layers, basemap="dark", theme="dark")
+```
+
+```json showLineNumbers
+}", "label": "Total Points of Interest"}}
+```
+
+```json showLineNumbers
+}", "label": "Median Average Income (thousand USD)"}}
+```
+
+```json showLineNumbers
+}", "title": "Distribution of Median Income"}}
+```
+
+</details>
+
+### Live map preview
+
+Interact with the POI map below — hexagons are colored by POI density, with the isochrone boundary and geocoded point overlaid. Try it out ->
+
+<iframe
+  src="https://unstable.udf.ai/fc_4fUqKOCoKL0gIX4YwgCk7z/selected_poi_map.html"
+  width="100%"
+  height="500px"
+  style=}
+  title="POI Site Selection Map"
+/>
+
+## Performance
+
+- **First run** (~30s): all UDFs execute end-to-end — geocoding, isochrone calculation, Overture queries, Census overlay, and hex aggregation
+- **Subsequent runs with the same inputs** (near-instant): Runs with pre-executed parameters are cached so the dashboard loads immediately
+
+This gives you the best of both worlds — if you change a UDF, you don't need to redeploy anything; but if multiple people open the same dashboard with the same inputs, they get cached results with no wait.
+
+### See also
+
+- Expose this Canvas as an MCP server so an AI agent can query the dashboard
+
+================================================================================
+
 ## Realtime Filtering with DuckDB
 Path: examples/realtime-filtering-duckdb.mdx
 URL: https://docs.fused.io/examples/realtime-filtering-duckdb
@@ -9440,7 +10200,7 @@ For the next step you can use the path to the data you just ingested or, if you 
 
 ## 3. Write a UDF to process the data
 
-To see the data as we process it, we will write a UDF in the Fused Workbench. As you write code in the UDF Builder you'll see how visualization results, logs, and errors show up immediately.
+To see the data as we process it, we will write a UDF in the Fused Workbench. As you write code in the Map Builder you'll see how visualization results, logs, and errors show up immediately.
 
 To write a UDF simply wrap a Python function with the decorator `@fused.udf`.
 
@@ -9489,7 +10249,7 @@ def udf(
     return common.geom_stats(gdf, arr)
 ```
 
-Try running the UDF in the UDF Builder and visually inspect the output on the map. See what happens when you change `year`. Try introducing print statements such as `print(arr)` and `print(gdf)` to show logs in the console.
+Try running the UDF in the Map Builder and visually inspect the output on the map. See what happens when you change `year`. Try introducing print statements such as `print(arr)` and `print(gdf)` to show logs in the console.
 
 [Image: Zonal Stats Map]
 
@@ -14093,90 +14853,36 @@ URL: https://docs.fused.io/python-sdk/changelog
 
 # Changelog
 
-## v2.4.2 (2026-04-14)
+## v2.5.0 (2026-04-16)
 
-**Canvas sharing enhancements**
+**[Experimental] Talk to your data in Slack!**
 
-Canvas sharing options now adapt based on the execution environment tier. Default canvases no longer generate a share token automatically. You can also delete an existing canvas directly from GitHub.
+Connect any Canvas to a Slack bot and let anyone on your team ask questions directly in Slack — no Workbench needed.
 
-**iFrame component in JSON-UI**
+See the Slack integration docs to get started.
 
-A new `iframe` component lets you embed any URL directly inside a JSON-UI render widget.
+**Improvements**
 
-**Export chat history**
+- [Experimental] Widgets: new `w` hotkey to open the widget builder
+- Canvas team access tokens: tokens in UDF settings are now truncated for clarity
+- Team-scoped shared canvases can now have an API endpoint created with a session token; "Open API" button activates when a session token is present
+- Canvas and share page performance improvements
+- UDF thumbnail now falls back gracefully if canvas-level capture fails
+- Home page UI polish
 
-Chat conversations can now be exported from the chat history sidebar.
+**Bug fixes**
+
+- Fixed: share token no longer carried over when copying a canvas in Workbench
+- Fixed: README metadata preserved when pulling UDFs from GitHub
+- Fixed: reading and pushing modified public UDFs
+- Fixed: initial canvas tab state in the UDF Collection modal
+- Fixed: Slack integration channel name handling
+
+## v2.4.2 (2026-04-13)
 
 **New home page**
 
 A redesigned home page with a landing experience, quick-access menu, recents section, and live integration status.
-
-**H3 analytics: non-count metrics in `run_partition`**
-
-`run_partition` now supports metrics beyond simple counts when using the H3 analytics ingest workflow.
-
-**Collection shared tokens**
-
-Collections now support shared tokens, making it easier to share data access without exposing credentials.
-
-**Improvements**
-
-- Batch jobs upgraded to Amazon Linux 2023
-- Blocking confirmation modals replaced with inline gate UI
-- UDF result state is now managed with per-UDF version atoms for better isolation
-- SQL query handling in DuckDB queries has been refactored for reliability
-- NumPy args and DataFrame keys are now cached to reduce repeated computation
-- AI usage tracking corrected for basic-tier accounts
-- Workbench now shows an access-denied page when an environment has been disabled
-- UDF catalog detail management and file explorer routing improved
-- Google Drive secrets and policies support added
-
-**Bug fixes**
-
-- Fixed: bar chart no longer re-animates on unrelated state changes
-- Fixed: CodeMirror text selection inside JSON-UI render widgets
-- Fixed: AI running badge overlapping the top bar
-- Fixed: serialization error when DataFrame index and column names conflict
-- Fixed: AI edit confirmation flow edge cases
-- Fixed: recents card count on home page not updating after reload
-- Fixed: integration statuses on home page now sync correctly
-- Fixed: Firefox doc popup layering in the code editor
-- Fixed: shared AI widgets now show a login CTA for unauthenticated users
-- Fixed: iFrame loading fallback not triggering correctly
-- Fixed: runtime loading bug on canvas open
-- Fixed: two Kubernetes agents with the same ID conflicting
-
-## v2.4.1 (2026-04-09)
-
-**Google Drive integration**
-
-Files stored in Google Drive can now be accessed directly from Workbench.
-
-**AI edit confirmation**
-
-When AI suggests code edits in the editor, you can now review and confirm them before they are applied.
-
-**Improvements**
-
-- [Experimental] Widgets: URL query params now sync with param broadcasts in shared Widget mode
-- [Experimental] Widgets: improved loading style when a UDF is running inside a Widget
-- Toolbar dropdowns now open on click instead of hover
-- Chart UX: improved zoom stability and donut legend cleanup
-- Duplicate now works for errored UDFs; default UDF description removed
-- Real-time UDF log streaming improvements
-- You can now clone a Canvas from a Shared Canvas 
-
-**Bug fixes**
-
-- Fixed: [Experimental] Widgets: dropdown not rendering in fullscreen mode
-- Fixed: download data option no longer shown in the toolbar
-- Fixed: node toolbar hover behavior reverted to avoid accidental triggers
-
-## v2.4.0 (2026-04-07)
-
-**Canvas UDF endpoint — build an MCP Server from any Canvas**
-
-Public canvases now expose an endpoint that lists all visible UDFs (after creating a shared canvas token). This makes it straightforward to turn any canvas into an MCP Server.
 
 **UDF folders**
 
@@ -14189,7 +14895,7 @@ Workbench now automatically creates a session token for UDFs in Team-scoped canv
 **Improvements**
 
 - [Experimental] Widgets: Map Widget — deck.gl hybrid rendering, tooltip/color updates, and hex-tile polish
-- [Experimental] Widgets: line chart and more chart types; switch layouts from a dropdown via `render`; SQL-backed widgets use a higher automatic row limit
+- [Experimental] Widgets: line chart and more chart types; switch layouts from a dropdown via `widget-builder`; SQL-backed widgets use a higher automatic row limit
 - [Experimental] Widgets: editor and AI tweaks; `$param` references included in share URLs and param discovery
 - Shared canvases support session tokens end-to-end; canvas passcode is generally available
 - Session tokens in the canvas workflow; streamlined top bar
@@ -14850,7 +15556,7 @@ New:
 General:
 - Improvements to Navigation in Command Palette. Try it out in Workbench by doing `Cmd + K` (`Ctrl + K` on Windows / Linux)
 - Autocomplete now works with `Tab` in Code Editor with `Tab`
-- Added a Delete Button in the Shared Tokens page (under Account page)
+- Added a Delete Button in the Shared Tokens page (under Profile page)
 - Ability to upload images for UDF Preview in Settings Page
 - Adding “Fullscreen” toggle in Map View
 - Improved `colorContinuous` in Visualize Tab
@@ -15148,16 +15854,6 @@ The reference is intended to be limited to low-level descriptions of various pro
 ================================================================================
 
 # WORKBENCH
-
-## Account
-Path: workbench/account.mdx
-URL: https://docs.fused.io/workbench/account
-
-On the Account page, you can edit your Username, view basic account information, and access the Usage, Debug, and S3 Policy sections.
-
-<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/account_page_edit7.mp4" />
-
-================================================================================
 
 ## AI Chat
 Path: workbench/ai-assistant.mdx
@@ -15479,13 +16175,39 @@ The Canvas Catalog is your central view to explore and manage all your UDF proje
 Path: workbench/canvas-checkpoints.mdx
 URL: https://docs.fused.io/workbench/canvas-checkpoints
 
-Canvas Checkpoints let you capture a moment in time of your Canvas.
+Canvas Checkpoints let you capture a snapshot of your Canvas at a point in time.
 
-Create a checkpoint to save the current state of your Canvas, including all UDFs, connections, and changes, so you can return to it.
+## Why use checkpoints?
 
-If you experiment, remove a UDF, or make larger updates, you can restore a previous checkpoint and continue working from that saved state.
+- **Version control your work** — Save the current state before a big refactor so you can always roll back.
+- **Team collaboration** — Checkpoints are the basis for pushing and pulling code to GitHub. Once you create a checkpoint, you can open a PR directly from it. See Versions for more on the GitHub workflow.
 
-<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/canvas_checkpoints2.mp4" />
+## Creating a checkpoint
+
+1. Make changes to your Canvas (edit UDFs, add widgets, update connections).
+2. Open the Canvas checkpoints panel and click **Create checkpoint**.
+3. Select the UDFs you want to include — each UDF shows a code diff of what changed.
+4. Give your checkpoint a name and click **Create checkpoint**.
+
+<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/create_checkpoint_flow.mp4" />
+
+_Creating a checkpoint, deleting a UDF, and restoring the Canvas back to the saved checkpoint._
+
+## Restoring a checkpoint
+
+1. Open the Canvas checkpoints panel and click **Restore** on a checkpoint.
+2. Review the code diff for each UDF to see what will change.
+3. Restore individual UDFs by clicking **Restore** next to each one, or click **Restore all** to revert the entire Canvas to that checkpoint.
+
+[Image: Restoring a checkpoint with code diff review and per-UDF restore controls]
+
+## Managing checkpoints
+
+From the checkpoints panel you can:
+
+- **Delete** — Remove a checkpoint you no longer need.
+- **Create a PR** — Open a pull request on GitHub directly from a checkpoint (requires GitHub integration).
+- **Clone from GitHub** — Pull an existing checkpoint from your connected repository.
 
 ================================================================================
 
@@ -15594,11 +16316,31 @@ Upgrade to a higher tier to get your own dedicated environment & compute resourc
 
 ================================================================================
 
-## Jobs
+## Integrations & Secrets
+Path: workbench/integrations-secrets.mdx
+URL: https://docs.fused.io/workbench/integrations-secrets
+
+The Integrations & Secrets page is where you connect third-party services to Fused and store the keys your UDFs need at runtime.
+
+[Image: Integrations & Secrets page]
+
+## Integrations
+
+Connect external services (like Slack) to Fused so canvases and UDFs can interact with them. See the Slack integration guide for setup details.
+
+## Secrets
+
+Store any keys or credentials you want to use in Workbench here. They're encrypted in the Fused backend and attached to your selected kernel. For details on managing secrets, see the Secrets management guide.
+
+To use a stored secret from a UDF, see `fused.secrets`.
+
+================================================================================
+
+## Job logs
 Path: workbench/jobs.mdx
 URL: https://docs.fused.io/workbench/jobs
 
-The Jobs page displays all dedicated jobs executions, organised into: 
+The Job logs page displays all dedicated jobs executions, organised into: 
 - Personal Jobs: Jobs you started 
 - Team Jobs: Any job started by your team 
 
@@ -15618,7 +16360,7 @@ Workbench is a browser-based platform to build with data. Write Python, visualiz
 
 **Canvas** — Default view for building workflows. Connect UDFs together, create dashboards, and see results side-by-side.
 
-**UDF Builder** — Advanced view for geospatial workflows. Visualize multiple UDFs as map layers or inspect individual Table outputs.
+**Map Builder** — Advanced view for geospatial workflows. Visualize multiple UDFs as map layers or inspect individual Table outputs.
 
 ## Tools
 
@@ -15634,72 +16376,56 @@ Try Workbench at fused.io/workbench
 Path: workbench/preferences.mdx
 URL: https://docs.fused.io/workbench/preferences
 
-You can access the Preferences page from Workbench by clicking on Preferences in the bottom-left corner.
+Open Preferences from the Workbench profile menu (top-right) to configure your session.
 
-This page contains general user preferences, experimental features, theme selection, data settings, and other customization options.
+[Image: Preferences page]
 
-[Image: Preferences button location]
+The page covers:
 
-This page is roughly split in 2 sections:
-
-[Image: preferences page sections]
-
-- **Environment**: Setting up kernels, Secret management and environment variables. See below for details.
-- **General Preferences**: Such as theme, file formats, etc. These are also searchable from Command Palette (`Cmd/Ctrl + K`).
-
-## Kernel
-
-Selecting a kernel in Workbench sets the environment for your session, providing access to Python libraries at runtime. Contact the Fused team through Slack, Discord or email to set up new kernels.
-
-[Image: kernel]
-
-When you share a canvas or create a legacy per-UDF token, the token is tied to the kernel at the time of creation. Even if you change the kernel later in Workbench, tokens created on a previous kernel will still use the previous kernel.
-
-Reach out to Fused support at `info@fused.io` to migrate your tokens to the new kernel.
-
-## Secrets management
-
-Store and manage secrets that are securely encrypted in the backend.
-
-[Image: secrets management]
-
-Add secrets directly in the UI by clicking "+ Add new secret"
-
-You can then retrieve secrets from your UDF:
-
-```python showLineNumbers
-
-fused.secrets["my_secret"]
-```
-
-You can also list all available secrets with:
-
-```python showLineNumbers
-dir(fused.secrets)
-```
-
-## Environment variables
-
-[Image: env variables]
-
-Environment variables in Fused are pre-configured by the Fused team. Contact the Fused team to set new ones. 
-
-These variables can be accessed in the usual way through Python's os module:
-
-```python showLineNumbers
-
-os.environ["ENV_VAR_NAME"]
-```
+- **Environment** — pick your kernel and set default raster/vector transfer formats and timing for running UDFs.
+- **Experimental features** — opt in to in-development features by toggling them on. Some integrations (like the Slack integration) and features (like Widget nodes) require enabling a flag here.
+- **General preferences** — theme and UI toggles, including **Show shared tokens**, which exposes the legacy per-UDF shared tokens (`fsh_***`) UI used in Tokens & endpoints.
 
 ================================================================================
 
-## Shared Tokens
-Path: workbench/shared_tokens.mdx
-URL: https://docs.fused.io/workbench/tokens
+## Profile
+Path: workbench/profile.mdx
+URL: https://docs.fused.io/workbench/profile
 
-The Shared Tokens page shows your legacy **per-UDF shared tokens** (`fsh_***`) for now. You can view existing tokens, see their status, copy them, or delete them as needed.
+The Profile page in Workbench lets you edit your username, view account information, monitor usage, and manage your S3 bucket policy. Navigate to it from the Workbench sidebar under your **Account > Profile**.
 
-[Image: Shared Tokens]
+The Profile page has three tabs: **Usage**, **Debug**, and **S3 Policy**.
+
+<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/profile-page-vid.mp4" />
+
+## Usage
+
+The **Usage** tab shows a realtime usage dashboard that tracks your compute and AI consumption. The dashboard includes:
+
+- **Cache hits** — number of requests served from cache.
+- **Errored requests** — failed calls with their count and CPU hours consumed.
+- **Successful requests** — completed calls with their count and CPU hours consumed.
+- **AI usage** — total AI tokens consumed.
+
+[Image: Profile usage dashboard]
+
+You can download the data as a CSV or refresh the dashboard at any time.
+
+For details on plans and pricing, see the Fused pricing page.
+
+## Billing
+
+You can upgrade your subscription tier directly from the Profile page. Upgrading gives you dedicated compute resources and higher usage limits. See Free Tier for details on what's included in the free plan, or visit the pricing page to compare plans.
+
+## S3 Policy
+
+The **S3 Policy** tab generates a bucket policy that grants Fused access to your S3 bucket. Copy the generated policy and apply it to your bucket in the AWS console.
+
+For more on connecting S3 buckets, see Connect your own bucket.
+
+## Debug
+
+The **Debug** tab provides diagnostic information useful for troubleshooting issues with Fused support.
 
 ================================================================================
 
@@ -15745,7 +16471,7 @@ The editor contains the UDF's function declaration. Whenever code is updated, Fu
 
 The code editor highlights errors in the code and shows error logs to help debug.
 
-<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/debug_code_editor_edit8.mp4" />
+<ReactPlayer playsinline= className="video__player" playing= muted= controls height="100%" url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/debug_code_editor_edit8.mp4" width="100%" />
 
 ## UDF Execution in Canvas
 
@@ -15853,13 +16579,13 @@ The map can be panned by dragging the viewport, zoomed in and out, and rotated w
 
 The top of the map has controls to interact with the viewport. These include an address search bar, a basemap selector, a fullscreen toggle, data visualization icon, and a three-dot menu providing access to additional map options.
 
-You can change the basemap by setting it in the map style settings, located at the top right of the UDF Builder map. Currently, light, dark, satellite, and blank basemaps are supported.
+You can change the basemap in the map style settings in the top-right corner of the map. Currently, light, dark, satellite, and blank basemaps are supported.
 
 <LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/mapcontrols_edit4.mp4" />
 
 ## Auto, Tile, and Single (Viewport, Parameter)
 
-On UDF Builder, UDFs can explicitly be set to run as Tile or File - or autoselect between the two if the `bounds` object is typed.
+On Map Builder, UDFs can explicitly be set to run as Tile or File - or autoselect between the two if the `bounds` object is typed.
 
 [Image: File]
 
@@ -15877,7 +16603,7 @@ When data renders successfully on the map, clicking or hovering on it shows attr
 Path: workbench/udf-builder/navigation.mdx
 URL: https://docs.fused.io/workbench/udf-builder/navigation
 
-The Navigation pane on the left side of the UDF Builder displays the UDFs available to the user. UDFs are listed as layers. Their order corresponds to their stacking order on the map. Each layer includes icons to delete, reorder, and toggle the visibility of UDFs. The selected layer becomes the "active" layer. Its code appears in the Code Editor and its output in the Runtime pane.
+The Navigation pane on the left side of the Map Builder displays the UDFs available to the user. UDFs are listed as layers. Their order corresponds to their stacking order on the map. Each layer includes icons to delete, reorder, and toggle the visibility of UDFs. The selected layer becomes the "active" layer. Its code appears in the Code Editor and its output in the Runtime pane.
 
 ## Zoom to Layer
 
@@ -15962,7 +16688,7 @@ URL: https://docs.fused.io/workbench/udf-builder/runtime
 
 Exploring and analyzing data involves scanning logs, previewing intermediary outputs, and debugging errors.
 
-The Runtime section of the UDF Builder dynamically displays information related to UDF execution, including visual output, debug info, and request details available via the toolbar.
+The Runtime section of the Map Builder dynamically displays information related to UDF execution, including visual output, debug info, and request details available via the toolbar.
 
 ### Toolbar
 
@@ -15972,13 +16698,13 @@ The toolbar at the top of the Runtime pane includes a menu button for displaying
 
 ================================================================================
 
-## UDF Builder
+## (Advanced) Map Builder
 Path: workbench/udf-builder/udf-builder.mdx
 URL: https://docs.fused.io/workbench/udf-builder/udf-builder
 
-The UDF Builder is an IDE to write User Defined Functions (UDFs) and visualize their output.
+The Map Builder is an IDE to write User Defined Functions (UDFs) and visualize their output.
 
-Data analysis is inherently iterative. It involves loading data, writing code, executing the code, and visualizing results. As developers write and debug their code in the UDF Builder, Fused gives them immediate feedback by automatically re-running the UDF and showing the output. Developers can write UDFs in the Code Editor and preview the results directly on the Canvas. To help debug, the Results pane displays logs and errors generated by the UDF.
+Data analysis is inherently iterative. It involves loading data, writing code, executing the code, and visualizing results. As developers write and debug their code in the Map Builder, Fused gives them immediate feedback by automatically re-running the UDF and showing the output. Developers can write UDFs in the Code Editor and preview the results directly on the Canvas. To help debug, the Results pane displays logs and errors generated by the UDF.
 
 - Write UDFs in the Code Editor
 - Preview the UDF's output on the Canvas
@@ -15994,9 +16720,9 @@ URL: https://docs.fused.io/workbench/udf-builder/styling
 
 # Layer Styling: Visualization 
 
-The UDF builder displays data from your UDF on the map. You can customize the visual representation using the visualization icon located on the map.
+The Map builder displays data from your UDF on the map. You can customize the visual representation using the visualization icon located on the map.
 
-If you're using `map_utils` to build standalone maps in Canvas, see Standalone Maps instead. This page covers styling for UDF Builder layers.
+If you're using `map_utils` to build standalone maps in Canvas, see Standalone Maps instead. This page covers styling for Map Builder layers.
 
 **Presets**
 
@@ -16562,7 +17288,7 @@ For more details on DeckGL properties, see the DeckGL documentation.
 Path: workbench/udf-catalog.mdx
 URL: https://docs.fused.io/workbench/udf-explorer
 
-The UDF Explorer offers a searchable collection of User Defined Functions (UDFs) that can be imported into the UDF Builder for editing. It facilitates sharing and discovering UDFs within teams and the broader Fused community.
+The UDF Explorer offers a searchable collection of User Defined Functions (UDFs) that can be imported into the Map Builder for editing. It facilitates sharing and discovering UDFs within teams and the broader Fused community.
 
 Data teams frequently encounter silos when looking to share and reuse code snippets & data across different projects. Traditional notebooks pose challenges in version control, sharing individual utility functions, managing dependencies, and reproducing results in new environments. Additionally, assets often end up disconnected from the code that generated them. UDFs on the other hand encapsulate modules, outputs, and code, which addresses issuess related to reproducibility and lineage.
 
@@ -16584,7 +17310,7 @@ Alternatively, you can use the "Upload UDF" button to import an existing UDF fro
 
 ## Search
 
-Open the UDF Explorer by Clicking "UDF Explorer". Search UDFs by name, sort them, and toggle between gallery and list views. Click UDF cards to view their profiles or add them to the UDF Builder.
+Open the UDF Explorer by Clicking "UDF Explorer". Search UDFs by name, sort them, and toggle between gallery and list views. Click UDF cards to view their profiles or add them to the Map Builder.
 
 [Image: Add UDF Button]
 
@@ -16632,24 +17358,59 @@ Note that once the UDF is committed to the main branch of the repo, you can expe
 
 ================================================================================
 
-## Versions
+## Versioning
 Path: workbench/versions.mdx
 URL: https://docs.fused.io/workbench/versions
 
-You can version control your UDFs using Github. You'll need to connect your Github repo first. 
-## Committing a UDF
+<Tag color="#3399ff">Developer, Professional and Enterprise</Tag> _Versioning with GitHub is accessible to organizations with a Fused Developer, Professional & Enterprise subscription (see Plans)._
 
-You can publish your UDF to GitHub directly from the Canvas.
+Versioning in Fused is built on top of Canvas Checkpoints. A checkpoint captures the state of your Canvas at a point in time — versioning lets you push that state to GitHub so your team can reuse and collaborate on it.
+
+You'll need to connect your GitHub repo first.
+
+## Versioning a Canvas
+
+### Pushing changes
+
+Push your Canvas state to GitHub by creating a PR from a checkpoint.
+
+1. Create a checkpoint of your Canvas
+2. Click **Create a PR** on the checkpoint
+3. (Optional) Add a commit message or change the target repository
+4. Click **Open PR**
+5. Merge the PR on GitHub
+
+[Image: Creating a PR from a checkpoint]
+
+Once merged, everyone on your team can pull the Canvas from the connected repository.
+
+### Pulling changes
+
+Pull the latest Canvas state from GitHub to stay in sync with your team.
+
+1. Open the Canvas checkpoints panel
+2. Click **Clone from GitHub**
+3. Select the checkpoint to restore
+
+[Image: Pulling from GitHub]
+
+This replaces your current Canvas state with the version from GitHub.
+
+## Versioning a UDF
+
+You can also commit individual UDFs to GitHub directly from the Canvas.
+
+### Committing a UDF
 
 1. Click **Versions** in the three-dot menu
-2. (Optional) Add a commit message or change the target repository Select the UDF to commit
+2. (Optional) Add a commit message or change the target repository
 3. Select the UDF to commit
 4. Click **Open PR**
 5. Merge the PR on GitHub
 
 [Image: Version Control Flow]
 
-UDFs that are merged to Github will then be available in your Team UDFs in the UDF Explorer
+UDFs merged to GitHub are available in your Team UDFs in the UDF Explorer.
 
 ================================================================================
 
@@ -17007,7 +17768,7 @@ The App code editor & renderer allow users to write their own Python code using 
 
 We want data scientists to be able to go from “hey, that’s a cool idea” to “here’s what it looks like” without tech getting in their way. Especially in a world where LLMs make writing code simpler, the bottleneck becomes the speed at which data scientists can execute & ship code, not write it.
 
-Fused Apps offers a way for data scientists to orchestrate their entire workflow using Python, without having to worry about backends, scaling, or clusters. Fused Apps complement our UDF builder, which offers a way to build data processing and backend functions, by offering an end-to-end workflow. At Fused, we use this for ingesting and managing datasets, managing resources we make available to our UDFs, and finalizing analyses.
+Fused Apps offers a way for data scientists to orchestrate their entire workflow using Python, without having to worry about backends, scaling, or clusters. Fused Apps complement our Map Builder, which offers a way to build data processing and backend functions, by offering an end-to-end workflow. At Fused, we use this for ingesting and managing datasets, managing resources we make available to our UDFs, and finalizing analyses.
 
 <LazyReactPlayer
     playsinline=
@@ -18297,7 +19058,7 @@ _Comparison between most and least similar hexes of two AOIs._
 
 ## Conclusion
 
-The Fused UDF Builder makes developing and iterating on these analyses swift and convenient, with no need to jump between different environments for developing vs viewing the results. And although the taxi dataset is small, the Fused Tiling functionality offer the possibility of developing similar analyses with larger datasets. With more data and richer features this proof-of-concept could be expanded to discover more robust, fully-defined neighborhoods, allowing us to develop data-driven approaches to local geography.
+The Fused Map Builder makes developing and iterating on these analyses swift and convenient, with no need to jump between different environments for developing vs viewing the results. And although the taxi dataset is small, the Fused Tiling functionality offer the possibility of developing similar analyses with larger datasets. With more data and richer features this proof-of-concept could be expanded to discover more robust, fully-defined neighborhoods, allowing us to develop data-driven approaches to local geography.
 
 ================================================================================
 
@@ -18341,7 +19102,7 @@ Fused is a platform that simplifies the engineering challenges involved in build
 - **Python User Defined Functions (UDFs):** UDFs define transformations on data and can easily be called with parameters and across different areas of interest.
 - **Remote Accessibility:** UDFs can be called from anywhere via HTTPS requests, delivering data exactly where it's needed without the need to store or transfer large datasets.
 - **Parallel Execution:** UDFs can run in parallel, processing thousands of data chips per minute for efficient scaling.
-- **UDF Workbench:** The UDF Builder provides instant feedback during algorithm development, allowing users to visually inspect the resulting data chips on a dynamic map. Any changes are immediately deployed upon saving.
+- **UDF Workbench:** The Map Builder provides instant feedback during algorithm development, allowing users to visually inspect the resulting data chips on a dynamic map. Any changes are immediately deployed upon saving.
 
 The synergy of these Fused components enables researchers to dedicate more time to experimentation and analysis rather than data engineering.
 
@@ -18498,7 +19259,7 @@ With Fused, working with rasters and vectors is straightforward. This blog post 
 
 ## Ready to transform?
 
-Curious to see the magic? Interact with the UDF in the Fused UDF Builder and elevate your data from weak to strong. Harness your data's full potential and make impactful decisions!
+Curious to see the magic? Interact with the UDF in the Fused Map Builder and elevate your data from weak to strong. Harness your data's full potential and make impactful decisions!
 
 Feel free to reach out if you have any questions at `info@fused.io`.
 
@@ -18718,7 +19479,7 @@ _Example of cloud-free HLS image composite for the same region in Brazil._
 The best part is that Pachama's Data Science team can design UDF while looking at a specific area, and to run it for a different region by simply changing the input bounding box (bbox). This flexibility allows Pachama to create individual image tiles for any location worldwide. They can easily experiment and generate composites for different date ranges by adjusting the input parameters.
 
 - Easy parallelization with simple Python function calls, no need to manage clusters
-- Iterate on both UDFs in the same code editor with the UDF Builder
+- Iterate on both UDFs in the same code editor with the Map Builder
 - Instant feedback during algorithm development, no need to wait for pipelines to run
 - Invoke UDF and load its data into a Jupyter Notebook with `fused.run` for downstream analysis
 
@@ -18962,7 +19723,7 @@ First, it is worth noting that we extract all content from a GeoTIFF image (idea
 
 We use the bounding box of the tile provided as a parameter, convert it from lat/long to Web Mercator (EPSG:3857), get the corresponding bounding box in the original image, and project it in Web Mercator projection in the destination array with the correct desired tile size (typically 256x256 pixels).
 
-The Fused UDF Builder enables one to view the result and logs while coding.
+The Fused Map Builder enables one to view the result and logs while coding.
 
 ## Implementing aircraft detection
 
@@ -19093,7 +19854,7 @@ Read about Pachama's mission and learn how they use technology to evaluate fores
 Path: blog/2024-04-22-webinar/index.mdx
 URL: https://docs.fused.io/blog/2024-04-22-webinar
 
-Isaac Brodsky, the CTO of Fused, delved into the power of Fused during a LinkedIn live session with Matt Forrest. They discussed the contrast of Python vs. SQL for data analytics, the advantages of serverless geospatial processing, and showcased a live demo of the UDF Builder. During the demo, Isaac created a User Defined Function visualize Overture building footprints that are within a certain proximity of water.
+Isaac Brodsky, the CTO of Fused, delved into the power of Fused during a LinkedIn live session with Matt Forrest. They discussed the contrast of Python vs. SQL for data analytics, the advantages of serverless geospatial processing, and showcased a live demo of the Map Builder. During the demo, Isaac created a User Defined Function visualize Overture building footprints that are within a certain proximity of water.
 
 You can re-watch the webinar on LinkedIn, YouTube, or below.
 
@@ -19319,5 +20080,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-04-14
+Generated automatically from Fused documentation. Last updated: 2026-04-23
 Total sections: 5

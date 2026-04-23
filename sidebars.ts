@@ -75,6 +75,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/data-input-outputs/import-connection/using-ai-inside-udf", label: "Using AI inside a UDF" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/ai-data-connection", label: "Connecting AI to Data" },
         { type: "doc", id: "guide/data-input-outputs/export-api/slack", label: "Slack [Experimental]" },
+        { type: "doc", id: "guide/data-input-outputs/import-connection/airtable", label: "Airtable" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/widgets", label: "Widgets" },
       ],
     },
