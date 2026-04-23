@@ -11,19 +11,22 @@ Query data, browse metadata, read/write stages, and write DataFrames to tables i
 
 ## Prerequisites
 
-### 1. Install the Snowflake extras
+### Connect your Snowflake account to Fused
+
+A Snowflake administrator runs a few one-time SQL commands in Snowflake (Steps 1–4), then you complete an OAuth flow in the Fused workbench (Step 5).
+
+<details>
+<summary>Using the Snowflake integration outside of Workbench?</summary>
+
+If you're running Fused locally (outside the Workbench), install the Snowflake extras first:
 
 ```bash
 pip install fused[snowflake]
 ```
 
-This installs `snowflake-connector-python` alongside the core `fused` package. If you are using hosted Fused, this is already installed for you.
+This adds `snowflake-connector-python` alongside the core `fused` package. In the Workbench this is already pre-installed.
 
-### 2. Connect your Snowflake account in the Fused workbench
-
-Before using the Python API, a Snowflake admin must set up a security integration, role, and service account user, and then you must complete the OAuth flow in the Fused UI.
-
-All SQL below should be run by a Snowflake admin.
+</details>
 
 **Step 1 -- Create a security integration:**
 
@@ -69,263 +72,110 @@ GRANT ROLE FUSED_WH_ROLE TO USER fused_service_account;
 ```
 
 :::warning
-Do **not** sign in with an admin account during the OAuth step. Snowflake blocks `ACCOUNTADMIN` and `SECURITYADMIN` for custom OAuth integrations, which is why a dedicated service account user is required.
+Do **not** sign in with an administrator account during the OAuth step. Snowflake blocks `ACCOUNTADMIN` and `SECURITYADMIN` for custom OAuth integrations, which is why a dedicated service account user is required.
 :::
 
-**Step 5 -- Connect in the Fused workbench:**
+**Step 5 -- Connect in Workbench:**
 
-1. Enable the **Snowflake integration** feature flag in **Settings > Experimental Features**.
+1. Enable the **Snowflake integration** feature flag in **[Preferences](/pr/1037/workbench/preferences) > Experimental Features**.
 2. Open **Settings > Integrations** and click **Connect Snowflake**.
 3. Enter your account identifier (e.g. `ORGNAME-ACCTNAME`), the `OAUTH_CLIENT_ID`, both client secrets, and optionally a role.
-4. A Snowflake sign-in popup will open. Sign in with the **service account** user you created in Step 4 (not an admin account) to complete the OAuth flow.
+
+   ![Connect Snowflake modal in Fused Workbench](/img/snowflake_modal_fused.png)
+
+4. A Snowflake sign-in popup will open. Sign in with the **service account** user you created in Step 4 (not an administrator account) to complete the OAuth flow.
+
+   ![Snowflake OAuth sign-in screen](/img/snowflake_login_screen.png)
+
+5. Click **Allow** on the OAuth consent screen to grant Fused access to your Snowflake account.
+
+   ![Snowflake OAuth confirmation screen](/img/snowflake_oauth_confirmation.png)
 
 ---
 
-## Quick start
+## Examples
+
+### Query Snowflake in a UDF
 
 ```python
-import fused.api
+@fused.udf
+def udf():
+    import fused.api
 
-# One-liner: run a SQL query and get a DataFrame
-df = fused.api.snowflake_query("SELECT * FROM my_db.my_schema.my_table LIMIT 10")
+    df = fused.api.snowflake_query(
+        "SELECT * FROM my_db.my_schema.my_table LIMIT 10"
+    )
+    return df
 ```
 
-Or use the connection object for multiple operations:
+### Use a connection for multiple operations
 
 ```python
-conn = fused.api.snowflake_connect(
-    warehouse="COMPUTE_WH",
-    database="MY_DB",
-    schema="PUBLIC",
-)
+@fused.udf
+def udf():
+    import fused.api
 
-df = conn.query("SELECT * FROM sales WHERE region = 'US'")
+    conn = fused.api.snowflake_connect(
+        warehouse="COMPUTE_WH",
+        database="ANALYTICS",
+        schema="PUBLIC",
+        role="ANALYST",
+    )
+
+    print("Tables:", conn.list_tables("ANALYTICS", "PUBLIC"))
+
+    sales = conn.query("""
+        SELECT region, SUM(amount) AS total
+        FROM orders
+        WHERE order_date >= '2025-01-01'
+        GROUP BY region
+        ORDER BY total DESC
+    """)
+    return sales
 ```
 
----
-
-## API Reference
-
-### Convenience functions
-
-These are top-level functions on `fused.api` for common one-shot operations.
-
-#### `fused.api.snowflake_connect(**kwargs) -> SnowflakeConnection`
-
-Create a `SnowflakeConnection` instance.
-
-| Parameter   | Type           | Default | Description                          |
-|-------------|----------------|---------|--------------------------------------|
-| `role`      | `str \| None`  | `None`  | Snowflake role to `USE` after connecting. |
-| `warehouse` | `str \| None`  | `None`  | Snowflake warehouse to `USE`.        |
-| `database`  | `str \| None`  | `None`  | Default database context.            |
-| `schema`    | `str \| None`  | `None`  | Default schema context.              |
+### Write results back to Snowflake
 
 ```python
-conn = fused.api.snowflake_connect(
-    role="ANALYST",
-    warehouse="COMPUTE_WH",
-    database="ANALYTICS",
-    schema="PUBLIC",
-)
+@fused.udf
+def udf():
+    import fused.api
+    import pandas as pd
+
+    conn = fused.api.snowflake_connect(
+        warehouse="COMPUTE_WH",
+        database="ANALYTICS",
+        schema="PUBLIC",
+    )
+
+    df = pd.DataFrame({"id": [1, 2, 3], "value": [10.5, 20.3, 30.1]})
+    conn.write(df, "ANALYTICS.PUBLIC.METRICS", mode="overwrite")
+    return df
 ```
 
-#### `fused.api.snowflake_query(sql, **kwargs) -> pd.DataFrame`
-
-Execute a SQL query and return a DataFrame. This is a shorthand for `SnowflakeConnection(**kwargs).query(sql)`.
+### Read from a Snowflake stage
 
 ```python
-df = fused.api.snowflake_query(
-    "SELECT date, revenue FROM sales WHERE year = 2025",
-    warehouse="COMPUTE_WH",
-    database="ANALYTICS",
-)
+@fused.udf
+def udf():
+    import fused.api
+
+    conn = fused.api.snowflake_connect(
+        warehouse="COMPUTE_WH",
+        database="RAW_DATA",
+        schema="INGEST",
+    )
+
+    files = conn.list_stage_files("@csv_stage", pattern=".*[.]csv")
+    if files:
+        df = conn.read_stage(f"@csv_stage/{files[0].split('/')[-1]}")
+        return df
 ```
 
----
-
-### `SnowflakeConnection` class
-
-`fused.api.SnowflakeConnection` manages Fused-issued OAuth tokens and opens direct connections to Snowflake via `snowflake-connector-python`.
-
-Each method call fetches a fresh short-lived token from the Fused server (cached for up to 10 minutes), opens a connection, executes the operation, and closes the connection.
-
-#### Constructor
-
-```python
-from fused.api import SnowflakeConnection
-
-conn = SnowflakeConnection(
-    role="ANALYST",          # optional
-    warehouse="COMPUTE_WH",  # optional
-    database="MY_DB",        # optional
-    schema="PUBLIC",          # optional
-)
-```
-
----
-
-#### Querying
-
-##### `conn.query(sql: str) -> pd.DataFrame`
-
-Execute a SQL statement and return the results as a pandas DataFrame.
-
-```python
-df = conn.query("SELECT * FROM customers WHERE active = TRUE")
-```
-
-##### `conn.execute(sql: str) -> None`
-
-Execute a SQL statement without returning results. Use for DDL or DML.
-
-```python
-conn.execute("CREATE TABLE IF NOT EXISTS staging.events (id INT, ts TIMESTAMP)")
-conn.execute("INSERT INTO staging.events VALUES (1, CURRENT_TIMESTAMP())")
-```
-
----
-
-#### Metadata browsing
-
-##### `conn.list_databases() -> list[str]`
-
-Return all database names visible to the current role.
-
-```python
-databases = conn.list_databases()
-# ['ANALYTICS', 'RAW_DATA', 'STAGING']
-```
-
-##### `conn.list_schemas(database: str | None = None) -> list[str]`
-
-Return schema names. Optionally scoped to a specific database.
-
-```python
-schemas = conn.list_schemas("ANALYTICS")
-# ['PUBLIC', 'REPORTING', 'TRANSFORMS']
-```
-
-##### `conn.list_tables(database: str | None = None, schema: str | None = None) -> list[str]`
-
-Return table names. Optionally scoped to a database and/or schema.
-
-```python
-tables = conn.list_tables(database="ANALYTICS", schema="PUBLIC")
-# ['CUSTOMERS', 'ORDERS', 'PRODUCTS']
-```
-
-##### `conn.list_stages(database: str | None = None, schema: str | None = None) -> list[str]`
-
-Return stage names. Optionally scoped to a database and/or schema.
-
-```python
-stages = conn.list_stages(database="RAW_DATA", schema="INGEST")
-# ['CSV_STAGE', 'PARQUET_STAGE']
-```
-
----
-
-#### Stage file operations
-
-##### `conn.list_stage_files(stage: str, pattern: str | None = None) -> list[str]`
-
-List files in a stage. The `@` prefix is added automatically if omitted.
-
-```python
-files = conn.list_stage_files("@RAW_DATA.INGEST.CSV_STAGE")
-# ['csv_stage/data_2025_01.csv', 'csv_stage/data_2025_02.csv']
-
-# Filter by pattern
-parquet_files = conn.list_stage_files("@my_stage", pattern=".*[.]parquet")
-```
-
-##### `conn.read_stage(stage_path: str) -> pd.DataFrame`
-
-Read a file from a stage into a DataFrame using `SELECT * FROM @stage/path`. Works for CSV and semi-structured data that Snowflake can auto-detect.
-
-```python
-df = conn.read_stage("@RAW_DATA.INGEST.CSV_STAGE/data_2025_01.csv")
-```
-
----
-
-#### Writing data
-
-##### `conn.write(df: pd.DataFrame, table: str, mode: str = "append", **kwargs) -> None`
-
-Write a pandas DataFrame to a Snowflake table using `snowflake.connector.pandas_tools.write_pandas`.
-
-| Parameter | Type           | Default    | Description                                          |
-|-----------|----------------|------------|------------------------------------------------------|
-| `df`      | `pd.DataFrame` | (required) | The DataFrame to write.                              |
-| `table`   | `str`          | (required) | Table name. Can be fully-qualified (`db.schema.tbl`).|
-| `mode`    | `str`          | `"append"` | `"append"` or `"overwrite"`.                         |
-| `**kwargs`|                |            | Extra args forwarded to `write_pandas`.              |
-
-```python
-import pandas as pd
-
-df = pd.DataFrame({"id": [1, 2, 3], "value": [10.5, 20.3, 30.1]})
-
-# Append rows to an existing table
-conn.write(df, "ANALYTICS.PUBLIC.METRICS")
-
-# Overwrite the table contents
-conn.write(df, "ANALYTICS.PUBLIC.METRICS", mode="overwrite")
-
-# Use a simple table name (uses database/schema from the connection)
-conn = fused.api.snowflake_connect(database="ANALYTICS", schema="PUBLIC")
-conn.write(df, "METRICS")
-```
-
----
-
-## Full example
-
-```python
-import fused.api
-import pandas as pd
-
-# Create a connection with defaults
-conn = fused.api.snowflake_connect(
-    warehouse="COMPUTE_WH",
-    database="ANALYTICS",
-    schema="PUBLIC",
-    role="ANALYST",
-)
-
-# Explore the account
-print("Databases:", conn.list_databases())
-print("Schemas:", conn.list_schemas("ANALYTICS"))
-print("Tables:", conn.list_tables("ANALYTICS", "PUBLIC"))
-
-# Run a query
-sales = conn.query("""
-    SELECT region, SUM(amount) AS total
-    FROM orders
-    WHERE order_date >= '2025-01-01'
-    GROUP BY region
-    ORDER BY total DESC
-""")
-print(sales)
-
-# Write results back
-conn.write(sales, "ANALYTICS.PUBLIC.REGIONAL_SUMMARY", mode="overwrite")
-
-# Browse and read stage files
-print("Stages:", conn.list_stages())
-files = conn.list_stage_files("@raw_stage", pattern=".*[.]csv")
-if files:
-    staged_df = conn.read_stage(f"@raw_stage/{files[0].split('/')[-1]}")
-    print(staged_df.head())
-```
+For full API details, see the [Snowflake section of the `fused.api` reference](/python-sdk/api-reference/api#snowflake).
 
 ---
 
 ## How it works
 
-1. When you call any method on `SnowflakeConnection`, it requests a short-lived OAuth access token from the Fused server (`GET /integrations/snowflake/token`).
-2. The Fused server checks Redis for a cached token. On a cache miss, it loads your encrypted credentials from AWS Secrets Manager, refreshes the token with Snowflake's `/oauth/token-request` endpoint, and caches the result.
-3. The client receives the access token and account identifier, then connects directly to Snowflake using `snowflake-connector-python` with `authenticator='oauth'`.
-4. Your Snowflake credentials (client ID, client secret, refresh token) never leave the Fused server.
+Fused manages the full OAuth token lifecycle on your behalf. Your Snowflake credentials never leave the Fused server -- the SDK only receives short-lived access tokens, which it uses to connect directly to Snowflake.
