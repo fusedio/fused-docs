@@ -2086,6 +2086,337 @@ job.run_batch()
 
 ================================================================================
 
+## Snowflake Integration
+Path: guide/data-input-outputs/import-connection/snowflake.mdx
+URL: https://docs.fused.io/guide/data-input-outputs/import-connection/snowflake
+
+# Snowflake Integration
+
+Query data, browse metadata, read/write stages, and write DataFrames to tables in Snowflake -- all using Fused-managed OAuth tokens. No passwords or credentials are stored client-side.
+
+## Prerequisites
+
+### Connect your Snowflake account to Fused
+
+A Snowflake administrator runs a few one-time SQL commands in Snowflake (Steps 1–4), then you complete an OAuth flow in the Fused workbench (Step 5).
+
+If you're running Fused locally (outside the Workbench), install the Snowflake extras first:
+
+```bash
+pip install fused[snowflake]
+```
+
+This adds `snowflake-connector-python` alongside the core `fused` package. In the Workbench this is already pre-installed.
+
+</details>
+
+**Step 1 -- Create a security integration:**
+
+```sql
+CREATE SECURITY INTEGRATION fused_oauth
+  TYPE = OAUTH
+  OAUTH_CLIENT = CUSTOM
+  OAUTH_CLIENT_TYPE = 'CONFIDENTIAL'
+  OAUTH_REDIRECT_URI = 'https://www.fused.io/server/v1/integrations/snowflake/callback'
+  ENABLED = TRUE;
+```
+
+Replace the domain in `OAUTH_REDIRECT_URI` with your Fused deployment's origin if you are not on `www.fused.io`. The path must always be `/server/v1/integrations/snowflake/callback`.
+
+**Step 2 -- Retrieve the client ID and secret:**
+
+```sql
+SELECT SYSTEM$SHOW_OAUTH_CLIENT_SECRETS('FUSED_OAUTH');
+```
+
+This returns a JSON object. Copy the `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`, and `OAUTH_CLIENT_SECRET_2` values -- you'll paste them into the Fused UI in the last step.
+
+**Step 3 -- Create a role with warehouse usage:**
+
+```sql
+CREATE ROLE FUSED_WH_ROLE;
+GRANT USAGE ON WAREHOUSE COMPUTE_WH TO ROLE FUSED_WH_ROLE;
+```
+
+**Step 4 -- Create a dedicated service account user and grant it the role:**
+
+```sql
+CREATE USER fused_service_account
+  TYPE = PERSON
+  LOGIN_NAME = 'fused_service_account'
+  DISPLAY_NAME = 'Fused Service Account'
+  DEFAULT_ROLE = FUSED_WH_ROLE
+  DEFAULT_WAREHOUSE = COMPUTE_WH
+  MUST_CHANGE_PASSWORD = FALSE
+  PASSWORD = 'xxxxx';
+
+GRANT ROLE FUSED_WH_ROLE TO USER fused_service_account;
+```
+
+Do **not** sign in with an administrator account during the OAuth step. Snowflake blocks `ACCOUNTADMIN` and `SECURITYADMIN` for custom OAuth integrations, which is why a dedicated service account user is required.
+
+**Step 5 -- Connect in Workbench:**
+
+1. Enable the **Snowflake integration** feature flag in **Preferences > Experimental Features**.
+2. Open **Settings > Integrations** and click **Connect Snowflake**.
+3. Enter your account identifier (e.g. `ORGNAME-ACCTNAME`), the `OAUTH_CLIENT_ID`, both client secrets, and optionally a role.
+4. A Snowflake sign-in popup will open. Sign in with the **service account** user you created in Step 4 (not an administrator account) to complete the OAuth flow.
+
+---
+
+## Quick start
+
+```python
+
+# One-liner: run a SQL query and get a DataFrame
+df = fused.api.snowflake_query("SELECT * FROM my_db.my_schema.my_table LIMIT 10")
+```
+
+Or use `snowflake_connect` to get a reusable connection for multiple operations:
+
+```python
+conn = fused.api.snowflake_connect(
+    warehouse="COMPUTE_WH",
+    database="MY_DB",
+    schema="PUBLIC",
+)
+
+df = conn.query("SELECT * FROM sales WHERE region = 'US'")
+```
+
+Both `snowflake_connect` and the `FusedSnowflakeConnection` constructor return the same wrapper type, so you can use whichever style you prefer.
+
+---
+
+## API Reference
+
+### Convenience functions
+
+These are top-level functions on `fused.api` for common one-shot operations.
+
+#### `fused.api.snowflake_connect(**kwargs) -> FusedSnowflakeConnection`
+
+Create a `FusedSnowflakeConnection` instance. This is a convenience shorthand for calling the constructor directly.
+
+| Parameter   | Type           | Default | Description                          |
+|-------------|----------------|---------|--------------------------------------|
+| `role`      | `str \| None`  | `None`  | Snowflake role to `USE` after connecting. |
+| `warehouse` | `str \| None`  | `None`  | Snowflake warehouse to `USE`.        |
+| `database`  | `str \| None`  | `None`  | Default database context.            |
+| `schema`    | `str \| None`  | `None`  | Default schema context.              |
+
+```python
+conn = fused.api.snowflake_connect(
+    role="ANALYST",
+    warehouse="COMPUTE_WH",
+    database="ANALYTICS",
+    schema="PUBLIC",
+)
+
+df = conn.query("SELECT CURRENT_USER() AS user")
+```
+
+#### `fused.api.snowflake_query(sql, **kwargs) -> pd.DataFrame`
+
+Execute a SQL query and return a DataFrame. Shorthand for `FusedSnowflakeConnection(**kwargs).query(sql)`.
+
+```python
+df = fused.api.snowflake_query(
+    "SELECT date, revenue FROM sales WHERE year = 2025",
+    warehouse="COMPUTE_WH",
+    database="ANALYTICS",
+)
+```
+
+---
+
+### `FusedSnowflakeConnection` class
+
+`fused.api.FusedSnowflakeConnection` is a thin wrapper around `snowflake-connector-python` that manages Fused-issued OAuth tokens and exposes high-level helper methods for querying, browsing metadata, reading stages, and writing DataFrames.
+
+Each method call fetches a fresh short-lived token from the Fused server (cached for up to 10 minutes), opens a connection, executes the operation, and closes the connection.
+
+If you need a raw `snowflake.connector.SnowflakeConnection` (e.g. to pass to another library), call `conn.connect()` on an instance.
+
+#### Constructor
+
+```python
+from fused.api import FusedSnowflakeConnection
+
+conn = FusedSnowflakeConnection(
+    role="ANALYST",          # optional
+    warehouse="COMPUTE_WH",  # optional
+    database="MY_DB",        # optional
+    schema="PUBLIC",          # optional
+)
+```
+
+---
+
+#### Querying
+
+##### `conn.query(sql: str) -> pd.DataFrame`
+
+Execute a SQL statement and return the results as a pandas DataFrame.
+
+```python
+df = conn.query("SELECT * FROM customers WHERE active = TRUE")
+```
+
+##### `conn.execute(sql: str) -> None`
+
+Execute a SQL statement without returning results. Use for DDL or DML.
+
+```python
+conn.execute("CREATE TABLE IF NOT EXISTS staging.events (id INT, ts TIMESTAMP)")
+conn.execute("INSERT INTO staging.events VALUES (1, CURRENT_TIMESTAMP())")
+```
+
+---
+
+#### Metadata browsing
+
+##### `conn.list_databases() -> list[str]`
+
+Return all database names visible to the current role.
+
+```python
+databases = conn.list_databases()
+# ['ANALYTICS', 'RAW_DATA', 'STAGING']
+```
+
+##### `conn.list_schemas(database: str | None = None) -> list[str]`
+
+Return schema names. Optionally scoped to a specific database.
+
+```python
+schemas = conn.list_schemas("ANALYTICS")
+# ['PUBLIC', 'REPORTING', 'TRANSFORMS']
+```
+
+##### `conn.list_tables(database: str | None = None, schema: str | None = None) -> list[str]`
+
+Return table names. Optionally scoped to a database and/or schema.
+
+```python
+tables = conn.list_tables(database="ANALYTICS", schema="PUBLIC")
+# ['CUSTOMERS', 'ORDERS', 'PRODUCTS']
+```
+
+##### `conn.list_stages(database: str | None = None, schema: str | None = None) -> list[str]`
+
+Return stage names. Optionally scoped to a database and/or schema.
+
+```python
+stages = conn.list_stages(database="RAW_DATA", schema="INGEST")
+# ['CSV_STAGE', 'PARQUET_STAGE']
+```
+
+---
+
+#### Stage file operations
+
+##### `conn.list_stage_files(stage: str, pattern: str | None = None) -> list[str]`
+
+List files in a stage. The `@` prefix is added automatically if omitted.
+
+```python
+files = conn.list_stage_files("@RAW_DATA.INGEST.CSV_STAGE")
+# ['csv_stage/data_2025_01.csv', 'csv_stage/data_2025_02.csv']
+
+# Filter by pattern
+parquet_files = conn.list_stage_files("@my_stage", pattern=".*[.]parquet")
+```
+
+##### `conn.read_stage(stage_path: str) -> pd.DataFrame`
+
+Read a file from a stage into a DataFrame using `SELECT * FROM @stage/path`. Works for CSV and semi-structured data that Snowflake can auto-detect.
+
+```python
+df = conn.read_stage("@RAW_DATA.INGEST.CSV_STAGE/data_2025_01.csv")
+```
+
+---
+
+#### Writing data
+
+##### `conn.write(df: pd.DataFrame, table: str, mode: str = "append", **kwargs) -> None`
+
+Write a pandas DataFrame to a Snowflake table using `snowflake.connector.pandas_tools.write_pandas`.
+
+| Parameter | Type           | Default    | Description                                          |
+|-----------|----------------|------------|------------------------------------------------------|
+| `df`      | `pd.DataFrame` | (required) | The DataFrame to write.                              |
+| `table`   | `str`          | (required) | Table name. Can be fully-qualified (`db.schema.tbl`).|
+| `mode`    | `str`          | `"append"` | `"append"` or `"overwrite"`.                         |
+| `**kwargs`|                |            | Extra args forwarded to `write_pandas`.              |
+
+```python
+
+df = pd.DataFrame()
+
+# Append rows to an existing table
+conn.write(df, "ANALYTICS.PUBLIC.METRICS")
+
+# Overwrite the table contents
+conn.write(df, "ANALYTICS.PUBLIC.METRICS", mode="overwrite")
+
+# Use a simple table name (uses database/schema from the connection)
+conn = fused.api.snowflake_connect(database="ANALYTICS", schema="PUBLIC")
+conn.write(df, "METRICS")
+```
+
+---
+
+## Full example
+
+```python
+
+# Create a connection with defaults
+conn = fused.api.snowflake_connect(
+    warehouse="COMPUTE_WH",
+    database="ANALYTICS",
+    schema="PUBLIC",
+    role="ANALYST",
+)
+
+# Explore the account
+print("Databases:", conn.list_databases())
+print("Schemas:", conn.list_schemas("ANALYTICS"))
+print("Tables:", conn.list_tables("ANALYTICS", "PUBLIC"))
+
+# Run a query
+sales = conn.query("""
+    SELECT region, SUM(amount) AS total
+    FROM orders
+    WHERE order_date >= '2025-01-01'
+    GROUP BY region
+    ORDER BY total DESC
+""")
+print(sales)
+
+# Write results back
+conn.write(sales, "ANALYTICS.PUBLIC.REGIONAL_SUMMARY", mode="overwrite")
+
+# Browse and read stage files
+print("Stages:", conn.list_stages())
+files = conn.list_stage_files("@raw_stage", pattern=".*[.]csv")
+if files:
+    staged_df = conn.read_stage(f"@raw_stage/")
+    print(staged_df.head())
+```
+
+---
+
+## How it works
+
+1. When you call any method on `FusedSnowflakeConnection` (or `fused.api.snowflake_connect` / `fused.api.snowflake_query`), the client requests a short-lived OAuth access token from the Fused server (`GET /integrations/snowflake/token`).
+2. The Fused server checks Redis for a cached token. On a cache miss, it loads your encrypted credentials from AWS Secrets Manager, refreshes the token with Snowflake's `/oauth/token-request` endpoint, and caches the result.
+3. The client receives the access token and account identifier, then connects directly to Snowflake using `snowflake-connector-python` with `authenticator='oauth'`.
+4. Your Snowflake credentials (client ID, client secret, refresh token) never leave the Fused server.
+
+================================================================================
+
 ## Using AI inside a UDF
 Path: guide/data-input-outputs/import-connection/using-ai-inside-udf.mdx
 URL: https://docs.fused.io/guide/data-input-outputs/import-connection/using-ai-inside-udf

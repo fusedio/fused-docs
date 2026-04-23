@@ -70,6 +70,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/data-input-outputs/import-connection/local-files", label: "Local files" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/cloud-storage", label: "Cloud storage" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/databases", label: "Databases" },
+        { type: "doc", id: "guide/data-input-outputs/import-connection/snowflake", label: "Snowflake Integration" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/stac", label: "STAC catalogs" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/gee", label: "Google Earth Engine" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/using-ai-inside-udf", label: "Using AI inside a UDF" },

@@ -679,6 +679,85 @@ fused.api.sign_url_prefix("s3://fused-users/fused/aman/table_directory/")  # cha
 
 ---
 
+## snowflake_connect
+
+```python
+snowflake_connect(
+    *,
+    role: str | None = None,
+    warehouse: str | None = None,
+    database: str | None = None,
+    schema: str | None = None,
+) -> FusedSnowflakeConnection
+```
+
+Create a `SnowflakeConnection` using Fused-managed OAuth.
+
+**Parameters:**
+
+- **role** (`str | None`) – Snowflake role to `USE` after connecting.
+- **warehouse** (`str | None`) – Snowflake warehouse to `USE`.
+- **database** (`str | None`) – Default database context.
+- **schema** (`str | None`) – Default schema context.
+
+**Returns:**
+
+- `FusedSnowflakeConnection` – A connection wrapper instance.
+
+**Examples:**
+
+```python
+conn = fused.api.snowflake_connect(
+    role="ANALYST",
+    warehouse="COMPUTE_WH",
+    database="ANALYTICS",
+    schema="PUBLIC",
+)
+
+df = conn.query("SELECT CURRENT_USER() AS user")
+```
+
+---
+
+## snowflake_query
+
+```python
+snowflake_query(
+    sql: str,
+    *,
+    role: str | None = None,
+    warehouse: str | None = None,
+    database: str | None = None,
+    schema: str | None = None,
+) -> pd.DataFrame
+```
+
+Execute a SQL query against Snowflake and return a DataFrame. Shorthand for `FusedSnowflakeConnection(**kwargs).query(sql)`.
+
+**Parameters:**
+
+- **sql** (`str`) – The SQL query to execute.
+- **role** (`str | None`) – Snowflake role to `USE` after connecting.
+- **warehouse** (`str | None`) – Snowflake warehouse to `USE`.
+- **database** (`str | None`) – Default database context.
+- **schema** (`str | None`) – Default schema context.
+
+**Returns:**
+
+- `pd.DataFrame` – The query results.
+
+**Examples:**
+
+```python
+df = fused.api.snowflake_query(
+    "SELECT date, revenue FROM sales WHERE year = 2025",
+    warehouse="COMPUTE_WH",
+    database="ANALYTICS",
+)
+```
+
+---
+
 ## team_info
 
 ```python
@@ -1029,5 +1108,289 @@ Block the Python kernel until the given job has finished
 
 
 **Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.wait_for_job()`
+
+---
+
+## Snowflake
+
+## FusedSnowflakeConnection
+
+```python
+FusedSnowflakeConnection(
+    *,
+    role: str | None = None,
+    warehouse: str | None = None,
+    database: str | None = None,
+    schema: str | None = None,
+)
+```
+
+Snowflake integration using Fused-managed OAuth tokens. A thin wrapper around `snowflake-connector-python` that exposes high-level helper methods for querying, browsing metadata, reading stages, and writing DataFrames.
+
+Each method call fetches a fresh short-lived token from the Fused server (cached for up to 10 minutes), opens a connection, executes the operation, and closes the connection.
+
+**Parameters:**
+
+- **role** (`str | None`) – Snowflake role to `USE` after connecting.
+- **warehouse** (`str | None`) – Snowflake warehouse to `USE` after connecting.
+- **database** (`str | None`) – Default database context.
+- **schema** (`str | None`) – Default schema context.
+
+**Examples:**
+
+```python
+from fused.api import FusedSnowflakeConnection
+
+conn = FusedSnowflakeConnection(
+    role="ANALYST",
+    warehouse="COMPUTE_WH",
+    database="MY_DB",
+    schema="PUBLIC",
+)
+```
+
+For setup instructions, see the [Snowflake Integration guide](/guide/data-input-outputs/import-connection/snowflake).
+
+---
+
+### connect
+
+```python
+connect(**kwargs) -> snowflake.connector.SnowflakeConnection
+```
+
+Open a raw `snowflake.connector.SnowflakeConnection` using Fused-managed OAuth tokens. Use this when you need direct cursor access or want to pass the connection to another library.
+
+**Returns:**
+
+- `snowflake.connector.SnowflakeConnection` – A native Snowflake connection object.
+
+---
+
+### query
+
+```python
+query(sql: str, *args, **kwargs) -> pd.DataFrame
+```
+
+Execute a SQL statement and return the results as a pandas DataFrame.
+
+**Parameters:**
+
+- **sql** (`str`) – The SQL query to execute.
+
+**Returns:**
+
+- `pd.DataFrame` – The query results.
+
+**Examples:**
+
+```python
+df = conn.query("SELECT * FROM customers WHERE active = TRUE")
+```
+
+---
+
+### execute
+
+```python
+execute(sql: str, *args, **kwargs)
+```
+
+Execute a SQL statement without returning results. Use for DDL or DML.
+
+**Parameters:**
+
+- **sql** (`str`) – The SQL statement to execute.
+
+**Examples:**
+
+```python
+conn.execute("CREATE TABLE IF NOT EXISTS staging.events (id INT, ts TIMESTAMP)")
+conn.execute("INSERT INTO staging.events VALUES (1, CURRENT_TIMESTAMP())")
+```
+
+---
+
+### list_databases
+
+```python
+list_databases() -> list[str]
+```
+
+Return all database names visible to the current role (`SHOW DATABASES`).
+
+**Returns:**
+
+- `list[str]` – Database names.
+
+**Examples:**
+
+```python
+databases = conn.list_databases()
+# ['ANALYTICS', 'RAW_DATA', 'STAGING']
+```
+
+---
+
+### list_schemas
+
+```python
+list_schemas(database: str | None = None) -> list[str]
+```
+
+Return schema names. Optionally scoped to a specific database.
+
+**Parameters:**
+
+- **database** (`str | None`) – Database to scope the query to.
+
+**Returns:**
+
+- `list[str]` – Schema names.
+
+**Examples:**
+
+```python
+schemas = conn.list_schemas("ANALYTICS")
+# ['PUBLIC', 'REPORTING', 'TRANSFORMS']
+```
+
+---
+
+### list_tables
+
+```python
+list_tables(database: str | None = None, schema: str | None = None) -> list[str]
+```
+
+Return table names. Optionally scoped to a database and/or schema.
+
+**Parameters:**
+
+- **database** (`str | None`) – Database to scope the query to.
+- **schema** (`str | None`) – Schema to scope the query to.
+
+**Returns:**
+
+- `list[str]` – Table names.
+
+**Examples:**
+
+```python
+tables = conn.list_tables(database="ANALYTICS", schema="PUBLIC")
+# ['CUSTOMERS', 'ORDERS', 'PRODUCTS']
+```
+
+---
+
+### list_stages
+
+```python
+list_stages(database: str | None = None, schema: str | None = None) -> list[str]
+```
+
+Return stage names. Optionally scoped to a database and/or schema.
+
+**Parameters:**
+
+- **database** (`str | None`) – Database to scope the query to.
+- **schema** (`str | None`) – Schema to scope the query to.
+
+**Returns:**
+
+- `list[str]` – Stage names.
+
+**Examples:**
+
+```python
+stages = conn.list_stages(database="RAW_DATA", schema="INGEST")
+# ['CSV_STAGE', 'PARQUET_STAGE']
+```
+
+---
+
+### list_stage_files
+
+```python
+list_stage_files(stage: str, pattern: str | None = None) -> list[str]
+```
+
+List files in a stage (`LIST @stage`). The `@` prefix is added automatically if omitted.
+
+**Parameters:**
+
+- **stage** (`str`) – Stage name or path (e.g. `@RAW_DATA.INGEST.CSV_STAGE`).
+- **pattern** (`str | None`) – Regex pattern to filter results.
+
+**Returns:**
+
+- `list[str]` – File paths within the stage.
+
+**Examples:**
+
+```python
+files = conn.list_stage_files("@RAW_DATA.INGEST.CSV_STAGE")
+# ['csv_stage/data_2025_01.csv', 'csv_stage/data_2025_02.csv']
+
+parquet_files = conn.list_stage_files("@my_stage", pattern=".*[.]parquet")
+```
+
+---
+
+### read_stage
+
+```python
+read_stage(stage_path: str) -> pd.DataFrame
+```
+
+Read a file from a stage into a DataFrame (`SELECT * FROM @stage/path`). Works for CSV and semi-structured data that Snowflake can auto-detect.
+
+**Parameters:**
+
+- **stage_path** (`str`) – Full stage file path (e.g. `@RAW_DATA.INGEST.CSV_STAGE/data.csv`).
+
+**Returns:**
+
+- `pd.DataFrame` – The file contents as a DataFrame.
+
+**Examples:**
+
+```python
+df = conn.read_stage("@RAW_DATA.INGEST.CSV_STAGE/data_2025_01.csv")
+```
+
+---
+
+### write
+
+```python
+write(
+    df: pd.DataFrame,
+    table: str,
+    mode: str = "append",
+    **kwargs,
+) -> None
+```
+
+Write a pandas DataFrame to a Snowflake table using `snowflake.connector.pandas_tools.write_pandas`.
+
+**Parameters:**
+
+- **df** (`pd.DataFrame`) – The DataFrame to write.
+- **table** (`str`) – Table name. Can be fully-qualified (`db.schema.tbl`).
+- **mode** (`str`) – `"append"` or `"overwrite"`. Defaults to `"append"`.
+- **\*\*kwargs** – Extra arguments forwarded to `write_pandas`.
+
+**Examples:**
+
+```python
+import pandas as pd
+
+df = pd.DataFrame({"id": [1, 2, 3], "value": [10.5, 20.3, 30.1]})
+
+conn.write(df, "ANALYTICS.PUBLIC.METRICS")
+conn.write(df, "ANALYTICS.PUBLIC.METRICS", mode="overwrite")
+```
 
 ---
