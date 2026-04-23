@@ -57,6 +57,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/version-control", label: "Working as a Team" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", label: "Geospatial processing" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/agents", label: "Building for Agents" },
+        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/debugging-playbook", label: "Debugging playbook" },
       ],
     },
 
