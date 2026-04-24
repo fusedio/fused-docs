@@ -30,44 +30,6 @@ def udf():
 
 Why: Fused serializes and ships your UDF function to a remote worker. Only the function body travels — the surrounding module scope does not. Any name referenced at module level won't exist on the worker when the function runs.
 
-## All logic must live inside the UDF
-
-Helper functions, constants, and any other names used by your UDF must be defined inside it. Nothing from the outer scope is available on the worker.
-
-This won't work:
-
-```python
-import pandas as pd
-
-def load_data(path):
-    return pd.read_csv(path)
-
-@fused.udf
-def udf(path):
-    df = load_data(path)   # load_data is not in scope on the worker
-    df["author"] = "my_name"
-    return df
-```
-
-Move everything inside:
-
-```python
-@fused.udf
-def udf(path):
-    import pandas as pd
-
-    def load_data(path):
-        return pd.read_csv(path)
-
-    df = load_data(path)
-    df["author"] = "my_name"
-    return df
-```
-
-:::tip
-Wrapping a helper in [`@fused.cache`](/guide/working-with-udfs/udf-best-practices/caching#fusedcache) inside the UDF is the idiomatic way to avoid re-running expensive work on every call.
-:::
-
 ## PEP 8 line-length and style conventions are relaxed
 
 PEP 8 was written for scripts and libraries — code that lives in files, is reviewed in editors, and is run locally. UDF code is written in Workbench, executed remotely, and is often short and self-contained. Strict PEP 8 compliance (79-character line limits, import ordering, etc.) is not enforced or expected.
@@ -92,9 +54,9 @@ results = pool.df()
 
 See [Scaling out UDFs](/guide/working-with-udfs/udf-best-practices/scaling-out).
 
-## `@fused.udf` changes the calling convention
+## `@fused.udf` is not just a decorator
 
-Decorating a function with `@fused.udf` turns it into a `Udf` object — calling `udf()` is no longer a plain function call. Depending on context it becomes an HTTP request, a job submission, or a cached tile lookup. The original function body still runs, but the mechanics around it are completely different from a normal Python function.
+`@fused.udf` turns your function into a `Udf` object with a different calling convention. By default, calling it submits a job to Fused's remote workers — not a local Python call. You can override this with `engine="local"` to run it in-process, but the object itself is no longer a plain Python function.
 
 ## `fused.load()` instead of `import`
 
