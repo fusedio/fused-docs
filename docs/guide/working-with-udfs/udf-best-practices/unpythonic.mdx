@@ -5,46 +5,78 @@ sidebar_label: Un-pythonic aspects
 sidebar_position: 10
 ---
 
+import CodeBlock from "@theme/CodeBlock";
+
 Fused UDFs look like Python functions but run in a managed, distributed environment. That environment imposes a few constraints that feel unusual if you're used to writing standard Python scripts.
 
 ## Imports must be inside the UDF
 
 In regular Python you put imports at the top of the file. In a Fused UDF they must go **inside** the function body:
 
-```python
-# Wrong — import at module level
+<CodeBlock
+  language="python"
+  className="code-block-no-copy"
+  title="Not recommended"
+  showLineNumbers
+>{`# import at module level
 import pandas as pd
 
 @fused.udf
 def udf():
     return pd.DataFrame({"a": [1, 2, 3]})
-```
+`}</CodeBlock>
 
-```python
-# Correct
-@fused.udf
+<CodeBlock
+  language="python"
+  title="Recommended"
+  showLineNumbers
+>{`@fused.udf
 def udf():
     import pandas as pd
     return pd.DataFrame({"a": [1, 2, 3]})
-```
+`}</CodeBlock>
 
 Why: Fused serializes and ships your UDF function to a remote worker. Only the function body travels — the surrounding module scope does not. Any name referenced at module level won't exist on the worker when the function runs.
 
-## PEP 8 line-length and style conventions are relaxed
+## Fused serialises the outputs
 
-PEP 8 was written for scripts and libraries — code that lives in files, is reviewed in editors, and is run locally. UDF code is written in Workbench, executed remotely, and is often short and self-contained. Strict PEP 8 compliance (79-character line limits, import ordering, etc.) is not enforced or expected.
+UDFs must return a value that Fused can serialize and send back to the caller. Supported types include DataFrames, GeoDataFrames, arrays, and JSON-serializable objects. File handles, database connections, and arbitrary class instances will fail at return time.
 
-Write readable code, but don't let a linter's module-level rules get in the way of the UDF's structure.
+<CodeBlock
+  language="python"
+  className="code-block-no-copy"
+  title="Not recommended"
+  showLineNumbers
+>{`@fused.udf
+def udf():
+    import duckdb
+    con = duckdb.connect()
+    return con.execute("SELECT 1 AS a")  # DuckDB cursor — cannot be serialized
+`}</CodeBlock>
 
-## Return types are limited
+:::danger Error
+Result serialization failed: `ValueError: Return value not in an expected vector format (gpd.GeoDataFrame, pd.DataFrame, gpd.GeoSeries, pd.Series, shapely geometry) Was: <class '_duckdb.DuckDBPyConnection'>`
+:::
 
-UDFs must return a value that Fused can serialize and send back to the caller. Anything that can't be serialized — a file handle, a database connection, an arbitrary class instance — will fail at return time. See [Return values](/guide/working-with-udfs/writing-udfs#return-values) for the full list of supported types.
+<CodeBlock
+  language="python"
+  title="Recommended"
+  showLineNumbers
+>{`@fused.udf
+def udf():
+    import duckdb
+    con = duckdb.connect()
+    return con.execute("SELECT 1 AS a").df()  # DataFrame — serialized and returned
+`}</CodeBlock>
 
-## Avoid `multiprocessing` — use `udf.map()` instead
+See [Output formats](/guide/working-with-udfs/run-udfs-as-api#output-formats) for the full list.
 
-`multiprocessing` is not reliable inside Fused — the sandbox environment restricts forking. Generators and `yield` are also not supported, since Fused must serialize the return value before sending it back to the caller, and a lazy iterator can't be serialized mid-stream.
+## Leverage `udf.map()` for multi processing
 
-The idiomatic alternative for both is [`udf.map()`](/guide/working-with-udfs/udf-best-practices/scaling-out), which fans work out across Fused workers:
+[`@fused.udf`](/python-sdk/api-reference/fused-udf) turns your function into a [`Udf`](/python-sdk/api-reference/udf) object — by default, calling it submits a job to Fused's remote workers, not a local Python call. [`udf.map()`](/python-sdk/api-reference/udf#map) gives you flexibility over execution:
+
+- `engine='remote'` (default) — fans out and spins up new UDFs
+- `engine='local'` — runs multiple UDFs in parallel using the current UDF's available cores and memory
 
 ```python
 pool = my_udf.map(list_of_inputs)
@@ -52,27 +84,29 @@ pool.wait()
 results = pool.df()
 ```
 
+Use [`udf.map()`](/python-sdk/api-reference/udf#map) over `multiprocessing` — it's the idiomatic way to parallelize work in Fused and integrates directly with the execution engine.
+
 See [Scaling out UDFs](/guide/working-with-udfs/udf-best-practices/scaling-out).
-
-## `@fused.udf` is not just a decorator
-
-`@fused.udf` turns your function into a `Udf` object with a different calling convention. By default, calling it submits a job to Fused's remote workers — not a local Python call. You can override this with `engine="local"` to run it in-process, but the object itself is no longer a plain Python function.
 
 ## `fused.load()` instead of `import`
 
-Reusing a UDF from another file or team member requires `fused.load()` with a URL or token string rather than a Python import:
+Reusing a UDF is done with [`fused.load()`](/python-sdk/api-reference/fused-load) with a UDF name or URL rather than a Python import:
 
 ```python
 other_udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/DuckDB_H3_Example")
 ```
 
-## Type annotations control routing, not just documentation
+You're not just importing the code — you're importing the whole UDF, which lets you:
 
-In standard Python, type annotations are hints — they don't affect runtime behavior. In Fused, annotating a parameter with [`fused.types.Bounds`](/python-sdk/api-reference/fused-types#bounds) changes *how and when* the UDF is invoked: what bounding box is passed and how the UDF is called from the map. Choosing the wrong annotation changes the execution model, not just the type checker output.
+- Inspect it: `other_udf.meta`
+- Execute it directly: `other_udf(params)`
+- Run it in parallel: `other_udf.map(list_of_inputs)`
 
-## No `pip install` inside a UDF
+## Use pre-installed packages
 
-You can't run `pip install` from inside a UDF body. Packages must already be available in the Fused runtime environment. To add a package that isn't pre-installed, see [Install your own dependencies](/guide/advanced-setup/dependencies#beta-install-your-own-dependencies).
+Fused provides a hosted environment with the most common Python packages for data manipulation. See the full list in [Dependencies](/guide/advanced-setup/dependencies).
+
+Packages not supported? Reach out to `info@fused.io`.
 
 ## See also
 
