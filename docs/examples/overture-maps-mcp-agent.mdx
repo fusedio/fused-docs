@@ -1,0 +1,123 @@
+---
+id: overture-maps-mcp-agent
+title: Querying Overture Maps Data with an AI Agent
+sidebar_label: Overture Maps MCP Agent
+sidebar_position: 16
+---
+
+This example shows how to wrap [Overture Maps Foundation](https://overturemaps.org/) open data as MCP tools on a Fused Canvas, so agents can query buildings, places, and more by location or GERS ID.
+
+![Overture Maps Explorer chatbot](/img/tutorials/agents/overture_mcp_chatbot.gif)
+
+Example questions you'll be able to answer:
+- *"Are there any named buildings at Times Square, New York?"*
+- *"When was GERS ID `0039aaa8-f0d9-45bb-90c5-d8a6781c4fbd` first introduced?"*
+- *"How many building features are in the latest release?"*
+
+## The Data Source
+
+[Overture Maps Foundation](https://overturemaps.org/) publishes open releases of global geospatial data. Each release is indexed in a [STAC catalog](https://stac.overturemaps.org/) (`catalog.json`) covering six themes:
+
+| Theme | Description |
+|---|---|
+| `buildings` | Building footprints globally |
+| `places` | Points of interest, businesses, amenities |
+| `transportation` | Road network segments |
+| `addresses` | Address points |
+| `base` | Land cover, water, land use |
+| `divisions` | Administrative boundaries |
+
+Every feature has a stable [GERS ID](https://docs.overturemaps.org/gers/) — a UUID that persists across releases, letting you track when a feature first appeared or last changed.
+
+## Creating MCP Tools
+
+We build four UDFs, each scoped to one job, and publish them from a single Fused Canvas as an MCP server.
+
+### `overture_list_releases`
+
+Lists every available release from `catalog.json`.
+
+```
+release        is_latest  schema_version  num_themes
+2026-04-15.0   True                       6
+2026-03-18.0   False      TBD             6
+```
+
+### `overture_stac_search`
+
+Browses themes, types, and feature counts for a given release.
+
+```
+theme           type               features
+addresses       address            472,884,309
+base            bathymetry              59,963
+base            infrastructure     149,530,606
+base            land                73,017,393
+base            land_cover         123,302,114
+base            land_use            54,159,685
+base            water               64,677,485
+buildings       building         2,542,597,608
+buildings       building_part        3,905,964
+divisions       division             4,597,236
+divisions       division_area        1,074,405
+divisions       division_boundary       87,804
+places          place               75,495,994
+transportation  connector          409,764,747
+transportation  segment            344,140,478
+```
+
+### `overture_bbox_query`
+
+Queries features by bounding box or address (geocoded automatically). Supports all themes, returns up to `max_rows` features (default 200).
+
+`address="Times Square, New York"`, `theme="buildings"`:
+
+```
+id                                    type      subtype    class    name
+54b78e32-a00c-4c8e-870b-a1279c6835ba  building
+0039aaa8-f0d9-45bb-90c5-d8a6781c4fbd  building  education  college  Business and Liberal Arts Center
+e26d5f68-186e-4162-8eba-fa04b4bd2fb9  building
+f5518c97-3cd4-4faf-a1fe-2e30f72d8c02  building
+ffe5fc63-8caf-4ef0-8339-68159f76354c  building
+```
+
+### `overture_gers_lookup`
+
+Looks up a single feature by GERS ID using binary search on the registry manifest in `catalog.json`, then fetches the full geometry from the exact data file.
+
+`gers_id="0039aaa8-f0d9-45bb-90c5-d8a6781c4fbd"`:
+
+```
+id                                    name                              subtype    class    height  registry_first_seen  registry_last_seen  registry_last_changed
+0039aaa8-f0d9-45bb-90c5-d8a6781c4fbd  Business and Liberal Arts Center  education  college  44.2    2025-06-25.0         2026-04-15.0        2025-06-25.0
+```
+
+## Keeping Outputs Small
+
+Each tool returns only what the agent needs — bounded row counts, a fixed column set, no raw geometry dumps. The heavy lifting (S3 reads, parquet scans, geometry decoding) stays inside Fused.
+
+## How It's Built
+
+Each UDF is a Python function on Fused that, once saved to a [Fused Canvas](https://docs.fused.io/workbench/udf-builder/canvas), [automatically becomes an HTTP endpoint](/guide/working-with-udfs/run-udfs-as-api) exposed as an MCP tool. The Canvas publishes an OpenAPI spec that any agent can load to discover available tools — adding or updating a UDF is picked up automatically, no separate deployment step needed. The same endpoint can be connected to Claude Desktop, ChatGPT, a notebook agent, or a custom chatbot.
+
+![Fused Canvas showing the four Overture MCP tools](/img/tutorials/agents/overture_mcp_canvas.png)
+
+A few things that make the data access efficient:
+
+- **STAC catalog as the entry point** — all tools read from `catalog.json` at `stac.overturemaps.org`, the authoritative index of releases, themes, and parquet file locations. No hardcoded S3 paths.
+- **`collections.parquet` for bbox queries** — `overture_bbox_query` queries a lightweight spatial index to find only the parquet partitions that intersect the requested bbox before reading any data.
+- **Binary search on the GERS registry** — Overture publishes a registry manifest of 50 sorted files. `overture_gers_lookup` binary-searches on `max_id` to pinpoint the single file containing the requested ID.
+- **Address geocoding built in** — `overture_bbox_query` accepts a plain address string, geocodes it via Nominatim, and derives a bbox automatically.
+
+## Try It
+
+- **Chatbot** — [Open the Overture Maps Explorer](https://unstable.udf.ai/fc_7OKlCRLA5FeqcwXkB5wvsq/ai_chat.html)
+- **Canvas** — [Browse the UDFs and Canvas](https://unstable.fused.io/canvas/fc_7OKlCRLA5FeqcwXkB5wvsq)
+
+<iframe
+  src="https://unstable.udf.ai/fc_7OKlCRLA5FeqcwXkB5wvsq/ai_chat.html"
+  width="100%"
+  height="600px"
+  style={{border: 'none'}}
+  title="Overture Maps Explorer chatbot"
+/>
