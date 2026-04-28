@@ -5,18 +5,39 @@ sidebar_label: Overture Maps MCP Agent
 sidebar_position: 16
 ---
 
-This example shows how to wrap [Overture Maps Foundation](https://overturemaps.org/) open data as MCP tools on a Fused Canvas, so agents can query buildings, places, and more by location or GERS ID.
+This example shows how to wrap [Overture Maps Foundation](https://overturemaps.org/) open data as MCP tools on a Fused Canvas, so an AI agent can query buildings, places, and more by location or GERS ID without pulling raw geospatial data into the chat context. [Try the chatbot](https://unstable.udf.ai/fc_7OKlCRLA5FeqcwXkB5wvsq/ai_chat.html) or [explore the Canvas](https://unstable.fused.io/canvas/fc_7OKlCRLA5FeqcwXkB5wvsq).
 
-![Overture Maps Explorer chatbot](/img/tutorials/agents/overture_mcp_chatbot.gif)
+<iframe
+  src="https://unstable.udf.ai/fc_7OKlCRLA5FeqcwXkB5wvsq/ai_chat.html"
+  width="100%"
+  height="600px"
+  style={{border: 'none'}}
+  title="Overture Maps Explorer chatbot"
+/>
 
-Example questions you'll be able to answer:
-- *"Are there any named buildings at Times Square, New York?"*
-- *"When was GERS ID `0039aaa8-f0d9-45bb-90c5-d8a6781c4fbd` first introduced?"*
-- *"How many building features are in the latest release?"*
+## Why AI Helps
+
+Overture exposes two different entry points into the data, and the right one depends on what the user is asking:
+
+- **STAC catalog** - best when the question starts from a place, address, bounding box, release, or theme.
+- **Registry** - best when the question starts from a specific [GERS ID](https://docs.overturemaps.org/gers/) and needs feature history or an exact lookup.
+
+The agent's job is to understand that intent and choose the right MCP tool automatically. That means the same chatbot can answer questions like *"Are there any named buildings at Times Square, New York?"*, *"When was GERS ID `0039aaa8-f0d9-45bb-90c5-d8a6781c4fbd` first introduced?"*, and *"How many building features are in the latest release?"* without the user needing to know which data path to use.
+
+## How It's Built
+
+We build four UDFs, each scoped to one job, and publish them from a single [Fused Canvas](https://docs.fused.io/workbench/udf-builder/canvas) as an MCP server. Each UDF [automatically becomes an HTTP endpoint](/guide/working-with-udfs/run-udfs-as-api), and the Canvas publishes an OpenAPI spec that any agent can load to discover available tools. Each tool returns only what the agent needs — bounded row counts, a fixed column set — while S3 reads, parquet scans, and geometry decoding stay inside Fused.
+
+![Fused Canvas showing the four Overture MCP tools](/img/tutorials/agents/overture_mcp_canvas.png)
+
+- **STAC catalog as the entry point** — all tools read from `catalog.json` at `stac.overturemaps.org`, the authoritative index of releases, themes, and parquet file locations. No hardcoded S3 paths.
+- **`collections.parquet` for bbox queries** — a lightweight spatial index is queried first to find only the parquet partitions that intersect the requested bbox, before reading any data.
+- **Binary search on the GERS registry** — Overture publishes a registry manifest of 50 sorted files; a binary search on `max_id` pinpoints the single file containing the requested ID.
+- **Address geocoding built in** — a plain address string is geocoded via Nominatim and converted to a bbox automatically, so the agent never handles coordinates directly.
 
 ## The Data Source
 
-[Overture Maps Foundation](https://overturemaps.org/) publishes open releases of global geospatial data. Each release is indexed in a [STAC catalog](https://stac.overturemaps.org/) (`catalog.json`) covering six themes:
+[Overture Maps Foundation](https://overturemaps.org/) publishes open releases of global geospatial data across two entry points: a [STAC catalog](https://stac.overturemaps.org/) for browsing releases, themes, and querying features by location; and a registry at `s3://overturemaps-us-west-2/registry` for looking up any feature by its GERS ID. The six themes available are:
 
 | Theme | Description |
 |---|---|
@@ -27,11 +48,9 @@ Example questions you'll be able to answer:
 | `base` | Land cover, water, land use |
 | `divisions` | Administrative boundaries |
 
-Every feature has a stable [GERS ID](https://docs.overturemaps.org/gers/) — a UUID that persists across releases, letting you track when a feature first appeared or last changed.
-
 ## Creating MCP Tools
 
-We build four UDFs, each scoped to one job, and publish them from a single Fused Canvas as an MCP server.
+The four UDFs below cover the full range of questions an agent might ask about Overture data — from catalog discovery to location queries to feature history.
 
 ### `overture_list_releases`
 
@@ -92,32 +111,7 @@ id                                    name                              subtype 
 0039aaa8-f0d9-45bb-90c5-d8a6781c4fbd  Business and Liberal Arts Center  education  college  44.2    2025-06-25.0         2026-04-15.0        2025-06-25.0
 ```
 
-## Keeping Outputs Small
+## See also
 
-Each tool returns only what the agent needs — bounded row counts, a fixed column set, no raw geometry dumps. The heavy lifting (S3 reads, parquet scans, geometry decoding) stays inside Fused.
-
-## How It's Built
-
-Each UDF is a Python function on Fused that, once saved to a [Fused Canvas](https://docs.fused.io/workbench/udf-builder/canvas), [automatically becomes an HTTP endpoint](/guide/working-with-udfs/run-udfs-as-api) exposed as an MCP tool. The Canvas publishes an OpenAPI spec that any agent can load to discover available tools — adding or updating a UDF is picked up automatically, no separate deployment step needed. The same endpoint can be connected to Claude Desktop, ChatGPT, a notebook agent, or a custom chatbot.
-
-![Fused Canvas showing the four Overture MCP tools](/img/tutorials/agents/overture_mcp_canvas.png)
-
-A few things that make the data access efficient:
-
-- **STAC catalog as the entry point** — all tools read from `catalog.json` at `stac.overturemaps.org`, the authoritative index of releases, themes, and parquet file locations. No hardcoded S3 paths.
-- **`collections.parquet` for bbox queries** — `overture_bbox_query` queries a lightweight spatial index to find only the parquet partitions that intersect the requested bbox before reading any data.
-- **Binary search on the GERS registry** — Overture publishes a registry manifest of 50 sorted files. `overture_gers_lookup` binary-searches on `max_id` to pinpoint the single file containing the requested ID.
-- **Address geocoding built in** — `overture_bbox_query` accepts a plain address string, geocodes it via Nominatim, and derives a bbox automatically.
-
-## Try It
-
-- **Chatbot** — [Open the Overture Maps Explorer](https://unstable.udf.ai/fc_7OKlCRLA5FeqcwXkB5wvsq/ai_chat.html)
-- **Canvas** — [Browse the UDFs and Canvas](https://unstable.fused.io/canvas/fc_7OKlCRLA5FeqcwXkB5wvsq)
-
-<iframe
-  src="https://unstable.udf.ai/fc_7OKlCRLA5FeqcwXkB5wvsq/ai_chat.html"
-  width="100%"
-  height="600px"
-  style={{border: 'none'}}
-  title="Overture Maps Explorer chatbot"
-/>
+- [Run UDFs as an API](/guide/working-with-udfs/run-udfs-as-api)
+- [Slack integration](/guide/data-input-outputs/export-api/slack)
