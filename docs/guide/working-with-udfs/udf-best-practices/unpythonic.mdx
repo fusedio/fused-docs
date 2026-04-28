@@ -1,0 +1,113 @@
+---
+id: unpythonic
+title: Un-pythonic aspects of Fused
+sidebar_label: Un-pythonic aspects
+sidebar_position: 10
+---
+
+import CodeBlock from "@theme/CodeBlock";
+
+Fused UDFs look like Python functions but run in a managed, distributed environment. That environment imposes a few constraints that feel unusual if you're used to writing standard Python scripts.
+
+## Imports must be inside the UDF
+
+In regular Python you put imports at the top of the file. In a Fused UDF they must go **inside** the function body:
+
+<CodeBlock
+  language="python"
+  className="code-block-no-copy"
+  title="Not recommended"
+  showLineNumbers
+>{`# import at module level
+import pandas as pd
+
+@fused.udf
+def udf():
+    return pd.DataFrame({"a": [1, 2, 3]})
+`}</CodeBlock>
+
+<CodeBlock
+  language="python"
+  title="Recommended"
+  showLineNumbers
+>{`@fused.udf
+def udf():
+    import pandas as pd
+    return pd.DataFrame({"a": [1, 2, 3]})
+`}</CodeBlock>
+
+Why: Fused serializes and ships your UDF function to a remote worker. Only the function body travels — the surrounding module scope does not. Any name referenced at module level won't exist on the worker when the function runs.
+
+## Fused serialises the outputs
+
+UDFs must return a value that Fused can serialize and send back to the caller. Anything else will fail at return time. See [Output formats](/guide/working-with-udfs/run-udfs-as-api#output-formats) for the full list of supported types.
+
+<CodeBlock
+  language="python"
+  className="code-block-no-copy"
+  title="Not recommended"
+  showLineNumbers
+>{`@fused.udf
+def udf():
+    import duckdb
+    con = duckdb.connect()
+    return con.execute("SELECT 1 AS a")  # DuckDB cursor — cannot be serialized
+`}</CodeBlock>
+
+:::danger Error
+Result serialization failed: `ValueError: Return value not in an expected vector format (gpd.GeoDataFrame, pd.DataFrame, gpd.GeoSeries, pd.Series, shapely geometry) Was: <class '_duckdb.DuckDBPyConnection'>`
+:::
+
+<CodeBlock
+  language="python"
+  title="Recommended"
+  showLineNumbers
+>{`@fused.udf
+def udf():
+    import duckdb
+    con = duckdb.connect()
+    return con.execute("SELECT 1 AS a").df()  # DataFrame — serialized and returned
+`}</CodeBlock>
+
+## Leverage `udf.map()` for multi processing
+
+[`@fused.udf`](/python-sdk/api-reference/fused-udf) turns your function into a [`Udf`](/python-sdk/api-reference/udf) object — by default, calling it submits a job to Fused's remote workers, not a local Python call. [`udf.map()`](/python-sdk/api-reference/udf#map) gives you flexibility over execution:
+
+- `engine='remote'` (default) — fans out and spins up new UDFs
+- `engine='local'` — runs multiple UDFs in parallel using the current UDF's available cores and memory
+
+```python
+pool = my_udf.map(list_of_inputs)
+pool.wait()
+results = pool.df()
+```
+
+We built [`udf.map()`](/python-sdk/api-reference/udf#map) as a simple way to parallelize jobs either locally in your current UDF or remotely by spinning up new compute as you need it on demand.
+
+See [Scaling out UDFs](/guide/working-with-udfs/udf-best-practices/scaling-out).
+
+## Reuse UDFs with `fused.load()`
+
+Reusing a UDF is done with [`fused.load()`](/python-sdk/api-reference/fused-load) with a UDF name or URL rather than a Python import:
+
+```python
+other_udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/DuckDB_H3_Example")
+```
+
+You're not just importing the code — you're importing the whole UDF, which lets you:
+
+- Inspect it: `other_udf.meta`
+- Execute it directly: `other_udf(params)`
+- Run it in parallel: `other_udf.map(list_of_inputs)`
+
+## Fused environments come with predefined packages
+
+Fused provides a hosted environment with the most common Python packages for data manipulation. See the full list in [Dependencies](/guide/advanced-setup/dependencies).
+
+Packages not supported? Reach out to `info@fused.io`.
+
+## See also
+
+- [Writing UDFs](/guide/working-with-udfs/writing-udfs)
+- [Efficient caching](/guide/working-with-udfs/udf-best-practices/caching)
+- [Scaling out UDFs](/guide/working-with-udfs/udf-best-practices/scaling-out)
