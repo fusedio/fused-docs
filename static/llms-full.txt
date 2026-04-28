@@ -2154,7 +2154,7 @@ Do **not** sign in with an administrator account during the OAuth step. Snowflak
 **Step 5 -- Connect in Workbench:**
 
 1. Enable the **Snowflake integration** feature flag in **Preferences > Experimental Features**.
-2. Open **Settings > Integrations** and click **Connect Snowflake**.
+2. Open **Integration & secrets > Integrations** and click **Connect Snowflake**.
 3. Enter your account identifier (e.g. `ORGNAME-ACCTNAME`), the `OAUTH_CLIENT_ID`, both client secrets, and optionally a role.
 
    [Image: Connect Snowflake modal in Fused Workbench]
@@ -2291,13 +2291,9 @@ Wrap `ai.run()` in a `@fused.cache`-decorated helper during development so ident
 Path: guide/data-input-outputs/import-connection/widgets.mdx
 URL: https://docs.fused.io/guide/data-input-outputs/import-connection/widgets
 
-# Widgets [Experimental]
+# Widgets
 
-Widgets are an experimental feature and need to be turned on before you can use them:
-
-1. Click your profile and go to **Preferences**.
-2. Open the **Experimental features** tab.
-3. Toggle **Widget nodes** on.
+[Image: Fused Widgets System diagram]
 
 Widgets are interactive, declarative UI nodes you can drop onto the Fused canvas. Unlike UDFs that run Python, widgets are defined in JSON — no code required. They can be inputs (sliders, dropdowns, text inputs) that drive parameters across the canvas, or outputs (charts, maps, tables, big numbers) that display live data from any UDF. Every widget is shareable as a standalone URL, embeddable anywhere, and fully accessible to AI for generation and editing.
 
@@ -6481,6 +6477,69 @@ Error: No such file or directory: '/mnt/cache/'
 
 ================================================================================
 
+## Un-pythonic aspects of Fused
+Path: guide/working-with-udfs/udf-best-practices/unpythonic.mdx
+URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/unpythonic
+
+Fused UDFs look like Python functions but run in a managed, distributed environment. That environment imposes a few constraints that feel unusual if you're used to writing standard Python scripts.
+
+## Imports must be inside the UDF
+
+In regular Python you put imports at the top of the file. In a Fused UDF they must go **inside** the function body:
+
+Why: Fused serializes and ships your UDF function to a remote worker. Only the function body travels — the surrounding module scope does not. Any name referenced at module level won't exist on the worker when the function runs.
+
+## Fused serialises the outputs
+
+UDFs must return a value that Fused can serialize and send back to the caller. Anything else will fail at return time. See Output formats for the full list of supported types.
+
+Result serialization failed: `ValueError: Return value not in an expected vector format (gpd.GeoDataFrame, pd.DataFrame, gpd.GeoSeries, pd.Series, shapely geometry) Was: <class '_duckdb.DuckDBPyConnection'>`
+
+## Leverage `udf.map()` for multi processing
+
+`@fused.udf` turns your function into a `Udf` object — by default, calling it submits a job to Fused's remote workers, not a local Python call. `udf.map()` gives you flexibility over execution:
+
+- `engine='remote'` (default) — fans out and spins up new UDFs
+- `engine='local'` — runs multiple UDFs in parallel using the current UDF's available cores and memory
+
+```python
+pool = my_udf.map(list_of_inputs)
+pool.wait()
+results = pool.df()
+```
+
+We built `udf.map()` as a simple way to parallelize jobs either locally in your current UDF or remotely by spinning up new compute as you need it on demand.
+
+See Scaling out UDFs.
+
+## Reuse UDFs with `fused.load()`
+
+Reusing a UDF is done with `fused.load()` with a UDF name or URL rather than a Python import:
+
+```python
+other_udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/DuckDB_H3_Example")
+```
+
+You're not just importing the code — you're importing the whole UDF, which lets you:
+
+- Inspect it: `other_udf.meta`
+- Execute it directly: `other_udf(params)`
+- Run it in parallel: `other_udf.map(list_of_inputs)`
+
+## Fused environments come with predefined packages
+
+Fused provides a hosted environment with the most common Python packages for data manipulation. See the full list in Dependencies.
+
+Packages not supported? Reach out to `info@fused.io`.
+
+## See also
+
+- Writing UDFs
+- Efficient caching
+- Scaling out UDFs
+
+================================================================================
+
 ## Working as a team
 Path: guide/working-with-udfs/udf-best-practices/version-control.mdx
 URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/version-control
@@ -9115,6 +9174,123 @@ We can now connect our MCP server to any chatbot. The below images show us askin
 [Image: MCP chatbot querying Overture building data]
 
 If you're logged in to Fused, you can now connect your Canvas MCP server to external agents like Claude Code, ChatGPT, or your own custom AI frontend. Just point your client at the Canvas MCP endpoint, authenticate, and the agent will be able to discover and call the same scoped tools (query, inspect, and widget UDFs) to answer questions and render shareable outputs.
+
+================================================================================
+
+## Querying Overture Maps Data with an AI Agent
+Path: examples/overture-maps-mcp-agent.mdx
+URL: https://docs.fused.io/examples/overture-maps-mcp-agent
+
+This example shows how to wrap Overture Maps Foundation open data as MCP tools on a Fused Canvas, so an AI agent can query buildings, places, and more by location or GERS ID without pulling raw geospatial data into the chat context. Try the chatbot or explore the Canvas.
+
+<iframe
+  src="https://unstable.udf.ai/fc_7OKlCRLA5FeqcwXkB5wvsq/ai_chat.html"
+  width="100%"
+  height="600px"
+  style=}
+  title="Overture Maps Explorer chatbot"
+/>
+
+## Why AI Helps
+
+Overture exposes two different entry points into the data, and the right one depends on what the user is asking:
+
+- **STAC catalog** - best when the question starts from a place, address, bounding box, release, or theme.
+- **Registry** - best when the question starts from a specific GERS ID and needs feature history or an exact lookup.
+
+The agent's job is to understand that intent and choose the right MCP tool automatically. That means the same chatbot can answer questions like *"Are there any named buildings at Times Square, New York?"*, *"When was GERS ID `0039aaa8-f0d9-45bb-90c5-d8a6781c4fbd` first introduced?"*, and *"How many building features are in the latest release?"* without the user needing to know which data path to use.
+
+## How It's Built
+
+We build four UDFs, each scoped to one job, and publish them from a single Fused Canvas as an MCP server. Each UDF automatically becomes an HTTP endpoint, and the Canvas publishes an OpenAPI spec that any agent can load to discover available tools. Each tool returns only what the agent needs — bounded row counts, a fixed column set — while S3 reads, parquet scans, and geometry decoding stay inside Fused.
+
+[Image: Fused Canvas showing the four Overture MCP tools]
+
+- **STAC catalog as the entry point** — all tools read from `catalog.json` at `stac.overturemaps.org`, the authoritative index of releases, themes, and parquet file locations. No hardcoded S3 paths.
+- **`collections.parquet` for bbox queries** — a lightweight spatial index is queried first to find only the parquet partitions that intersect the requested bbox, before reading any data.
+- **Binary search on the GERS registry** — Overture publishes a registry manifest of 50 sorted files; a binary search on `max_id` pinpoints the single file containing the requested ID.
+- **Address geocoding built in** — a plain address string is geocoded via Nominatim and converted to a bbox automatically, so the agent never handles coordinates directly.
+
+## The Data Source
+
+Overture Maps Foundation publishes open releases of global geospatial data across two entry points: a STAC catalog for browsing releases, themes, and querying features by location; and a registry at `s3://overturemaps-us-west-2/registry` for looking up any feature by its GERS ID. The six themes available are:
+
+| Theme | Description |
+|---|---|
+| `buildings` | Building footprints globally |
+| `places` | Points of interest, businesses, amenities |
+| `transportation` | Road network segments |
+| `addresses` | Address points |
+| `base` | Land cover, water, land use |
+| `divisions` | Administrative boundaries |
+
+## Creating MCP Tools
+
+The four UDFs below cover the full range of questions an agent might ask about Overture data — from catalog discovery to location queries to feature history.
+
+### `overture_list_releases`
+
+Lists every available release from `catalog.json`.
+
+```
+release        is_latest  schema_version  num_themes
+2026-04-15.0   True                       6
+2026-03-18.0   False      TBD             6
+```
+
+### `overture_stac_search`
+
+Browses themes, types, and feature counts for a given release.
+
+```
+theme           type               features
+addresses       address            472,884,309
+base            bathymetry              59,963
+base            infrastructure     149,530,606
+base            land                73,017,393
+base            land_cover         123,302,114
+base            land_use            54,159,685
+base            water               64,677,485
+buildings       building         2,542,597,608
+buildings       building_part        3,905,964
+divisions       division             4,597,236
+divisions       division_area        1,074,405
+divisions       division_boundary       87,804
+places          place               75,495,994
+transportation  connector          409,764,747
+transportation  segment            344,140,478
+```
+
+### `overture_bbox_query`
+
+Queries features by bounding box or address (geocoded automatically). Supports all themes, returns up to `max_rows` features (default 200).
+
+`address="Times Square, New York"`, `theme="buildings"`:
+
+```
+id                                    type      subtype    class    name
+54b78e32-a00c-4c8e-870b-a1279c6835ba  building
+0039aaa8-f0d9-45bb-90c5-d8a6781c4fbd  building  education  college  Business and Liberal Arts Center
+e26d5f68-186e-4162-8eba-fa04b4bd2fb9  building
+f5518c97-3cd4-4faf-a1fe-2e30f72d8c02  building
+ffe5fc63-8caf-4ef0-8339-68159f76354c  building
+```
+
+### `overture_gers_lookup`
+
+Looks up a single feature by GERS ID using binary search on the registry manifest in `catalog.json`, then fetches the full geometry from the exact data file.
+
+`gers_id="0039aaa8-f0d9-45bb-90c5-d8a6781c4fbd"`:
+
+```
+id                                    name                              subtype    class    height  registry_first_seen  registry_last_seen  registry_last_changed
+0039aaa8-f0d9-45bb-90c5-d8a6781c4fbd  Business and Liberal Arts Center  education  college  44.2    2025-06-25.0         2026-04-15.0        2025-06-25.0
+```
+
+## See also
+
+- Run UDFs as an API
+- Slack integration
 
 ================================================================================
 
@@ -15382,6 +15558,41 @@ URL: https://docs.fused.io/python-sdk/changelog
 
 # Changelog
 
+## v2.6.0 (2026-04-24)
+
+**[Experimental] Snowflake integration**
+
+Connect your Snowflake data warehouse directly to Fused — query Snowflake tables from UDFs and expose results through the Fused API without moving data.
+
+See the Snowflake integration docs to get started.
+
+**[Experimental] Airtable integration**
+
+Read and write Airtable bases from UDFs, making it easy to build data pipelines on top of your Airtable data.
+
+See the Airtable integration docs to get started.
+
+[Image: Integrations panel on the Fused home page]
+
+**Improvements**
+
+- Widgets: now generally available — no longer behind a feature flag
+- Widgets: AI auto-fix from the error log; copy/share button in the code editor
+- Canvas: "Folders" renamed to "Sections"; stale indicator added; edge improvements
+- Canvas: "Generate MCP" button added; AI suggestions now use canvas context
+- Clickable UDF names in the code editor — click to jump to the definition
+- Home page UI polish
+- Public Canvas now support preview images
+- `fused.submit` shows the first error before retrying; `delete_cache` renamed to `invalidate_cache`
+
+**Bug fixes**
+
+- Fixed: Slack connection issues
+- Fixed: login redirect on shared canvas pages
+- Fixed: ghost node on canvas
+- Fixed: reading chunks with no geometry
+- Fixed: widget props not syncing on shared pages
+
 ## v2.5.0 (2026-04-16)
 
 **[Experimental] Talk to your data in Slack!**
@@ -16912,7 +17123,7 @@ Open Preferences from the Workbench profile menu (top-right) to configure your s
 The page covers:
 
 - **Environment** — pick your kernel and set default raster/vector transfer formats and timing for running UDFs.
-- **Experimental features** — opt in to in-development features by toggling them on. Some integrations (like the Slack integration) and features (like Widget nodes) require enabling a flag here.
+- **Experimental features** — opt in to in-development features by toggling them on. Some integrations (like the Slack integration) require enabling a flag here.
 - **General preferences** — theme and UI toggles, including **Show shared tokens**, which exposes the legacy per-UDF shared tokens (`fsh_***`) UI used in Tokens & endpoints.
 
 ================================================================================
@@ -17910,6 +18121,10 @@ Push your Canvas state to GitHub by creating a PR from a checkpoint.
 5. Merge the PR on GitHub
 
 [Image: Creating a PR from a checkpoint]
+
+If the folder name and repository are locked (because the canvas already has saved Git details), click the pencil icon to unlock them. This lets you push the UDF to a different repository — for example, to a public repo instead of your team's private one.
+
+[Image: Edit locked folder name and repository]
 
 Once merged, everyone on your team can pull the Canvas from the connected repository.
 
@@ -20609,5 +20824,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-04-24
+Generated automatically from Fused documentation. Last updated: 2026-04-28
 Total sections: 5
