@@ -1,0 +1,117 @@
+---
+id: overture-maps-mcp-agent
+title: Querying Overture Maps Data with an AI Agent
+sidebar_label: Overture Maps MCP Agent
+sidebar_position: 16
+---
+
+This example shows how to wrap [Overture Maps Foundation](https://overturemaps.org/) open data as MCP tools on a Fused Canvas, so an AI agent can query buildings, places, and more by location or GERS ID without pulling raw geospatial data into the chat context. [Try the chatbot](https://unstable.udf.ai/fc_7OKlCRLA5FeqcwXkB5wvsq/ai_chat.html) or [explore the Canvas](https://unstable.fused.io/canvas/fc_7OKlCRLA5FeqcwXkB5wvsq).
+
+<iframe
+  src="https://unstable.udf.ai/fc_7OKlCRLA5FeqcwXkB5wvsq/ai_chat.html"
+  width="100%"
+  height="600px"
+  style={{border: 'none'}}
+  title="Overture Maps Explorer chatbot"
+/>
+
+## Why AI Helps
+
+Overture exposes two different entry points into the data, and the right one depends on what the user is asking:
+
+- **STAC catalog** - best when the question starts from a place, address, bounding box, release, or theme.
+- **Registry** - best when the question starts from a specific [GERS ID](https://docs.overturemaps.org/gers/) and needs feature history or an exact lookup.
+
+The agent's job is to understand that intent and choose the right MCP tool automatically. That means the same chatbot can answer questions like *"Are there any named buildings at Times Square, New York?"*, *"When was GERS ID `0039aaa8-f0d9-45bb-90c5-d8a6781c4fbd` first introduced?"*, and *"How many building features are in the latest release?"* without the user needing to know which data path to use.
+
+## How It's Built
+
+We build four UDFs, each scoped to one job, and publish them from a single [Fused Canvas](https://docs.fused.io/workbench/udf-builder/canvas) as an MCP server. Each UDF [automatically becomes an HTTP endpoint](/guide/working-with-udfs/run-udfs-as-api), and the Canvas publishes an OpenAPI spec that any agent can load to discover available tools. Each tool returns only what the agent needs — bounded row counts, a fixed column set — while S3 reads, parquet scans, and geometry decoding stay inside Fused.
+
+![Fused Canvas showing the four Overture MCP tools](/img/tutorials/agents/overture_mcp_canvas.png)
+
+- **STAC catalog as the entry point** — all tools read from `catalog.json` at `stac.overturemaps.org`, the authoritative index of releases, themes, and parquet file locations. No hardcoded S3 paths.
+- **`collections.parquet` for bbox queries** — a lightweight spatial index is queried first to find only the parquet partitions that intersect the requested bbox, before reading any data.
+- **Binary search on the GERS registry** — Overture publishes a registry manifest of 50 sorted files; a binary search on `max_id` pinpoints the single file containing the requested ID.
+- **Address geocoding built in** — a plain address string is geocoded via Nominatim and converted to a bbox automatically, so the agent never handles coordinates directly.
+
+## The Data Source
+
+[Overture Maps Foundation](https://overturemaps.org/) publishes open releases of global geospatial data across two entry points: a [STAC catalog](https://stac.overturemaps.org/) for browsing releases, themes, and querying features by location; and a registry at `s3://overturemaps-us-west-2/registry` for looking up any feature by its GERS ID. The six themes available are:
+
+| Theme | Description |
+|---|---|
+| `buildings` | Building footprints globally |
+| `places` | Points of interest, businesses, amenities |
+| `transportation` | Road network segments |
+| `addresses` | Address points |
+| `base` | Land cover, water, land use |
+| `divisions` | Administrative boundaries |
+
+## Creating MCP Tools
+
+The four UDFs below cover the full range of questions an agent might ask about Overture data — from catalog discovery to location queries to feature history.
+
+### `overture_list_releases`
+
+Lists every available release from `catalog.json`.
+
+```
+release        is_latest  schema_version  num_themes
+2026-04-15.0   True                       6
+2026-03-18.0   False      TBD             6
+```
+
+### `overture_stac_search`
+
+Browses themes, types, and feature counts for a given release.
+
+```
+theme           type               features
+addresses       address            472,884,309
+base            bathymetry              59,963
+base            infrastructure     149,530,606
+base            land                73,017,393
+base            land_cover         123,302,114
+base            land_use            54,159,685
+base            water               64,677,485
+buildings       building         2,542,597,608
+buildings       building_part        3,905,964
+divisions       division             4,597,236
+divisions       division_area        1,074,405
+divisions       division_boundary       87,804
+places          place               75,495,994
+transportation  connector          409,764,747
+transportation  segment            344,140,478
+```
+
+### `overture_bbox_query`
+
+Queries features by bounding box or address (geocoded automatically). Supports all themes, returns up to `max_rows` features (default 200).
+
+`address="Times Square, New York"`, `theme="buildings"`:
+
+```
+id                                    type      subtype    class    name
+54b78e32-a00c-4c8e-870b-a1279c6835ba  building
+0039aaa8-f0d9-45bb-90c5-d8a6781c4fbd  building  education  college  Business and Liberal Arts Center
+e26d5f68-186e-4162-8eba-fa04b4bd2fb9  building
+f5518c97-3cd4-4faf-a1fe-2e30f72d8c02  building
+ffe5fc63-8caf-4ef0-8339-68159f76354c  building
+```
+
+### `overture_gers_lookup`
+
+Looks up a single feature by GERS ID using binary search on the registry manifest in `catalog.json`, then fetches the full geometry from the exact data file.
+
+`gers_id="0039aaa8-f0d9-45bb-90c5-d8a6781c4fbd"`:
+
+```
+id                                    name                              subtype    class    height  registry_first_seen  registry_last_seen  registry_last_changed
+0039aaa8-f0d9-45bb-90c5-d8a6781c4fbd  Business and Liberal Arts Center  education  college  44.2    2025-06-25.0         2026-04-15.0        2025-06-25.0
+```
+
+## See also
+
+- [Run UDFs as an API](/guide/working-with-udfs/run-udfs-as-api)
+- [Slack integration](/guide/data-input-outputs/export-api/slack)
