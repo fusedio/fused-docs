@@ -35,7 +35,7 @@ Read through all the provided changes and sort them into three buckets:
 ## Step 3 — Apply the writing rules
 
 ### Feature naming conventions
-- JSON-UI / widget builder → always write as **[Experimental] [Widgets](/guide/data-input-outputs/import-connection/widgets)**
+- Widget builder → always write as **[Widgets](/guide/data-input-outputs/import-connection/widgets)**
 - Canvas → [Canvas](/workbench/udf-builder/canvas)
 - H3 analytics → [H3 analytics](/guide/h3-analytics/h3-overview)
 - Shared tokens / API endpoints → [tokens & endpoints](/guide/data-input-outputs/export-api/tokens-endpoints)
