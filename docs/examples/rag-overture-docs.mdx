@@ -7,21 +7,21 @@ sidebar_position: 15
 
 **_TL;DR: With a few Fused UDFs you can turn any public docs site into a fully searchable RAG pipeline — connect data, process it, and expose it as an API._**
 
-Retrieval-Augmented Generation (RAG) lets LLMs answer questions using real, up-to-date content instead of just their training data. The problem is that setting up a production-ready RAG pipeline usually means stitching together a scraper, a chunker, an embedding service, a vector store, and a query endpoint — often across multiple services and repos.
-
-With Fused, the whole pipeline fits in three Python UDFs. We'll walk through how we built a semantic search system on top of the [Overture Maps documentation](https://docs.overturemaps.org/), and how you can reuse the exact same approach for any site.
+This example shows how to build a RAG pipeline over [Overture Maps documentation](https://docs.overturemaps.org/) using Fused — from ingestion to a queryable API endpoint. The same pattern works for any public docs site.
 
 [![RAG pipeline Canvas overview](/img/tutorials/rag-overture-docs/canvas_overview.png)](https://www.fused.io/canvas/fc_15I0YWafBBT90ruAM4DUF9?bounds=2458%2C206%2C8995%2C4381)
 
 *[Try it out on Fused Canvas](https://www.fused.io/canvas/fc_15I0YWafBBT90ruAM4DUF9?bounds=2458%2C206%2C8995%2C4381) →*
 
+## How it works
+
 :::info Overview
 
-The pipeline uses four UDFs, each doing one job:
+The pipeline follows a crawl → embed → search pattern, implemented as four UDFs:
 
-- `site_to_llmstxt` — crawls any docs site via its sitemap and writes a clean [`llms.txt`](https://llmstxt.org/) to S3
-- `docs_ragging` — reads the `llms.txt`, chunks it, embeds every chunk, and stores the result in a [LanceDB](https://lancedb.github.io/lancedb/) vector table at `/mount/lancedb/`
-- `overture_docs_searching` — takes a natural-language question, embeds it, and returns the most relevant chunks from the vector table
+- `site_to_llmstxt` — **crawls** any docs site via its sitemap and writes a clean [`llms.txt`](https://llmstxt.org/) to S3
+- `docs_ragging` — **embeds** the `llms.txt` in chunks and stores vectors in a [LanceDB](https://lancedb.github.io/lancedb/) table at `/mount/lancedb/`
+- `overture_docs_searching` — **searches** by embedding an incoming question and returning the most relevant chunks
 - `ai_utils` — shared helpers for embedding, LanceDB reads/writes, and agentic tool calling
 
 :::
@@ -466,6 +466,13 @@ Then query as before:
 ```python
 fused.run(overture_docs_searching, question="How do I authenticate?")
 ```
+
+:::caution Considerations
+
+- Large document sets may take time to index — crawling and embedding hundreds of pages runs in parallel but is still I/O and compute-bound
+- Re-indexing overwrites the existing LanceDB table and re-embeds all chunks, which incurs additional embedding API costs; only re-index when the source docs change significantly
+
+:::
 
 ---
 
