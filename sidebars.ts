@@ -146,6 +146,7 @@ const sidebars: SidebarsConfig = {
         "examples/google-calendar-meetings",
         "examples/messy-data-agents",
         "examples/airbnb-explore-on-the-fly",
+        "examples/rag-overture-docs",
       ],
     },
 
