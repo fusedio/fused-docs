@@ -1,6 +1,6 @@
 ---
 id: rag-overture-docs
-title: "RAG Any Docs with Fused: Connect, Process, Expose"
+title: "RAG Any Docs with Fused"
 sidebar_label: RAG Docs with Fused
 sidebar_position: 15
 ---
@@ -9,79 +9,272 @@ sidebar_position: 15
 
 Retrieval-Augmented Generation (RAG) lets LLMs answer questions using real, up-to-date content instead of just their training data. The problem is that setting up a production-ready RAG pipeline usually means stitching together a scraper, a chunker, an embedding service, a vector store, and a query endpoint — often across multiple services and repos.
 
-With Fused, the whole pipeline fits in a handful of Python UDFs. In this post we'll walk through how we built a semantic search system on top of the [Overture Maps documentation](https://docs.overturemaps.org/), and how you can reuse the exact same approach for any site.
+With Fused, the whole pipeline fits in three Python UDFs. We'll walk through how we built a semantic search system on top of the [Overture Maps documentation](https://docs.overturemaps.org/), and how you can reuse the exact same approach for any site.
 
-## The 3-Step Pipeline
+[![RAG pipeline Canvas overview](/img/tutorials/rag-overture-docs/canvas_overview.png)](https://www.fused.io/canvas/fc_7iCovkQRbVsttSBhCcY4Py?bounds=5587%2C1407%2C7466%2C2901)
 
-The architecture maps directly onto three questions:
+*[Try it out on Fused Canvas](https://www.fused.io/canvas/fc_7iCovkQRbVsttSBhCcY4Py?bounds=5587%2C1407%2C7466%2C2901) →*
 
-1. **Connect** — How do you get the raw data?
-2. **Process** — How do you turn it into searchable embeddings?
-3. **Expose** — How do you let clients query it?
+:::info Overview
 
-{/* TODO: Add architecture diagram showing the 3-step flow: docs site → llms.txt → LanceDB → Search API */}
+The pipeline uses four UDFs, each doing one job:
 
-Each step is a single Fused UDF. They share a persistent volume (`/mount/lancedb/`) so data flows between them without any glue infrastructure.
+- `site_to_llmstxt` — crawls any docs site via its sitemap and writes a clean [`llms.txt`](https://llmstxt.org/) to S3
+- `docs_ragging` — reads the `llms.txt`, chunks it, embeds every chunk, and stores the result in a [LanceDB](https://lancedb.github.io/lancedb/) vector table at `/mount/lancedb/`
+- `overture_docs_searching` — takes a natural-language question, embeds it, and returns the most relevant chunks from the vector table
+- `ai_utils` — shared helpers for embedding, LanceDB reads/writes, and agentic tool calling
+
+:::
 
 ---
 
-## Step 1: Connect — Crawl Any Docs Site into `llms.txt`
+## Step 1: Crawl Any Docs Site into `llms.txt`
 
-The first challenge is getting clean text out of a docs site. HTML is noisy: navbars, footers, sidebars, and scripts all get in the way. The [llms.txt standard](https://llmstxt.org/) solves this by defining a single, clean file that captures a site's full content in a format LLMs can actually use.
+The first challenge is getting clean text out of a docs site. HTML is noisy: navbars, footers, sidebars, and scripts all get in the way. The `site_to_llmstxt` UDF accepts any docs site URL, crawls every page in parallel via `crawl_page.map()`, strips boilerplate, and writes a single clean [`llms.txt`](https://llmstxt.org/) to S3.
 
-The `site_to_llmstxt` UDF accepts any docs site URL and a sitemap path, crawls every page in parallel, strips the boilerplate, and writes a single `llms.txt` to S3.
+<details>
+<summary>Show UDF code</summary>
 
 ```python showLineNumbers
 @fused.udf(cache_max_age='1d')
 def udf(
     base_url: str = "https://docs.overturemaps.org/",
     site_name: str = "Overture_maps_documentation",
-    mode: str = "full",          # "curated" (index) | "full" (page content)
+    mode: str = "full",          # "curated" (index only) | "full" (page content)
     sitemap_path: str = "/sitemap.xml",
     max_pages: int = 0,          # 0 = no limit
     output_dir: str = "s3://fused-users/overture/demos/llms_txt/",
 ):
     """Generate an llms.txt from any public docs site with a sitemap."""
-    ...
+    import re
+    import time
+    import requests
+    import pandas as pd
+    import json
+    from xml.etree import ElementTree
+    from bs4 import BeautifulSoup
+
+    def fetch(url: str, retries: int = 3, timeout: int = 15) -> str | None:
+        headers = {"User-Agent": "llms-txt-generator/1.0 (sitemap crawler)"}
+        for attempt in range(retries):
+            try:
+                r = requests.get(url, headers=headers, timeout=timeout)
+                r.raise_for_status()
+                return r.text
+            except Exception as e:
+                if attempt == retries - 1:
+                    print(f"  ✗ Failed {url}: {e}")
+                    return None
+                time.sleep(1.5 ** attempt)
+
+    def parse_sitemap(xml_text: str) -> list[str]:
+        try:
+            root = ElementTree.fromstring(xml_text)
+        except ElementTree.ParseError:
+            return []
+        ns = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+        urls = []
+        for sitemap_tag in root.findall("sm:sitemap", ns):
+            loc = sitemap_tag.find("sm:loc", ns)
+            if loc is not None and loc.text:
+                sub_xml = fetch(loc.text.strip())
+                if sub_xml:
+                    urls.extend(parse_sitemap(sub_xml))
+        for url_tag in root.findall("sm:url", ns):
+            loc = url_tag.find("sm:loc", ns)
+            if loc is not None and loc.text:
+                urls.append(loc.text.strip())
+        return urls
+
+    sitemap_url = base_url.rstrip("/") + sitemap_path
+    print(f"Fetching sitemap: {sitemap_url}")
+    sitemap_xml = fetch(sitemap_url)
+    if not sitemap_xml:
+        raise RuntimeError(f"Could not fetch sitemap at {sitemap_url}")
+
+    all_urls = parse_sitemap(sitemap_xml)
+    print(f"Found {len(all_urls)} URLs in sitemap")
+
+    skip_patterns = re.compile(
+        r"/(tags?|search|404|sitemap|assets|_|static)/|"
+        r"\.(xml|json|txt|png|jpg|svg|css|js)$",
+        re.IGNORECASE,
+    )
+    page_urls = sorted(set(u for u in all_urls if not skip_patterns.search(u)))
+
+    if max_pages > 0:
+        page_urls = page_urls[:max_pages]
+
+    print(f"Processing {len(page_urls)} doc pages (mode={mode})")
+
+    results = crawl_page.map(
+        [{"url": u} for u in page_urls],
+        engine="local",
+        max_workers=10,
+    ).df()
+
+    pages = results.to_dict("records")
+    header = f"# {site_name}\n\n"
+
+    if mode == "curated":
+        lines = [header, "## Pages\n"]
+        for p in pages:
+            lines.append(f"- [{p['title']}]({p['url']})")
+        lines.append(f"\n---\n\nGenerated from {base_url} sitemap. Total pages: {len(pages)}")
+        output = "\n".join(lines)
+    else:
+        sep = "=" * 80
+        sections = [header, sep + "\n"]
+        for p in pages:
+            sections.append(f"## {p['title']}")
+            sections.append(f"URL: {p['url']}\n")
+            if p["content"]:
+                sections.append(p["content"])
+            sections.append("\n" + sep + "\n")
+        sections.append(f"\n---\n\nGenerated from {base_url} sitemap. Total pages: {len(pages)}")
+        output = "\n".join(sections)
+
+    if output_dir:
+        import fsspec, re
+        safe_name = re.sub(r"[^\w]+", "_", site_name.lower()).strip("_")
+        output_path = output_dir.rstrip("/") + f"/{safe_name}/llms.txt"
+        with fsspec.open(output_path, "w") as f:
+            f.write(output)
+        print(f"Written to {output_path}")
+        return output_path
+    else:
+        return output
+
+
+@fused.udf
+def crawl_page(url: str = "https://docs.overturemaps.org/"):
+    """Fetch and extract content from a single docs page."""
+    import re, time, requests
+    from bs4 import BeautifulSoup, NavigableString, Tag
+
+    headers = {"User-Agent": "llms-txt-generator/1.0 (sitemap crawler)"}
+    for attempt in range(3):
+        try:
+            r = requests.get(url, headers=headers, timeout=15)
+            r.raise_for_status()
+            html = r.text
+            break
+        except Exception:
+            if attempt == 2:
+                return None
+            time.sleep(1.5 ** attempt)
+    else:
+        return None
+
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup.select(
+        "nav, footer, aside, .sidebar, .toc, .table-of-contents, "
+        ".navbar, .pagination, .edit-this-page, script, style, "
+        "[class*='sidebar'], [class*='navbar'], [class*='footer'], "
+        "[class*='toc'], [class*='pagination'], [class*='breadcrumb'], "
+        "[aria-hidden='true']"
+    ):
+        tag.decompose()
+
+    title = ""
+    h1 = soup.find("h1")
+    if h1:
+        title = h1.get_text(strip=True)
+    if not title:
+        title_tag = soup.find("title")
+        if title_tag:
+            title = re.sub(r"\s*[|–—-].*$", "", title_tag.get_text(strip=True))
+
+    content_el = (
+        soup.find("article")
+        or soup.find(class_=re.compile(r"md-content|markdown|content|documentation"))
+        or soup.find("main")
+        or soup.body
+    )
+
+    BLOCK_TAGS = {"p", "div", "section", "li", "dt", "dd", "blockquote",
+                  "h1", "h2", "h3", "h4", "h5", "h6", "tr", "thead", "tbody"}
+
+    def walk(node) -> str:
+        if isinstance(node, NavigableString):
+            return str(node)
+        if not isinstance(node, Tag):
+            return ""
+        tag = node.name.lower() if node.name else ""
+        if tag == "pre":
+            inner_code = node.find("code")
+            lang = ""
+            if inner_code and inner_code.get("class"):
+                for cls in inner_code.get("class", []):
+                    m = re.match(r"language-(\w+)", cls)
+                    if m:
+                        lang = m.group(1)
+                        break
+            code_text = (inner_code or node).get_text()
+            return f"\n\n```{lang}\n{code_text.strip()}\n```\n\n"
+        if tag == "code":
+            text = node.get_text()
+            if "\n" in text:
+                return f"\n\n```\n{text.strip()}\n```\n\n"
+            return f"`{text}`"
+        if tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+            level = int(tag[1])
+            return f"\n\n{'#' * level} {node.get_text(strip=True)}\n\n"
+        parts = [walk(child) for child in node.children]
+        text = "".join(parts)
+        if tag in BLOCK_TAGS:
+            text = text.strip()
+            return f"\n\n{text}\n\n" if text else ""
+        return text
+
+    if content_el is None:
+        import pandas as pd
+        return pd.DataFrame([{"url": url, "title": title, "description": "", "content": ""}])
+
+    raw = walk(content_el)
+    content = re.sub(r"\n{3,}", "\n\n", raw).strip()
+
+    description = ""
+    for line in content.splitlines():
+        line = line.strip()
+        if len(line) >= 40 and not line.startswith("#") and not line.startswith("`"):
+            description = line[:160] + ("..." if len(line) > 160 else "")
+            break
+
+    import pandas as pd
+    return pd.DataFrame([{"url": url, "title": title, "description": description, "content": content}])
 ```
 
-Internally the UDF:
-
-1. Fetches and parses the sitemap (including sitemap indexes that reference sub-sitemaps)
-2. Filters out non-content URLs (tag pages, assets, 404s)
-3. Crawls every remaining page **in parallel** via `crawl_page.map()` with up to 10 workers
-4. Extracts content with BeautifulSoup, converting headings, code blocks, and paragraphs into clean markdown
-5. Writes the result to an S3 path like `s3://…/overture_maps_documentation/llms.txt`
-
-Two modes are available:
-
-| Mode | Output |
-|------|--------|
-| `curated` | One line per page — title, URL, short description |
-| `full` | Full page text, lightly cleaned — best for RAG |
+</details>
 
 ```python showLineNumbers
 import fused
 
-# Point at any docs site — the UDF handles the rest
-result = fused.run(site_to_llmstxt, base_url="https://docs.overturemaps.org/")
-print(result)  # s3://…/overture_maps_documentation/llms.txt
+output_path = fused.run(site_to_llmstxt, base_url="https://docs.overturemaps.org/")
+# s3://fused-users/overture/demos/llms_txt/overture_maps_documentation/llms.txt
 ```
-
-{/* TODO: Add screenshot of the UDF running in Workbench, showing the parallel crawl progress in the logs */}
 
 ---
 
-## Step 2: Process — Chunk, Embed, and Store in LanceDB
+## Step 2: Chunk, Embed, and Store in LanceDB
 
-With the raw text in S3, the next step is turning it into a vector database. The `docs_ragging` UDF handles chunking, embedding, and writing to [LanceDB](https://lancedb.github.io/lancedb/) — a serverless vector store that runs directly on the mounted volume at `/mount/lancedb/`.
+The `docs_ragging` UDF fetches the `llms.txt` from S3, splits it into overlapping chunks, embeds each chunk using the [Qwen3-Embedding-8B](https://huggingface.co/Qwen/Qwen3-Embedding) model via OpenRouter, and writes the result to a [LanceDB](https://lancedb.github.io/lancedb/) table on the shared volume at `/mount/lancedb/`.
+
+<details>
+<summary>Show UDF code</summary>
 
 ```python showLineNumbers
+# ===================== CONFIGURATION =====================
 LANCEDB_TABLE_NAME = "overture_docs_17_04_2026"
 LANCEDB_BASE_PATH = "/mount/lancedb/"
 EMBEDDING_MODEL = "qwen/qwen3-embedding-8b"
-CHUNK_SIZE = 1300       # characters per chunk
-OVERLAP_PERCENT = 0.15  # 15% overlap between chunks
+SOURCE_URL = "s3://fused-users/overture/demos/llms_txt/overture_maps_documentation/llms.txt"
+CHUNK_SIZE = 1300
+OVERLAP_PERCENT = 0.15
+OVERLAP_SIZE = int(CHUNK_SIZE * OVERLAP_PERCENT)
+EMBEDDING_BATCH_SIZE = 400
+# =========================================================
+
 
 @fused.udf(cache_max_age=0)
 def udf(
@@ -93,10 +286,14 @@ def udf(
 
     ai = fused.load("ai_utils")
 
+    print(f"Fetching docs from: {SOURCE_URL}")
     response = requests.get(SOURCE_URL, timeout=60)
+    response.raise_for_status()
     content = response.text
+    print(f"Fetched {len(content):,} characters")
 
     chunks = chunk_with_overlap(content, CHUNK_SIZE, OVERLAP_SIZE)
+    print(f"Created {len(chunks)} chunks")
 
     df = pd.DataFrame({
         "chunk_id": list(range(1, len(chunks) + 1)),
@@ -104,88 +301,106 @@ def udf(
         "source_url": SOURCE_URL,
     })
 
+    print("Embedding chunks...")
     df = ai.embed_df(
         df,
         text_col="code",
         embedding_col="embedding",
         provider="qwen",
         embedding_model=EMBEDDING_MODEL,
-        batch_size=400,
+        batch_size=EMBEDDING_BATCH_SIZE,
         max_workers=16,
     )
 
-    ai.write_table(df, table_name, embedding_col="embedding",
-                   base_path=LANCEDB_BASE_PATH, overwrite=overwrite)
-```
+    print(f"Writing {len(df)} rows to LanceDB: {table_name}")
+    table_path = ai.write_table(
+        df,
+        table_name=table_name,
+        embedding_col="embedding",
+        base_path=LANCEDB_BASE_PATH,
+        overwrite=overwrite,
+    )
 
-### Chunking with overlap
+    return pd.DataFrame({
+        "status": ["success"],
+        "table_name": [table_name],
+        "chunks": [len(df)],
+        "chunk_size": [CHUNK_SIZE],
+        "lancedb_base_path": [LANCEDB_BASE_PATH],
+    })
 
-Long documents need to be split before embedding. We use a fixed-size chunker with a 15% overlap so that context at chunk boundaries isn't lost:
 
-```python showLineNumbers
 def chunk_with_overlap(text, chunk_size, overlap_size):
     chunks = []
     start = 0
     while start < len(text):
-        chunks.append(text[start : start + chunk_size])
-        start += chunk_size - overlap_size
+        end = start + chunk_size
+        chunk = text[start:end]
+        chunks.append(chunk)
+        start = end - overlap_size
+        if start + chunk_size >= len(text) and start < len(text):
+            final_chunk = text[start:]
+            if final_chunk and final_chunk not in chunks and len(final_chunk) > overlap_size:
+                chunks.append(final_chunk)
+            break
     return chunks
 ```
 
-For the Overture docs (roughly 500K characters), this produces ~400 chunks at 1,300 characters each.
+</details>
 
-### Embeddings via ai_utils
-
-Embedding is handled by `ai_utils`, a reusable UDF that wraps the [Qwen3-Embedding-8B](https://huggingface.co/Qwen/Qwen3-Embedding) model via OpenRouter. Batches are processed concurrently with up to 16 workers:
-
-```python showLineNumbers
-# From ai_utils.py — works for any DataFrame column
-def embed_df(df, text_col, embedding_col="embedding",
-             provider="qwen", batch_size=400, max_workers=16):
-    ...
-    batch_results = common.run_pool(do_batch, batches, max_workers=max_workers)
-    df[embedding_col] = [v for batch in batch_results for v in batch]
-    return df
-```
-
-The UDF returns a status DataFrame confirming the table name, number of chunks written, and the LanceDB path:
+After running, the UDF returns a status table:
 
 ```
 status   table_name                    chunks   chunk_size   lancedb_base_path
 success  overture_docs_17_04_2026      412      1300         /mount/lancedb/
 ```
 
-{/* TODO: Add screenshot of the docs_ragging UDF output table in Workbench */}
+Embeddings are generated in batches of 400 chunks with up to 16 concurrent workers. Switching to a different embedding model is a one-line change in the `EMBEDDING_MODEL` constant at the top of the UDF.
 
 ---
 
-## Step 3: Expose — Semantic Search as a Fused API
+## Step 3: Semantic Search as a Fused API
 
-Once the table exists, any client can query it. The `overture_docs_searching` UDF accepts a natural-language question, embeds it with the same model, and runs a cosine similarity search against the stored chunks:
+The `overture_docs_searching` UDF accepts a natural-language question, embeds it with the same model, and runs a cosine similarity search against the stored chunks in LanceDB. Because it's a standard Fused UDF, it's immediately available as an HTTP endpoint.
+
+<details>
+<summary>Show UDF code</summary>
 
 ```python showLineNumbers
 @fused.udf
-def udf(question: str = "Latest release?"):
-    """Search Overture docs by natural language."""
+def udf(
+    question: str = "Latest release?",
+):
+    """Search Overture docs RAG for matching areas in the documentation."""
     import pandas as pd
 
-    ai = fused.load("ai_utils")
     collection_name = "overture_docs_17_04_2026"
+    limit = 30
+    base_path = "/mount/lancedb/"
 
-    df = ai.search(question, collection_name, top_k=30)
+    ai = fused.load("ai_utils")
+
+    if not ai.table_exists(collection_name, base_path=base_path):
+        available = ai.list_tables(base_path=base_path)
+        return pd.DataFrame({
+            "status": ["error"],
+            "error": [f"LanceDB table '{collection_name}' was not found."],
+            "available_tables": [", ".join(available) if available else "(none)"],
+        })
+
+    df = ai.search(question, collection_name, top_k=limit)
+
+    if df is None or len(df) == 0:
+        return pd.DataFrame({"status": ["empty"], "message": ["No vector matches found."]})
+
+    cols_to_drop = [c for c in ["_distance", "_relevance_score", "vector", "embedding"] if c in df.columns]
+    if cols_to_drop:
+        df = df.drop(columns=cols_to_drop)
+
     return df.head(5)
 ```
 
-Under the hood, `ai.search` calls `embed_text` on the query and then runs a vector search against the LanceDB table:
-
-```python showLineNumbers
-def search(query, table_name, top_k=10, provider="qwen", base_path=DEFAULT_LANCEDB_PATH):
-    query_vec = embed_text(query, provider=provider)
-    results = _search_by_vector(table_name, query_vec, top_k=top_k)
-    return results
-```
-
-Because this is a standard Fused UDF, it's immediately available as an HTTP endpoint. You can call it from Python, from Slack (via the [export API](/guide/data-input-outputs/export-api/slack)), from any notebook, or wire it into a larger agent loop.
+</details>
 
 ```python showLineNumbers
 import fused
@@ -194,11 +409,26 @@ results = fused.run(overture_docs_searching, question="How do I filter places by
 print(results["code"].iloc[0])
 ```
 
-{/* TODO: Add GIF of querying the search UDF in Workbench with different questions and seeing results update */}
+The result is a ranked table of the most relevant doc chunks for the query (default: `"Latest release?"`):
+
+```
+chunk_id   similarity   code
+215        0.123        ## Overture Maps Engineering Blog ... August 20, 2025 — 2025-08-20.0 release ...
+164        0.112        The 2025-08-20.0 release of Overture data and v1.11.0 of the schema are now available ...
+214        0.095        April 22 - Exploring our beta release / May 16 - 2024-05-16-beta.0 release notes ...
+213        0.092        ### 2026 — January 21 - 2026-01-21 release notes / February 11 - Overture Has ...
+165        0.092        The base, buildings, divisions, places, and transportation themes are in GA ...
+```
+
+:::tip Speeding up repeated queries
+
+The `overture_docs_searching` UDF calls `embed_text` on every request. Wrap it with [`@fused.cache`](/guide/working-with-udfs/udf-best-practices/caching) to cache embeddings for repeated or identical queries and cut latency significantly.
+
+:::
 
 ### Going further: Agentic RAG
 
-The `ai_utils` library also includes a `run_agent` helper that wraps the search UDF into an OpenAI-compatible tool-calling loop. This lets an LLM decide *when* to search and *how* to synthesize the results into a final answer:
+The `ai_utils` library includes a `run_agent` helper that wraps the search into an OpenAI-compatible tool-calling loop, so an LLM can decide when to search and how to synthesize results:
 
 ```python showLineNumbers
 search_tool, search_handler = ai.make_search_tool(
@@ -215,47 +445,33 @@ result = ai.run_agent(
 print(result["text"])
 ```
 
-{/* TODO: Add screenshot of the agent answering a multi-hop question about Overture themes */}
-
 ---
 
 ## Using This for Any Site
 
-The pipeline is fully parameterized. To RAG a different docs site, change one line in `site_to_llmstxt` and one constant in `docs_ragging`:
+To RAG a different docs site, make two changes:
 
-```python showLineNumbers
-# Step 1 — point at a different site
-result = fused.run(site_to_llmstxt, base_url="https://docs.myproject.io/")
-
-# Step 2 — pick a new table name and rerun
-fused.run(docs_ragging, table_name="myproject_docs_v1", overwrite=True)
-
-# Step 3 — query as before
-fused.run(overture_docs_searching, question="How do I authenticate?")
+1. In `site_to_llmstxt`, update `base_url` to point at your site:
+```python
+fused.run(site_to_llmstxt, base_url="https://docs.myproject.io/")
 ```
 
-:::info
+2. In `docs_ragging`, update the `SOURCE_URL` constant to the new `llms.txt` path and pick a new `LANCEDB_TABLE_NAME`:
+```python
+SOURCE_URL = "s3://your-bucket/myproject/llms.txt"
+LANCEDB_TABLE_NAME = "myproject_docs_v1"
+```
 
-To try this yourself, open the collection in Fused Workbench:
-- `site_to_llmstxt` — crawls any site into a clean `llms.txt`
-- `docs_ragging` — embeds and stores in LanceDB
-- `overture_docs_searching` — semantic search endpoint
-- `ai_utils` — shared embedding and vector DB helpers
-
-{/* TODO: Add Workbench collection link once published */}
-
-:::
+Then query as before:
+```python
+fused.run(overture_docs_searching, question="How do I authenticate?")
+```
 
 ---
 
 ## Conclusion
 
-Three UDFs. No infrastructure. The same Fused execution model that lets you query spatial data tile-by-tile works just as well for building a full RAG pipeline:
+Three UDFs, no infrastructure. The pipeline is independently cacheable, versioned, and composable — swap in a different embedding model, a different vector store, or add an LLM reranking step without rewriting the whole thing.
 
-- **Connect**: `site_to_llmstxt` crawls any docs site and writes clean `llms.txt` to S3
-- **Process**: `docs_ragging` chunks, embeds, and stores in LanceDB on a shared volume
-- **Expose**: `overture_docs_searching` is an instant HTTP endpoint any client can hit
+[Try the full Canvas →](https://www.fused.io/canvas/fc_7iCovkQRbVsttSBhCcY4Py?bounds=5587%2C1407%2C7466%2C2901)
 
-Because every UDF is independently cacheable, versioned, and composable, you can swap in a different embedding model, switch to a different vector store, or add an LLM reranking step without rewriting the whole pipeline.
-
-{/* TODO: Add final demo video showing end-to-end: crawl → embed → search in one Workbench session */}
