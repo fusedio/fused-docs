@@ -291,7 +291,7 @@ const sidebars: SidebarsConfig = {
         // UDF Builder
     {
       type: "category",
-      label: "UDF Builder",
+      label: "Map Builder",
       collapsible: false,
       items: [
         { type: "doc", id: "workbench/udf-builder/udf-builder", label: "Overview" },
