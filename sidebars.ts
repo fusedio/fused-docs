@@ -284,6 +284,21 @@ const sidebars: SidebarsConfig = {
       ],
     },
 
+    // Integrations
+    {
+      type: "category",
+      label: "Integrations",
+      collapsible: false,
+      items: [
+        { type: "doc", id: "workbench/integrations/snowflake", label: "Snowflake" },
+        { type: "doc", id: "workbench/integrations/bigquery", label: "BigQuery" },
+        { type: "doc", id: "workbench/integrations/s3", label: "Amazon S3" },
+        { type: "doc", id: "workbench/integrations/gcs", label: "Google Cloud Storage" },
+        { type: "doc", id: "workbench/integrations/airtable", label: "Airtable" },
+        { type: "doc", id: "workbench/integrations/slack", label: "Slack [Experimental]" },
+      ],
+    },
+
         // UDF Builder
     {
       type: "category",
@@ -306,21 +321,6 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "workbench/app-builder/app-builder", label: "App Builder" },
         { type: "doc", id: "workbench/app-builder/app-overview", label: "App Overview" },
         { type: "doc", id: "workbench/app-builder/app-map", label: "App Map" },
-      ],
-    },
-
-    // Integrations
-    {
-      type: "category",
-      label: "Integrations",
-      collapsible: false,
-      items: [
-        { type: "doc", id: "workbench/integrations/snowflake", label: "Snowflake" },
-        { type: "doc", id: "workbench/integrations/bigquery", label: "BigQuery" },
-        { type: "doc", id: "workbench/integrations/s3", label: "Amazon S3" },
-        { type: "doc", id: "workbench/integrations/gcs", label: "Google Cloud Storage" },
-        { type: "doc", id: "workbench/integrations/airtable", label: "Airtable" },
-        { type: "doc", id: "workbench/integrations/slack", label: "Slack [Experimental]" },
       ],
     },
   ],
