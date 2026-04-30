@@ -317,7 +317,8 @@ const sidebars: SidebarsConfig = {
       collapsible: false,
       items: [
         { type: "doc", id: "workbench/integrations/snowflake", label: "Snowflake" },
-        { type: "doc", id: "guide/advanced-setup/encrypted-s3-bucket", label: "S3" },
+        { type: "doc", id: "workbench/integrations/bigquery", label: "BigQuery" },
+        { type: "doc", id: "guide/advanced-setup/encrypted-s3-bucket", label: "Encrypted S3 bucket" },
         { type: "doc", id: "workbench/integrations/airtable", label: "Airtable" },
         { type: "doc", id: "workbench/integrations/slack", label: "Slack [Experimental]" },
       ],
