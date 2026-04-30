@@ -388,7 +388,7 @@ methods = [
     "create_access_token",
     "get_access_tokens",
     "delete_saved",
-    "delete_cache",
+    "invalidate_cache",
     "catalog_url",
 ]
 
