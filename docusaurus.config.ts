@@ -315,6 +315,11 @@ const config: Config = {
           { to: "/python-sdk/overview", from: ["/python-sdk/top-level-functions"] },
           { to: "/guide/advanced-setup/local-installation", from: ["/python-sdk/index", "/python-sdk/authentication"] },
           { to: "/python-sdk/overview", from: ["/python-sdk"] },
+
+          // Integrations section migration redirects
+          { to: "/workbench/integrations/snowflake", from: ["/guide/data-input-outputs/import-connection/snowflake"] },
+          { to: "/workbench/integrations/airtable", from: ["/guide/data-input-outputs/import-connection/airtable"] },
+          { to: "/workbench/integrations/slack", from: ["/guide/data-input-outputs/export-api/slack"] },
         ],
         // createRedirects(existingPath) {
         //   if (existingPath.includes("/user-guide/out")) {

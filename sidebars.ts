@@ -71,14 +71,10 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/data-input-outputs/import-connection/local-files", label: "Local files" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/cloud-storage", label: "Cloud storage" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/databases", label: "Databases" },
-        { type: "doc", id: "guide/data-input-outputs/import-connection/snowflake", label: "Snowflake Integration" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/stac", label: "STAC catalogs" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/gee", label: "Google Earth Engine" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/using-ai-inside-udf", label: "Using AI inside a UDF" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/ai-data-connection", label: "Connecting AI to Data" },
-        { type: "doc", id: "guide/data-input-outputs/export-api/slack", label: "Slack [Experimental]" },
-        { type: "doc", id: "guide/data-input-outputs/import-connection/airtable", label: "Airtable" },
-        { type: "doc", id: "guide/data-input-outputs/import-connection/widgets", label: "Widgets" },
       ],
     },
 
@@ -270,7 +266,8 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "workbench/file-explorer", label: "File Explorer" },
         { type: "doc", id: "workbench/canvas-catalog", label: "Canvas Catalog" },
         { type: "doc", id: "workbench/canvas-checkpoints", label: "Canvas Checkpoints" },
-        { type: "doc", id: "workbench/versions", label: "Versions" }
+        { type: "doc", id: "workbench/versions", label: "Versions" },
+        { type: "doc", id: "guide/data-input-outputs/import-connection/widgets", label: "Widgets" },
       ],
     },
 
@@ -310,6 +307,19 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "workbench/app-builder/app-builder", label: "App Builder" },
         { type: "doc", id: "workbench/app-builder/app-overview", label: "App Overview" },
         { type: "doc", id: "workbench/app-builder/app-map", label: "App Map" },
+      ],
+    },
+
+    // Integrations
+    {
+      type: "category",
+      label: "Integrations",
+      collapsible: false,
+      items: [
+        { type: "doc", id: "workbench/integrations/snowflake", label: "Snowflake" },
+        { type: "doc", id: "guide/advanced-setup/encrypted-s3-bucket", label: "S3" },
+        { type: "doc", id: "workbench/integrations/airtable", label: "Airtable" },
+        { type: "doc", id: "workbench/integrations/slack", label: "Slack [Experimental]" },
       ],
     },
   ],
