@@ -117,7 +117,6 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/advanced-setup/secrets-management", label: "Secrets management" },
         { type: "doc", id: "guide/advanced-setup/dependencies", label: "Dependencies" },
         { type: "doc", id: "guide/advanced-setup/on-prem-setup", label: "On-prem setup" },
-        { type: "doc", id: "guide/advanced-setup/encrypted-s3-bucket", label: "Encrypted S3 Bucket" },
       ],
     },
 
@@ -318,7 +317,8 @@ const sidebars: SidebarsConfig = {
       items: [
         { type: "doc", id: "workbench/integrations/snowflake", label: "Snowflake" },
         { type: "doc", id: "workbench/integrations/bigquery", label: "BigQuery" },
-        { type: "doc", id: "guide/advanced-setup/encrypted-s3-bucket", label: "Encrypted S3 bucket" },
+        { type: "doc", id: "workbench/integrations/s3", label: "Amazon S3" },
+        { type: "doc", id: "workbench/integrations/gcs", label: "Google Cloud Storage" },
         { type: "doc", id: "workbench/integrations/airtable", label: "Airtable" },
         { type: "doc", id: "workbench/integrations/slack", label: "Slack [Experimental]" },
       ],

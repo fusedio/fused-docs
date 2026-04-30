@@ -320,6 +320,7 @@ const config: Config = {
           { to: "/workbench/integrations/snowflake", from: ["/guide/data-input-outputs/import-connection/snowflake"] },
           { to: "/workbench/integrations/airtable", from: ["/guide/data-input-outputs/import-connection/airtable"] },
           { to: "/workbench/integrations/slack", from: ["/guide/data-input-outputs/export-api/slack"] },
+          { to: "/workbench/integrations/s3", from: ["/guide/advanced-setup/encrypted-s3-bucket"] },
         ],
         // createRedirects(existingPath) {
         //   if (existingPath.includes("/user-guide/out")) {
