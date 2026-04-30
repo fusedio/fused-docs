@@ -1,0 +1,88 @@
+---
+id: gcs
+title: Google Cloud Storage Integration
+sidebar_label: Google Cloud Storage
+---
+
+import Details from '@theme/MDXComponents/Details';
+
+# Google Cloud Storage Integration
+
+Connect a GCS bucket to Fused to browse files in the [File Explorer](/workbench/file-explorer) and access them from UDFs.
+
+## 1. Create a Service Account
+
+Set up a Google Cloud service account with permissions to read, write, and list from the GCS bucket. See the Google Cloud documentation for instructions to:
+- [Create a Service Account](https://cloud.google.com/iam/docs/service-accounts-create)
+- [Set permissions for the Service Account](https://cloud.google.com/iam/docs/manage-access-service-accounts)
+
+## 2. Download the JSON Key File
+
+Download the JSON key file associated with the Service Account. This file contains credentials that Fused will use to access the GCS bucket.
+
+<Details open={false}>
+
+<summary>Expected service account JSON structure</summary>
+
+```json
+{
+  "type": "service_account",
+  "project_id": "your-project-id",
+  "private_key_id": "key-id-here",
+  "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+  "client_email": "your-service-account@your-project-id.iam.gserviceaccount.com",
+  "client_id": "123456789",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/your-service-account%40your-project-id.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
+```
+
+</Details>
+
+## 3. Store the key as a secret
+
+In the [Secrets management UI](/workbench/preferences#secrets-management), store the JSON key file contents as a secret named `gcs_fused`.
+
+## 4. Use the credentials in a UDF
+
+Write the secret to a temporary file and set `GOOGLE_APPLICATION_CREDENTIALS` so the GCS client picks it up:
+
+```python
+@fused.udf
+def udf():
+    import os
+    from google.cloud import storage
+
+    with open("/tmp/gcs_key.json", "w") as f:
+        f.write(fused.secrets["gcs_fused"])
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/tmp/gcs_key.json"
+
+    # your code here
+```
+
+Verify the connection by listing files in your bucket:
+
+```python
+@fused.udf
+def udf():
+    import os
+    from google.cloud import storage
+
+    with open("/tmp/gcs_key.json", "w") as f:
+        f.write(fused.secrets["gcs_fused"])
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/tmp/gcs_key.json"
+
+    client = storage.Client()
+    bucket = client.bucket("your_bucket_name")
+    blobs = bucket.list_blobs(prefix="path/to/your/data")
+    print({blob.name for blob in blobs})
+```
+
+## See also
+
+- [Cloud storage](/guide/data-input-outputs/import-connection/cloud-storage) — read and write GCS files from UDFs
+- [S3 integration](/workbench/integrations/s3) — connect an Amazon S3 bucket
+- [Secrets management](/guide/advanced-setup/secrets-management) — store credentials securely
