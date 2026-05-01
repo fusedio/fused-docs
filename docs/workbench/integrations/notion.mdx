@@ -1,0 +1,254 @@
+---
+id: notion
+title: Notion Integration
+sidebar_label: Notion
+keywords: [notion, integration, oauth, pages, databases, comments]
+---
+
+# Notion Integration
+
+Read and write Notion pages, comments, and users from Fused UDFs using OAuth-managed tokens. No API keys need to be hardcoded — Fused handles token refresh automatically.
+
+## Prerequisites
+
+1. A Fused account on a paid plan (execution environment required).
+2. The Notion integration connected through the Fused workbench (your Fused deployment manages the OAuth app).
+
+## Setup
+
+### Connect your Notion account
+
+Open **Settings > Integrations & Secrets**, find the Notion section, and click **Connect Notion**. You will be redirected to Notion to select a workspace and authorize access, then back to the workbench.
+
+## Quick start
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+
+    # Search for pages by title
+    results = client.search(query="Project Plan")
+
+    # Get a specific page
+    page = client.pages.retrieve(page_id="your-page-id")
+
+    # List workspace users
+    response = client.users.list()
+    for u in response["results"]:
+        print(u["name"], u["type"])
+```
+
+The `client()` method fetches the Fused-managed OAuth token and passes it to `notion_client.Client(auth=...)`. The `notion-client` package is pre-installed in the Fused runtime; no extra setup is needed.
+
+## Examples
+
+### Search
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+
+    # Search by title
+    results = client.search(query="Q4 Planning")
+
+    # Search only for pages (exclude databases)
+    pages = client.search(query="Meeting", filter={"value": "page", "property": "object"})
+
+    # Sort by last edited time
+    recent = client.search(
+        sort={"direction": "descending", "timestamp": "last_edited_time"},
+    )
+```
+
+### Get a page
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+    page = client.pages.retrieve(page_id="a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+    print(page["properties"])
+```
+
+### Create a page
+
+The `parent` dict specifies where the page lives — either under another page or inside a database.
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+
+    # Create a page inside a database
+    new_page = client.pages.create(
+        parent={"database_id": "your-database-id"},
+        properties={
+            "Name": {"title": [{"text": {"content": "Weekly Report"}}]},
+            "Status": {"select": {"name": "Draft"}},
+        },
+    )
+
+    # Create a sub-page under an existing page, with body content
+    new_page = client.pages.create(
+        parent={"page_id": "parent-page-id"},
+        properties={
+            "title": [{"text": {"content": "Sub-page Title"}}],
+        },
+        children=[
+            {
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {
+                    "rich_text": [{"type": "text", "text": {"content": "Hello from Fused!"}}]
+                },
+            }
+        ],
+    )
+```
+
+### Update a page
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+
+    # Update a status property
+    client.pages.update(
+        page_id="your-page-id",
+        properties={"Status": {"status": {"name": "Done"}}},
+    )
+
+    # Move to trash
+    client.pages.update(page_id="your-page-id", in_trash=True)
+
+    # Restore from trash
+    client.pages.update(page_id="your-page-id", in_trash=False)
+```
+
+> **Property type formats:** The inner key must match the property's `type`.
+> Common formats:
+> - `status`: `{"status": {"name": "..."}}`
+> - `select`: `{"select": {"name": "..."}}`
+> - `title`: `{"title": [{"text": {"content": "..."}}]}`
+> - `rich_text`: `{"rich_text": [{"text": {"content": "..."}}]}`
+> - `checkbox`: `{"checkbox": true}`
+
+### Delete a page
+
+Notion does not support permanent deletion via the API — this moves the page to trash.
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+    client.pages.update(page_id="your-page-id", in_trash=True)
+```
+
+### Query a database
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+    response = client.databases.query(database_id="your-database-id")
+    for page in response["results"]:
+        print(page["id"], page["properties"])
+```
+
+### List comments
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+    response = client.comments.list(block_id="your-page-id")
+    for c in response["results"]:
+        text = "".join(rt["plain_text"] for rt in c["rich_text"])
+        print(f"{c['created_by']['id']}: {text}")
+```
+
+### Create a comment
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+
+    # New top-level comment on a page
+    client.comments.create(
+        parent={"page_id": "your-page-id"},
+        rich_text=[{"type": "text", "text": {"content": "Looks good — approved!"}}],
+    )
+
+    # Reply to an existing discussion thread
+    client.comments.create(
+        discussion_id="existing-discussion-id",
+        rich_text=[{"type": "text", "text": {"content": "Thanks for the feedback."}}],
+    )
+```
+
+### List users
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+    response = client.users.list()
+    for u in response["results"]:
+        print(u["id"], u["name"], u["type"])  # type is "person" or "bot"
+```
+
+### Get a user
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+    user = client.users.retrieve(user_id="user-uuid")
+    print(user["name"], user.get("person", {}).get("email"))
+```
+
+## Full example
+
+```python
+@fused.udf()
+def udf():
+    import pandas as pd
+
+    nt = fused.api.notion_connect()
+    client = nt.client()
+
+    # Pull all pages matching a query
+    response = client.search(filter={"value": "page", "property": "object"})
+
+    rows = []
+    for p in response["results"]:
+        props = p.get("properties", {})
+        title_parts = props.get("Name", {}).get("title", [])
+        title = "".join(t["plain_text"] for t in title_parts)
+        rows.append({
+            "id": p["id"],
+            "title": title,
+            "url": p.get("url"),
+            "last_edited": p.get("last_edited_time"),
+        })
+    return pd.DataFrame(rows)
+```
+
+## Disconnecting
+
+To revoke the integration, go to **Settings > Integrations & Secrets**, find the Notion section, and click **Disconnect**.
