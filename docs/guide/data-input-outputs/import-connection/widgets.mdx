@@ -140,6 +140,81 @@ The `{{orders_df}}` reference still resolves to the UDF on your canvas — the s
 
 Open this in a browser to get a live, interactive widget — the chart renders data from your Fused UDF. [Try it out](https://unstable.fused.io/share/fc_1bHh5W6D1Yk6smpCeUuWPy?widget={%20%22type%22:%20%22line-chart%22,%20%22props%22:%20{%20%22sql%22:%20%22SELECT%20date%20AS%20label,%20value%20FROM%20{{orders_df}}%20ORDER%20BY%20label%22,%20%22title%22:%20%22Time%20Series%22,%20%22showArea%22:%20true,%20%22curveType%22:%20%22smooth%22%20}%20}) →
 
+## Passing parameters to a UDF in SQL
+
+You can pass parameters directly into a UDF reference using `?param=value` — this calls the UDF with that value, rather than filtering its output in SQL.
+
+:::note
+The upstream UDF must explicitly accept the parameter as a Python function argument for this to work.
+:::
+
+Given a UDF that accepts a `product` argument:
+
+```python
+@fused.udf
+def udf(product: str = ""):
+    import pandas as pd
+    import random
+
+    random.seed(42)
+    products = ["Widget A", "Widget B", "Gadget X"]
+    rows = [{"product": random.choice(products), "revenue": round(random.uniform(100, 5000), 2)} for _ in range(50)]
+    df = pd.DataFrame(rows)
+    if product:
+        return df[df["product"] == product]
+    return df
+```
+
+You can pass a value directly in the SQL reference — for example, to always query for `Widget A`:
+
+```sql
+SELECT product AS label, revenue AS value FROM {{udf_1?product=Widget A}}
+```
+
+Or pass a **dynamic value** from an input widget using `$param`, so the chart re-runs as the user types:
+
+```sql
+SELECT product AS label, revenue AS value FROM {{udf_1?product=$name}}
+```
+
+<details>
+<summary>Show full widget JSON</summary>
+
+```json
+{
+  "type": "div",
+  "props": { "style": "display:flex;flex-direction:column;gap:12px;padding:12px" },
+  "children": [
+    {
+      "type": "input",
+      "props": {
+        "label": "Filter category",
+        "placeholder": "e.g. Widget A",
+        "param": "name",
+        "defaultValue": ""
+      }
+    },
+    {
+      "type": "bar-chart",
+      "props": {
+        "title": "Category Values",
+        "sql": "SELECT product AS label, revenue AS value FROM {{udf_1?product=$name}}",
+        "barColor": "#E8FF59",
+        "showGrid": true,
+        "showValues": true,
+        "beginAtZero": true
+      }
+    }
+  ]
+}
+```
+
+</details>
+
+The `input` widget publishes its value under `param: "name"`. The bar chart reads it as `$name` and passes it to `udf_1` on every keystroke.
+
+![Input widget filtering bar chart by passing $name into udf_1 at query time](/img/widgets/parameterize-sql.png)
+
 ## AI driven Widget
 
 This section uses the `widget-builder` widget type — a wrapper widget that takes any other widget definition as input and displays it on the canvas. Because it wraps other widgets, it can layer on an AI panel and a live JSON editor, letting you iterate on the inner widget without leaving the canvas.
