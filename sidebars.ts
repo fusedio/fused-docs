@@ -236,6 +236,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "python-sdk/api-reference/options", label: "fused.options" },
         { type: "doc", id: "python-sdk/api-reference/fused-register-dataset", label: "fused.register_dataset" },
         { type: "doc", id: "python-sdk/api-reference/fused-secrets", label: "fused.secrets" },
+        { type: "doc", id: "python-sdk/api-reference/fused-user-secrets", label: "fused.user_secrets" },
         { type: "doc", id: "python-sdk/api-reference/fused-types", label: "fused.types" },
         { type: "doc", id: "python-sdk/api-reference/fused-run", label: "fused.run" },
         { type: "doc", id: "python-sdk/api-reference/fused-run-async", label: "fused.run_async" },
