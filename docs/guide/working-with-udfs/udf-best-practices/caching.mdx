@@ -135,6 +135,60 @@ def child_udf():
 Use this when you want to force-refresh `parent_udf` without disabling caching
 for every run of `child_udf`.
 
+### @fused.cache is shared across UDFs
+
+`@fused.cache` keys the cache on a **hash of the function's source code**, not on which UDF the function belongs to. Two UDFs that define a cached function with identical source code (same name, same body, same comments, same print statements) will share the same cache entry.
+
+```python
+# UDF 1
+@fused.udf
+def udf():
+    import pandas as pd
+
+    @fused.cache
+    def cached_sleep():
+        import time
+        time.sleep(5)
+        return
+
+    cached_sleep()
+    return pd.DataFrame({"hello": ['world']})
+
+# UDF 2
+@fused.udf
+def udf(name: str = "world"):
+    import pandas as pd
+
+    @fused.cache
+    def cached_sleep():
+        import time
+        time.sleep(5)
+        return
+
+    cached_sleep()
+    return pd.DataFrame({"hello": [name]})
+```
+
+Because `cached_sleep` is byte-for-byte identical in both UDFs, they share the same cache entry. If UDF 1 runs first, UDF 2 will return the cached result immediately without executing the function body again.
+
+Note that any modification to the function source, including a comment or a print statement, produces a different hash and results in a cache miss.
+
+**This can be useful:** shared utility functions, such as loading a reference dataset, automatically reuse the same cache across all UDFs that define them identically.
+
+**Watch out for:** if two UDFs have cached functions with the same name but different logic, they will silently return each other's cached output.
+
+To avoid accidental cache sharing, use distinct function names across UDFs:
+
+```python
+@fused.cache
+def cached_sleep_udf1():
+    ...
+
+@fused.cache
+def cached_sleep_udf2():
+    ...
+```
+
 ### Each execution context has its own cache
 
 Workbench and HTTP endpoints maintain **separate caches**, even when running the exact same UDF with the same parameters. Clearing cache in one context does not affect the others.
