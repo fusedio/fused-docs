@@ -17287,79 +17287,55 @@ URL: https://docs.fused.io/workbench/integrations/bigquery
 
 # BigQuery Integration
 
-Fused integrates with Google BigQuery via the Python `bigquery` library.
+Fused integrates with Google BigQuery via the Python `google-cloud-bigquery` library. Authentication uses the shared Google Cloud service account stored through the Integrations & Secrets page.
 
-## Option 1: Credentials file
+## 1. Create a Service Account
 
-### 1. Authenticate with a Google Service Account
+Set up a Google Cloud service account with permissions to query BigQuery. See the Google Cloud documentation for instructions to:
+- Create a Service Account
+- Set permissions for the Service Account
 
-Create a UDF to write your Google Service Account credentials to the Fused runtime disk at `/mnt/cache`.
+The service account needs at minimum the `BigQuery Data Viewer` and `BigQuery Job User` roles.
 
-```python showLineNumbers
+## 2. Download the JSON Key File
+
+Download the JSON key file associated with the Service Account. This file contains credentials that Fused will use to authenticate with BigQuery.
+
+## 3. Connect the Google Cloud integration in Fused
+
+In the Integrations & Secrets page, open the **Google Cloud** integration and paste the JSON key file contents. This stores the key as a secret named `gcs_fused`.
+
+## 4. Query BigQuery from a UDF
+
+Load the secret directly as a dict and create a BigQuery client:
+
+```python
 @fused.udf
 def udf():
-
-    # Google Key as JSON
-    data = 
-
-    key_path = '/mnt/cache/bq_creds.json'
-
-    with open(key_path, 'w') as file:
-        json.dump(data, file)
-```
-
-### 2. Load data from BigQuery
-
-Create a UDF that queries a BigQuery dataset and returns the results as a DataFrame or GeoDataFrame. Authenticate by passing the key file path to `service_account.Credentials`.
-
-```python showLineNumbers
-@fused.udf
-def udf(bounds: fused.types.TileGDF=None, geography_column=None):
+    import json
     from google.cloud import bigquery
     from google.oauth2 import service_account
 
-    key_path = "/mnt/cache/bq_creds.json"
-
-    credentials = service_account.Credentials.from_service_account_file(
-        key_path, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    credentials = service_account.Credentials.from_service_account_info(
+        json.loads(fused.secrets["gcs_fused"]),
+        scopes=["https://www.googleapis.com/auth/cloud-platform"],
     )
-
     client = bigquery.Client(credentials=credentials, project=credentials.project_id)
 
-    query = f"""
+    query = """
         SELECT * FROM `bigquery-public-data.new_york.tlc_yellow_trips_2015`
         LIMIT 10
     """
-
-    if geography_column:
-        return client.query(query).to_geodataframe(geography_column=geography_column)
-    else:
-        return client.query(query).to_dataframe()
+    return client.query(query).to_dataframe()
 ```
 
-## Option 2: Secrets
+To return results as a GeoDataFrame, call `.to_geodataframe(geography_column="geometry")` instead of `.to_dataframe()`.
 
-If you already have a `gcs_secret` in Fused secrets, you can use it to access your GCP secrets. Otherwise create new secrets in the Fused secrets manager with:
-- `GS_ACCESS_KEY_ID`
-- `GS_SECRET_ACCESS_KEY`
+## See also
 
-```python showLineNumbers
-@fused.udf
-def udf(repo_name: str = "athasdev/athas"):
-
-    # Not required if your account already has the `gcs_secret` in Fused secrets
-    os.environ['GS_ACCESS_KEY_ID'] = fused.secrets["GS_ACCESS_KEY_ID"]
-    os.environ['GS_SECRET_ACCESS_KEY'] = fused.secrets["GS_SECRET_ACCESS_KEY"]
-
-    from google.cloud import bigquery
-    client = bigquery.Client()
-
-    query = f""" SELECT * FROM `githubarchive.day.202508*` LIMIT 10"""
-
-    query_job = client.query(query)
-    return query_job.to_dataframe()
-```
-
+- Google Cloud Storage integration — connect a GCS bucket
+- Cloud storage — read and write cloud storage files from UDFs
+- Secrets management — store credentials securely
 ================================================================================
 
 ## Google Cloud Storage Integration
