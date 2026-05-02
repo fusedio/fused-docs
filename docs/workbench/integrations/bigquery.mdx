@@ -4,91 +4,80 @@ title: BigQuery Integration
 sidebar_label: BigQuery
 ---
 
+import Details from '@theme/MDXComponents/Details';
+
 # BigQuery Integration
 
-Fused integrates with [Google BigQuery](https://cloud.google.com/bigquery/docs/introduction) via the Python [`bigquery`](https://cloud.google.com/python/docs/reference/bigquery/latest) library.
+Fused integrates with [Google BigQuery](https://cloud.google.com/bigquery/docs/introduction) via the Python [`google-cloud-bigquery`](https://cloud.google.com/python/docs/reference/bigquery/latest) library. Authentication uses the shared Google Cloud service account stored through the [Integrations & Secrets](/workbench/integrations-secrets) page.
 
-## Option 1: Credentials file
+## 1. Create a Service Account
 
-### 1. Authenticate with a Google Service Account
+Set up a Google Cloud service account with permissions to query BigQuery. See the Google Cloud documentation for instructions to:
+- [Create a Service Account](https://cloud.google.com/iam/docs/service-accounts-create)
+- [Set permissions for the Service Account](https://cloud.google.com/iam/docs/manage-access-service-accounts)
 
-Create a UDF to write your Google [Service Account credentials](https://cloud.google.com/bigquery/docs/use-service-accounts) to the Fused runtime [disk](/guide/working-with-udfs/udf-best-practices/storage/#mntcache-disk) at `/mnt/cache`.
+The service account needs at minimum the `BigQuery Data Viewer` and `BigQuery Job User` roles.
 
-```python showLineNumbers
-@fused.udf
-def udf():
+## 2. Download the JSON Key File
 
-    import os, json
+Download the JSON key file associated with the Service Account. This file contains credentials that Fused will use to authenticate with BigQuery.
 
-    # Google Key as JSON
-    data = {
-        'type': 'service_account',
-        'project_id': 'MYPROJECT',
-        'private_key_id': '1234',
-        'private_key': '-----BEGIN PRIVATE KEY-----...\n-----END PRIVATE KEY-----\n',
-        'client_email': 'fused-account@MYPROJECT.iam.gserviceaccount.com',
-        'client_id': '1234567',
-        'auth_uri': 'https://accounts.google.com/o/oauth2/auth',
-        'token_uri': 'https://oauth2.googleapis.com/token',
-        'auth_provider_x509_cert_url': 'https://www.googleapis.com/oauth2/v1/certs',
-        'client_x509_cert_url': 'https://www.googleapis.com/robot/v1/metadata/x509/fused-pg%40MYPROJECT.iam.gserviceaccount.com',
-        'universe_domain': 'googleapis.com'
-    }
+<Details open={false}>
 
-    key_path = '/mnt/cache/bq_creds.json'
+<summary>Expected service account JSON structure</summary>
 
-    with open(key_path, 'w') as file:
-        json.dump(data, file)
+```json
+{
+  "type": "service_account",
+  "project_id": "your-project-id",
+  "private_key_id": "key-id-here",
+  "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+  "client_email": "your-service-account@your-project-id.iam.gserviceaccount.com",
+  "client_id": "123456789",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/your-service-account%40your-project-id.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
 ```
 
-### 2. Load data from BigQuery
+</Details>
 
-Create a UDF that queries a BigQuery dataset and returns the results as a DataFrame or GeoDataFrame. Authenticate by passing the key file path to `service_account.Credentials`.
+## 3. Connect the Google Cloud integration in Fused
 
-```python showLineNumbers
+In the [Integrations & Secrets](https://www.fused.io/workbench/user/integrations) page, open the **Google Cloud** integration and paste the JSON key file contents. This stores the key as a secret named `gcs_fused`.
+
+## 4. Query BigQuery from a UDF
+
+Load the secret directly as a dict and create a BigQuery client:
+
+```python
 @fused.udf
-def udf(bounds: fused.types.TileGDF=None, geography_column=None):
+def udf():
+    import json
     from google.cloud import bigquery
     from google.oauth2 import service_account
 
-    key_path = "/mnt/cache/bq_creds.json"
-
-    credentials = service_account.Credentials.from_service_account_file(
-        key_path, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    credentials = service_account.Credentials.from_service_account_info(
+        json.loads(fused.secrets["gcs_fused"]),
+        scopes=["https://www.googleapis.com/auth/cloud-platform"],
     )
-
     client = bigquery.Client(credentials=credentials, project=credentials.project_id)
 
-    query = f"""
+    query = """
         SELECT * FROM `bigquery-public-data.new_york.tlc_yellow_trips_2015`
         LIMIT 10
     """
-
-    if geography_column:
-        return client.query(query).to_geodataframe(geography_column=geography_column)
-    else:
-        return client.query(query).to_dataframe()
+    return client.query(query).to_dataframe()
 ```
 
-## Option 2: Secrets
+:::tip
+To return results as a GeoDataFrame, call `.to_geodataframe(geography_column="geometry")` instead of `.to_dataframe()`.
+:::
 
-If you already have a `gcs_secret` in Fused secrets, you can use it to access your GCP secrets. Otherwise create new secrets in the Fused secrets manager with:
-- `GS_ACCESS_KEY_ID`
-- `GS_SECRET_ACCESS_KEY`
+## See also
 
-```python showLineNumbers
-@fused.udf
-def udf(repo_name: str = "athasdev/athas"):
-    import os
-    # Not required if your account already has the `gcs_secret` in Fused secrets
-    os.environ['GS_ACCESS_KEY_ID'] = fused.secrets["GS_ACCESS_KEY_ID"]
-    os.environ['GS_SECRET_ACCESS_KEY'] = fused.secrets["GS_SECRET_ACCESS_KEY"]
-
-    from google.cloud import bigquery
-    client = bigquery.Client()
-
-    query = f""" SELECT * FROM `githubarchive.day.202508*` LIMIT 10"""
-
-    query_job = client.query(query)
-    return query_job.to_dataframe()
-```
+- [Google Cloud Storage integration](/workbench/integrations/gcs) — connect a GCS bucket
+- [Cloud storage](/guide/data-input-outputs/import-connection/cloud-storage) — read and write cloud storage files from UDFs
+- [Secrets management](/guide/advanced-setup/secrets-management) — store credentials securely
