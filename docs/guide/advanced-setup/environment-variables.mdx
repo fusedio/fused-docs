@@ -5,18 +5,23 @@ sidebar_label: Secrets management
 sidebar_position: 1
 ---
 
-Fused provides a built-in secrets manager to securely store and access sensitive credentials like API keys, database passwords, and tokens. Secrets are encrypted in the Fused backend and scoped to your account or organization.
+Fused provides a built-in secrets manager to securely store and access sensitive credentials like API keys, database passwords, and tokens. Both types of secrets require a paid plan. There are two kinds of secrets:
+
+- **Team secrets** ([`fused.secrets`](/python-sdk/api-reference/fused-secrets)) — scoped to your team and accessible to everyone in your team.
+- **User secrets** ([`fused.user_secrets`](/python-sdk/api-reference/fused-user-secrets)) — owned and accessible only by the authenticated user.
 
 ## Storing secrets
 
+Open the **Integrations & secrets** modal in Workbench:
 
-In Workbench, click your profile picture in the top right corner and open Integrations & secrets. In the Secrets section, click **"+ Add new secret"** to add a key-value pair.
+- From the **home** sidebar, click **Integrations & secrets** under your user section.
+- From inside a **canvas**, open the overflow menu and select **Integrations & secrets**.
 
-![secrets management](/img/workbench/preferences/secrets_management.png)
+The modal has separate **Team secrets** and **Personal secrets** sections. In either section, click **Add new secret** to store a key-value pair.
 
-## Accessing secrets in UDFs
+## Team secrets — `fused.secrets`
 
-Use [`fused.secrets`](/python-sdk/api-reference/fused-secrets) to retrieve stored secrets by name:
+Team secrets are scoped to the execution environment (kernel) and shared across your team or organization. Use [`fused.secrets`](/python-sdk/api-reference/fused-secrets) to read, write, and delete them:
 
 ```python
 import fused
@@ -30,11 +35,56 @@ def udf():
     ...
 ```
 
+You can also manage team secrets programmatically:
+
+```python
+@fused.udf
+def udf():
+    fused.secrets["MY_KEY"] = "value"
+
+    del fused.secrets["MY_KEY"]
+
+    dir(fused.secrets)
+```
+
+## User secrets — `fused.user_secrets`
+
+User secrets are owned by the authenticated user.
+
+User secrets are read-only in the SDK. To create, update, or delete user secrets, use the Workbench UI under **Integrations & secrets**.
+
+```python
+@fused.udf
+def udf():
+    val = fused.user_secrets["MY_KEY"]
+    # or
+    val = fused.user_secrets.MY_KEY
+    ...
+```
+
+To list all user secret keys:
+
+```python
+@fused.udf
+def udf():
+    keys = list(fused.user_secrets)
+    ...
+```
+
+## How secrets are secured
+
+All secrets are stored in [AWS Secrets Manager](https://aws.amazon.com/secrets-manager/), which encrypts secret values at rest and in transit.
+
+- **Team secrets** are each protected by a dedicated [AWS KMS](https://aws.amazon.com/kms/) encryption key. IAM policies restrict access so that only the specific execution environment that owns a secret can decrypt it.
+- **User secrets** are encrypted at rest using AWS-managed encryption keys within Secrets Manager.
+- Secrets are never written to disk in plaintext or included in logs.
+- Access is authenticated and authorized through Fused's API layer — secrets are only decrypted at the moment they are read by your UDF code.
+
 ## Security notes
 
-- Secrets are stored encrypted in the Fused backend.
-- Any secrets added to Fused are accessible by anyone in your team.
-- Never print or return secret values from UDFs — anyone calling the UDF could otherwise read them.
-- Use [`fused.secrets`](/python-sdk/api-reference/fused-secrets) instead of `.env` files to keep credentials out of your codebase.
+- Team secrets added to Fused are accessible by anyone in your team.
+- User secrets are private to the authenticated user.
+- Never print or return secret values from UDFs — anyone calling the UDF could otherwise read them. This applies to both `fused.secrets` and `fused.user_secrets`.
+- Use secrets instead of `.env` files to keep credentials out of your codebase.
 
 For more on writing UDFs securely, see [Security best practices](/guide/working-with-udfs/udf-best-practices/security).
