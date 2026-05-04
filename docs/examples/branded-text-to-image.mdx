@@ -1,0 +1,147 @@
+---
+id: branded-text-to-image
+title: Create a branded text to image pipeline
+sidebar_label: Branded text to image
+---
+
+# Create a branded text to image pipeline
+
+**Define your brand's visual style once and share it with your whole team — anyone can generate on-brand images from a text prompt without a design tool or local setup. The Canvas is scoped to your organization, so external users can't access it, the style library version-controls through [GitHub](/guide/advanced-setup/git-integration), and API keys never leave the platform.**
+
+Turn a text description into a brand-consistent image in one click — or feed an existing sketch through the same style system to get a polished, on-brand version. Define your visual style once; everyone on the team uses the same guidelines automatically.
+
+The pipeline was built on [Fused Workbench](https://www.fused.io/workbench/) and uses [widgets](/guide/data-input-outputs/import-connection/widgets/) to display generated images inline. The image on the [Widgets docs page](/guide/data-input-outputs/import-connection/widgets/) is an example of an image made using this exact technique.
+
+## How the pipeline works
+
+![Diagram showing the image-to-image and text-to-image pipelines: source image plus transform prompt, or style library plus text prompt, both feed an AI model via OpenRouter running on Fused, outputting to a Canvas widget](/img/examples/branded-t2i/pipeline-diagram.png)
+
+*This diagram was itself generated using the pipeline — prompt: "Cartoon version of how the pipeline works for image to image pipeline", style: `technical_blogpost`.*
+
+<details>
+<summary>View the style prompt used to generate this diagram</summary>
+
+```text
+A clean hand-drawn technical diagram illustration, white background, black ink only.
+Style: marker-drawn boxes and arrows, slightly rough edges, imperfect lines — like a
+whiteboard diagram drawn by a skilled designer. NOT isometric, NOT 3D, NOT photorealistic.
+
+Typography: bold hand-lettered titles in a casual but clean marker style.
+Labels inside boxes use a clean sans-serif or handwritten font, medium weight.
+Fused brand accent: use #E5FF44 (bright yellow-green) ONLY for:
+- The "FUSED" box or any box representing Fused itself
+- Underlines on main section titles
+- Key arrow highlights
+Other colors could be used but should only be supplementary and used sparingly.
+
+Layout rules:
+- Clear left-to-right or top-to-bottom flow
+- Boxes have thin rounded borders, consistent sizing
+- Arrows are clean, single-headed, slightly curved
+- Labels are short: 1-3 words max per item
+- Generous whitespace between elements
+- If two panels, divide with a single vertical black line
+
+Do NOT add: drop shadows, gradients, textures, background colors, decorative elements.
+The diagram should look like it could be recreated on a whiteboard in 10 minutes.
+```
+
+</details>
+
+A central **style library** UDF holds your brand guidelines as named style prompts. Both the text-to-image and image-to-image generators pull from it at runtime, so every image — regardless of who generated it or what prompt they wrote — automatically follows the same visual rules.
+
+### Text-to-image
+
+Type a description of what you want to create, choose a style from the dropdown, and submit. The AI model receives your prompt wrapped in the style guidelines and returns a brand-consistent image displayed directly in a Canvas widget.
+
+![Canvas showing the text prompt "A YouTube thumbnail for a video about DuckDB vs Polars in 2025" with YouTube thumbnail style selected, and the generated image output on the right](https://fused-magic.s3.us-west-2.amazonaws.com/blog-assets/text-to-image/text_to_image.gif)
+
+### Image-to-image
+
+Provide an existing image — a hand-drawn sketch, a rough diagram, a photo — and a short prompt describing the transformation. The model applies your brand style while preserving the structure and composition of the source.
+
+![Before and after: raw sketches on the left, polished branded illustrations on the right](/img/examples/branded-t2i/image-to-image-showcase.png)
+
+*Left: raw sketches. Right: the same content transformed into a consistent branded illustration style — no manual design work.*
+
+This is how the illustrations below were made: hand-drawn sketches converted to polished brand illustrations using a single shared style prompt.
+
+<div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px'}}>
+  <img src="/img/examples/branded-t2i/crime-style-ai-editors.png" alt="AI editors illustration in brand style" style={{width: '100%', borderRadius: '6px'}} />
+  <img src="/img/examples/branded-t2i/crime-style-duckdb.png" alt="DuckDB illustration in brand style" style={{width: '100%', borderRadius: '6px'}} />
+</div>
+
+## Why run this on Fused?
+
+You could wire up OpenRouter locally in a script, but running it on Fused gives you:
+
+- **[Secure secrets management](/workbench/preferences#secrets-management)** — API keys are stored as Fused secrets, never in code or environment variables. The key never touches team members' machines.
+- **[Team sharing](/guide/working-with-udfs/udf-best-practices/version-control)** — share the Canvas URL with anyone in your org. They open a browser, type a prompt, and get an on-brand image — no Python environment, no local setup, no credential sharing. Access stays within your organization.
+- **[Response caching](/python-sdk/api-reference/fused-cache)** — identical prompt + style combinations return instantly without re-calling the API. Running the same prompt twice costs nothing extra.
+- **One style update, everywhere** — edit the style library once and every future generation picks up the change automatically.
+- **Fast iteration** — tweak prompts, switch styles, and compare outputs in the browser in seconds.
+
+:::tip Setting up your OpenRouter API key
+Add your key once as a [Fused secret](/workbench/preferences#secrets-management) named `openrouter_api_key`:
+
+1. Go to **Workbench → Preferences → Secrets**
+2. Click **Add secret**, name it `openrouter_api_key`, paste your key
+3. The pipeline reads it automatically — no code changes needed
+
+Team members with Canvas access can generate images without ever seeing or handling the key.
+:::
+
+## Customize your brand style
+
+The style library UDF returns a DataFrame where each column is a named style. Each value is a detailed visual prompt the AI model uses alongside whatever the user types. Adding a new style is just adding a new column:
+
+```python
+@fused.udf
+def udf(color: str = "#E5FF44"):
+    import pandas as pd
+
+    return pd.DataFrame({
+        "technical_blogpost": [f"""
+A clean hand-drawn technical diagram, white background, black ink only.
+Marker-drawn boxes and arrows, slightly rough edges — like a whiteboard sketch.
+Fused brand accent: use {color} only for key highlights and the focal element.
+Clear left-to-right flow, generous whitespace, 1-3 word labels per box.
+"""],
+        "youtube_thumbnail": ["""
+YouTube thumbnail, 16:9. Pure black background. Ultra-bold condensed all-caps
+sans-serif headline. First lines in white, last line in bright lime green (#E5FF44).
+No people, no logos, no gradients — type fills the frame edge to edge.
+"""],
+        "crime_blogpost": [f"""
+Hand-drawn sketch inked into a polished brand illustration. White background,
+black ink line art, ONE accent color: {color} as wide highlighter swipes.
+Crime scene diagram aesthetic. Bold all-caps labels, chunky arrows.
+"""],
+        # Add your own style here
+        "my_brand": [f"""
+Describe your brand visual style here. Include: color palette (use {color} for
+accents), typography style, layout rules, illustration technique, and tone.
+Be specific — the more precise the style prompt, the more consistent the output.
+"""],
+    })
+```
+
+The `color` parameter propagates your brand accent across all styles at once — change `#E5FF44` to your primary color and every style updates in one place.
+
+### Making the new style available in the dashboard
+
+After adding a column to the style library, add one line to the style selector dropdown widget:
+
+```sql
+SELECT 'my_brand' AS value, 'My Brand' AS label FROM {{style_library}}
+```
+
+The dropdown lists all available styles dynamically — no other changes needed.
+
+## See also
+
+- [Widgets](/guide/data-input-outputs/import-connection/widgets/) — how image output widgets work on the Canvas
+- [Secrets management](/workbench/preferences#secrets-management) — storing API keys securely
+- [`@fused.cache`](/python-sdk/api-reference/fused-cache) — avoid duplicate API charges
+- [Working as a team](/guide/working-with-udfs/udf-best-practices/version-control)
+- [Using AI inside a UDF](/guide/data-input-outputs/import-connection/using-ai-inside-udf)
