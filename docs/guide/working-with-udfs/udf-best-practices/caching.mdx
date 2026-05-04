@@ -137,47 +137,43 @@ for every run of `child_udf`.
 
 ### @fused.cache is shared across UDFs
 
-`@fused.cache` keys the cache on a **hash of the function's source code**, not on which UDF the function belongs to. Two UDFs that define a cached function with identical source code (same name, same body, same comments, same print statements) will share the same cache entry.
+The cache key is a **hash of [function source code + parameters]**. Two UDFs with byte-for-byte identical cached function bodies, called with the same arguments, share the same cache entry.
 
+**UDF 1**
 ```python
-# UDF 1
 @fused.udf
 def udf():
     import pandas as pd
 
     @fused.cache
-    def cached_sleep():
+    def cached_sleep():  # identical source → same cache key
         import time
         time.sleep(5)
-        return
 
-    cached_sleep()
+    cached_sleep()  # populates the cache on first run
     return pd.DataFrame({"hello": ['world']})
+```
 
-# UDF 2
+**UDF 2**
+```python
 @fused.udf
 def udf(name: str = "world"):
     import pandas as pd
 
     @fused.cache
-    def cached_sleep():
+    def cached_sleep():  # identical source → hits UDF 1's cache entry
         import time
         time.sleep(5)
-        return
 
-    cached_sleep()
+    cached_sleep()  # returns instantly if UDF 1 ran first
     return pd.DataFrame({"hello": [name]})
 ```
 
-Because `cached_sleep` is byte-for-byte identical in both UDFs, they share the same cache entry. If UDF 1 runs first, UDF 2 will return the cached result immediately without executing the function body again.
+:::tip
+Any change to function source — a comment, print statement, or different call arguments — produces a different hash and causes a cache miss.
+:::
 
-Note that any modification to the function source, including a comment or a print statement, produces a different hash and results in a cache miss.
-
-**This can be useful:** shared utility functions, such as loading a reference dataset, automatically reuse the same cache across all UDFs that define them identically.
-
-**Watch out for:** if two UDFs have cached functions with the same name but different logic, they will silently return each other's cached output.
-
-To avoid accidental cache sharing, use distinct function names across UDFs:
+To avoid accidental cache sharing, use distinct function names:
 
 ```python
 @fused.cache
