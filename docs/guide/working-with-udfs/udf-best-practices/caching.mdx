@@ -135,6 +135,56 @@ def child_udf():
 Use this when you want to force-refresh `parent_udf` without disabling caching
 for every run of `child_udf`.
 
+### @fused.cache is shared across UDFs
+
+If two UDFs define the same cached function — identical source code, called with the same arguments — the second will reuse the cached result from the first instead of recomputing. This is because the cache key is based on function source code and call arguments, not on which UDF the function belongs to. Here's an example:
+
+**UDF 1**
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+
+    @fused.cache
+    def cached_sleep():  # identical source → same cache key
+        import time
+        time.sleep(5)
+
+    cached_sleep()  # populates the cache on first run
+    return pd.DataFrame({"hello": ['world']})
+```
+
+**UDF 2**
+```python
+@fused.udf
+def udf(name: str = "world"):
+    import pandas as pd
+
+    @fused.cache
+    def cached_sleep():  # identical source → hits UDF 1's cache entry
+        import time
+        time.sleep(5)
+
+    cached_sleep()  # returns instantly if UDF 1 ran first
+    return pd.DataFrame({"hello": [name]})
+```
+
+:::tip
+Any change to function source — a comment, print statement, or different call arguments — produces a different hash and causes a cache miss.
+:::
+
+To avoid accidental cache sharing, use distinct function names:
+
+```python
+@fused.cache
+def cached_sleep_udf1():
+    ...
+
+@fused.cache
+def cached_sleep_udf2():
+    ...
+```
+
 ### Each execution context has its own cache
 
 Workbench and HTTP endpoints maintain **separate caches**, even when running the exact same UDF with the same parameters. Clearing cache in one context does not affect the others.
