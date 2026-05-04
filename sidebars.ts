@@ -170,6 +170,7 @@ const sidebars: SidebarsConfig = {
         "examples/maxar-satellite-imagery",
         "examples/site-selection-analysis",
         "examples/poi-site-selection-dashboard",
+        "examples/seismic-hazard-mapping",
       ],
     },
 
