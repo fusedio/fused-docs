@@ -4658,6 +4658,221 @@ result = my_udf(name="hello")
 
 ================================================================================
 
+## Scheduling UDFs
+Path: guide/working-with-udfs/scheduling-udfs.mdx
+URL: https://docs.fused.io/guide/working-with-udfs/scheduling-udfs
+
+Schedule UDFs to run automatically on a recurring cron schedule. Scheduled UDFs execute on batch compute instances with no time limit, making them suitable for data pipelines, periodic refreshes, and automated workflows.
+
+- Cronjobs can be scheduled at any combination of minute, hour, day of month, month, or day of week.
+- The minimum frequency is **once per hour**.
+- Cronjobs run on **batch compute instances** with no execution time limit.
+- There is a **1:1 relationship** between a UDF and a cronjob — the same UDF cannot have multiple schedules.
+
+## Creating a schedule
+
+### With `fused.api.schedule_udf()`
+
+Use `fused.api.schedule_udf()` to schedule any UDF by name or object:
+
+```python
+
+job = fused.api.schedule_udf(
+    udf=fused.load("my_etl_pipeline"),
+    minute=0,
+    hour=8,
+    udf_args=,
+    enabled=True,
+)
+print(job)
+# <CronJob my_etl_pipeline (0 8 * * *)>
+```
+
+### With `udf.schedule()`
+
+If you already have a UDF object, call `.schedule()` directly:
+
+```python
+@fused.udf
+def my_udf():
+
+    return pd.DataFrame()
+
+job = my_udf.schedule(minute=0, hour=8)
+```
+
+### Cron field reference
+
+| Field | Parameter | Range | Default |
+|-------|-----------|-------|---------|
+| Minute | `minute` | 0–59 | *required* |
+| Hour | `hour` | 0–23 | *required* |
+| Day of month | `day_of_month` | 1–31 | Every day |
+| Month | `month` | 1–12 | Every month |
+| Day of week | `day_of_week` | 0–6 (0 = Sunday) | Every day |
+
+Pass a single `int` for a specific value, or a `list[int]` for multiple values:
+
+```python
+# Run every day at 4:59 AM
+fused.api.schedule_udf(udf="my_udf", minute=59, hour=4)
+
+# Run at midnight on the 1st and 15th of every month
+fused.api.schedule_udf(udf="my_udf", minute=0, hour=0, day_of_month=[1, 15])
+
+# Run every Monday (1) and Friday (5) at noon
+fused.api.schedule_udf(udf="my_udf", minute=0, hour=12, day_of_week=[1, 5])
+```
+
+## Passing arguments
+
+Use `udf_args` to pass parameters to the scheduled UDF. These are forwarded as keyword arguments each time the job runs:
+
+```python
+fused.api.schedule_udf(
+    udf=fused.load("job_to_run"),
+    minute=59,
+    hour=4,
+    udf_args=,
+    enabled=True,
+)
+```
+
+The target UDF receives them as typed parameters:
+
+```python
+@fused.udf(cache_max_age="0s")
+def udf(message: str = "hello from cron!"):
+
+    print(message)
+    return pd.DataFrame()
+```
+
+## Listing schedules
+
+Use `fused.api.schedule_list()` to retrieve all scheduled jobs for your team:
+
+```python
+jobs = fused.api.schedule_list()
+print(f"Total jobs: ")
+
+for job in jobs:
+    print(f" —  — enabled=")
+```
+
+To inspect schedules as a DataFrame:
+
+```python
+
+jobs = fused.api.schedule_list()
+rows = []
+for job in jobs:
+    row = job.model_dump()
+    rows.append()
+
+df = pd.DataFrame(rows)
+```
+
+You can also check a specific UDF's schedule with `udf.get_schedule()`:
+
+```python
+my_udf = fused.load("my_etl_pipeline")
+schedules = my_udf.get_schedule()
+```
+
+## Updating a schedule
+
+Calling `fused.api.schedule_udf()` (or `udf.schedule()`) with a UDF that already has a schedule will **update the existing schedule** rather than creating a duplicate. This makes schedule creation idempotent:
+
+```python
+# Initially schedule at 8 AM
+fused.api.schedule_udf(udf="my_udf", minute=0, hour=8)
+
+# Change to 6 AM — updates the same cronjob
+fused.api.schedule_udf(udf="my_udf", minute=0, hour=6)
+```
+
+To disable a schedule without deleting it, set `enabled=False`:
+
+```python
+fused.api.schedule_udf(udf="my_udf", minute=0, hour=8, enabled=False)
+```
+
+## Triggering a run manually
+
+Use `run_now()` on a `CronJob` to trigger an immediate execution outside of the regular schedule:
+
+```python
+jobs = fused.api.schedule_list()
+for job in jobs:
+    if job.name == "my_etl_pipeline":
+        result = job.run_now()
+        print(result)
+        break
+```
+
+## Deleting a schedule
+
+Call `.delete()` on a `CronJob` to permanently remove it:
+
+```python
+jobs = fused.api.schedule_list()
+for job in jobs:
+    if job.name == "my_etl_pipeline":
+        job.delete()
+        print(f"Deleted job: ")
+        break
+```
+
+## Example: scheduled data pipeline
+
+A complete example that fetches data and writes results to cloud storage, scheduled to run daily:
+
+```python
+@fused.udf(cache_max_age="0s")
+def daily_weather_sync(city: str = "San Francisco"):
+
+    from datetime import datetime
+
+    response = requests.get(
+        f"https://api.open-meteo.com/v1/forecast?latitude=37.77&longitude=-122.42&current_weather=true"
+    )
+    data = response.json()["current_weather"]
+
+    df = pd.DataFrame([])
+
+    path = f"fd://weather//.parquet"
+    df.to_parquet(path)
+    print(f"Wrote  rows to ")
+    return df
+```
+
+Schedule it to run every day at 6:00 AM:
+
+```python
+job = fused.api.schedule_udf(
+    udf=fused.load("daily_weather_sync"),
+    minute=0,
+    hour=6,
+    udf_args=,
+)
+print(job)
+# <CronJob daily_weather_sync (0 6 * * *)>
+```
+
+Monitor execution results in the Job logs page.
+
+## API reference
+
+| Function | Description |
+|----------|-------------|
+| `fused.api.schedule_udf()` | Schedule a UDF on a cron schedule |
+| `fused.api.schedule_list()` | List all scheduled jobs |
+| `udf.schedule()` | Schedule a UDF (instance method) |
+| `udf.get_schedule()` | Get existing schedules for a UDF |
+
+================================================================================
+
 ## Building UDFs for Agents
 Path: guide/working-with-udfs/udf-best-practices/agents.mdx
 URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/agents

@@ -40,6 +40,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/working-with-udfs/run-udfs-as-api", label: "UDFs as API" },
         { type: "doc", id: "guide/working-with-udfs/fused-run", label: "Running UDFs" },
         { type: "doc", id: "guide/working-with-udfs/fused-submit", label: "Parallel execution" },
+        { type: "doc", id: "guide/working-with-udfs/scheduling-udfs", label: "Scheduling UDFs" },
       ],
     },
 
