@@ -5,55 +5,51 @@ sidebar_label: Seismic Hazard Mapping
 sidebar_position: 11
 ---
 
-_A complete example showcasing how to combine a seismic hazard raster with building vector data — using H3 hexagons as a universal join key — to find where the most buildings sit in the most dangerous earthquake zones._
+_Cross-reference earthquake hazard with building density over Italy to find where the most buildings sit in the highest-risk zones._
 
-:::tip Try it yourself
+<iframe
+  src="https://www.fused.io/share/fc_26RsEajoeO8MGcP6wJgkqm/widget_1"
+  width="100%"
+  height="500px"
+  frameBorder="0"
+  style={{borderRadius: '8px', marginBottom: '1.5rem'}}
+></iframe>
+
+:::tip Try the full canvas
 Open the live canvas: [Seismic Hazard Mapping](https://www.fused.io/canvas/fc_26RsEajoeO8MGcP6wJgkqm?bounds=-329%2C-1758%2C6459%2C3069)
 :::
 
-## The problem: where are buildings most at risk?
+## The problem
 
-Italy sits at the intersection of the African and Eurasian tectonic plates, making it one of Europe's most seismically active countries. Historic cities like L'Aquila, Assisi, and Amatrice have suffered devastating earthquakes in living memory.
+Italy sits at the collision of the African and Eurasian tectonic plates. Cities like L'Aquila and Amatrice have suffered devastating earthquakes in living memory. The goal: **find where the highest concentration of buildings overlaps with the highest seismic hazard**.
 
-The goal of this canvas is to answer a practical question: **where is the highest concentration of buildings in high-seismic-hazard zones?**
-
-To answer it we need two things:
-- A **seismic hazard map** — how likely and how severe are ground shaking events at each location?
-- A **building inventory** — where are buildings, and how much built area is there?
-
-These come from two completely different data sources, in two completely different formats. This is where Fused makes the analysis elegant.
+That requires joining two datasets that have nothing in common structurally — a raster and a vector — from two different organizations. H3 makes it trivial.
 
 ## Data sources
 
-**Seismic hazard** comes from the [GEM Foundation's OpenQuake Global Seismic Hazard Map (GSHM 2023)](https://maps.openquake.org/map/gshm-2023-1/). OpenQuake is the reference platform used by governments and engineering firms worldwide for seismic risk assessment. The dataset is distributed as a GeoTIFF where each pixel stores a Peak Ground Acceleration (PGA) value — the expected ground motion for a 1-in-475-year event.
-
-**Buildings** come from [Overture Maps](https://overturemaps.org/), one of the most comprehensive open building footprint datasets available. It covers all of Italy as pre-partitioned GeoParquet files, each holding the building polygons for a geographic partition.
-
-:::note
-The seismic hazard raster and the Overture building polygons have nothing in common structurally: different formats, different resolutions, different projections. A traditional workflow would require a spatial join — a slow, topology-error-prone operation. Here, we sidestep that entirely using H3.
-:::
+- **Seismic hazard** — [GEM Foundation OpenQuake Global Seismic Hazard Map (GSHM 2023)](https://maps.openquake.org/map/gshm-2023-1/). Each pixel is a Peak Ground Acceleration (PGA) value for a 1-in-475-year event.
+- **Buildings** — [Overture Maps](https://overturemaps.org/) building footprints for Italy, as pre-partitioned GeoParquet files.
 
 ## Canvas overview
 
-The canvas is built from a chain of composable UDFs. Each one does one job and passes its output directly to the next:
+![Canvas overview: OpenQuake hazard pipeline (top) and Overture buildings pipeline (bottom), joined on H3](/img/examples/seismic_hazard/canvas_overview.png)
 
 | Step | UDF | What it does |
 |------|-----|--------------|
 | 1 | `openquake_explorer` | Downloads the OpenQuake GeoTIFF and saves it to S3 once |
 | 2 | `loading_seismic_data` | Reads the TIF for a given bounding box, returns a pixel array |
 | 3 | `hexagonified_seismic_hazard` | Converts raster pixels → H3 hexagons, averaging hazard per cell |
-| 4 | `Overture_partitions` | Shows Overture GeoParquet partitions across Italy to pick the right file |
-| 5 | `Overture_to_hex_single_file` | Reads one Overture partition, aggregates building area per H3 hex via DuckDB |
-| 6 | `join_over_buildings` | Inner-joins the two hex layers on the H3 cell ID |
-| 7 | Dashboard widget | Scatter chart + KPI tiles + map to explore the joined result interactively |
-
-Changing the H3 resolution (`res=6`) propagates automatically through the entire pipeline. Swap the AOI or the hazard dataset — the rest adapts.
-
-![Canvas overview showing the full seismic hazard pipeline: from OpenQuake ingest through hexagonification to Overture building aggregation](/img/examples/seismic_hazard/canvas_overview.png)
+| 4 | `Overture_partitions` | Shows Overture partition footprints across Italy |
+| 5 | `Overture_to_hex_single_file` | Aggregates building area per H3 hex via DuckDB spatial SQL |
+| 6 | `join_over_buildings` | Inner-joins both hex tables on H3 cell ID |
+| 7 | Widget | Scatter chart + KPI tiles + map |
 
 ## 1. Ingest the seismic GeoTIFF
 
-The OpenQuake hazard dataset is distributed as a ZIP file containing a GeoTIFF. The `openquake_explorer` UDF downloads it once, extracts the `.tif`, and writes it to S3 so every subsequent UDF can read it directly without re-downloading.
+The OpenQuake dataset is distributed as a ZIP containing a ~100 MB GeoTIFF. Rather than downloading it on every run, this UDF fetches it once and writes it to S3. Subsequent UDFs read from S3 directly.
+
+<details>
+<summary>View <code>openquake_explorer</code> code</summary>
 
 ```python showLineNumbers
 @fused.udf
@@ -65,7 +61,7 @@ def udf(save_to_s3: bool = True):
 
     url = "https://cloud.openquake.org/public.php/dav/files/6SnFk2f92JEr76H"
 
-    @fused.cache
+    @fused.cache  # <-- fetch once, re-use on subsequent runs
     def fetch_zip(url):
         response = requests.get(url, timeout=60)
         response.raise_for_status()
@@ -76,7 +72,6 @@ def udf(save_to_s3: bool = True):
 
     tif_name = "v2023_1_pga_475_rock_3min.tif"
     s3_path = f"s3://fused-asset/demos/seismic_data/{tif_name}"
-
     tif_bytes = zf.read(tif_name)
 
     if save_to_s3:
@@ -93,15 +88,18 @@ def udf(save_to_s3: bool = True):
     }])
 ```
 
-:::tip
-`@fused.cache` on `fetch_zip` means the network request only happens once. Subsequent runs read from the local cache. See the [caching guide](/guide/working-with-udfs/udf-best-practices/caching) for more.
-:::
+</details>
 
-Once this UDF has been run once with `save_to_s3=True`, you can set it to `False` for all subsequent runs and skip the download entirely.
+:::tip
+`@fused.cache` means the network request only runs once. See [efficient caching](/guide/working-with-udfs/udf-best-practices/caching).
+:::
 
 ## 2. Load the seismic raster
 
-`loading_seismic_data` reads the GeoTIFF from S3 for a given bounding box and returns a 2D NumPy array of hazard values. It uses `read_tiff_safe` from [Fused's common utilities](https://github.com/fusedio/udfs/tree/main/public/common) — a helper that handles CRS reprojection, resampling, and safe pixel-count limits automatically.
+Reads the GeoTIFF from S3 clipped to a bounding box and returns a 2D NumPy array of PGA values. This array feeds directly into step 3, which converts it to H3 hexagons.
+
+<details>
+<summary>View <code>loading_seismic_data</code> code</summary>
 
 ```python showLineNumbers
 @fused.udf
@@ -111,15 +109,16 @@ def udf(
 ):
     path = 's3://fused-asset/demos/seismic_data/v2023_1_pga_475_rock_3min.tif'
     common = fused.load('https://github.com/fusedio/udfs/tree/6750f1f/public/common/')
+    # read_tiff_safe handles CRS reprojection, resampling and pixel-count limits
     arr = common.read_tiff_safe(bounds, path, chip_len, max_pixel=10 ** 8)
     return arr
 ```
 
-The `bounds` parameter defaults to the Italy bounding box. When this UDF is used as a dependency inside `hexagonified_seismic_hazard`, bounds flow in automatically from the parent.
+</details>
 
 ## 3. Raster → H3 hexagons
 
-This is the first "aha moment" in the canvas. Most people think of rasters and hexagons as separate worlds. `hexagonified_seismic_hazard` bridges them: it takes the pixel array from step 2 and converts it into a DataFrame where each row is an H3 hex cell with an average hazard score.
+`arr_to_h3` samples each pixel's coordinate, assigns it to an H3 cell, and aggregates all pixels in the same cell into a mean hazard score. A GeoTIFF becomes a flat table: one row per hex, one hazard column.
 
 ```python showLineNumbers
 @fused.udf
@@ -133,29 +132,43 @@ def udf(
     parent_udf = fused.load('loading_seimic_data')
 
     arr = parent_udf(bounds=bounds, chip_len=chip_len)
-
-    # Squeeze band dimension if present
     if arr.ndim == 3:
         arr = arr[0]
 
-    # Convert raster array → H3 hexagons
-    df = common.arr_to_h3(arr, bounds, res=h3_res)
+    df = common.arr_to_h3(arr, bounds, res=h3_res)  # <-- raster pixels → H3 hexagons
 
-    # Collapse list of pixel values per hex to a single mean
-    df["sesimic_hazard"] = df["agg_data"].apply(lambda x: float(np.mean(x)))
-    df = df[["hex", "sesimic_hazard"]]
-    return df
+    df["sesimic_hazard"] = df["agg_data"].apply(lambda x: float(np.mean(x)))  # <-- mean PGA per cell
+    return df[["hex", "sesimic_hazard"]]
 ```
 
-`arr_to_h3` samples each pixel's geographic coordinate, assigns it to an H3 cell at the chosen resolution, and aggregates all pixels that land in the same cell. The result is a flat table: one row per hex, one hazard column. See [converting data to H3](/guide/h3-analytics/converting) for more on this pattern.
+**Output** (30,031 hex cells for Italy at resolution 6):
+
+| hex | sesimic_hazard |
+|-----|---------------|
+| 604474434765455359 | 12.000 |
+| 604474509390512127 | 12.000 |
+| 604474458656210943 | 12.000 |
+| 604474458790428671 | 16.375 |
+| 604020220230631423 | 12.000 |
 
 :::tip H3 resolution
-Resolution 6 cells are roughly 36 km² each — good for a country-scale risk overview. Resolution 7 (about 5 km²) gives finer spatial detail at the cost of more rows. See the [resolution guide](/guide/h3-analytics/resolution-guide) to pick the right level for your analysis.
+Resolution 6 cells are ~36 km² — good for a country-scale overview. Resolution 7 (~5 km²) gives finer detail. See the [resolution guide](/guide/h3-analytics/resolution-guide).
 :::
 
-## 4. Explore Overture building partitions
+## 4. Explore Overture partitions
 
-Overture Maps buildings are stored as geo-partitioned GeoParquet files. Before reading buildings, `Overture_partitions` lets you visualize the partition footprints across Italy so you can identify which files cover your area of interest.
+Overture building data is split into geographic partitions to keep file sizes manageable. Before reading buildings, you need to know which partition file covers your AOI. The interactive map below shows all partition boundaries across Italy — hover to see the `chunk_id` and pick the right file for step 5.
+
+<iframe
+  src="https://www.fused.io/share/fc_26RsEajoeO8MGcP6wJgkqm/overture_partitions?bounds=%5B-5.810546%2C35.211212%2C30.810546%2C47.955184%5D"
+  width="100%"
+  height="400px"
+  frameBorder="0"
+  style={{borderRadius: '8px', margin: '1rem 0'}}
+></iframe>
+
+<details>
+<summary>View <code>Overture_partitions</code> code</summary>
 
 ```python showLineNumbers
 @fused.udf
@@ -169,9 +182,11 @@ def udf():
     return gpd.GeoDataFrame(df)
 ```
 
+</details>
+
 ## 5. Buildings → H3 with DuckDB
 
-`Overture_to_hex_single_file` reads a single Overture partition and aggregates building data per H3 cell — all inside one SQL query using DuckDB's built-in spatial and H3 functions.
+Each Overture partition contains tens of thousands of building polygons. This UDF reads one partition and uses DuckDB's spatial extensions to compute centroids, assign H3 cells, and aggregate total area and building count — all in a single SQL pass. The result has the same shape as the seismic layer from step 3: one row per H3 cell, ready to join.
 
 ```python showLineNumbers
 @fused.udf
@@ -181,33 +196,28 @@ def udf(
 ):
     common = fused.load("https://github.com/fusedio/udfs/tree/4dde28e/public/common/")
     con = common.duckdb_connect()
-    gdf = con.sql(f"""
+    return con.sql(f"""
         SELECT
-            h3_latlng_to_cell(
+            h3_latlng_to_cell(                              -- <-- assign building centroid to H3 cell
                 ST_Y(ST_Centroid(geometry::GEOMETRY)),
                 ST_X(ST_Centroid(geometry::GEOMETRY)),
                 {res}
             ) AS hex,
-            sum(ST_Area_Spheroid(geometry::GEOMETRY)) AS total_area_sqm,
+            sum(ST_Area_Spheroid(geometry::GEOMETRY)) AS total_area_sqm,  -- <-- spheroidal area in m²
             count(1) AS building_count
         FROM read_parquet('{path}')
         GROUP BY 1
-        ORDER BY 1
     """).df()
-    return gdf.reset_index(drop=True)
 ```
 
-Three things happen inside this single SQL statement:
-
-- **`h3_latlng_to_cell`** — assigns each building centroid to an H3 cell at the chosen resolution
-- **`ST_Area_Spheroid`** — computes each building's area in square metres on the WGS84 ellipsoid
-- **`GROUP BY hex`** — collapses all buildings in the same cell into `building_count` and `total_area_sqm`
-
-This would normally require a Spark cluster or PostGIS instance. Here it runs inside a serverless UDF with zero infrastructure. See [DuckDB for geospatial](/guide/h3-analytics/aggregations) for more on this pattern.
+`h3_latlng_to_cell`, `ST_Area_Spheroid`, and `GROUP BY hex` all run inside the serverless UDF with no Spark or PostGIS needed.
 
 ## 6. Join on H3
 
-With both datasets expressed as H3 hex tables, joining them is a two-line pandas merge — no spatial join, no topology checks, no geometry processing.
+The outputs of `hexagonified_seismic_hazard` and `Overture_to_hex_single_file` both share a `hex` column at the same resolution. That's the key insight: by expressing both datasets on the same H3 grid, joining a raster and a vector becomes a standard table join. The result has one row per hex cell with hazard score and building statistics side by side — ready for analysis.
+
+<details>
+<summary>View <code>join_over_buildings</code> code</summary>
 
 ```python showLineNumbers
 @fused.udf
@@ -226,23 +236,23 @@ def udf(
     seismic_udf = fused.load("hexagonified_seismic_hazard")
     df_seismic = seismic_udf(bounds=bounds, chip_len=chip_len, h3_res=h3_res)
 
-    # Normalize hex column to lowercase hex string (H3 canonical format)
+    # normalize to lowercase hex string (H3 canonical format) before joining
     df_buildings["hex"] = df_buildings["hex"].apply(lambda x: format(int(x), 'x'))
     df_seismic["hex"] = df_seismic["hex"].apply(lambda x: format(int(x), 'x'))
 
-    merged = pd.merge(df_buildings, df_seismic, on="hex", how="inner")
-    return merged
+    return pd.merge(df_buildings, df_seismic, on="hex", how="inner")  # <-- join on H3 cell
 ```
 
-This is the architectural centrepiece of the canvas. A seismic hazard raster and building vector polygons — two completely different data formats from two different organizations — are unified with a `JOIN ON hex`. No `ST_Intersects`, no projection gymnastics, no topology errors.
+</details>
 
-This works because H3 hexagons are a **universal join key**: any dataset that can be expressed as points or pixels can be assigned to the same hex grid, making multi-source joins trivially simple. Read more in the [joining H3 datasets](/guide/h3-analytics/joining) guide.
+A seismic hazard raster and building vector polygons — two completely different formats from two different organizations — unified with `JOIN ON hex`. Read more in [joining H3 datasets](/guide/h3-analytics/joining).
 
-## 7. Interactive dashboard
+## 7. Dashboard
 
-The final node is a Canvas widget that turns the joined table into an interactive risk dashboard: a scatter chart of hazard score versus building count, KPI tiles for high-risk zones, and a filtered map layer.
+The widget uses `{{join_over_buildings}}` to query the upstream UDF output directly. The scatter chart plots each hex cell as a point (x = hazard score, y = building count), colored by risk category. The map layer filters to only hexes above both thresholds, making the high-risk zones immediately visible. KPI tiles show aggregate counts across the filtered set.
 
-The widget uses SQL queries directly against the UDF output using `{{join_over_buildings}}` syntax to reference upstream UDF results:
+<details>
+<summary>View widget JSON</summary>
 
 ```json
 {
@@ -254,7 +264,7 @@ The widget uses SQL queries directly against the UDF output using `{{join_over_b
 }
 ```
 
-The map layer filters to only show hexes where both hazard and building density exceed thresholds:
+Map layer — filter to high-risk hexes only:
 
 ```json
 {
@@ -262,40 +272,19 @@ The map layer filters to only show hexes where both hazard and building density 
 }
 ```
 
+</details>
+
 :::tip Styling the map
-You can customize how each hex layer looks by editing the `fillColor`, `opacity`, and `coverage` fields in the [Visualization tab](/workbench/udf-builder/styling/). The joined layer uses a continuous color scale from yellow to dark red to reflect increasing hazard intensity.
+Customize colors, opacity, and coverage in the [Visualization tab](/workbench/udf-builder/styling/). You can also use the [AI-driven widget](/guide/data-input-outputs/import-connection/widgets#ai-driven-widget) to describe style changes in plain language and have them applied instantly.
 :::
 
-## Where Fused shines
+## Next steps
 
-**H3 as the universal join key.** A GeoTIFF raster and GeoParquet building polygons — two incompatible formats from different organizations — are joined with a plain `pd.merge`. Neither dataset needs to be reprojected or converted to match the other. Hexagonify both, merge on the cell ID, done. This approach scales to any two datasets that can be spatially indexed.
+- **Swap the AOI** — replace the Italy bounds with Turkey, Japan, or the US West Coast
+- **Add vulnerability** — join a third dataset (e.g. building age from Overture) to weight exposure by structural fragility
+- **Run at scale** — use [`my_udf.map()`](/guide/working-with-udfs/fused-submit) to process all Overture partitions in parallel
 
-**Raster → hex in pure Python.** `hexagonified_seismic_hazard` calls `arr_to_h3` on a NumPy array. Most spatial analysis tools treat rasters and hexagons as separate paradigms. Here it's a single function call.
-
-**DuckDB spatial SQL inside a serverless function.** `Overture_to_hex_single_file` assigns H3 cells, computes spheroidal area, and aggregates — all in one SQL query, on Fused infrastructure, with no cluster required.
-
-**No ETL pipeline.** The canvas is the pipeline. Each UDF is a node; outputs wire directly to the next step. Changing the resolution propagates automatically. Swap the AOI or the Overture partition file — the rest adapts.
-
-**Composable UDFs.** `join_over_buildings` calls `hexagonified_seismic_hazard` and `Overture_to_hex_single_file` directly via `fused.load`. Any UDF can call any other UDF. The canvas wires them together visually; the code stays clean.
-
-## Limitations & next steps
-
-This is a simplified risk overview, not a full engineering assessment. Some things to be aware of:
-
-- The OpenQuake PGA values represent **rock-site** conditions. Soft soils amplify ground shaking significantly — a proper site-specific assessment would require soil data.
-- Building exposure here is measured by **count and footprint area**, not structural type or age. Vulnerability depends heavily on construction material and year.
-- Resolution 6 cells (≈36 km²) are large enough to mask local hotspots. Increasing to resolution 7 or 8 gives finer spatial detail — at the cost of sparser hex coverage in rural areas.
-
-Ideas for extending this canvas:
-
-- **Swap the AOI** — replace the Italy bounding box with Turkey, Japan, or the western United States, all of which have high-quality OpenQuake hazard maps.
-- **Add vulnerability** — join a third dataset (e.g., building age or material from Overture) to weight exposure by structural fragility.
-- **Run at scale** — use [`fused.submit()`](/guide/working-with-udfs/fused-submit) to run `Overture_to_hex_single_file` across all Overture partitions covering Italy in parallel and combine results.
-- **Time-series risk** — OpenQuake also publishes scenario shake maps for historical events. Swap in a specific earthquake shake map to see which buildings were exposed to that event.
-
-For more on the techniques used here:
-- [Converting data to H3](/guide/h3-analytics/converting)
-- [Joining H3 datasets](/guide/h3-analytics/joining)
-- [H3 resolution guide](/guide/h3-analytics/resolution-guide)
+Further reading:
+- [Converting to H3](/guide/h3-analytics/converting)
+- [Resolution guide](/guide/h3-analytics/resolution-guide)
 - [Geospatial ingestion](/guide/data-input-outputs/read-write/geospatial/ingestion)
-- [Efficient caching](/guide/working-with-udfs/udf-best-practices/caching)
