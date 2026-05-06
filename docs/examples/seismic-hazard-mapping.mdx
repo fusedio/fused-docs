@@ -72,13 +72,17 @@ def udf(save_to_s3: bool = True):
 
     tif_name = "v2023_1_pga_475_rock_3min.tif"
     s3_path = f"s3://fused-asset/demos/seismic_data/{tif_name}"
+
+    print(f"Extracting {tif_name} from ZIP...")
     tif_bytes = zf.read(tif_name)
+    print(f"Extracted {len(tif_bytes):,} bytes")
 
     if save_to_s3:
         import s3fs
         fs = s3fs.S3FileSystem()
         with fs.open(s3_path, "wb") as f:
             f.write(tif_bytes)
+        print(f"Saved to {s3_path}")
 
     return pd.DataFrame([{
         "filename": tif_name,
@@ -107,10 +111,11 @@ def udf(
     bounds: fused.types.Bounds = [6.6272, 36.6197, 18.4802, 47.0921],
     chip_len: int = 512
 ):
-    path = 's3://fused-asset/demos/seismic_data/v2023_1_pga_475_rock_3min.tif'
+    path: str = 's3://fused-asset/demos/seismic_data/v2023_1_pga_475_rock_3min.tif'
     common = fused.load('https://github.com/fusedio/udfs/tree/6750f1f/public/common/')
-    # read_tiff_safe handles CRS reprojection, resampling and pixel-count limits
     arr = common.read_tiff_safe(bounds, path, chip_len, max_pixel=10 ** 8)
+
+    print(arr)
     return arr
 ```
 
@@ -168,18 +173,42 @@ Overture building data is split into geographic partitions to keep file sizes ma
 ></iframe>
 
 <details>
-<summary>View <code>Overture_partitions</code> code</summary>
+<summary>View <code>Overture_partitions</code> widget JSON</summary>
 
-```python showLineNumbers
-@fused.udf
-def udf():
-    import geopandas as gpd
-    bounds = [6.6, 36.6, 18.5, 47.1]
-    path = 's3://fused-asset/overture/2026-03-18.0/theme=buildings/type=building/part=2/_sample'
-    common = fused.load('https://github.com/fusedio/udfs/tree/d4f567c/public/common/')
-    base_path = path.rsplit('/', maxsplit=1)[0]
-    df = common.table_to_tile(bounds, table=base_path, use_columns=None, min_zoom=7)
-    return gpd.GeoDataFrame(df)
+```json showLineNumbers
+{
+  "type": "fused-map",
+  "props": {
+    "basemap": "mapbox://styles/mapbox/dark-v11",
+    "centerLng": 12.5,
+    "centerLat": 42,
+    "zoom": 5,
+    "showControls": true,
+    "showScale": true,
+    "showBasemapSwitcher": true,
+    "showLegend": false,
+    "showLayerPanel": true,
+    "autoSend": false,
+    "autoSendDebounceMs": 600,
+    "layers": [
+      {
+        "id": "partitions-layer",
+        "name": "Overture Partitions",
+        "type": "deck-geojson",
+        "visible": true,
+        "sql": "SELECT file_id, ST_AsGeoJSON(geometry) as geometry FROM {{Overture_partitions}}",
+        "geometryColumn": "geometry",
+        "tooltip": ["file_id"],
+        "style": {
+          "opacity": 0.8,
+          "lineColor": [250, 250, 250],
+          "lineWidth": 1,
+          "fillColor": [0, 0, 0, 0]
+        }
+      }
+    ]
+  }
+}
 ```
 
 </details>
@@ -194,20 +223,20 @@ def udf(
     path: str = "s3://fused-asset/overture/2026-03-18.0/theme=buildings/type=building/part=2/36.parquet",
     res: int = 6
 ):
+    import geopandas as gpd
+
     common = fused.load("https://github.com/fusedio/udfs/tree/4dde28e/public/common/")
     con = common.duckdb_connect()
-    return con.sql(f"""
+    gdf = con.sql(f"""
         SELECT
-            h3_latlng_to_cell(                              -- <-- assign building centroid to H3 cell
-                ST_Y(ST_Centroid(geometry::GEOMETRY)),
-                ST_X(ST_Centroid(geometry::GEOMETRY)),
-                {res}
-            ) AS hex,
-            sum(ST_Area_Spheroid(geometry::GEOMETRY)) AS total_area_sqm,  -- <-- spheroidal area in m²
-            count(1) AS building_count
+            h3_latlng_to_cell(ST_Y(ST_Centroid(geometry::GEOMETRY)), ST_X(ST_Centroid(geometry::GEOMETRY)), {res}) AS hex,
+            sum(ST_Area_Spheroid(geometry::GEOMETRY)) as total_area_sqm,
+            count(1) as building_count
         FROM read_parquet('{path}')
-        GROUP BY 1
+        group by 1
+        order by 1
     """).df()
+    return gdf.reset_index(drop=True)
 ```
 
 
@@ -223,8 +252,8 @@ The outputs of `hexagonified_seismic_hazard` and `Overture_to_hex_single_file` U
 @fused.udf
 def udf(
     path: str = "s3://fused-asset/overture/2026-03-18.0/theme=buildings/type=building/part=2/36.parquet",
-    bounds: fused.types.Bounds = [6.6272, 36.6197, 18.4802, 47.0921],
     res: int = 6,
+    bounds: fused.types.Bounds = [6.6272, 36.6197, 18.4802, 47.0921],
     chip_len: int = 512,
     h3_res: int = 6,
 ):
