@@ -7,13 +7,15 @@ sidebar_position: 14
 
 This example shows how to turn Fused UDF pipelines into agentic workflows: ask questions over massive datasets while compute stays behind the scenes and agents see only the scoped outputs needed to query, compare, and visualize results.
 
-[![AI chatbot helping answer queries related to dataset](/img/tutorials/agents/chatbot_hero.png)](https://unstable.fused.io/canvas/fc_1OKBYKbEo1nab5A4aE2ezb?bounds=4640%2C-804%2C10148%2C2903)
+[![Overture building release comparison canvas](/img/tutorials/agents/overture_canvas_overview.png)](https://unstable.fused.io/canvas/fc_1OKBYKbEo1nab5A4aE2ezb?bounds=4640%2C-804%2C10148%2C2903)
 
-*AI chatbot helping answer queries related to dataset. [Try it out](https://unstable.fused.io/canvas/fc_1OKBYKbEo1nab5A4aE2ezb?bounds=4640%2C-804%2C10148%2C2903) →*
+*Overture Building Release Comparison canvas. [Try it out](https://unstable.fused.io/canvas/fc_1OKBYKbEo1nab5A4aE2ezb?bounds=4640%2C-804%2C10148%2C2903) →*
 
 Overture Maps ships frequent global building-footprint releases, but the data is huge: hundreds of gigabytes of geometry per release, far too much for anyone to manually diff across versions. With agentic workflows, we can flip the approach: instead of building one-off analyses for every question about data quality, expose the dataset to an agent that can query, compare, and visualize changes across releases on demand.
 
 The key is to give the agent scoped analytics: structured summaries and interactive widgets that are easy to parse and render, while the heavy geometry and compute stay behind the scenes. By packaging these analytics as bounded MCP tools, the agent does the analytical lifting and humans stay in the loop through shareable visualizations.
+
+We want to analyse how Overture's building dataset evolves across releases — by asking simple questions in plain language, without touching the raw data directly.
 
 This example will help you:
 
@@ -26,7 +28,300 @@ This example will help you:
 We compare two data sources across Philadelphia:
 
 - **Philadelphia's official building footprints** — the city's authoritative layer, served from [Philadelphia's ArcGIS Feature Server](https://services.arcgis.com/fLeGjb7u4uXqeF9q/arcgis/rest/services/LI_BUILDING_FOOTPRINTS/FeatureServer/0/query): polygons with height, address, and name.
+
+<details>
+<summary>Show `load_philly_buildings` UDF code</summary>
+
+```python
+import fused
+
+PHILLY_BOUNDS = (-75.27943327075063, 39.87237043855194, -74.95729745028228, 40.13778135004081)
+CHUNK_SIZE = 0.02
+CACHE_VERSION = "1"
+
+PHILLY_URL = (
+    "https://services.arcgis.com/fLeGjb7u4uXqeF9q/arcgis/rest/services/"
+    "LI_BUILDING_FOOTPRINTS/FeatureServer/0/query"
+)
+
+OUT_COLS = [
+    "objectid",
+    "approx_hgt",
+    "building_name",
+    "address",
+    "value",
+    "geometry",
+]
+
+
+@fused.udf
+def udf(bounds: str = "[-75.158176,39.938397,-75.155727,39.939866]"):
+    import json
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.geometry import box
+
+    def empty():
+        return gpd.GeoDataFrame(
+            columns=["objectid", "geometry"],
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+    bounds = tuple(map(float, json.loads(bounds) if isinstance(bounds, str) else bounds))
+
+    layer_minx, layer_miny, layer_maxx, layer_maxy = PHILLY_BOUNDS
+
+    minx = max(bounds[0], layer_minx)
+    miny = max(bounds[1], layer_miny)
+    maxx = min(bounds[2], layer_maxx)
+    maxy = min(bounds[3], layer_maxy)
+
+    if minx >= maxx or miny >= maxy:
+        return empty()
+
+    eps = 1e-12
+
+    col_start = int((minx - layer_minx) // CHUNK_SIZE)
+    col_end = int(((maxx - layer_minx) - eps) // CHUNK_SIZE)
+    row_start = int((miny - layer_miny) // CHUNK_SIZE)
+    row_end = int(((maxy - layer_miny) - eps) // CHUNK_SIZE)
+
+    frames = []
+
+    for row in range(row_start, row_end + 1):
+        for col in range(col_start, col_end + 1):
+            gdf = _load_philly_chunk(f"{col}:{row}", CACHE_VERSION)
+            if gdf is not None and not gdf.empty:
+                frames.append(gdf)
+
+    if not frames:
+        return empty()
+
+    gdf = gpd.GeoDataFrame(
+        pd.concat(frames, ignore_index=True),
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+    if "objectid" in gdf.columns:
+        gdf = gdf.drop_duplicates("objectid")
+
+    gdf = gdf[gdf.intersects(box(*bounds))].copy()
+
+    if gdf.empty:
+        return empty()
+
+    gdf["value"] = gdf["approx_hgt"].fillna(0).astype(float)
+
+    keep = [c for c in OUT_COLS if c in gdf.columns]
+    return gdf[keep].reset_index(drop=True)
+
+
+@fused.cache(
+    cache_max_age="7d",
+    cache_folder_path="philly_building_chunks",
+    cache_storage="auto",
+)
+def _load_philly_chunk(chunk_id, cache_version=CACHE_VERSION):
+    import json
+    import geopandas as gpd
+    import requests
+
+    bounds = _chunk_bounds(chunk_id)
+
+    envelope = {
+        "xmin": bounds[0],
+        "ymin": bounds[1],
+        "xmax": bounds[2],
+        "ymax": bounds[3],
+        "spatialReference": {"wkid": 4326},
+    }
+
+    features = []
+    page_size = 2000
+    max_features = 50000
+
+    for offset in range(0, max_features, page_size):
+        response = requests.get(
+            PHILLY_URL,
+            params={
+                "where": "1=1",
+                "geometry": json.dumps(envelope),
+                "geometryType": "esriGeometryEnvelope",
+                "spatialRel": "esriSpatialRelIntersects",
+                "inSR": 4326,
+                "outSR": 4326,
+                "outFields": "objectid,approx_hgt,building_name,address",
+                "returnGeometry": "true",
+                "f": "geojson",
+                "resultOffset": offset,
+                "resultRecordCount": page_size,
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+
+        batch = response.json().get("features", [])
+        if not batch:
+            break
+
+        features.extend(batch)
+
+        if len(batch) < page_size:
+            break
+
+    if not features:
+        return gpd.GeoDataFrame(
+            columns=["objectid", "geometry"],
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+    return gpd.GeoDataFrame.from_features(
+        {"type": "FeatureCollection", "features": features},
+        crs="EPSG:4326",
+    )
+
+
+def _chunk_bounds(chunk_id):
+    col, row = map(int, str(chunk_id).split(":"))
+
+    minx = PHILLY_BOUNDS[0] + col * CHUNK_SIZE
+    miny = PHILLY_BOUNDS[1] + row * CHUNK_SIZE
+
+    return (
+        minx,
+        miny,
+        min(minx + CHUNK_SIZE, PHILLY_BOUNDS[2]),
+        min(miny + CHUNK_SIZE, PHILLY_BOUNDS[3]),
+    )
+```
+
+</details>
+
 - **[Overture Maps Foundation building footprints](https://docs.overturemaps.org/examples/fused/#14/32.58453/-117.05154/0/60)** — the open dataset maintained by the Overture Maps Foundation. We pull data from 7 releases (December 2024 through February 2026) to track how the dataset evolves. This builds on our earlier work [Partnering with Overture](https://docs.fused.io/blog/partnering-with-overture/). Each release contains millions of building polygons globally, so we filter down to the same Philadelphia bounding boxes.
+
+<details>
+<summary>Show `load_overture_buildings` UDF code</summary>
+
+```python
+import fused
+
+PHILLY_BOUNDS = (-75.27943327075063, 39.87237043855194, -74.95729745028228, 40.13778135004081)
+CHUNK_SIZE = 0.02
+CACHE_VERSION = "1"
+OUT_COLS = ["id", "overture_name", "height", "geometry"]
+
+
+@fused.udf
+def udf(
+    bounds: str = "[-75.158176,39.938397,-75.155727,39.939866]",
+    overture_release: str = "2026-02-18-0",
+):
+    import json
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.geometry import box
+
+    empty = lambda: gpd.GeoDataFrame(
+        columns=["id", "geometry"],
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+    bounds = tuple(map(float, json.loads(bounds) if isinstance(bounds, str) else bounds))
+
+    layer_minx, layer_miny, layer_maxx, layer_maxy = PHILLY_BOUNDS
+    minx = max(bounds[0], layer_minx)
+    miny = max(bounds[1], layer_miny)
+    maxx = min(bounds[2], layer_maxx)
+    maxy = min(bounds[3], layer_maxy)
+
+    if minx >= maxx or miny >= maxy:
+        return empty()
+
+    eps = 1e-12
+
+    col_start = int((minx - layer_minx) // CHUNK_SIZE)
+    col_end = int(((maxx - layer_minx) - eps) // CHUNK_SIZE)
+    row_start = int((miny - layer_miny) // CHUNK_SIZE)
+    row_end = int(((maxy - layer_miny) - eps) // CHUNK_SIZE)
+
+    frames = []
+    for row in range(row_start, row_end + 1):
+        for col in range(col_start, col_end + 1):
+            gdf = _load_chunk(f"{col}:{row}", overture_release, CACHE_VERSION)
+            if gdf is not None and not gdf.empty:
+                frames.append(gdf)
+
+    if not frames:
+        return empty()
+
+    gdf = gpd.GeoDataFrame(
+        pd.concat(frames, ignore_index=True),
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+    if "id" in gdf.columns:
+        gdf = gdf.drop_duplicates("id")
+
+    gdf = gdf[gdf.intersects(box(*bounds))].reset_index(drop=True)
+
+    if gdf.empty:
+        return empty()
+
+    keep = [c for c in OUT_COLS if c in gdf.columns]
+    return gdf[keep]
+
+
+@fused.cache(
+    cache_max_age="30d",
+)
+def _load_chunk(chunk_id, overture_release, cache_version=CACHE_VERSION):
+    minx, miny, maxx, maxy = _chunk_bounds(chunk_id)
+
+    overture = fused.load("UDF_Overture_Maps_Example")
+    gdf = overture(
+        bounds=[minx, miny, maxx, maxy],
+        release=overture_release,
+        overture_type="building",
+        theme="buildings",
+    )
+
+    if gdf is None or gdf.empty:
+        return gdf
+
+    if "names" in gdf.columns:
+        gdf["overture_name"] = gdf["names"].apply(
+            lambda v: v.get("primary", "") if isinstance(v, dict) else ("" if v is None else str(v))
+        )
+    else:
+        gdf["overture_name"] = ""
+
+    if "id" not in gdf.columns:
+        gdf["id"] = ""
+
+    keep = [c for c in OUT_COLS if c in gdf.columns]
+    return gdf[keep].reset_index(drop=True)
+
+
+def _chunk_bounds(chunk_id):
+    col, row = map(int, str(chunk_id).split(":"))
+
+    minx = PHILLY_BOUNDS[0] + col * CHUNK_SIZE
+    miny = PHILLY_BOUNDS[1] + row * CHUNK_SIZE
+
+    return (
+        minx,
+        miny,
+        min(minx + CHUNK_SIZE, PHILLY_BOUNDS[2]),
+        min(miny + CHUNK_SIZE, PHILLY_BOUNDS[3]),
+    )
+```
+
+</details>
 
 To measure how well Overture buildings match the city's ground truth, we compute Intersection over Union (IoU):
 
@@ -36,9 +331,97 @@ IoU = area(intersection) / area(union)
 
 The logic is simple: for each Philadelphia building, we find its best-matching Overture building via polygon overlay, compute the intersection area, and derive IoU. A perfect overlap gives IoU = 1.0; no overlap gives 0.0.
 
-![IoU visualization](/img/tutorials/agents/iou_visualization.gif)
+<details>
+<summary>Show `compute_iou` UDF code</summary>
 
-*A building-level IoU visualization highlighting where Overture building footprints closely match (green) and where gaps or mismatches still exist (yellow-red). IoU represents overlap percentage between Philadelphia's official building and Overture building footprint.*
+```python
+import fused
+
+
+@fused.udf
+def udf(
+    map_bounds: str = "[-75.158176,39.938397,-75.155727,39.939866]",
+    overture_release: str = "2026-02-18-0",
+):
+    import geopandas as gpd
+
+    load_overture = fused.load("load_overture_buildings")
+    load_philly = fused.load("load_philly_buildings")
+
+    gdf_overture = load_overture(
+        bounds=map_bounds,
+        overture_release=overture_release,
+    ).reset_index(drop=True)
+
+    gdf_philly = load_philly(bounds=map_bounds).reset_index(drop=True)
+
+    if len(gdf_philly) == 0:
+        return _empty_result()
+
+    if len(gdf_overture) == 0:
+        gdf_philly["iou"] = 0.0
+        gdf_philly["gers_id"] = ""
+        return _finalize(gdf_philly, overture_release)
+
+    gdf_overture["area_overture"] = gdf_overture.geometry.area
+    gdf_philly["area_philly"] = gdf_philly.geometry.area
+    gdf_philly["philly_idx"] = gdf_philly.index
+
+    intersections = gpd.overlay(
+        gdf_philly[["philly_idx", "area_philly", "geometry"]],
+        gdf_overture[["id", "area_overture", "geometry"]],
+        how="intersection",
+        keep_geom_type=True,
+        make_valid=True,
+    )
+
+    if len(intersections) == 0:
+        gdf_philly["iou"] = 0.0
+        gdf_philly["gers_id"] = ""
+        return _finalize(gdf_philly, overture_release)
+
+    intersections["inter_area"] = intersections.geometry.area
+    intersections["iou"] = intersections["inter_area"] / (
+        intersections["area_philly"]
+        + intersections["area_overture"]
+        - intersections["inter_area"]
+    )
+
+    best = (
+        intersections.sort_values(["philly_idx", "iou"], ascending=[True, False])
+        .drop_duplicates("philly_idx")
+        .loc[:, ["philly_idx", "iou", "id"]]
+    )
+
+    gdf_philly = gdf_philly.merge(best, on="philly_idx", how="left")
+    gdf_philly["iou"] = gdf_philly["iou"].fillna(0.0)
+    gdf_philly["gers_id"] = gdf_philly["id"].fillna("")
+
+    return _finalize(gdf_philly, overture_release)
+
+
+def _finalize(gdf_philly, overture_release):
+    gdf = gdf_philly.copy()
+    drop_cols = [c for c in ["philly_idx", "id", "area_philly"] if c in gdf.columns]
+    if drop_cols:
+        gdf = gdf.drop(columns=drop_cols)
+
+    gdf["release"] = overture_release
+    ordered = ["release"] + [c for c in gdf.columns if c != "release"]
+    return gdf[ordered].reset_index(drop=True)
+
+
+def _empty_result():
+    import geopandas as gpd
+
+    return gpd.GeoDataFrame(
+        columns=["release", "gers_id", "iou", "geometry"],
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+```
+
+</details>
 
 For this demo, to show how to build an agentic workflow in Fused, we focus on nine representative Philadelphia neighborhoods and compare each Overture release against the city's official building-footprint layer. This provides a consistent way to evaluate quality across both neighborhoods and releases.
 
@@ -61,6 +444,100 @@ We'll leverage a few benefits of Fused for this:
 
 We compute IoU for each Philadelphia building against its best Overture match, run that across 7 releases and 9 neighborhoods in parallel, and collapse the result into a compact summary table that can later be exposed to agents as tools.
 
+<details>
+<summary>Show `all_bounds_summary` UDF code</summary>
+
+```python
+ALL_BOUNDS = {
+    "Art Museum / Fairmount": "[-75.177,39.9478,-75.165,39.9572]",
+    "Center City": "[-75.161676,39.935697,-75.152227,39.942566]",
+    "Northern Liberties": "[-75.151,39.9478,-75.139,39.9572]",
+    "Rittenhouse Square": "[-75.167,39.9308,-75.155,39.9402]",
+    "Old City": "[-75.148,39.9408,-75.136,39.9502]",
+    "University City (Penn)": "[-75.196,39.9528,-75.184,39.9622]",
+    "Fishtown": "[-75.137,39.9678,-75.125,39.9772]",
+    "Kensington": "[-75.136,39.9772,-75.124,39.9866]",
+    "South Philly (East Passyunk)": "[-75.165,39.9208,-75.153,39.9302]",
+}
+
+RELEASES = [
+    "2026-02-18-0",
+    "2026-01-21-0",
+    "2025-05-21-0",
+    "2025-04-23-0",
+    "2025-03-19-1",
+    "2025-01-22-0",
+    "2024-12-18-0",
+]
+
+
+@fused.udf
+def udf():
+    import pandas as pd
+
+    single_udf = fused.load("compute_iou")
+
+    @fused.cache
+    def run_all_bounds_summary(labels_key: str, releases_key: str):
+        labels = list(ALL_BOUNDS.keys())
+        bounds_list = list(ALL_BOUNDS.values())
+
+        arg_list = []
+        combo_index = []
+        for nb_idx, (label, bounds) in enumerate(zip(labels, bounds_list)):
+            for release in RELEASES:
+                arg_list.append({"map_bounds": bounds, "overture_releases": release})
+                combo_index.append((nb_idx, release))
+
+        pool = single_udf.map(arg_list, max_workers=20)
+        pool.wait()
+        results = pool.results()
+
+        summary_rows = []
+        for (nb_idx, release), result in zip(combo_index, results):
+            label = labels[nb_idx]
+            if result is None or not isinstance(result, pd.DataFrame) or len(result) == 0:
+                continue
+
+            matched = result["iou"] > 0
+            matched_df = result.loc[matched]
+
+            release_query = (
+                result["release_query"].iloc[0]
+                if "release_query" in result.columns and len(result) > 0
+                else release
+            )
+
+            summary_rows.append({
+                "neighborhood": label,
+                "release": release,
+                "release_query": release_query,
+                "philly_buildings": int(len(result)),
+                "matched_buildings": int(matched.sum()),
+                "match_rate": float(matched.mean()),
+                "mean_iou_matched": float(matched_df["iou"].mean()) if len(matched_df) else 0.0,
+                "median_iou_matched": float(matched_df["iou"].median()) if len(matched_df) else 0.0,
+            })
+
+        columns = [
+            "neighborhood", "release", "release_query",
+            "philly_buildings", "matched_buildings", "match_rate",
+            "mean_iou_matched", "median_iou_matched",
+        ]
+
+        if not summary_rows:
+            return pd.DataFrame(columns=columns)
+
+        return pd.DataFrame(summary_rows, columns=columns)
+
+    labels_key = ",".join(ALL_BOUNDS.keys())
+    releases_key = ",".join(RELEASES)
+
+    return run_all_bounds_summary(labels_key=labels_key, releases_key=releases_key)
+```
+
+</details>
+
 ## UDFs as Composable Building Blocks for Agents
 
 Since each UDF is a [standalone Python function with a stable HTTPS endpoint](https://docs.fused.io/guide/working-with-udfs/writing-udfs), it can be exposed as an LLM tool. But, the goal is to make UDFs agent-callable without overwhelming the context window. Fused can process large datasets (multi-GB geometry, millions of rows) inside UDFs, but it rarely makes sense to pass those raw intermediates back to an agent.
@@ -82,62 +559,30 @@ Instead, we scope tools: create downstream "tool UDFs" that call upstream pipeli
 
 Pipeline UDFs remain internal; agent-facing tool UDFs act as the safe, small, stable interface.
 
-![UDF building blocks](/img/tutorials/agents/udf_building_blocks.png)
+<ClickZoomImage src="/img/tutorials/agents/udf_building_blocks.png" alt="UDF building blocks" />
 
 ## Exposing Results to Agents
 
-The final agent can then have access to:
+<ClickZoomImage src="/img/tutorials/agents/overture_pipeline_overview.png" alt="Exposing results to agents" />
 
-- **Query / summary tools:** Runs a structured query over the precomputed summary table (filter, group, sort, limit) and returns a bounded result. Used for questions like "which release improved most?" and "rank neighborhoods by match rate."
-- **Widget tools:** Return interactive charts/maps the agent can embed and share, instead of streaming raw data.
-- **Inspect tool:** Returns a one-row schema summary (row count, column count, column names) for quick validation.
+The Fused Canvas itself becomes a shared MCP server — click **Share → Open API** in Workbench to generate an MCP-compatible endpoint. AI tools like Claude, Cursor, or any MCP-capable client can connect to this endpoint and discover your UDFs as callable tools.
 
-![Exposing results to agents](/img/tutorials/agents/exposing_results.png)
-
-Fused Canvas then exposes all of these UDFs through an MCP Server that can be easily passed to any Agent / LLM. Each UDF has a short description explaining what it does, which parameters it takes and what it returns:
-
-```json
-{
-    "udf_name": "query_release_summary",
-    "link": "https://udf.ai/<canvas_id>/<udf-name>/run",
-    "description": "Query the Overture release summary data for Philadelphia neighborhoods across Overture releases using DuckDB SQL. The data is aliased as table 't'.",
-    "parameters": {
-        "bounds_map": "str"
-    }
-}
-```
-
-The Fused Canvas itself becomes a shared MCP server, a single source of truth for data tools that any agent can call.
-
-```mermaid
-graph TD
-    subgraph canvas ["Fused Canvas"]
-        T["Tool UDFs<br/>(query + chart)"]
-    end
-
-    T --> A["Claude Desktop"]
-    T --> B["ChatGPT"]
-    T --> C["Custom Chatbot"]
-    T --> D["Notebook Agent"]
-    T --> E["Slack Bot"]
-
-    style canvas fill:#1a1a2e,stroke:#444,color:#ccc
-    style T fill:#1a6b4a,stroke:#2dbf7e,color:#fff
-    style A fill:#2d4a6f,stroke:#4a82c4,color:#fff
-    style B fill:#2d4a6f,stroke:#4a82c4,color:#fff
-    style C fill:#2d4a6f,stroke:#4a82c4,color:#fff
-    style D fill:#2d4a6f,stroke:#4a82c4,color:#fff
-    style E fill:#2d4a6f,stroke:#4a82c4,color:#fff
-```
-
-These tools can be called from any client.
+See [Expose your canvas to agents](/guide/working-with-udfs/udf-best-practices/agents/#expose-your-canvas-to-agents) for more on organizing and securing agent-facing canvases.
 
 This is the agentic development workflow: data engineers write UDFs that shrink the world, and every team — from analysts to product managers — asks questions through whatever interface they prefer. The answers are always interactive, always current, and always shareable.
 
 ## Connecting MCP Server to AI
 
-We can now connect our MCP server to any chatbot. The below images show us asking questions regarding our Overture building data set for all the releases. It fetches and processes the data and then gives us the answer. [Try it out](https://unstable.udf.ai/fc_1OKBYKbEo1nab5A4aE2ezb/ai_chat.html)
+Once the Canvas is shared, connect any AI agent to it. Here's how to set up Claude Code:
 
-![MCP chatbot querying Overture building data](/img/tutorials/agents/mcp_chatbot.png)
+1. **Teach Claude Code about Fused.** Paste the [Fused skills](https://github.com/fusedio/fused-docs/tree/main/static/skills) into Claude Code so it understands how to interact with Fused endpoints. Tell it: "always use these skills when working with Fused."
+2. **Give it the OpenAPI spec.** In the Canvas, click **Share → OpenAPI** and copy the `.api.json` URL (it looks like `https://udf.ai/fc_<your_token>.api.json`). Paste it into Claude Code so the agent knows which tools are available and what parameters they accept.
+3. **Ask questions.** The agent can now query the Overture release data directly:
 
-If you're logged in to Fused, you can now connect your Canvas MCP server to external agents like Claude Code, ChatGPT, or your own custom AI frontend. Just point your client at the Canvas MCP endpoint, authenticate, and the agent will be able to discover and call the same scoped tools (query, inspect, and widget UDFs) to answer questions and render shareable outputs.
+- *"Which release has the lowest IoU across all neighborhoods?"*
+- *"Which neighborhood has seen the biggest increase in match rate?"*
+- *"Show me the trend of IoU over time for Center City."*
+
+![AI agent querying Overture building release data](https://fused-magic.s3.us-west-2.amazonaws.com/blog-assets/overture-building-comprsion/ai-agent-talk.gif)
+
+For more details on connecting agents, see [Connect an AI agent](/examples/google-calendar-meetings/#4-connect-an-ai-agent).
