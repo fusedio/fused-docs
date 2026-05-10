@@ -145,6 +145,7 @@ const sidebars: SidebarsConfig = {
         "examples/messy-data-agents",
         "examples/airbnb-explore-on-the-fly",
         "examples/rag-overture-docs",
+        "examples/branded-text-to-image",
       ],
     },
 
