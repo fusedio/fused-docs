@@ -139,13 +139,13 @@ const sidebars: SidebarsConfig = {
       label: "Agentic Workflows",
       collapsible: false,
       items: [
+        "examples/airbnb-explore-on-the-fly",
+        "examples/rag-overture-docs",
+        "examples/branded-text-to-image",
         "examples/overture-buildings-agents",
         "examples/overture-maps-mcp-agent",
         "examples/google-calendar-meetings",
         "examples/messy-data-agents",
-        "examples/airbnb-explore-on-the-fly",
-        "examples/rag-overture-docs",
-        "examples/branded-text-to-image",
       ],
     },
 
