@@ -146,6 +146,7 @@ const sidebars: SidebarsConfig = {
         "examples/airbnb-explore-on-the-fly",
         "examples/rag-overture-docs",
         "examples/branded-text-to-image",
+        "examples/comfyui-fused-workflows",
       ],
     },
 
