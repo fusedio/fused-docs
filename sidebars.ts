@@ -104,6 +104,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/data-input-outputs/export-api/download", label: "Download" },
         { type: "doc", id: "guide/data-input-outputs/export-api/geospatial-export", label: "Geospatial Integration" },
         { type: "doc", id: "guide/data-input-outputs/export-api/audit-logs", label: "Audit Logs" },
+        { type: "doc", id: "guide/data-input-outputs/export-api/log-file-paths", label: "File system paths" },
       ],
     },
 
