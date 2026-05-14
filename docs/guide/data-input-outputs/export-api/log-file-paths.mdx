@@ -13,7 +13,7 @@ This page maps every directory under each location so you know where things live
 
 ## `/mount/` — mounted disk
 
-`/mount/` and `/mnt/cache/` point to the same shared disk. Everything written here is shared across all UDFs in your environment and persists between executions.
+Everything written here is shared across all UDFs in your environment and persists between executions. The `fused-system/` subdirectory is managed by the Fused runtime — do not write to it directly.
 
 ```
 /mount/
@@ -30,15 +30,9 @@ This page maps every directory under each location so you know where things live
 │                       ├── udf.json
 │                       ├── stdout.log
 │                       └── stderr.log
-├── cached_data/
 ```
 
-
-### `fused-system/`
-
-Fused-managed directory. Do not write to this path directly — its contents are created and maintained by the Fused runtime.
-
-#### `fused-system/cached_data/`
+#### `/mount/fused-system/cached_data/`
 
 Output cache for [`@fused.cache`](/python-sdk/api-reference/fused-cache). Each subdirectory corresponds to a UDF by name; entries within are keyed by a hash of the function arguments.
 
@@ -48,13 +42,9 @@ Output cache for [`@fused.cache`](/python-sdk/api-reference/fused-cache). Each s
     └── data_{hash}
 ```
 
-#### `fused-system/tmp/`
+#### `/mount/fused-system/logs/`
 
-Scratch space for temporary files created during execution. Contents are not guaranteed to persist across sessions.
-
-#### `fused-system/logs/`
-
-Per-request execution logs for user-authenticated UDF runs. One directory per request, organized by date and time.
+Per-request execution logs for UDF runs. One directory per request, organized by date and time.
 
 ```
 /mount/fused-system/logs/
@@ -68,52 +58,55 @@ Per-request execution logs for user-authenticated UDF runs. One directory per re
                 └── stderr.log       ← captured stderr; non-empty means an error occurred
 ```
 
-List all executions for a date and read a specific request's files:
+List all execution directories for a date:
 
 ```python showLineNumbers
 @fused.udf
 def udf(datestr: str = "2026-05-12"):
-    import glob, json, pandas as pd
+    import glob
+    import pandas as pd
 
     dirs = glob.glob(f"/mount/fused-system/logs/{datestr}/*/*/*")
     df = pd.DataFrame({"file_path": dirs})
-    df["hhmm"]      = df["file_path"].apply(lambda x: x.split("/")[5])
-    df["user"]       = df["file_path"].apply(lambda x: x.split("/")[6])
-    df["request_id"] = df["file_path"].apply(lambda x: x.split("/")[7])
+    df["hhmm"]       = df["file_path"].apply(lambda x: x.split("/")[5])
+    df["user"]        = df["file_path"].apply(lambda x: x.split("/")[6])
+    df["request_id"]  = df["file_path"].apply(lambda x: x.split("/")[7])
     return df
 ```
 
-Read stdout and metadata for a specific request:
+Read the files for a specific request (replace the path with one from the listing above):
 
 ```python showLineNumbers
 import json
 
+# Replace with an actual path from the listing above
 path = "/mount/fused-system/logs/2026-05-12/1430/user@example.com/abc123"
 
 with open(f"{path}/metadata.json") as f:
-    meta = json.load(f)   # udf_name, execution_time_seconds, ...
+    meta = json.load(f)
 
 with open(f"{path}/stderr.log") as f:
-    stderr = f.read()     # non-empty → execution error
+    stderr = f.read()
 
 print(meta["udf_name"], meta["execution_time_seconds"])
 print(stderr or "no errors")
 ```
 
+---
 
 ## `s3://fused-users/<org>/` — S3 home
 
 Your organization's S3 space. Use the [File Explorer](/workbench/file-explorer/) to browse it and confirm the exact paths for your account.
 
 ```
-s3://fused-users/fused/
+s3://fused-users/<org>/
 ├── {username}/
 ├── fused-system/
 │   ├── checkpoints/
 │   │   └── {user_email}/
 │   │       └── {canvas_uuid}/
-│   │           ├── {timestamp}.json
-│   │           └── checkpoint_v1.json
+│   │           ├── <checkpoint_name>.json
+│   │           └── {YYYY_MM_DD_HHMM}.json
 │   ├── fused-cache/
 │   │   └── {user_email}/
 │   │       └── {udf_name}/
@@ -130,156 +123,109 @@ s3://fused-users/fused/
 │   │   └── {YYYY-MM-DD}/
 │   │       └── {job_uuid}/
 │   │           └── file.json
-│   ├── logs/
-│   │   └── datestr={YYYY-MM-DD}/
-│   │       └── 0.parquet
-│   └── uploaded-files/
+│   └── logs/
 │       └── {YYYY-MM-DD}/
-│           └── {upload_uuid}/
-│               └── file.*
-├── logs/
-│   └── {YYYY-MM-DD}.parquet
+│           └── {HHMM}/
+│               └── {token_or_user}/
+│                   └── {request_id}/
 ├── manifests/
 ├── batch-manifests/
 └── batch-reports/
 ```
 
-### `{username}/`
+### `s3://fused-users/<org>/{username}/`
 
 Your personal home directory for persistent storage. This is where you write output datasets, GeoTIFFs, and any files that need to be accessed outside of Fused. See [Storage options](/guide/working-with-udfs/udf-best-practices/storage#home-directory) for details.
 
 ```python showLineNumbers
-# list your home directory
-import fused
-fused.api.list("s3://fused-users/fused/<username>/")
+@fused.udf(cache_max_age="0s")
+def udf():
+    import pandas as pd
+
+    val = fused.api.list("s3://fused-users/<org>/<username>/")
+    return pd.DataFrame(val, columns=["path"])
 ```
 
-### `fused-system/`
+### `s3://fused-users/<org>/fused-system/`
 
 Organization-wide system data managed by Fused. Contents are described below.
 
-#### `fused-system/checkpoints/`
+#### `s3://fused-users/<org>/fused-system/checkpoints/`
 
 Canvas checkpoint snapshots created when you save a checkpoint in Workbench. Each canvas has its own directory under the user's email, containing timestamped JSON snapshots.
 
 ```
-fused-system/checkpoints/
+s3://fused-users/<org>/fused-system/checkpoints/
 └── {user_email}/
     └── {canvas_uuid}/
-        ├── checkpoint_v1.json     ← latest checkpoint
-        └── {YYYY_MM_DD_HHMM}.json ← named snapshots
+        ├── <checkpoint_name>.json ← saved checkpoints, named by the user
+        └── {YYYY_MM_DD_HHMM}.json ← auto-timestamped snapshots
 ```
 
 See [Canvas Checkpoints](/workbench/canvas-checkpoints) for how to create and restore them.
 
-#### `fused-system/fused-cache/`
+#### `s3://fused-users/<org>/fused-system/fused-cache/`
 
 S3-backed output cache for [`@fused.cache`](/python-sdk/api-reference/fused-cache). Stores results keyed by a hash of the function arguments, persisted per user and per UDF.
 
 ```
-fused-system/fused-cache/
+s3://fused-users/<org>/fused-system/fused-cache/
 └── {user_email}/
     └── {udf_name}/
         └── output/
-            └── {hash}/     ← cached result for a specific argument combination
+            └── {hash}/
 ```
 
-#### `fused-system/history/`
+#### `s3://fused-users/<org>/fused-system/history/`
 
-Version history of UDF code edits. Each UDF has a directory by its UUID; within that, edits are stored per day as timestamped JSON snapshots.
+Code history for every UDF in the organization. Each UDF is identified by its UUID; within that, every save is stored as a timestamped JSON snapshot grouped by day.
 
 ```
-fused-system/history/
+s3://fused-users/<org>/fused-system/history/
 └── {udf_uuid}/
     └── {YYYY-MM-DD}/
         └── {revision_uuid}/
-            └── {timestamp}.json
+            └── {timestamp}.json    ← full UDF code snapshot at that point in time
 ```
 
-#### `fused-system/integrations/`
+#### `s3://fused-users/<org>/fused-system/integrations/`
 
 Integration configuration files. For example, `slack.json` holds the Slack webhook configuration set up via [Integrations & Secrets](/workbench/integrations-secrets).
 
-#### `fused-system/job-configs/`
+#### `s3://fused-users/<org>/fused-system/job-configs/`
 
 Configuration files for batch jobs, stored by submission date and job UUID. Each job writes a `file.json` with its execution parameters.
 
 ```
-fused-system/job-configs/
+s3://fused-users/<org>/fused-system/job-configs/
 └── {YYYY-MM-DD}/
     └── {job_uuid}/
         └── file.json
 ```
 
-#### `fused-system/logs/`
+#### `s3://fused-users/<org>/fused-system/logs/`
 
-Daily aggregated parquet snapshots of UDF execution metadata. Each file covers one day and is partitioned by `datestr` for efficient date filtering.
-
-```
-fused-system/logs/
-└── datestr={YYYY-MM-DD}/
-    └── 0.parquet
-```
-
-| Column | Description |
-|--------|-------------|
-| `user_email` | User who triggered the execution |
-| `udf_name` | UDF name |
-| `collection_name` | Canvas the UDF belongs to |
-| `execution_time_seconds` | Execution duration |
-
-Query across days with DuckDB (credentials are injected automatically inside a UDF):
-
-```python showLineNumbers
-@fused.udf
-def udf():
-    import duckdb
-
-    path = "s3://fused-users/fused/<username>/logs/**/*.parquet"
-    return duckdb.connect().execute(f"""
-        SELECT user_email, udf_name, count(1) AS calls,
-               avg(execution_time_seconds) AS avg_s
-        FROM read_parquet('{path}', hive_partitioning=true)
-        WHERE datestr >= '2026-05-01'
-        GROUP BY 1, 2
-        ORDER BY calls DESC
-    """).df()
-```
-
-#### `fused-system/uploaded-files/`
-
-Files uploaded to Fused via the File Upload feature in Workbench. Each upload gets a UUID-keyed directory containing the raw file.
+S3 mirror of the execution logs written to `/mount/fused-system/logs/`. Organized by the same date and time hierarchy, with one directory per request.
 
 ```
-fused-system/uploaded-files/
+s3://fused-users/<org>/fused-system/logs/
 └── {YYYY-MM-DD}/
-    └── {upload_uuid}/
-        └── file.*          ← original file (any format: .parquet, .csv, .geojson, …)
+    └── {HHMM}/
+        └── {token_or_user}/
+            └── {request_id}/
+                ├── metadata.json
+                ├── udf.json
+                ├── stdout.log
+                └── stderr.log
 ```
 
-### `logs/`
-
-Organization-level flat parquet files, one per day. Unlike `fused-system/logs/` (which uses hive partitioning), these are flat files named by date.
-
-```
-s3://fused-users/fused/logs/
-└── {YYYY-MM-DD}.parquet
-```
+List available dates:
 
 ```python showLineNumbers
 import fused
-fused.api.list("s3://fused-users/fused/logs/")
+fused.api.list("s3://fused-users/<org>/fused-system/logs/")
 ```
 
-### `manifests/`, `batch-manifests/`, `batch-reports/`
-
-Managed by the Fused runtime for data ingestion and batch job tracking. Users do not write to these paths directly.
-
-| Path | Contents |
-|------|----------|
-| `manifests/` | Metadata manifests for ingested datasets |
-| `batch-manifests/` | Input manifests for batch job runs |
-| `batch-reports/` | Execution reports for completed batch jobs |
 
 ---
 
