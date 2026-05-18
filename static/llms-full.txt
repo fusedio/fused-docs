@@ -62,9 +62,6 @@ Open the **Integrations & secrets** modal in Workbench:
 
 The modal has separate **Team secrets** and **Personal secrets** sections. In either section, click **Add new secret** to store a key-value pair.
 
-[Image: team secrets management]
-[Image: user secrets management]
-
 ## Team secrets — `fused.secrets`
 
 Team secrets are scoped to the execution environment (kernel) and shared across your team or organization. Use `fused.secrets` to read, write, and delete them:
@@ -93,7 +90,7 @@ def udf():
 
 ## User secrets — `fused.user_secrets`
 
-User secrets are owned by the authenticated user and persist regardless of which execution environment you run UDFs in.
+User secrets are owned by the authenticated user.
 
 User secrets are read-only in the SDK. To create, update, or delete user secrets, use the Workbench UI under **Integrations & secrets**.
 
@@ -1089,7 +1086,7 @@ headers = ",
 payload = 
 
 # Make the request to the Fused server
-req = requests.post(f"https://www.fused.io/server/v1/session_token/by-access-token/", headers=headers, json=payload)
+req = requests.post(f"https://www.fused.io/server/v1/session-token/by-access-token/", headers=headers, json=payload)
 
 # Extract the session token from the response
 session_token = req.json()["session_token"]
@@ -1893,9 +1890,6 @@ def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
 | Utility | `sql-runner` | Named SQL data source | Shared SQL context for descendant components, avoids duplicating queries |
 | Utility | `div` | Layout container | Groups and wraps child components, supports layout/spacing control |
 | Utility | `ai-chat` | AI chat interface | Connects to a UDF for AI-powered Q&A, streams responses |
-
-}
-></iframe> */}
 
 ## Multi-Component Widgets
 
@@ -4665,9 +4659,10 @@ URL: https://docs.fused.io/guide/working-with-udfs/scheduling-udfs
 Schedule UDFs to run automatically on a recurring cron schedule. Scheduled UDFs execute on batch compute instances with no time limit, making them suitable for data pipelines, periodic refreshes, and automated workflows.
 
 - Cronjobs can be scheduled at any combination of minute, hour, day of month, month, or day of week.
-- The minimum frequency is **once per hour**.
+- Cronjobs can only be scheduled **once per hour**.
 - Cronjobs run on **batch compute instances** with no execution time limit.
 - There is a **1:1 relationship** between a UDF and a cronjob — the same UDF cannot have multiple schedules.
+- A Fused developer or enterprise account is required to schedule UDFs.
 
 ## Creating a schedule
 
@@ -4676,31 +4671,18 @@ Schedule UDFs to run automatically on a recurring cron schedule. Scheduled UDFs 
 Use `fused.api.schedule_udf()` to schedule any UDF by name or object:
 
 ```python
-
-job = fused.api.schedule_udf(
-    udf=fused.load("my_etl_pipeline"),
-    minute=0,
-    hour=8,
-    udf_args=,
-    enabled=True,
-)
-print(job)
-# <CronJob my_etl_pipeline (0 8 * * *)>
-```
-
-### With `udf.schedule()`
-
-If you already have a UDF object, call `.schedule()` directly:
-
-```python
 @fused.udf
-def my_udf():
-
-    return pd.DataFrame()
-
-job = my_udf.schedule(minute=0, hour=8)
+def udf():
+    job = fused.api.schedule_udf(
+        udf=fused.load("my_etl_pipeline"),
+        minute=0,
+        hour=8,
+        udf_args=,
+        enabled=True,
+    )
+    print(job)
+    # <CronJob my_etl_pipeline (0 8 * * *)>
 ```
-
 ### Cron field reference
 
 | Field | Parameter | Range | Default |
@@ -4714,14 +4696,16 @@ job = my_udf.schedule(minute=0, hour=8)
 Pass a single `int` for a specific value, or a `list[int]` for multiple values:
 
 ```python
-# Run every day at 4:59 AM
-fused.api.schedule_udf(udf="my_udf", minute=59, hour=4)
+@fused.udf
+def udf():
+    # Run every day at 4:59 AM
+    fused.api.schedule_udf(udf="my_udf", minute=59, hour=4)
 
-# Run at midnight on the 1st and 15th of every month
-fused.api.schedule_udf(udf="my_udf", minute=0, hour=0, day_of_month=[1, 15])
+    # Run at midnight on the 1st and 15th of every month
+    fused.api.schedule_udf(udf="my_udf", minute=0, hour=0, day_of_month=[1, 15])
 
-# Run every Monday (1) and Friday (5) at noon
-fused.api.schedule_udf(udf="my_udf", minute=0, hour=12, day_of_week=[1, 5])
+    # Run every Monday (1) and Friday (5) at noon
+    fused.api.schedule_udf(udf="my_udf", minute=0, hour=12, day_of_week=[1, 5])
 ```
 
 ## Passing arguments
@@ -4729,13 +4713,15 @@ fused.api.schedule_udf(udf="my_udf", minute=0, hour=12, day_of_week=[1, 5])
 Use `udf_args` to pass parameters to the scheduled UDF. These are forwarded as keyword arguments each time the job runs:
 
 ```python
-fused.api.schedule_udf(
-    udf=fused.load("job_to_run"),
-    minute=59,
-    hour=4,
-    udf_args=,
-    enabled=True,
-)
+@fused.udf
+def udf():
+    fused.api.schedule_udf(
+        udf=fused.load("job_to_run"),
+        minute=59,
+        hour=4,
+        udf_args=,
+        enabled=True,
+    )
 ```
 
 The target UDF receives them as typed parameters:
@@ -4753,31 +4739,38 @@ def udf(message: str = "hello from cron!"):
 Use `fused.api.schedule_list()` to retrieve all scheduled jobs for your team:
 
 ```python
-jobs = fused.api.schedule_list()
-print(f"Total jobs: ")
+@fused.udf
+def udf():
+    jobs = fused.api.schedule_list()
+    print(f"Total jobs: ")
 
-for job in jobs:
-    print(f" —  — enabled=")
+    for job in jobs:
+        print(f" —  — enabled=")
 ```
 
 To inspect schedules as a DataFrame:
 
 ```python
+@fused.udf(cache_max_age="0s")
+def udf():
 
-jobs = fused.api.schedule_list()
-rows = []
-for job in jobs:
-    row = job.model_dump()
-    rows.append()
+    jobs = fused.api.schedule_list()
+    rows = []
+    for job in jobs:
+        row = job.model_dump()
+        rows.append()
 
-df = pd.DataFrame(rows)
+    return pd.DataFrame(rows)
 ```
 
 You can also check a specific UDF's schedule with `udf.get_schedule()`:
 
 ```python
-my_udf = fused.load("my_etl_pipeline")
-schedules = my_udf.get_schedule()
+@fused.udf
+def udf():
+    my_udf = fused.load("my_etl_pipeline")
+    schedules = my_udf.get_schedule()
+    print(schedules)
 ```
 
 ## Updating a schedule
@@ -4785,17 +4778,21 @@ schedules = my_udf.get_schedule()
 Calling `fused.api.schedule_udf()` (or `udf.schedule()`) with a UDF that already has a schedule will **update the existing schedule** rather than creating a duplicate. This makes schedule creation idempotent:
 
 ```python
-# Initially schedule at 8 AM
-fused.api.schedule_udf(udf="my_udf", minute=0, hour=8)
+@fused.udf
+def udf():
+    # Initially schedule at 8 AM
+    fused.api.schedule_udf(udf="my_udf", minute=0, hour=8)
 
-# Change to 6 AM — updates the same cronjob
-fused.api.schedule_udf(udf="my_udf", minute=0, hour=6)
+    # Change to 6 AM — updates the same cronjob
+    fused.api.schedule_udf(udf="my_udf", minute=0, hour=6)
 ```
 
 To disable a schedule without deleting it, set `enabled=False`:
 
 ```python
-fused.api.schedule_udf(udf="my_udf", minute=0, hour=8, enabled=False)
+@fused.udf
+def udf():
+    fused.api.schedule_udf(udf="my_udf", minute=0, hour=8, enabled=False)
 ```
 
 ## Triggering a run manually
@@ -4803,12 +4800,14 @@ fused.api.schedule_udf(udf="my_udf", minute=0, hour=8, enabled=False)
 Use `run_now()` on a `CronJob` to trigger an immediate execution outside of the regular schedule:
 
 ```python
-jobs = fused.api.schedule_list()
-for job in jobs:
-    if job.name == "my_etl_pipeline":
-        result = job.run_now()
-        print(result)
-        break
+@fused.udf
+def udf():
+    jobs = fused.api.schedule_list()
+    for job in jobs:
+        if job.name == "my_etl_pipeline":
+            result = job.run_now()
+            print(result)
+            break
 ```
 
 ## Deleting a schedule
@@ -4816,12 +4815,14 @@ for job in jobs:
 Call `.delete()` on a `CronJob` to permanently remove it:
 
 ```python
-jobs = fused.api.schedule_list()
-for job in jobs:
-    if job.name == "my_etl_pipeline":
-        job.delete()
-        print(f"Deleted job: ")
-        break
+@fused.udf
+def udf(name: str = "my_etl_pipeline"):
+    jobs = fused.api.schedule_list()
+    for job in jobs:
+        if job.name == name:
+            job.delete()
+            print(f"Deleted job: ")
+            break
 ```
 
 ## Example: scheduled data pipeline
@@ -4850,14 +4851,16 @@ def daily_weather_sync(city: str = "San Francisco"):
 Schedule it to run every day at 6:00 AM:
 
 ```python
-job = fused.api.schedule_udf(
-    udf=fused.load("daily_weather_sync"),
-    minute=0,
-    hour=6,
-    udf_args=,
-)
-print(job)
-# <CronJob daily_weather_sync (0 6 * * *)>
+@fused.udf
+def udf():
+    job = fused.api.schedule_udf(
+        udf=fused.load("daily_weather_sync"),
+        minute=0,
+        hour=6,
+        udf_args=,
+    )
+    print(job)
+    # <CronJob daily_weather_sync (0 6 * * *)>
 ```
 
 Monitor execution results in the Job logs page.
@@ -5197,6 +5200,34 @@ Click **Share → Open API** in Workbench to generate an MCP-compatible endpoint
 
 In the example above, the top canvas exposes all three UDFs to the agent, while the bottom canvas hides the two upstream UDFs and surfaces only the final analysis tool. Hiding intermediate steps keeps the agent's tool list focused on the UDFs that answer questions directly.
 
+### Connect your AI tool
+
+In Workbench, click **Share → OpenAPI** and copy the `.api.json` URL — it looks like `https://udf.ai/fc_<your_token>.api.json`. Paste it into any of the tools below so the agent knows which tools are available and what parameters they accept.
+
+#### Claude Code
+
+1. Paste the Fused skills into Claude Code so it understands how to interact with Fused endpoints. Tell it: "always use these skills when working with Fused."
+2. Paste the `.api.json` URL into the chat so Claude Code can discover your UDFs as callable tools.
+3. Ask questions — Claude Code will call your UDFs directly.
+
+#### Codex
+
+1. Open a Codex chat.
+2. Paste the `.api.json` URL and tell Codex to fetch it to discover available tools.
+3. Ask questions — Codex will call your UDFs directly.
+
+#### Cursor
+
+1. Open a Cursor chat in **Agent** mode.
+2. Paste the `.api.json` URL and tell Cursor to fetch it to discover available tools.
+3. Ask questions — Cursor will call your UDFs directly.
+
+#### Windsurf
+
+1. Open a Windsurf chat in **Cascade** mode.
+2. Paste the `.api.json` URL and tell Windsurf to fetch it to discover available tools.
+3. Ask questions — Windsurf will call your UDFs directly.
+
 ### Organize your canvas
 
 All UDFs on a canvas are exposed together through a single canvas token (`fc_XXX`). Group agent-facing UDFs on a dedicated canvas and move large batch jobs or internal utilities to a separate one:
@@ -5235,6 +5266,101 @@ See Write UDFs securely for full guidance.
 - Scaling out UDFs
 - Cloud storage
 - Tokens & endpoints
+
+================================================================================
+
+## Using AI Coding Tools with Fused
+Path: guide/working-with-udfs/udf-best-practices/ai-coding-tools.mdx
+URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/ai-coding-tools
+
+Fused publishes a skills plugin that teaches AI coding tools the Fused-specific formats they need to author canvases: the `canvas.toml` schema, JSON UI widget definitions, and the `fused` CLI. Once installed, the AI understands how to create and modify Fused canvases without you having to explain the format every time.
+
+The plugin covers three skill areas:
+
+| Skill | What it teaches |
+|---|---|
+| `canvas-toml` | `canvas.toml` format — nodes, edges, viewport, folder layout |
+| `fused-cli` | `fused` CLI — push, run, share, and manage UDFs from the terminal |
+| `json-ui-schemas` | Widget JSON schemas — text inputs, dropdowns, charts, maps, SQL tables |
+
+---
+
+## Claude Code
+
+Claude Code supports the Fused plugin natively via its plugin marketplace.
+
+**Option A — via the `fused` CLI:**
+
+```bash
+pip install fused
+fused claude plugin add
+```
+
+**Option B — via Claude Code directly:**
+
+```bash
+claude plugin marketplace add fusedio/claude-plugins
+claude plugin install fused@fused-marketplace
+```
+
+To update or remove later:
+
+```bash
+claude plugin update fused@fused-marketplace
+claude plugin remove fused
+```
+
+Once installed, Claude Code automatically applies the Fused skills whenever you work on canvas files.
+
+---
+
+## Codex
+
+OpenAI Codex CLI uses `AGENTS.md` files to provide persistent context, similar to how Claude Code uses `CLAUDE.md`. There is no plugin marketplace, so paste the skill content directly.
+
+1. Download the skill files from github.com/fusedio/skills — copy `canvas-toml`, `fused-cli`, and `json-ui-schemas`.
+2. Paste the relevant content into your project's `AGENTS.md` file.
+3. Codex will apply that context automatically on every run in that directory.
+
+---
+
+## Cursor
+
+Cursor uses **Rules** to inject persistent context into every chat. There is no plugin install — create a rules file and paste the skill content into it.
+
+**Project-level (recommended):** create a `.cursor/rules/fused.md` file in your project root and paste the skill content from github.com/fusedio/skills. This file is version-controlled and scoped to your repo.
+
+**Global:** go to **Cursor Settings → Rules for AI** and paste the content there to apply it across all projects.
+
+Once set, Cursor's Agent mode will understand Fused canvas structure without additional prompting.
+
+---
+
+## Windsurf
+
+Windsurf uses **Rules** files to inject persistent context into Cascade. There is no plugin install.
+
+**Project-level (recommended):** create a `.windsurf/rules/fused.md` file in your project root. Add frontmatter to control when it activates, then paste the skill content from github.com/fusedio/skills:
+
+```markdown
+---
+trigger: always_on
+---
+
+<paste skill content here>
+```
+
+**Global:** add the skill content to `~/.codeium/windsurf/memories/global_rules.md` to apply it across all projects.
+
+Windsurf's Cascade mode will pick up the rules automatically.
+
+---
+
+## See also
+
+- Building for Agents — expose your canvas as an MCP endpoint for AI agents to query
+- fused CLI reference — full CLI command reference
+- Working as a Team — GitHub integration for canvas version control
 
 ================================================================================
 
@@ -5554,6 +5680,52 @@ def child_udf():
 
 Use this when you want to force-refresh `parent_udf` without disabling caching
 for every run of `child_udf`.
+
+### @fused.cache is shared across UDFs
+
+If two UDFs define the same cached function — identical source code, called with the same arguments — the second will reuse the cached result from the first instead of recomputing. This is because the cache key is based on function source code and call arguments, not on which UDF the function belongs to. Here's an example:
+
+**UDF 1**
+```python
+@fused.udf
+def udf():
+
+    @fused.cache
+    def cached_sleep():  # identical source → same cache key
+
+        time.sleep(5)
+
+    cached_sleep()  # populates the cache on first run
+    return pd.DataFrame()
+```
+
+**UDF 2**
+```python
+@fused.udf
+def udf(name: str = "world"):
+
+    @fused.cache
+    def cached_sleep():  # identical source → hits UDF 1's cache entry
+
+        time.sleep(5)
+
+    cached_sleep()  # returns instantly if UDF 1 ran first
+    return pd.DataFrame()
+```
+
+Any change to function source — a comment, print statement, or different call arguments — produces a different hash and causes a cache miss.
+
+To avoid accidental cache sharing, use distinct function names:
+
+```python
+@fused.cache
+def cached_sleep_udf1():
+    ...
+
+@fused.cache
+def cached_sleep_udf2():
+    ...
+```
 
 ### Each execution context has its own cache
 
@@ -6372,7 +6544,7 @@ By connecting a canvas to a GitHub repository, your team can collaborate on UDFs
 Here's what we'll do:
 1. Save the canvas state as a **checkpoint** and push the UDFs to a shared GitHub repo via a PR
 2. Pull any GitHub changes back into the canvas
-3. Generate a **shared team link** — a permanent canvas URL scoped to your org, accessible by anyone on the team
+3. Configure canvas access and generate a shared team link
 
 ## Step 1: Create a checkpoint and open a PR
 
@@ -6382,23 +6554,11 @@ Open your canvas and click the **checkpoint icon** (🕐) in the top toolbar (st
 
 Once the checkpoint is saved, click **Create a PR** next to it. Fill in the **folder name** (the directory it will be pushed to in the repo), select the **repository**, and confirm the commit message — then click **Create PR** (step 2 below).
 
-<ClickZoomImage src="/img/working-as-a-team/create_checkpoint_pr.png" alt="Create checkpoint and Pull Request" />
+</ul>
 
-Fused opens a pull request on GitHub. Once a maintainer merges it, the UDFs are version-controlled in your team repo.
+Changing the access setting automatically creates a PR on the linked repository to change <code>shared_token.json</code>. The access change takes effect only after the PR is merged.
 
-## Step 2: Pull GitHub changes into the canvas
-
-When there are newer commits on GitHub that aren't reflected in the canvas yet, the checkpoint icon shows a **"Newer changes on GitHub"** badge. Click it, choose **See changes** to review the diff, then **Pull all** to bring those changes into the canvas.
-
-This is how teammates who push changes via PR — or locally via a tool like Claude Code — get their updates reflected in the canvas.
-
-## Step 3: Generate a shared team link
-
-By default a canvas belongs to the user who created it. Generating a share token moves ownership to the org — the canvas URL is then tied to your team, not an individual.
-
-Go to the **Team** section on the Fused home page, hover over the canvas, and click **Generate share token** (step 1 below). Fused opens a PR on your linked repo that adds a `shared_token.json` file. Once a maintainer merges it, hover over the canvas again and click **Open share link** (step 2 below).
-
-<ClickZoomImage src="/img/working-as-a-team/generate_share_token_steps.png" alt="Generate share token" />
+<ClickZoomImage src="/img/working-as-a-team/config_canvas.png" alt="canvas_access" />
 
 The canvas is now accessible at a permanent URL in the format:
 
@@ -7971,6 +8131,129 @@ If you want to take this a bit further check out:
 
 ================================================================================
 
+## Create a branded text to image pipeline
+Path: examples/branded-text-to-image.mdx
+URL: https://docs.fused.io/examples/branded-text-to-image
+
+# Create a branded text to image pipeline
+
+**Define your brand's visual style once and share it with your whole team — anyone can generate on-brand images from a text prompt without a design tool or local setup. The Canvas can be scoped to your organization, so external users can't access it, the style library version-controls through GitHub, and API keys never leave the platform.**
+
+Turn a text description into a brand-consistent image in one click — or feed an existing sketch through the same style system to get a polished, on-brand version. Define your visual style once; everyone on the team uses the same guidelines automatically.
+
+The pipeline was built on Fused Workbench and uses widgets to display generated images inline. The image on the Widgets docs page is an example of an image made using this exact technique.
+
+Try it out on the Canvas →
+
+## How the pipeline works
+
+[Image: Diagram showing the image-to-image and text-to-image pipelines: source image plus transform prompt, or style library plus text prompt, both feed an AI model via OpenRouter running on Fused, outputting to a Canvas widget]
+
+*This diagram was itself generated using the pipeline — prompt: "Cartoon version of how the pipeline works for image to image pipeline", style: `technical_blogpost`.*
+
+```text
+A clean hand-drawn technical diagram illustration, white background, black ink only.
+Style: marker-drawn boxes and arrows, slightly rough edges, imperfect lines — like a
+whiteboard diagram drawn by a skilled designer. NOT isometric, NOT 3D, NOT photorealistic.
+
+Typography: bold hand-lettered titles in a casual but clean marker style.
+Labels inside boxes use a clean sans-serif or handwritten font, medium weight.
+Fused brand accent: use #E5FF44 (bright yellow-green) ONLY for:
+- The "FUSED" box or any box representing Fused itself
+- Underlines on main section titles
+- Key arrow highlights
+Other colors could be used but should only be supplementary and used sparingly.
+
+Layout rules:
+- Clear left-to-right or top-to-bottom flow
+- Boxes have thin rounded borders, consistent sizing
+- Arrows are clean, single-headed, slightly curved
+- Labels are short: 1-3 words max per item
+- Generous whitespace between elements
+- If two panels, divide with a single vertical black line
+
+Do NOT add: drop shadows, gradients, textures, background colors, decorative elements.
+The diagram should look like it could be recreated on a whiteboard in 10 minutes.
+```
+
+</details>
+
+A central **style library** UDF holds your brand guidelines as named style prompts. Both the text-to-image and image-to-image generators pull from it at runtime, so every image — regardless of who generated it or what prompt they wrote — automatically follows the same visual rules.
+
+### Text-to-image
+
+Type a description of what you want to create and submit. The AI model receives your prompt wrapped in the style guidelines and returns a brand-consistent image displayed directly in a Canvas widget.
+
+[Image: Canvas showing the "Create an image" interface with a prompt input on the left and the generated branded diagram output on the right]
+
+### Image-to-image
+
+Provide an existing image — a hand-drawn sketch, a rough diagram, a photo — and a short prompt describing the transformation. The model applies your brand style while preserving the structure and composition of the source.
+
+[Image: Before and after: raw sketches on the left, polished branded illustrations on the right]
+
+*Left: raw sketches. Right: the same content transformed into a consistent branded illustration style — no manual design work.*
+
+## Why run this on Fused?
+
+You could wire up OpenRouter locally in a script, but running it on Fused gives you:
+
+- **Secure secrets management** — API keys are stored as Fused secrets, never in code or environment variables. The key never touches team members' machines.
+- **Team sharing** — share the Canvas URL with anyone in your org. They open a browser, type a prompt, and get an on-brand image — no Python environment, no local setup, no credential sharing. Access stays within your organization.
+- **Response caching** — identical prompt + style combinations return instantly without re-calling the API. Running the same prompt twice costs nothing extra.
+- **One style update, everywhere** — edit the style library once and every future generation picks up the change automatically.
+- **Fast iteration** — tweak prompts, switch styles, and compare outputs in the browser in seconds.
+
+Add your key once as a Fused secret named `openrouter_api_key`:
+
+1. Go to **Workbench → Preferences → Secrets**
+2. Click **Add secret**, name it `openrouter_api_key`, paste your key
+3. The pipeline reads it automatically — no code changes needed
+
+Team members with Canvas access can generate images without ever seeing or handling the key.
+
+## Customize your brand style
+
+The style library UDF returns a DataFrame where each column is a named style. Each value is a detailed visual prompt the AI model uses alongside whatever the user types. Adding a new style is just adding a new column:
+
+```python
+@fused.udf
+def udf(color: str = "#E5FF44"):
+
+    return pd.DataFrame( only for key highlights and the focal element.
+Clear left-to-right flow, generous whitespace, 1-3 word labels per box.
+"""],
+        "youtube_thumbnail": ["""
+YouTube thumbnail, 16:9. Pure black background. Ultra-bold condensed all-caps
+sans-serif headline. First lines in white, last line in bright lime green (#E5FF44).
+No people, no logos, no gradients — type fills the frame edge to edge.
+"""],
+        "crime_blogpost": [f"""
+Hand-drawn sketch inked into a polished brand illustration. White background,
+black ink line art, ONE accent color:  as wide highlighter swipes.
+Crime scene diagram aesthetic. Bold all-caps labels, chunky arrows.
+"""],
+        # Add your own style here
+        "my_brand": [f"""
+Describe your brand visual style here. Include: color palette (use  for
+accents), typography style, layout rules, illustration technique, and tone.
+Be specific — the more precise the style prompt, the more consistent the output.
+"""],
+    })
+```
+
+The `color` parameter propagates your brand accent across all styles at once — change `#E5FF44` to your primary color and every style updates in one place.
+
+## See also
+
+- Widgets — how image output widgets work on the Canvas
+- Secrets management — storing API keys securely
+- `@fused.cache` — avoid duplicate API charges
+- Working as a team
+- Using AI inside a UDF
+
+================================================================================
+
 ## Canvas Gallery
 Path: examples/canvas-gallery.mdx
 URL: https://docs.fused.io/examples/canvas-gallery
@@ -8908,13 +9191,15 @@ URL: https://docs.fused.io/examples/overture-buildings-agents
 
 This example shows how to turn Fused UDF pipelines into agentic workflows: ask questions over massive datasets while compute stays behind the scenes and agents see only the scoped outputs needed to query, compare, and visualize results.
 
-[[Image: AI chatbot helping answer queries related to dataset]](https://unstable.fused.io/canvas/fc_1OKBYKbEo1nab5A4aE2ezb?bounds=4640%2C-804%2C10148%2C2903)
+[[Image: Overture building release comparison canvas]](https://unstable.fused.io/canvas/fc_1OKBYKbEo1nab5A4aE2ezb?bounds=4640%2C-804%2C10148%2C2903)
 
-*AI chatbot helping answer queries related to dataset. Try it out →*
+*Overture Building Release Comparison canvas. Try it out →*
 
 Overture Maps ships frequent global building-footprint releases, but the data is huge: hundreds of gigabytes of geometry per release, far too much for anyone to manually diff across versions. With agentic workflows, we can flip the approach: instead of building one-off analyses for every question about data quality, expose the dataset to an agent that can query, compare, and visualize changes across releases on demand.
 
 The key is to give the agent scoped analytics: structured summaries and interactive widgets that are easy to parse and render, while the heavy geometry and compute stay behind the scenes. By packaging these analytics as bounded MCP tools, the agent does the analytical lifting and humans stay in the loop through shareable visualizations.
+
+We want to analyse how Overture's building dataset evolves across releases — by asking simple questions in plain language, without touching the raw data directly.
 
 This example will help you:
 
@@ -8927,40 +9212,407 @@ This example will help you:
 We compare two data sources across Philadelphia:
 
 - **Philadelphia's official building footprints** — the city's authoritative layer, served from Philadelphia's ArcGIS Feature Server: polygons with height, address, and name.
-- **Overture Maps Foundation building footprints** — the open dataset maintained by the Overture Maps Foundation. We pull data from 7 releases (December 2024 through February 2026) to track how the dataset evolves. This builds on our earlier work Partnering with Overture. Each release contains millions of building polygons globally, so we filter down to the same Philadelphia bounding boxes.
 
-To measure how well Overture buildings match the city's ground truth, we compute Intersection over Union (IoU):
+```python
 
+PHILLY_BOUNDS = (-75.27943327075063, 39.87237043855194, -74.95729745028228, 40.13778135004081)
+CHUNK_SIZE = 0.02
+CACHE_VERSION = "1"
+
+PHILLY_URL = (
+    "https://services.arcgis.com/fLeGjb7u4uXqeF9q/arcgis/rest/services/"
+    "LI_BUILDING_FOOTPRINTS/FeatureServer/0/query"
+)
+
+OUT_COLS = [
+    "objectid",
+    "approx_hgt",
+    "building_name",
+    "address",
+    "value",
+    "geometry",
+]
+
+@fused.udf
+def udf(bounds: str = "[-75.158176,39.938397,-75.155727,39.939866]"):
+
+    from shapely.geometry import box
+
+    def empty():
+        return gpd.GeoDataFrame(
+            columns=["objectid", "geometry"],
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+    bounds = tuple(map(float, json.loads(bounds) if isinstance(bounds, str) else bounds))
+
+    layer_minx, layer_miny, layer_maxx, layer_maxy = PHILLY_BOUNDS
+
+    minx = max(bounds[0], layer_minx)
+    miny = max(bounds[1], layer_miny)
+    maxx = min(bounds[2], layer_maxx)
+    maxy = min(bounds[3], layer_maxy)
+
+    if minx >= maxx or miny >= maxy:
+        return empty()
+
+    eps = 1e-12
+
+    col_start = int((minx - layer_minx) // CHUNK_SIZE)
+    col_end = int(((maxx - layer_minx) - eps) // CHUNK_SIZE)
+    row_start = int((miny - layer_miny) // CHUNK_SIZE)
+    row_end = int(((maxy - layer_miny) - eps) // CHUNK_SIZE)
+
+    frames = []
+
+    for row in range(row_start, row_end + 1):
+        for col in range(col_start, col_end + 1):
+            gdf = _load_philly_chunk(f":", CACHE_VERSION)
+            if gdf is not None and not gdf.empty:
+                frames.append(gdf)
+
+    if not frames:
+        return empty()
+
+    gdf = gpd.GeoDataFrame(
+        pd.concat(frames, ignore_index=True),
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+    if "objectid" in gdf.columns:
+        gdf = gdf.drop_duplicates("objectid")
+
+    gdf = gdf[gdf.intersects(box(*bounds))].copy()
+
+    if gdf.empty:
+        return empty()
+
+    gdf["value"] = gdf["approx_hgt"].fillna(0).astype(float)
+
+    keep = [c for c in OUT_COLS if c in gdf.columns]
+    return gdf[keep].reset_index(drop=True)
+
+@fused.cache(
+    cache_max_age="7d",
+    cache_folder_path="philly_building_chunks",
+    cache_storage="auto",
+)
+def _load_philly_chunk(chunk_id, cache_version=CACHE_VERSION):
+
+    bounds = _chunk_bounds(chunk_id)
+
+    envelope = ,
+    }
+
+    features = []
+    page_size = 2000
+    max_features = 50000
+
+    for offset in range(0, max_features, page_size):
+        response = requests.get(
+            PHILLY_URL,
+            params=,
+            timeout=30,
+        )
+        response.raise_for_status()
+
+        batch = response.json().get("features", [])
+        if not batch:
+            break
+
+        features.extend(batch)
+
+        if len(batch) < page_size:
+            break
+
+    if not features:
+        return gpd.GeoDataFrame(
+            columns=["objectid", "geometry"],
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+    return gpd.GeoDataFrame.from_features(
+        ,
+        crs="EPSG:4326",
+    )
+
+def _chunk_bounds(chunk_id):
+    col, row = map(int, str(chunk_id).split(":"))
+
+    minx = PHILLY_BOUNDS[0] + col * CHUNK_SIZE
+    miny = PHILLY_BOUNDS[1] + row * CHUNK_SIZE
+
+    return (
+        minx,
+        miny,
+        min(minx + CHUNK_SIZE, PHILLY_BOUNDS[2]),
+        min(miny + CHUNK_SIZE, PHILLY_BOUNDS[3]),
+    )
 ```
-IoU = area(intersection) / area(union)
+
+```python
+
+PHILLY_BOUNDS = (-75.27943327075063, 39.87237043855194, -74.95729745028228, 40.13778135004081)
+CHUNK_SIZE = 0.02
+CACHE_VERSION = "1"
+OUT_COLS = ["id", "overture_name", "height", "geometry"]
+
+@fused.udf
+def udf(
+    bounds: str = "[-75.158176,39.938397,-75.155727,39.939866]",
+    overture_release: str = "2026-02-18-0",
+):
+
+    from shapely.geometry import box
+
+    empty = lambda: gpd.GeoDataFrame(
+        columns=["id", "geometry"],
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+    bounds = tuple(map(float, json.loads(bounds) if isinstance(bounds, str) else bounds))
+
+    layer_minx, layer_miny, layer_maxx, layer_maxy = PHILLY_BOUNDS
+    minx = max(bounds[0], layer_minx)
+    miny = max(bounds[1], layer_miny)
+    maxx = min(bounds[2], layer_maxx)
+    maxy = min(bounds[3], layer_maxy)
+
+    if minx >= maxx or miny >= maxy:
+        return empty()
+
+    eps = 1e-12
+
+    col_start = int((minx - layer_minx) // CHUNK_SIZE)
+    col_end = int(((maxx - layer_minx) - eps) // CHUNK_SIZE)
+    row_start = int((miny - layer_miny) // CHUNK_SIZE)
+    row_end = int(((maxy - layer_miny) - eps) // CHUNK_SIZE)
+
+    frames = []
+    for row in range(row_start, row_end + 1):
+        for col in range(col_start, col_end + 1):
+            gdf = _load_chunk(f":", overture_release, CACHE_VERSION)
+            if gdf is not None and not gdf.empty:
+                frames.append(gdf)
+
+    if not frames:
+        return empty()
+
+    gdf = gpd.GeoDataFrame(
+        pd.concat(frames, ignore_index=True),
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+    if "id" in gdf.columns:
+        gdf = gdf.drop_duplicates("id")
+
+    gdf = gdf[gdf.intersects(box(*bounds))].reset_index(drop=True)
+
+    if gdf.empty:
+        return empty()
+
+    keep = [c for c in OUT_COLS if c in gdf.columns]
+    return gdf[keep]
+
+@fused.cache(
+    cache_max_age="30d",
+)
+def _load_chunk(chunk_id, overture_release, cache_version=CACHE_VERSION):
+    minx, miny, maxx, maxy = _chunk_bounds(chunk_id)
+
+    overture = fused.load("UDF_Overture_Maps_Example")
+    gdf = overture(
+        bounds=[minx, miny, maxx, maxy],
+        release=overture_release,
+        overture_type="building",
+        theme="buildings",
+    )
+
+    if gdf is None or gdf.empty:
+        return gdf
+
+    if "names" in gdf.columns:
+        gdf["overture_name"] = gdf["names"].apply(
+            lambda v: v.get("primary", "") if isinstance(v, dict) else ("" if v is None else str(v))
+        )
+    else:
+        gdf["overture_name"] = ""
+
+    if "id" not in gdf.columns:
+        gdf["id"] = ""
+
+    keep = [c for c in OUT_COLS if c in gdf.columns]
+    return gdf[keep].reset_index(drop=True)
+
+def _chunk_bounds(chunk_id):
+    col, row = map(int, str(chunk_id).split(":"))
+
+    minx = PHILLY_BOUNDS[0] + col * CHUNK_SIZE
+    miny = PHILLY_BOUNDS[1] + row * CHUNK_SIZE
+
+    return (
+        minx,
+        miny,
+        min(minx + CHUNK_SIZE, PHILLY_BOUNDS[2]),
+        min(miny + CHUNK_SIZE, PHILLY_BOUNDS[3]),
+    )
 ```
 
-The logic is simple: for each Philadelphia building, we find its best-matching Overture building via polygon overlay, compute the intersection area, and derive IoU. A perfect overlap gives IoU = 1.0; no overlap gives 0.0.
+```python
 
-[Image: IoU visualization]
+@fused.udf
+def udf(
+    map_bounds: str = "[-75.158176,39.938397,-75.155727,39.939866]",
+    overture_release: str = "2026-02-18-0",
+):
 
-*A building-level IoU visualization highlighting where Overture building footprints closely match (green) and where gaps or mismatches still exist (yellow-red). IoU represents overlap percentage between Philadelphia's official building and Overture building footprint.*
+    load_overture = fused.load("load_overture_buildings")
+    load_philly = fused.load("load_philly_buildings")
 
-For this demo, to show how to build an agentic workflow in Fused, we focus on nine representative Philadelphia neighborhoods and compare each Overture release against the city's official building-footprint layer. This provides a consistent way to evaluate quality across both neighborhoods and releases.
+    gdf_overture = load_overture(
+        bounds=map_bounds,
+        overture_release=overture_release,
+    ).reset_index(drop=True)
 
-<iframe
-  src="https://unstable.udf.ai/fc_1OKBYKbEo1nab5A4aE2ezb/philly_locations_map.html"
-  width="100%"
-  height="500px"
-  style=}
-  title="Nine Philadelphia neighborhood locations for analysis"
-/>
+    gdf_philly = load_philly(bounds=map_bounds).reset_index(drop=True)
 
-*Nine Philadelphia neighborhood locations for analysis*
+    if len(gdf_philly) == 0:
+        return _empty_result()
 
-We build the pipeline as a chain of UDFs, where each step does one job and passes its result downstream.
+    if len(gdf_overture) == 0:
+        gdf_philly["iou"] = 0.0
+        gdf_philly["gers_id"] = ""
+        return _finalize(gdf_philly, overture_release)
 
-We'll leverage a few benefits of Fused for this:
+    gdf_overture["area_overture"] = gdf_overture.geometry.area
+    gdf_philly["area_philly"] = gdf_philly.geometry.area
+    gdf_philly["philly_idx"] = gdf_philly.index
 
-- Parallel processing: Fused scales UDF execution horizontally, it runs the same function across many inputs at once (for example, one worker per release and one per neighborhood).
-- Efficient caching: If the agent calls the same location again, the results will be cached and thus served faster.
+    intersections = gpd.overlay(
+        gdf_philly[["philly_idx", "area_philly", "geometry"]],
+        gdf_overture[["id", "area_overture", "geometry"]],
+        how="intersection",
+        keep_geom_type=True,
+        make_valid=True,
+    )
 
-We compute IoU for each Philadelphia building against its best Overture match, run that across 7 releases and 9 neighborhoods in parallel, and collapse the result into a compact summary table that can later be exposed to agents as tools.
+    if len(intersections) == 0:
+        gdf_philly["iou"] = 0.0
+        gdf_philly["gers_id"] = ""
+        return _finalize(gdf_philly, overture_release)
+
+    intersections["inter_area"] = intersections.geometry.area
+    intersections["iou"] = intersections["inter_area"] / (
+        intersections["area_philly"]
+        + intersections["area_overture"]
+        - intersections["inter_area"]
+    )
+
+    best = (
+        intersections.sort_values(["philly_idx", "iou"], ascending=[True, False])
+        .drop_duplicates("philly_idx")
+        .loc[:, ["philly_idx", "iou", "id"]]
+    )
+
+    gdf_philly = gdf_philly.merge(best, on="philly_idx", how="left")
+    gdf_philly["iou"] = gdf_philly["iou"].fillna(0.0)
+    gdf_philly["gers_id"] = gdf_philly["id"].fillna("")
+
+    return _finalize(gdf_philly, overture_release)
+
+def _finalize(gdf_philly, overture_release):
+    gdf = gdf_philly.copy()
+    drop_cols = [c for c in ["philly_idx", "id", "area_philly"] if c in gdf.columns]
+    if drop_cols:
+        gdf = gdf.drop(columns=drop_cols)
+
+    gdf["release"] = overture_release
+    ordered = ["release"] + [c for c in gdf.columns if c != "release"]
+    return gdf[ordered].reset_index(drop=True)
+
+def _empty_result():
+
+    return gpd.GeoDataFrame(
+        columns=["release", "gers_id", "iou", "geometry"],
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+```
+
+```python
+ALL_BOUNDS = 
+
+RELEASES = [
+    "2026-02-18-0",
+    "2026-01-21-0",
+    "2025-05-21-0",
+    "2025-04-23-0",
+    "2025-03-19-1",
+    "2025-01-22-0",
+    "2024-12-18-0",
+]
+
+@fused.udf
+def udf():
+
+    single_udf = fused.load("compute_iou")
+
+    @fused.cache
+    def run_all_bounds_summary(labels_key: str, releases_key: str):
+        labels = list(ALL_BOUNDS.keys())
+        bounds_list = list(ALL_BOUNDS.values())
+
+        arg_list = []
+        combo_index = []
+        for nb_idx, (label, bounds) in enumerate(zip(labels, bounds_list)):
+            for release in RELEASES:
+                arg_list.append()
+                combo_index.append((nb_idx, release))
+
+        pool = single_udf.map(arg_list, max_workers=20)
+        pool.wait()
+        results = pool.results()
+
+        summary_rows = []
+        for (nb_idx, release), result in zip(combo_index, results):
+            label = labels[nb_idx]
+            if result is None or not isinstance(result, pd.DataFrame) or len(result) == 0:
+                continue
+
+            matched = result["iou"] > 0
+            matched_df = result.loc[matched]
+
+            release_query = (
+                result["release_query"].iloc[0]
+                if "release_query" in result.columns and len(result) > 0
+                else release
+            )
+
+            summary_rows.append()
+
+        columns = [
+            "neighborhood", "release", "release_query",
+            "philly_buildings", "matched_buildings", "match_rate",
+            "mean_iou_matched", "median_iou_matched",
+        ]
+
+        if not summary_rows:
+            return pd.DataFrame(columns=columns)
+
+        return pd.DataFrame(summary_rows, columns=columns)
+
+    labels_key = ",".join(ALL_BOUNDS.keys())
+    releases_key = ",".join(RELEASES)
+
+    return run_all_bounds_summary(labels_key=labels_key, releases_key=releases_key)
+```
+
+</details>
 
 ## UDFs as Composable Building Blocks for Agents
 
@@ -8983,59 +9635,33 @@ Instead, we scope tools: create downstream "tool UDFs" that call upstream pipeli
 
 Pipeline UDFs remain internal; agent-facing tool UDFs act as the safe, small, stable interface.
 
-[Image: UDF building blocks]
+<ClickZoomImage src="/img/tutorials/agents/udf_building_blocks.png" alt="UDF building blocks" />
 
 ## Exposing Results to Agents
 
-The final agent can then have access to:
+<ClickZoomImage src="/img/tutorials/agents/overture_pipeline_overview.png" alt="Exposing results to agents" />
 
-- **Query / summary tools:** Runs a structured query over the precomputed summary table (filter, group, sort, limit) and returns a bounded result. Used for questions like "which release improved most?" and "rank neighborhoods by match rate."
-- **Widget tools:** Return interactive charts/maps the agent can embed and share, instead of streaming raw data.
-- **Inspect tool:** Returns a one-row schema summary (row count, column count, column names) for quick validation.
+The Fused Canvas itself becomes a shared MCP server — click **Share → Open API** in Workbench to generate an MCP-compatible endpoint. AI tools like Claude, Cursor, or any MCP-capable client can connect to this endpoint and discover your UDFs as callable tools.
 
-[Image: Exposing results to agents]
-
-Fused Canvas then exposes all of these UDFs through an MCP Server that can be easily passed to any Agent / LLM. Each UDF has a short description explaining what it does, which parameters it takes and what it returns:
-
-```json
-
-}
-```
-
-The Fused Canvas itself becomes a shared MCP server, a single source of truth for data tools that any agent can call.
-
-```mermaid
-graph TD
-    subgraph canvas ["Fused Canvas"]
-        T["Tool UDFs<br/>(query + chart)"]
-    end
-
-    T --> A["Claude Desktop"]
-    T --> B["ChatGPT"]
-    T --> C["Custom Chatbot"]
-    T --> D["Notebook Agent"]
-    T --> E["Slack Bot"]
-
-    style canvas fill:#1a1a2e,stroke:#444,color:#ccc
-    style T fill:#1a6b4a,stroke:#2dbf7e,color:#fff
-    style A fill:#2d4a6f,stroke:#4a82c4,color:#fff
-    style B fill:#2d4a6f,stroke:#4a82c4,color:#fff
-    style C fill:#2d4a6f,stroke:#4a82c4,color:#fff
-    style D fill:#2d4a6f,stroke:#4a82c4,color:#fff
-    style E fill:#2d4a6f,stroke:#4a82c4,color:#fff
-```
-
-These tools can be called from any client.
+See Expose your canvas to agents for more on organizing and securing agent-facing canvases.
 
 This is the agentic development workflow: data engineers write UDFs that shrink the world, and every team — from analysts to product managers — asks questions through whatever interface they prefer. The answers are always interactive, always current, and always shareable.
 
 ## Connecting MCP Server to AI
 
-We can now connect our MCP server to any chatbot. The below images show us asking questions regarding our Overture building data set for all the releases. It fetches and processes the data and then gives us the answer. Try it out
+Once the Canvas is shared, connect any AI agent to it. Here's how to set up Claude Code:
 
-[Image: MCP chatbot querying Overture building data]
+1. **Teach Claude Code about Fused.** Paste the Fused skills into Claude Code so it understands how to interact with Fused endpoints. Tell it: "always use these skills when working with Fused."
+2. **Give it the OpenAPI spec.** In the Canvas, click **Share → OpenAPI** and copy the `.api.json` URL (it looks like `https://udf.ai/fc_<your_token>.api.json`). Paste it into Claude Code so the agent knows which tools are available and what parameters they accept.
+3. **Ask questions.** The agent can now query the Overture release data directly:
 
-If you're logged in to Fused, you can now connect your Canvas MCP server to external agents like Claude Code, ChatGPT, or your own custom AI frontend. Just point your client at the Canvas MCP endpoint, authenticate, and the agent will be able to discover and call the same scoped tools (query, inspect, and widget UDFs) to answer questions and render shareable outputs.
+- *"Which release has the lowest IoU across all neighborhoods?"*
+- *"Which neighborhood has seen the biggest increase in match rate?"*
+- *"Show me the trend of IoU over time for Center City."*
+
+[Image: AI agent querying Overture building release data]
+
+For more details on connecting agents, see Connect an AI agent.
 
 ================================================================================
 
@@ -9043,10 +9669,10 @@ If you're logged in to Fused, you can now connect your Canvas MCP server to exte
 Path: examples/overture-maps-mcp-agent.mdx
 URL: https://docs.fused.io/examples/overture-maps-mcp-agent
 
-This example shows how to wrap Overture Maps Foundation open data as MCP tools on a Fused Canvas, so an AI agent can query buildings, places, and more by location or GERS ID without pulling raw geospatial data into the chat context. Try the chatbot or explore the Canvas.
+This example shows how to wrap Overture Maps Foundation open data as MCP tools on a Fused Canvas, so an AI agent can query buildings, places, and more by location or GERS ID without pulling raw geospatial data into the chat context. Explore the Canvas.
 
 <iframe
-  src="https://unstable.udf.ai/fc_7OKlCRLA5FeqcwXkB5wvsq/ai_chat.html"
+  src="https://unstable.fused.io/share/fc_7OKlCRLA5FeqcwXkB5wvsq/overture_ai_chat_widget"
   width="100%"
   height="600px"
   style=}
@@ -10269,6 +10895,204 @@ Open in a new tab
 ## Want to try it yourself?
 
 Sign up for a free Fused account and build on top of any of the User Defined Functions directly in Fused!
+
+================================================================================
+
+## Seismic Hazard Mapping
+Path: examples/seismic-hazard-mapping.mdx
+URL: https://docs.fused.io/examples/seismic-hazard-mapping
+
+_Cross-reference earthquake hazard with building density over Italy to find where the most buildings sit in the highest-risk zones._
+
+Open the live canvas: Seismic Hazard Mapping
+
+## The problem
+
+Italy sits at the collision of the African and Eurasian tectonic plates. Cities like L'Aquila and Amatrice have suffered devastating earthquakes in living memory. The goal: **find where the highest concentration of buildings overlaps with the highest seismic hazard**.
+
+That requires joining two datasets that have nothing in common structurally — a raster and a vector — from two different organizations. H3 makes it trivial.
+
+## Data sources
+
+- **Seismic hazard** — GEM Foundation OpenQuake Global Seismic Hazard Map (GSHM 2023). Each pixel is a Peak Ground Acceleration (PGA) value for a 1-in-475-year event.
+- **Buildings** — Overture Maps building footprints for Italy, as pre-partitioned GeoParquet files.
+
+## Canvas overview
+
+[Image: Canvas overview: OpenQuake hazard pipeline (top) and Overture buildings pipeline (bottom), joined on H3]
+
+| Step | UDF | What it does |
+|------|-----|--------------|
+| 1 | `openquake_explorer` | Downloads the OpenQuake GeoTIFF and saves it to S3 once |
+| 2 | `loading_seismic_data` | Reads the TIF for a given bounding box, returns a pixel array |
+| 3 | `hexagonified_seismic_hazard` | Converts raster pixels → H3 hexagons, averaging hazard per cell |
+| 4 | `Overture_partitions` | Shows Overture partition footprints across Italy |
+| 5 | `Overture_to_hex_single_file` | Aggregates building area per H3 hex via DuckDB spatial SQL |
+| 6 | `join_over_buildings` | Inner-joins both hex tables on H3 cell ID |
+| 7 | Widget | Scatter chart + KPI tiles + map |
+
+## 1. Ingest the seismic GeoTIFF
+
+The OpenQuake dataset is distributed as a ZIP containing a GeoTIFF. Rather than downloading it on every run, this UDF fetches it once and writes it to S3. Subsequent UDFs read from S3 directly.
+
+```python showLineNumbers
+@fused.udf
+def udf(save_to_s3: bool = True):
+
+    url = "https://cloud.openquake.org/public.php/dav/files/6SnFk2f92JEr76H"
+
+    @fused.cache  # <-- fetch once, re-use on subsequent runs
+    def fetch_zip(url):
+        response = requests.get(url, timeout=60)
+        response.raise_for_status()
+        return response.content
+
+    content = fetch_zip(url)
+    zf = zipfile.ZipFile(io.BytesIO(content))
+
+    tif_name = "v2023_1_pga_475_rock_3min.tif"
+    s3_path = f"s3://fused-asset/demos/seismic_data/"
+
+    print(f"Extracting  from ZIP...")
+    tif_bytes = zf.read(tif_name)
+    print(f"Extracted  bytes")
+
+    if save_to_s3:
+
+        fs = s3fs.S3FileSystem()
+        with fs.open(s3_path, "wb") as f:
+            f.write(tif_bytes)
+        print(f"Saved to ")
+
+    return pd.DataFrame([])
+```
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [6.6272, 36.6197, 18.4802, 47.0921],
+    chip_len: int = 512
+):
+    path: str = 's3://fused-asset/demos/seismic_data/v2023_1_pga_475_rock_3min.tif'
+    common = fused.load('https://github.com/fusedio/udfs/tree/6750f1f/public/common/')
+    arr = common.read_tiff_safe(bounds, path, chip_len, max_pixel=10 ** 8)
+
+    print(arr)
+    return arr
+```
+
+```json showLineNumbers
+}",
+        "geometryColumn": "geometry",
+        "tooltip": ["file_id"],
+        "style": 
+      }
+    ]
+  }
+}
+```
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    path: str = "s3://fused-asset/overture/2026-03-18.0/theme=buildings/type=building/part=2/36.parquet",
+    res: int = 6,
+    bounds: fused.types.Bounds = [6.6272, 36.6197, 18.4802, 47.0921],
+    chip_len: int = 512,
+    h3_res: int = 6,
+):
+
+    overture_udf = fused.load("Overture_to_hex_single_file")
+    df_buildings = overture_udf(path=path, res=res)
+
+    seismic_udf = fused.load("hexagonified_seismic_hazard")
+    df_seismic = seismic_udf(bounds=bounds, chip_len=chip_len, h3_res=h3_res)
+
+    # normalize to lowercase hex string (H3 canonical format) before joining
+    df_buildings["hex"] = df_buildings["hex"].apply(lambda x: format(int(x), 'x'))
+    df_seismic["hex"] = df_seismic["hex"].apply(lambda x: format(int(x), 'x'))
+
+    return pd.merge(df_buildings, df_seismic, on="hex", how="inner")  # <-- join on H3 cell
+```
+
+```json
+,
+  "children": [
+    ,
+      "children": [
+        
+        },
+        
+        }
+      ]
+    },
+    ,
+      "children": [
+        } WHERE sesimic_hazard > 70 AND building_count > 1000",
+            "style": "flex: 1; background: #212326; border-radius: 8px; padding: 8px 14px; border: 1px solid #E8FF59; color: #E8FF59;"
+          }
+        },
+        } WHERE sesimic_hazard > 70 AND building_count > 1000",
+            "style": "flex: 1; background: #212326; border-radius: 8px; padding: 8px 14px; border: 1px solid #E8FF59; color: #E8FF59;"
+          }
+        },
+        } WHERE sesimic_hazard > 70 AND building_count > 1000",
+            "style": "flex: 1; background: #212326; border-radius: 8px; padding: 8px 14px; border: 1px solid #E8FF59; color: #E8FF59;"
+          }
+        }
+      ]
+    },
+    ,
+      "children": [
+        } WHERE sesimic_hazard > 70 AND building_count > 1000",
+                "h3Column": "hex",
+                "tooltip": ["hex", "sesimic_hazard", "building_count"],
+                "legend": ,
+                "style": ,
+                  "opacity": 0.85,
+                  "coverage": 0.9,
+                  "extruded": false
+                }
+              }
+            ]
+          }
+        },
+        }",
+            "pointColor": "#E8FF59",
+            "pointOpacity": 0.75,
+            "defaultPointSize": 5,
+            "pointStrokeWidth": 0.35,
+            "pointStrokeColor": "#1a1c1f",
+            "minBubbleSize": 10,
+            "maxBubbleSize": 140,
+            "showGrid": true,
+            "showLegend": true,
+            "xAxisFontSize": 11,
+            "yAxisFontSize": 11,
+            "animationMs": 300,
+            "style": "flex: 1; min-width: 260px; background: #212326; border-radius: 10px; padding: 10px; min-height: 0; overflow: hidden;"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+</details>
+
+Customize colors, opacity, and coverage in the Visualization tab. You can also use the AI-driven widget to describe style changes in plain language and have them applied instantly.
+
+## Next steps
+
+- **Swap the AOI** — replace the Italy bounds with Turkey, Japan, or the US West Coast
+- **Add vulnerability** — join a third dataset (e.g. building age from Overture) to weight exposure by structural fragility
+- **Run at scale** — use `my_udf.map()` to process all Overture partitions in parallel
+
+Further reading:
+- Converting to H3
+- Resolution guide
+- Geospatial ingestion
 
 ================================================================================
 
@@ -13781,7 +14605,7 @@ URL: https://docs.fused.io/python-sdk/api-reference/fused-user-secrets
 
 # user_secrets
 
-Access user-owned secrets that persist across all execution environments. User secrets are private to the authenticated user — they are not shared with your team. Requires a paid plan.
+Access secrets that are private to you. User secrets are private to the authenticated user — they are not shared with your team. Requires a paid plan.
 
 ```python
 
@@ -15905,17 +16729,11 @@ URL: https://docs.fused.io/python-sdk/changelog
 
 # Changelog
 
-## v2.6.1 (2026-04-29)
+## v2.7.1 (2026-05-14)
 
-**New integrations: Notion, Google Cloud (BigQuery), Snowflake, and Airtable**
+**Widgets: new components and capabilities**
 
-Connect Notion pages, BigQuery datasets, Snowflake tables, and Airtable bases directly to UDFs and expose results through the Fused API.
-
-[Image: Integrations panel]
-
-**Widget AI Chat**
-
-An AI assistant built into the Widgets builder that lets you iterate on widget layout and logic through natural language.
+Widgets gain a transformer component for custom JavaScript logic, per-widget background colors, an AI chat preset (beta), and schema linting with autocompletion in the JSON UI editor.
 
 See the Slack integration docs to get started.
 
@@ -17360,8 +18178,6 @@ URL: https://docs.fused.io/workbench/integrations-secrets
 
 The Integrations & Secrets page is where you connect third-party services to Fused and store the keys your UDFs need at runtime.
 
-[Image: Integrations & Secrets page]
-
 ## Integrations
 
 Connect external services to Fused so canvases and UDFs can interact with them. See the dedicated integration guides:
@@ -17516,6 +18332,12 @@ The service account needs at minimum the `BigQuery Data Viewer` and `BigQuery Jo
 
 Download the JSON key file associated with the Service Account. This file contains credentials that Fused will use to authenticate with BigQuery.
 
+```json
+
+```
+
+</Details>
+
 ## 3. Connect the Google Cloud integration in Fused
 
 In the Integrations & Secrets page, open the **Google Cloud** integration and paste the JSON key file contents. This stores the key as a secret named `gcs_fused`.
@@ -17527,7 +18349,7 @@ Load the secret directly as a dict and create a BigQuery client:
 ```python
 @fused.udf
 def udf():
-    import json
+
     from google.cloud import bigquery
     from google.oauth2 import service_account
 
@@ -17551,6 +18373,7 @@ To return results as a GeoDataFrame, call `.to_geodataframe(geography_column="ge
 - Google Cloud Storage integration — connect a GCS bucket
 - Cloud storage — read and write cloud storage files from UDFs
 - Secrets management — store credentials securely
+
 ================================================================================
 
 ## Google Cloud Storage Integration
@@ -17642,26 +18465,6 @@ Read and write Notion pages, comments, and users from Fused UDFs using OAuth-man
 ### Connect your Notion account
 
 Open **Settings > Integrations & Secrets**, find the Notion section, and click **Connect Notion**. You will be redirected to Notion to select a workspace and authorize access, then back to the workbench.
-
-## Finding page and database IDs
-
-Every Notion page and database has a UUID. To find it:
-
-1. Open the page in the Notion web app.
-2. Click **Share > Copy link**. The URL follows the pattern `https://www.notion.so/Page-Title-<32-hex-chars>`. The last 32 hex characters (without dashes) are the ID.
-3. You can use the ID with or without dashes — the API accepts both formats.
-
-Alternatively, search for pages programmatically:
-
-```python
-@fused.udf()
-def udf():
-    nt = fused.api.notion_connect()
-    client = nt.client()
-    results = client.search(query="Meeting Notes")
-    for page in results["results"]:
-        print(page["id"], page.get("url"))
-```
 
 ## Quick start
 
@@ -18204,7 +19007,7 @@ The Profile page in Workbench lets you edit your username, view account informat
 
 The Profile page has three tabs: **Usage**, **Debug**, and **S3 Policy**.
 
-<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/profile-page-vid.mp4" />
+<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/profile.mp4" />
 
 ## Usage
 
@@ -18379,7 +19182,7 @@ return np.array([[…], […]]), [xmin, ymin, xmax, ymax]
 
 For UDFs that return map Tiles, Fused runs the UDF for only the Tiles in the viewport. This enables efficient analysis on a fraction of a dataset.
 
-<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/map_overture4.mp4" />
+<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/map_overture5.mp4" />
 
 ### Map controls
 
@@ -18389,7 +19192,7 @@ The top of the map has controls to interact with the viewport. These include an 
 
 You can change the basemap in the map style settings in the top-right corner of the map. Currently, light, dark, satellite, and blank basemaps are supported.
 
-<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/mapcontrols_edit4.mp4" />
+<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/mapcontrols_edit5.mp4" />
 
 ## Auto, Tile, and Single (Viewport, Parameter)
 
@@ -18403,7 +19206,7 @@ Clicking a rendered feature enters debug mode. To exit, press `Escape` or click 
 
 When data renders successfully on the map, clicking or hovering on it shows attributes for selected pixels or geometries. When data doesn't render, clicking errored tiles shows an error code, and the full error details can be copied as JSON. Additional debugging information can be found in the Runtime pane.
 
-<LazyReactPlayer loop url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/debugclick7.mp4" />
+<LazyReactPlayer loop url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/debugclick8.mp4" />
 
 ================================================================================
 
@@ -21892,5 +22695,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-05-01
+Generated automatically from Fused documentation. Last updated: 2026-05-18
 Total sections: 5
