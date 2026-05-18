@@ -44,80 +44,30 @@ def udf():
 
 ================================================================================
 
-## Connecting an Encrypted S3 Bucket
-Path: guide/advanced-setup/encrypted-s3-bucket.mdx
-URL: https://docs.fused.io/guide/advanced-setup/encrypted-s3-bucket
-
-# Connecting an Encrypted S3 Bucket
-
-If your S3 buckets use server-side encryption with AWS KMS (SSE-KMS), the Fused role in your account needs access to both the bucket **and** the KMS key. The KMS key must reside in the same region as the bucket.
-
-## 1. Add a KMS key policy statement
-
-In the AWS KMS console, add the following statement to the key policy of the KMS key used by the bucket. Replace `<FUSED_ACCOUNT>` and `<FUSED_ROLE_NAME>` with the values provided by your Fused solutions engineer.
-
-```json
-,
-  "Action": [
-    "kms:Decrypt",
-    "kms:Encrypt",
-    "kms:GenerateDataKey*",
-    "kms:DescribeKey"
-  ],
-  "Resource": "*"
-}
-```
-
-## 2. Add an S3 bucket policy statement
-
-In the S3 console, add the following statement to the bucket policy. Replace `<FUSED_ACCOUNT>`, `<FUSED_ROLE_NAME>`, and `<BUCKET_NAME>` with your values.
-
-```json
-,
-      "Action": "s3:*",
-      "Resource": [
-        "arn:aws:s3        "arn:aws:s3      ]
-    }
-  ]
-}
-```
-
-If you only need Fused to **read** from the bucket (not write), you can scope the `Action` down to `["s3:GetObject", "s3:ListBucket"]` instead of `s3:*`.
-
-## 3. Verify access
-
-Once both policies are saved, your Fused solutions engineer can confirm connectivity. You can also verify from a UDF:
-
-```python
-@fused.udf
-def udf():
-    return fused.api.list("s3://<BUCKET_NAME>/")
-```
-
-## See also
-
-- Cloud storage — connect S3 and GCS buckets to Fused
-- On-Prem Setup — overview of on-premise deployment
-- Secrets Management — store credentials securely
-- Write UDFs securely — best practices for handling sensitive data
-
-================================================================================
-
 ## Secrets management
 Path: guide/advanced-setup/environment-variables.mdx
 URL: https://docs.fused.io/guide/advanced-setup/secrets-management
 
-Fused provides a built-in secrets manager to securely store and access sensitive credentials like API keys, database passwords, and tokens. Secrets are encrypted in the Fused backend and scoped to your account or organization.
+Fused provides a built-in secrets manager to securely store and access sensitive credentials like API keys, database passwords, and tokens. Both types of secrets require a paid plan. There are two kinds of secrets:
+
+- **Team secrets** (`fused.secrets`) — scoped to your team and accessible to everyone in your team.
+- **User secrets** (`fused.user_secrets`) — owned and accessible only by the authenticated user.
 
 ## Storing secrets
 
-In Workbench, go to **Preferences** and find the **Secrets** section. Click **"+ Add new secret"** to add a key-value pair.
+Open the **Integrations & secrets** modal in Workbench:
 
-[Image: secrets management]
+- From the **home** sidebar, click **Integrations & secrets** under your user section.
+- From inside a **canvas**, open the overflow menu and select **Integrations & secrets**.
 
-## Accessing secrets in UDFs
+The modal has separate **Team secrets** and **Personal secrets** sections. In either section, click **Add new secret** to store a key-value pair.
 
-Use `fused.secrets` to retrieve stored secrets by name:
+[Image: team secrets management]
+[Image: user secrets management]
+
+## Team secrets — `fused.secrets`
+
+Team secrets are scoped to the execution environment (kernel) and shared across your team or organization. Use `fused.secrets` to read, write, and delete them:
 
 ```python
 
@@ -129,12 +79,57 @@ def udf():
     ...
 ```
 
+You can also manage team secrets programmatically:
+
+```python
+@fused.udf
+def udf():
+    fused.secrets["MY_KEY"] = "value"
+
+    del fused.secrets["MY_KEY"]
+
+    dir(fused.secrets)
+```
+
+## User secrets — `fused.user_secrets`
+
+User secrets are owned by the authenticated user and persist regardless of which execution environment you run UDFs in.
+
+User secrets are read-only in the SDK. To create, update, or delete user secrets, use the Workbench UI under **Integrations & secrets**.
+
+```python
+@fused.udf
+def udf():
+    val = fused.user_secrets["MY_KEY"]
+    # or
+    val = fused.user_secrets.MY_KEY
+    ...
+```
+
+To list all user secret keys:
+
+```python
+@fused.udf
+def udf():
+    keys = list(fused.user_secrets)
+    ...
+```
+
+## How secrets are secured
+
+All secrets are stored in AWS Secrets Manager, which encrypts secret values at rest and in transit.
+
+- **Team secrets** are each protected by a dedicated AWS KMS encryption key. IAM policies restrict access so that only the specific execution environment that owns a secret can decrypt it.
+- **User secrets** are encrypted at rest using AWS-managed encryption keys within Secrets Manager.
+- Secrets are never written to disk in plaintext or included in logs.
+- Access is authenticated and authorized through Fused's API layer — secrets are only decrypted at the moment they are read by your UDF code.
+
 ## Security notes
 
-- Secrets are stored encrypted in the Fused backend.
-- Any secrets added to Fused are accessible by anyone in your team.
-- Never print or return secret values from UDFs — anyone calling the UDF could otherwise read them.
-- Use `fused.secrets` instead of `.env` files to keep credentials out of your codebase.
+- Team secrets added to Fused are accessible by anyone in your team.
+- User secrets are private to the authenticated user.
+- Never print or return secret values from UDFs — anyone calling the UDF could otherwise read them. This applies to both `fused.secrets` and `fused.user_secrets`.
+- Use secrets instead of `.env` files to keep credentials out of your codebase.
 
 For more on writing UDFs securely, see Security best practices.
 
@@ -296,7 +291,7 @@ Your Fused solutions engineer will walk you through the provisioning process and
 
 ## See also
 
-- Connecting an Encrypted S3 Bucket — grant Fused access to SSE-KMS encrypted buckets
+- Amazon S3 integration — connect S3 buckets, including SSE-KMS encrypted buckets
 - Python installation — install the Fused SDK locally
 - Secrets Management — store credentials securely
 - Write UDFs securely — best practices for handling sensitive data
@@ -1126,26 +1121,6 @@ Use that URL in iframes, map tile layers, or `fetch` from the browser.
 
 ================================================================================
 
-## Slack
-Path: guide/data-input-outputs/export-api/slack.mdx
-URL: https://docs.fused.io/guide/data-input-outputs/export-api/slack
-
-# Slack [Experimental]
-
-Let anyone in your team talk to your Canvas with a Slack Bot!
-
-This is an experimental feature. Enable it in **Preferences** by toggling on the Slack integration.
-
-Check your Fused home page — the **Integrations** panel shows whether Slack is connected for your team.
-
-## One-time setup
-
-If your Integrations panel already shows **SYNCED**, skip this section to avoid disrupting your team's existing connection.
-
-## Adding a new Canvas to Slack
-
-================================================================================
-
 ## Tokens & endpoints
 Path: guide/data-input-outputs/export-api/tokens-endpoints.mdx
 URL: https://docs.fused.io/guide/data-input-outputs/export-api/tokens-endpoints
@@ -1432,125 +1407,6 @@ Paste this configuration into your profile settings to enable the tool.
 
 ================================================================================
 
-## Airtable Integration
-Path: guide/data-input-outputs/import-connection/airtable.mdx
-URL: https://docs.fused.io/guide/data-input-outputs/import-connection/airtable
-
-# Airtable Integration
-
-Read and write Airtable records from Fused UDFs by connecting to your Airtable account in Fused.
-
-## Prerequisites
-
-- A Fused account on a paid plan and an Airtable account.
-
-## Setup
-
-### 1. Enable the feature flag
-
-In the Fused workbench, open **Settings > Experimental Features** and toggle **Airtable integration** on.
-
-### 2. Connect your Airtable account
-
-1. Open **Settings > Integrations & Secrets**, find the Airtable section, and click **Connect**.
-2. You will be redirected to Airtable to authorize access. During this flow you can grant access to **all bases** or select **specific bases**.
-
-[Image: Airtable OAuth consent screen]
-
-3. Once you confirm, you will be redirected back to the workbench.
-
-## Finding your base ID
-
-Every Airtable base has an ID that starts with `app`. To find it:
-
-1. Open the base in the Airtable web app.
-2. Look at the URL — it follows the pattern `https://airtable.com/appXXXXXXXXXXXXXX/...`. The `appXXXXXXXXXXXXXX` segment is your base ID.
-
-Alternatively, after connecting, you can list all accessible bases programmatically as shown below in the examples section.
-
-## Examples
-
-### List bases
-
-```python
-@fused.udf()
-def udf():
-
-    at = fused.api.airtable_connect()
-    bases = at.list_bases()
-    for base in bases:
-        print(base["id"], base["name"])
-```
-
-### Read records
-
-Use `list_records` to read all records from a table. It automatically paginates through all pages. Extra keyword arguments are forwarded as query parameters to the Airtable List Records endpoint.
-
-```python
-@fused.udf()
-def udf():
-
-    at = fused.api.airtable_connect(base_id="appXXXXXXXXXXXXXX")
-    records = at.list_records(
-        "Tasks",
-        view="Grid view",
-        filterByFormula=" = 'Done'",
-        maxRecords=100,
-    )
-
-    rows = [ for r in records]
-    return pd.DataFrame(rows)
-```
-
-### Create records
-
-Use `create_records` to insert new rows. Each record should be a dict with a `"fields"` key. Airtable allows up to 10 records per request.
-
-```python
-@fused.udf()
-def udf():
-
-    at = fused.api.airtable_connect(base_id="appXXXXXXXXXXXXXX")
-    created = at.create_records("Tasks", [
-        },
-        },
-    ])
-    for r in created:
-        print(r["id"])
-```
-
-### Update records
-
-Use `update_records` to patch existing records (PATCH semantics — only the specified fields are changed). Each record must include an `"id"` and a `"fields"` dict.
-
-```python
-@fused.udf()
-def udf():
-
-    at = fused.api.airtable_connect(base_id="appXXXXXXXXXXXXXX")
-    at.update_records("Tasks", [
-        },
-    ])
-```
-
-### Delete records
-
-Use `delete_records` to remove records by ID. Airtable allows up to 10 record IDs per request.
-
-```python
-@fused.udf()
-def udf():
-
-    at = fused.api.airtable_connect(base_id="appXXXXXXXXXXXXXX")
-    at.delete_records("Tasks", ["recAAAAAAAAAAAA", "recBBBBBBBBBBBB"])
-```
-
-## Disconnecting
-
-To revoke the integration, go to **Settings > Integrations & Secrets**, find the Airtable section, and click **Disconnect**.
-
-================================================================================
-
 ## Cloud storage
 Path: guide/data-input-outputs/import-connection/cloud-storage.mdx
 URL: https://docs.fused.io/guide/data-input-outputs/import-connection/cloud-storage
@@ -1587,7 +1443,7 @@ The bucket must enable the following CORS settings to allow uploading files from
 
 #### Encrypted S3 Buckets
 
-If your bucket uses server-side encryption with AWS KMS (SSE-KMS), additional KMS and bucket policy configuration is required. See Connecting an Encrypted S3 Bucket for full step-by-step instructions.
+If your bucket uses server-side encryption with AWS KMS (SSE-KMS), additional KMS and bucket policy configuration is required. See Amazon S3 integration for full step-by-step instructions.
 
 ### Google Cloud Storage (GCS)
 
@@ -1719,183 +1575,10 @@ URL: https://docs.fused.io/guide/data-input-outputs/import-connection/databases
 
 # Databases
 
-Connect Fused to external databases like Snowflake and BigQuery.
+Connect Fused to external databases. See the dedicated integration guides:
 
-## Snowflake
-
-### 1. Allowlist Fused IPs in Snowflake
-
-If your Snowflake account has a network policy, you must allowlist the Fused IPs before connections will work:
-- `44.230.70.117/32`
-- `52.42.164.181/32`
-
-To add them, run the following SQL in Snowflake (or ask your Snowflake admin):
-
-```sql
-CREATE NETWORK RULE fused_ips
-  TYPE = IPV4
-  VALUE_LIST = ('44.230.70.117', '52.42.164.181')
-  MODE = INGRESS;
-
-ALTER NETWORK POLICY your_network_policy
-  ADD ALLOWED_IP_LIST = ('44.230.70.117', '52.42.164.181');
-```
-
-### 2. Set up a Snowflake user for Fused
-
-You can use an existing Snowflake user or create a dedicated one. Either way, make sure the user has a role and warehouse assigned.
-
-To create a new user:
-
-```sql
-CREATE USER fused_user
-  PASSWORD = 'a_strong_password'
-  DEFAULT_ROLE = your_role
-  DEFAULT_WAREHOUSE = your_warehouse;
-
-GRANT ROLE your_role TO USER fused_user;
-```
-
-If using an existing user, verify they have the necessary role and warehouse:
-
-```sql
-ALTER USER existing_user SET DEFAULT_ROLE = your_role DEFAULT_WAREHOUSE = your_warehouse;
-GRANT ROLE your_role TO USER existing_user;
-```
-
-Your account identifier looks like `orgname-accountname` or `xy12345.us-east-1`. You can find it in **Snowflake > Admin > Accounts**, or by running `SELECT CURRENT_ACCOUNT()`.
-
-### 3. Store credentials in Fused secrets
-
-Add `SNOWFLAKE_USER` and `SNOWFLAKE_PASSWORD` in the Fused secrets management UI. Use the user’s password or a programmatic access token (PAT) for `SNOWFLAKE_PASSWORD`—the Python connector accepts either.
-
-### 4. Connect from a UDF
-
-```python showLineNumbers
-@fused.udf
-def udf():
-
-    query = 'SELECT CURRENT_VERSION()'
-
-    conn = snowflake.connector.connect(
-        user=fused.secrets['SNOWFLAKE_USER'],
-        password=fused.secrets['SNOWFLAKE_PASSWORD'],
-        account='your_account_identifier',
-        warehouse='your_warehouse',
-        database='your_database',
-        schema='your_schema'
-    )
-
-    cursor = conn.cursor()
-    cursor.execute(query)
-    df = cursor.fetch_pandas_all()
-    cursor.close()
-    conn.close()
-
-    return df
-```
-
-Read more about Snowflake's Python connector.
-
----
-
-## BigQuery - Option 1: Credentials file
-
-Fused integrates with Google BigQuery with the Python `bigquery` library.
-
-### 1. Authenticate with a Google Service Account
-
-Create a UDF to set your Google Service Account credentials in your Fused runtime disk in a file in the `/mnt/cache` directory.
-
-```python showLineNumbers
-@fused.udf
-def udf():
-
-    # Google Key as JSON
-    data = 
-
-    # Define the target path for the new GEE credentials file
-    key_path = '/mnt/cache/bq_creds.json'
-
-    # Write the loaded JSON data to the new file
-    with open(key_path, 'w') as file:
-        json.dump(data, file)
-```
-
-### 2. Load data from BigQuery
-
-Create a UDF to perform a query on a BigQuery dataset and return the results as a DataFrame or GeoDataFrame. Authenticate by passing the key file path to `service_account.Credentials`.
-
-```python showLineNumbers
-@fused.udf
-def udf(bounds: fused.types.TileGDF=None, geography_column=None):
-    from google.cloud import bigquery
-    from google.oauth2 import service_account
-
-    # This UDF will only work on runtime with mounted EFS
-    key_path = "/mnt/cache/bq_creds.json"
-
-    # Authenticate BigQuery
-    credentials = service_account.Credentials.from_service_account_file(
-        key_path, scopes=["https://www.googleapis.com/auth/cloud-platform"]
-    )
-
-    # Create a BigQuery client
-    client = bigquery.Client(credentials=credentials, project=credentials.project_id)
-
-    # Structure spatial query
-    query = f"""
-        SELECT * FROM `bigquery-public-data.new_york.tlc_yellow_trips_2015`
-        LIMIT 10
-    """
-
-    if geography_column:
-        return client.query(query).to_geodataframe(geography_column=geography_column)
-    else:
-        return client.query(query).to_dataframe()
-```
-
-## Big Query - Option 2: Secrets
-
-If you already have a `gcs_secret` in Fused secrets, you can use it to access your GCP secrets. Otherwise you can simply create new secrets in the Fused secrets manager with:
-- `GS_ACCESS_KEY_ID`
-- `GS_SECRET_ACCESS_KEY`
-
-You can for example use this to access the Github Activity Data
-
-```python showLineNumbers
-@fused.udf
-def udf(repo_name: str = "athasdev/athas"):
-
-    # This is not required if your account already has the `gcs_secret` in Fused secrets
-    os.environ['GS_ACCESS_KEY_ID'] = fused.secrets["GS_ACCESS_KEY_ID"]
-    os.environ['GS_SECRET_ACCESS_KEY'] = fused.secrets["GS_SECRET_ACCESS_KEY"]
-    
-    from google.cloud import bigquery
-    # Initialize BigQuery client
-    client = bigquery.Client()
-    
-    # Get total stars 
-    total_query = f"""
-        SELECT 
-            repo.name as repository,
-            COUNT(*) as total_stars
-        FROM `githubarchive.day.202508*`
-        WHERE type = 'WatchEvent' 
- --           AND repo.name = ''
-        GROUP BY repository
-    """
-    
-    total_query = f""" SELECT  * FROM `githubarchive.day.202508*` limit 10"""
-    
-    # Run the query
-    query_job = client.query(total_query)
-    
-    # Convert to pandas DataFrame
-    total_df = query_job.to_dataframe()
-     
-    return total_df
-```
+- Snowflake
+- BigQuery
 
 ================================================================================
 
@@ -2082,177 +1765,6 @@ job.run_batch()
 
 ================================================================================
 
-## Snowflake Integration
-Path: guide/data-input-outputs/import-connection/snowflake.mdx
-URL: https://docs.fused.io/guide/data-input-outputs/import-connection/snowflake
-
-# Snowflake Integration
-
-Query data, browse metadata, read/write stages, and write DataFrames to tables in Snowflake -- all using Fused-managed OAuth tokens. No passwords or credentials are stored client-side.
-
-## Prerequisites
-
-### Connect your Snowflake account to Fused
-
-A Snowflake administrator runs a few one-time SQL commands in Snowflake (Steps 1–4), then you complete an OAuth flow in the Fused workbench (Step 5).
-
-If you're running Fused locally (outside the Workbench), install the Snowflake extras first:
-
-```bash
-pip install fused[snowflake]
-```
-
-This adds `snowflake-connector-python` alongside the core `fused` package. In the Workbench this is already pre-installed.
-
-</details>
-
-**Step 1 -- Create a security integration:**
-
-```sql
-CREATE SECURITY INTEGRATION fused_oauth
-  TYPE = OAUTH
-  OAUTH_CLIENT = CUSTOM
-  OAUTH_CLIENT_TYPE = 'CONFIDENTIAL'
-  OAUTH_REDIRECT_URI = 'https://www.fused.io/server/v1/integrations/snowflake/callback'
-  ENABLED = TRUE;
-```
-
-Replace the domain in `OAUTH_REDIRECT_URI` with your Fused deployment's origin if you are not on `www.fused.io`. The path must always be `/server/v1/integrations/snowflake/callback`.
-
-**Step 2 -- Retrieve the client ID and secret:**
-
-```sql
-SELECT SYSTEM$SHOW_OAUTH_CLIENT_SECRETS('FUSED_OAUTH');
-```
-
-This returns a JSON object. Copy the `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`, and `OAUTH_CLIENT_SECRET_2` values -- you'll paste them into the Fused UI in the last step.
-
-**Step 3 -- Create a role with warehouse usage:**
-
-```sql
-CREATE ROLE FUSED_WH_ROLE;
-GRANT USAGE ON WAREHOUSE COMPUTE_WH TO ROLE FUSED_WH_ROLE;
-```
-
-**Step 4 -- Create a dedicated service account user and grant it the role:**
-
-```sql
-CREATE USER fused_service_account
-  TYPE = PERSON
-  LOGIN_NAME = 'fused_service_account'
-  DISPLAY_NAME = 'Fused Service Account'
-  DEFAULT_ROLE = FUSED_WH_ROLE
-  DEFAULT_WAREHOUSE = COMPUTE_WH
-  MUST_CHANGE_PASSWORD = FALSE
-  PASSWORD = 'xxxxx';
-
-GRANT ROLE FUSED_WH_ROLE TO USER fused_service_account;
-```
-
-Do **not** sign in with an administrator account during the OAuth step. Snowflake blocks `ACCOUNTADMIN` and `SECURITYADMIN` for custom OAuth integrations, which is why a dedicated service account user is required.
-
-**Step 5 -- Connect in Workbench:**
-
-1. Enable the **Snowflake integration** feature flag in **Preferences > Experimental Features**.
-2. Open **Integration & secrets > Integrations** and click **Connect Snowflake**.
-3. Enter your account identifier (e.g. `ORGNAME-ACCTNAME`), the `OAUTH_CLIENT_ID`, both client secrets, and optionally a role.
-
-   [Image: Connect Snowflake modal in Fused Workbench]
-
-4. A Snowflake sign-in popup will open. Sign in with the **service account** user you created in Step 4 (not an administrator account) to complete the OAuth flow.
-
-   [Image: Snowflake OAuth sign-in screen]
-
-5. Click **Allow** on the OAuth consent screen to grant Fused access to your Snowflake account.
-
-   [Image: Snowflake OAuth confirmation screen]
-
----
-
-## Examples
-
-### Query Snowflake in a UDF
-
-```python
-@fused.udf
-def udf():
-
-    df = fused.api.snowflake_query(
-        "SELECT * FROM my_db.my_schema.my_table LIMIT 10"
-    )
-    return df
-```
-
-### Use a connection for multiple operations
-
-```python
-@fused.udf
-def udf():
-
-    conn = fused.api.snowflake_connect(
-        warehouse="COMPUTE_WH",
-        database="ANALYTICS",
-        schema="PUBLIC",
-        role="ANALYST",
-    )
-
-    print("Tables:", conn.list_tables("ANALYTICS", "PUBLIC"))
-
-    sales = conn.query("""
-        SELECT region, SUM(amount) AS total
-        FROM orders
-        WHERE order_date >= '2025-01-01'
-        GROUP BY region
-        ORDER BY total DESC
-    """)
-    return sales
-```
-
-### Write results back to Snowflake
-
-```python
-@fused.udf
-def udf():
-
-    conn = fused.api.snowflake_connect(
-        warehouse="COMPUTE_WH",
-        database="ANALYTICS",
-        schema="PUBLIC",
-    )
-
-    df = pd.DataFrame()
-    conn.write(df, "ANALYTICS.PUBLIC.METRICS", mode="overwrite")
-    return df
-```
-
-### Read from a Snowflake stage
-
-```python
-@fused.udf
-def udf():
-
-    conn = fused.api.snowflake_connect(
-        warehouse="COMPUTE_WH",
-        database="RAW_DATA",
-        schema="INGEST",
-    )
-
-    files = conn.list_stage_files("@csv_stage", pattern=".*[.]csv")
-    if files:
-        df = conn.read_stage(f"@csv_stage/")
-        return df
-```
-
-For full API details, see the Snowflake section of the `fused.api` reference.
-
----
-
-## How it works
-
-Fused manages the full OAuth token lifecycle on your behalf. Your Snowflake credentials never leave the Fused server -- the SDK only receives short-lived access tokens, which it uses to connect directly to Snowflake.
-
-================================================================================
-
 ## Using AI inside a UDF
 Path: guide/data-input-outputs/import-connection/using-ai-inside-udf.mdx
 URL: https://docs.fused.io/guide/data-input-outputs/import-connection/using-ai-inside-udf
@@ -2293,48 +1805,6 @@ URL: https://docs.fused.io/guide/data-input-outputs/import-connection/widgets
 
 # Widgets
 
-[Image: Fused Widgets System diagram]
-
-Widgets are interactive, declarative UI nodes you can drop onto the Fused canvas. Unlike UDFs that run Python, widgets are defined in JSON — no code required. They can be inputs (sliders, dropdowns, text inputs) that drive parameters across the canvas, or outputs (charts, maps, tables, big numbers) that display live data from any UDF. Every widget is shareable as a standalone URL, embeddable anywhere, and fully accessible to AI for generation and editing.
-
-With Widgets, you can:
-
-- **Drive UDFs with inputs** — Sliders, dropdowns, and text inputs broadcast values to every UDF on the canvas.
-- **Visualize UDF output** — Output widgets render charts, tables, maps, and KPIs from any UDF.
-- **Query with SQL** — Widgets run SQL over UDF results in-browser via DuckDB WASM.
-- **Dynamically generate interactive UI** — Pass valid widget JSON via a URL parameter to update the UI on the fly (see Anatomy of a Widget URL).
-
-[Image: Widgets overview]
-
-*Changes in the input widget make all the downstream UDFs and output widgets re-run.*
-
-## Structure of a Widget
-
-Every widget is a small JSON object with two required keys: `type` and `props`.
-
-```json
-} WHERE value > $my_param",
-    "title": "My Chart",
-    "param": "my_param"
-  }
-}
-```
-
-See all the available widget types in the Available Widgets section below.
-
-## How to create and use a Widget
-
-### Step 1: Drop a Widget Node
-
-In the Fused Workbench canvas, click the **Widget** icon in the toolbar to add one, then click it to open the JSON editor in the right panel.
-
-```json
-
-}
-```
-
-### Step 2: Connect it to a UDF
-
 ```python
 @fused.udf
 def udf(selected_option: str = "orders"):
@@ -2349,6 +1819,22 @@ def udf(selected_option: str = "orders"):
 
     col = selected_option if selected_option in ("orders", "revenue") else "orders"
     return df[["date", col]].rename(columns=)
+```
+
+```json
+,
+  "children": [
+    
+    },
+    }",
+        "barColor": "#E8FF59",
+        "showGrid": true,
+        "showValues": true,
+        "beginAtZero": true
+      }
+    }
+  ]
+}
 ```
 
 ```python
@@ -2399,6 +1885,14 @@ def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
 | Output | `fused-map` | Full interactive map | Supports multiple layer types, tooltips, legends, basemaps |
 | Output | `widget-builder` | Meta widget | Renders widgets dynamically from JSON |
 | Output | `iframe` | Embedded web page | Pass any URL — a video, GIF, image, or web page |
+| Output | `stacked-bar-chart` | Stacked bar chart via DuckDB SQL | Multiple series stacked, `label` + `value` + `series` columns, driven by SQL query |
+| Output | `stacked-area-chart` | Stacked area chart via DuckDB SQL | Area version of stacked bar, good for time-series proportions, driven by SQL query |
+| Output | `scatter-chart` | Scatter/XY plot via DuckDB SQL | `x` and `y` axis columns, optional color/size encoding, driven by SQL query |
+| Output | `donut-chart` | Donut/pie chart via DuckDB SQL | `label` + `value` columns, shows proportions, driven by SQL query |
+| Output | `heatmap-chart` | Heatmap grid via DuckDB SQL | `x`, `y`, and `value` columns, color intensity encoding, driven by SQL query |
+| Utility | `sql-runner` | Named SQL data source | Shared SQL context for descendant components, avoids duplicating queries |
+| Utility | `div` | Layout container | Groups and wraps child components, supports layout/spacing control |
+| Utility | `ai-chat` | AI chat interface | Connects to a UDF for AI-powered Q&A, streams responses |
 
 }
 ></iframe> */}
@@ -4524,30 +4018,121 @@ Feel free to directly reach out to us at `info@fused.io` if you have any questio
 
 ================================================================================
 
-## Guide Overview
+## What is Fused?
 Path: guide/overview.mdx
 URL: https://docs.fused.io/guide/guide-overview
 
-# Fused Guide Overview
+# What is Fused?
 
-At Fused, we’re building an analytics platform where context-rich data, real-time execution, and human insight come together to make AI more accurate, useful, and aligned with how analysts actually work.
+Fused is the glue between your data and the tools that consume it: write Python functions that run serverlessly at scale, and expose them as secure HTTP endpoints. No containers, no infrastructure config, no waiting.
 
-Read more about our vision here.
+<img src="/img/what-is-fused/overview-diagram.png" alt="Fused Overview" style=} />
 
-Fused brings together:
-- **Multi-Processing**: Real-time Python engine for immediate Python runtime
-- **AI Editor**: Unlike AI code editors, Fused has access to your data's structure and context
-- **Visualization**: Create dashboards & graphs with your data in seconds
+---
 
-Imagine a data engine, code editor & business intelligence all in one.
+## Built on Python
 
-### Getting started
+Python is the language of data. Whether you want to load data from S3, Snowflake, or Google Drive, or extract from a PDF, scrape a website, or process a one-time download, there's a way to do it in Python. It's the most versatile tool for working with any data, regardless of type, origin, or size.
 
-To get your hands dirty with Fused:
+We ship an opinionated and tested set of dependencies that covers most modern data use cases, so data scientists and engineers can start building in seconds, not hours.
+
+---
+
+## Scalable serverless engine
+
+Python alone isn't enough. Scaling up compute on demand normally means deploying a new Docker container. Fused lets you create **User Defined Functions (UDFs)**: simple, self-contained Python functions that run on our serverless compute infrastructure. All you need is a `@fused.udf` decorator:
+
+```python
+@fused.udf
+def udf():
+
+    return pd.read_parquet("s3://fused-sample/demo_data/airbnb_listings_sf.parquet")
+```
+
+You can call thousands of jobs at the same time:
+
+```python
+@fused.udf
+def udf():
+    basic_example = fused.load('process_data')  # Load existing UDF
+    results = basic_example.map(range(100_000), max_workers=500)  # Run in parallel
+    return results.df()
+```
+
+This spins up as many nodes as needed under the hood.
+
+<img src="/img/what-is-fused/fused-parallel.jpg" alt="Fused parallel job execution" style=} />
+
+To put that in perspective: two thousand 90-second jobs complete in 120 wall-clock seconds, just 30 seconds of total orchestration overhead, at 0.015s per job, each on a dedicated 4-core machine with 10 GB of RAM. A regular EC2 instance takes ~2 minutes just to turn on. Fused does the whole job in that time.
+
+---
+
+## Expose everything as an API
+
+Every project you build in Fused lives in a **Canvas**: a freeform board where every component is either a UDF running Python, a sticky note, or a widget to explore data.
+
+<img src="/img/what-is-fused/canvas.jpg" alt="Fused Canvas" style=} />
+
+Each Canvas is shareable, and every component is directly accessible through an API call. Think of a Canvas as a directory of all your endpoints, and each UDF as an endpoint.
+
+Every Canvas can also be turned into a **Fused MCP Server**: a list of all the endpoints in your Canvas, corresponding to all your UDFs:
+
+<img src="/img/what-is-fused/mcp-server.jpg" alt="Fused MCP Server" style=} />
+
+Every UDF you create can instantly become a parameterized endpoint callable from anywhere, once you've scoped the right permissions:
+
+<img src="/img/what-is-fused/api-endpoint.png" alt="Fused API endpoint" style=} />
+
+---
+
+## Version control & team collaboration
+
+Since users are doing real work in Fused, version control matters. The Canvas can be collaborated on and connected directly to GitHub to store and version-control your code.
+
+<img src="/img/what-is-fused/github-integration.jpg" alt="GitHub integration" style=} />
+
+Teams can make edits directly from GitHub and push or pull changes to update dashboards and visualizations in real time.
+
+---
+
+## Scoped security & access control
+
+Every Fused project can be shared and turned into a Fused MCP server, with fine-grained control over who can access what:
+
+- **Public**: Anyone can see and execute your UDFs. Optionally require a passcode.
+- **Private**: Only members of your Fused team can access your work. Issue temporary access tokens (e.g. valid for 1 hour) or use service accounts for secure machine-to-machine delivery.
+
+You control the scope of each UDF individually.
+
+---
+
+## Example: RAG your docs
+
+We built a bot that answers questions about Fused documentation directly in Slack, all built inside Fused itself.
+
+<img src="/img/what-is-fused/rag-slack.jpg" alt="RAG Slack bot built in Fused" style=} />
+
+It works in three steps:
+
+- **Connect**: Crawl any docs site via its sitemap, parallelize fetching and cleaning all pages into a single `llms.txt` file saved to S3.
+- **Process**: Fetch the file, split into overlapping chunks, embed with an off-the-shelf LLM, write vector embeddings to a LanceDB table.
+- **Expose**: A `vector_search` UDF takes a natural language question, embeds it, runs a cosine similarity lookup, and returns the top 4 most relevant chunks, cached for 1 hour.
+
+The result: any AI agent (or Slack bot) can query your docs with a single request:
+
+```
+https://udf.ai/fc_YOUR_SHARED_TOKEN/vector_search.json?question=what is fused?
+```
+
+All on S3, simple Python, smart caching, and parallel processing, no additional setup. See the full example in the docs.
+
+---
+
+## Get started
 
 - ⚡️ Quickstart Guide: Write your first UDF in minutes
 - 💻 Writing UDFs: Learn UDF structure and best practices
-- 🍿 Getting Started With Fused Youtube Series: 1-4min videos to get you started
+- 🍿 Getting Started With Fused: 1–4 min videos to get you up and running
 
 ================================================================================
 
@@ -5070,6 +4655,221 @@ result = fused.run(my_udf, name="hello")
 my_udf = fused.load("udf_name_here")
 result = my_udf(name="hello")
 ```
+
+================================================================================
+
+## Scheduling UDFs
+Path: guide/working-with-udfs/scheduling-udfs.mdx
+URL: https://docs.fused.io/guide/working-with-udfs/scheduling-udfs
+
+Schedule UDFs to run automatically on a recurring cron schedule. Scheduled UDFs execute on batch compute instances with no time limit, making them suitable for data pipelines, periodic refreshes, and automated workflows.
+
+- Cronjobs can be scheduled at any combination of minute, hour, day of month, month, or day of week.
+- The minimum frequency is **once per hour**.
+- Cronjobs run on **batch compute instances** with no execution time limit.
+- There is a **1:1 relationship** between a UDF and a cronjob — the same UDF cannot have multiple schedules.
+
+## Creating a schedule
+
+### With `fused.api.schedule_udf()`
+
+Use `fused.api.schedule_udf()` to schedule any UDF by name or object:
+
+```python
+
+job = fused.api.schedule_udf(
+    udf=fused.load("my_etl_pipeline"),
+    minute=0,
+    hour=8,
+    udf_args=,
+    enabled=True,
+)
+print(job)
+# <CronJob my_etl_pipeline (0 8 * * *)>
+```
+
+### With `udf.schedule()`
+
+If you already have a UDF object, call `.schedule()` directly:
+
+```python
+@fused.udf
+def my_udf():
+
+    return pd.DataFrame()
+
+job = my_udf.schedule(minute=0, hour=8)
+```
+
+### Cron field reference
+
+| Field | Parameter | Range | Default |
+|-------|-----------|-------|---------|
+| Minute | `minute` | 0–59 | *required* |
+| Hour | `hour` | 0–23 | *required* |
+| Day of month | `day_of_month` | 1–31 | Every day |
+| Month | `month` | 1–12 | Every month |
+| Day of week | `day_of_week` | 0–6 (0 = Sunday) | Every day |
+
+Pass a single `int` for a specific value, or a `list[int]` for multiple values:
+
+```python
+# Run every day at 4:59 AM
+fused.api.schedule_udf(udf="my_udf", minute=59, hour=4)
+
+# Run at midnight on the 1st and 15th of every month
+fused.api.schedule_udf(udf="my_udf", minute=0, hour=0, day_of_month=[1, 15])
+
+# Run every Monday (1) and Friday (5) at noon
+fused.api.schedule_udf(udf="my_udf", minute=0, hour=12, day_of_week=[1, 5])
+```
+
+## Passing arguments
+
+Use `udf_args` to pass parameters to the scheduled UDF. These are forwarded as keyword arguments each time the job runs:
+
+```python
+fused.api.schedule_udf(
+    udf=fused.load("job_to_run"),
+    minute=59,
+    hour=4,
+    udf_args=,
+    enabled=True,
+)
+```
+
+The target UDF receives them as typed parameters:
+
+```python
+@fused.udf(cache_max_age="0s")
+def udf(message: str = "hello from cron!"):
+
+    print(message)
+    return pd.DataFrame()
+```
+
+## Listing schedules
+
+Use `fused.api.schedule_list()` to retrieve all scheduled jobs for your team:
+
+```python
+jobs = fused.api.schedule_list()
+print(f"Total jobs: ")
+
+for job in jobs:
+    print(f" —  — enabled=")
+```
+
+To inspect schedules as a DataFrame:
+
+```python
+
+jobs = fused.api.schedule_list()
+rows = []
+for job in jobs:
+    row = job.model_dump()
+    rows.append()
+
+df = pd.DataFrame(rows)
+```
+
+You can also check a specific UDF's schedule with `udf.get_schedule()`:
+
+```python
+my_udf = fused.load("my_etl_pipeline")
+schedules = my_udf.get_schedule()
+```
+
+## Updating a schedule
+
+Calling `fused.api.schedule_udf()` (or `udf.schedule()`) with a UDF that already has a schedule will **update the existing schedule** rather than creating a duplicate. This makes schedule creation idempotent:
+
+```python
+# Initially schedule at 8 AM
+fused.api.schedule_udf(udf="my_udf", minute=0, hour=8)
+
+# Change to 6 AM — updates the same cronjob
+fused.api.schedule_udf(udf="my_udf", minute=0, hour=6)
+```
+
+To disable a schedule without deleting it, set `enabled=False`:
+
+```python
+fused.api.schedule_udf(udf="my_udf", minute=0, hour=8, enabled=False)
+```
+
+## Triggering a run manually
+
+Use `run_now()` on a `CronJob` to trigger an immediate execution outside of the regular schedule:
+
+```python
+jobs = fused.api.schedule_list()
+for job in jobs:
+    if job.name == "my_etl_pipeline":
+        result = job.run_now()
+        print(result)
+        break
+```
+
+## Deleting a schedule
+
+Call `.delete()` on a `CronJob` to permanently remove it:
+
+```python
+jobs = fused.api.schedule_list()
+for job in jobs:
+    if job.name == "my_etl_pipeline":
+        job.delete()
+        print(f"Deleted job: ")
+        break
+```
+
+## Example: scheduled data pipeline
+
+A complete example that fetches data and writes results to cloud storage, scheduled to run daily:
+
+```python
+@fused.udf(cache_max_age="0s")
+def daily_weather_sync(city: str = "San Francisco"):
+
+    from datetime import datetime
+
+    response = requests.get(
+        f"https://api.open-meteo.com/v1/forecast?latitude=37.77&longitude=-122.42&current_weather=true"
+    )
+    data = response.json()["current_weather"]
+
+    df = pd.DataFrame([])
+
+    path = f"fd://weather//.parquet"
+    df.to_parquet(path)
+    print(f"Wrote  rows to ")
+    return df
+```
+
+Schedule it to run every day at 6:00 AM:
+
+```python
+job = fused.api.schedule_udf(
+    udf=fused.load("daily_weather_sync"),
+    minute=0,
+    hour=6,
+    udf_args=,
+)
+print(job)
+# <CronJob daily_weather_sync (0 6 * * *)>
+```
+
+Monitor execution results in the Job logs page.
+
+## API reference
+
+| Function | Description |
+|----------|-------------|
+| `fused.api.schedule_udf()` | Schedule a UDF on a cron schedule |
+| `fused.api.schedule_list()` | List all scheduled jobs |
+| `udf.schedule()` | Schedule a UDF (instance method) |
+| `udf.get_schedule()` | Get existing schedules for a UDF |
 
 ================================================================================
 
@@ -6277,7 +6077,7 @@ Fused UDFs are flexible, but callers and shared links should be treated with the
 
 ## Use secrets
 
-Never put passwords or API keys in UDF source. Add them in secrets management, then read them at runtime (for Snowflake, set names like `SNOWFLAKE_USER` and `SNOWFLAKE_PASSWORD` there—see Databases).
+Never put passwords or API keys in UDF source. Add them in secrets management, then read them at runtime (for Snowflake, set names like `SNOWFLAKE_USER` and `SNOWFLAKE_PASSWORD` there—see the Snowflake integration guide).
 
 **Do not: hardcode credentials**
 
@@ -6447,7 +6247,7 @@ response = requests.get(
 - Securing shared tokens — public vs team-only, session tokens, service accounts
 - Shared Tokens
 - Secrets Management
-- Encrypted S3 Bucket — connect SSE-KMS encrypted buckets
+- Amazon S3 integration — connect S3 buckets, including SSE-KMS encrypted buckets
 
 ================================================================================
 
@@ -6565,30 +6365,72 @@ URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/version-co
 
 # Working as a team
 
-Version control your UDFs with GitHub to share across your team and track changes over time.
-
 **Prerequisite:** GitHub integration setup
 
-## Calling UDFs
+By connecting a canvas to a GitHub repository, your team can collaborate on UDFs through pull requests, pull the latest changes back into the canvas, and share the canvas via a permanent link tied to your org rather than an individual user.
 
-**Saved UDF** — Personal, stored in Fused cloud. Appears in the **Saved** tab of the UDF explorer.
+Here's what we'll do:
+1. Save the canvas state as a **checkpoint** and push the UDFs to a shared GitHub repo via a PR
+2. Pull any GitHub changes back into the canvas
+3. Generate a **shared team link** — a permanent canvas URL scoped to your org, accessible by anyone on the team
+
+## Step 1: Create a checkpoint and open a PR
+
+A checkpoint saves the current state of your canvas so you can push it to GitHub or restore it later.
+
+Open your canvas and click the **checkpoint icon** (🕐) in the top toolbar (step 1 below). This opens the **Canvas checkpoints** panel. Click **+ Create checkpoint**, give it a name, and click **Create**.
+
+Once the checkpoint is saved, click **Create a PR** next to it. Fill in the **folder name** (the directory it will be pushed to in the repo), select the **repository**, and confirm the commit message — then click **Create PR** (step 2 below).
+
+<ClickZoomImage src="/img/working-as-a-team/create_checkpoint_pr.png" alt="Create checkpoint and Pull Request" />
+
+Fused opens a pull request on GitHub. Once a maintainer merges it, the UDFs are version-controlled in your team repo.
+
+## Step 2: Pull GitHub changes into the canvas
+
+When there are newer commits on GitHub that aren't reflected in the canvas yet, the checkpoint icon shows a **"Newer changes on GitHub"** badge. Click it, choose **See changes** to review the diff, then **Pull all** to bring those changes into the canvas.
+
+This is how teammates who push changes via PR — or locally via a tool like Claude Code — get their updates reflected in the canvas.
+
+## Step 3: Generate a shared team link
+
+By default a canvas belongs to the user who created it. Generating a share token moves ownership to the org — the canvas URL is then tied to your team, not an individual.
+
+Go to the **Team** section on the Fused home page, hover over the canvas, and click **Generate share token** (step 1 below). Fused opens a PR on your linked repo that adds a `shared_token.json` file. Once a maintainer merges it, hover over the canvas again and click **Open share link** (step 2 below).
+
+<ClickZoomImage src="/img/working-as-a-team/generate_share_token_steps.png" alt="Generate share token" />
+
+The canvas is now accessible at a permanent URL in the format:
+
+```
+https://fused.io/canvas/fc_<org>/<canvas_name>
+```
+
+This link is scoped to your team. Anyone outside the team — or accessing it in incognito — will see:
+```
+Error loading canvas fc_<org>/<canvas_name>: 
+```
+
+## What this enables
+
+- **Stable canvas URL** — the link is tied to the org, not an individual user. It stays the same when team members rotate.
+- **GitHub-based collaboration** — multiple people can contribute changes through PRs. Pull updates into the canvas whenever you're ready to reflect them.
+- **Works with AI coding tools** — clone the repo locally, ask Claude Code to make changes, open a PR, merge it, then pull into the canvas.
+
+## Calling team UDFs
+
 ```python
-my_udf = fused.load("my_udf")
+# Tracks main — always latest
+my_udf = fused.load("team/my_udf")
 my_udf()
 ```
 
-**Team UDF** — Version controlled, shared with team. Appears in the **Team** tab of the UDF explorer.
+Pin to a specific commit to avoid breaking changes when `main` updates:
 ```python
-my_udf = fused.load("team/my_udf")  # tracks main
-my_udf()
-```
-
-Pin to a commit to avoid breaking changes when `main` updates:
-```python
-# Point to specific commit, pinned version
+# Pinned to a specific commit
 ✅ my_udf = fused.load("https://github.com/org/repo/<COMMIT_SHA>/my_udf")
 
-# Point to main, may break if main changes
+# Follows main — may break if main changes
 ❌ fused.load("team/my_udf")
 ❌ fused.load("https://github.com/org/repo/main/my_udf")
 ```
@@ -6599,6 +6441,7 @@ See all ways to load a UDF.
 
 - Calling UDFs — how to call UDFs from other UDFs
 - Git Integration — how to integrate your own repositories with Fused
+- Canvas checkpoints — more on saving and restoring canvas state
 
 ================================================================================
 
@@ -6947,7 +6790,7 @@ Quick links for data engineers using Fused.
 ## Connect Your Data
 - Local files (drag & drop)
 - Cloud storage (S3/GCS)
-- Databases (Snowflake, BigQuery)
+- Snowflake, BigQuery
 
 ## Data Formats
 - Reading data
@@ -8917,7 +8760,7 @@ Each data source is loaded by its own UDF in the Canvas. Fused can pull data fro
 
 #### Snowflake — supplier records
 
-The `all_suppliers` UDF reads supplier records (name, address, phone, account balance) from Snowflake's TPCH_SF1 sample dataset — anyone with a Snowflake account can reproduce this. Store your Snowflake credentials using `fused.secrets[]` so the UDF can authenticate. See the Snowflake guide for setup details.
+The `all_suppliers` UDF reads supplier records (name, address, phone, account balance) from Snowflake's TPCH_SF1 sample dataset — anyone with a Snowflake account can reproduce this. Store your Snowflake credentials using `fused.secrets[]` so the UDF can authenticate. See the Snowflake integration guide for setup details.
 
 ```python
 @fused.udf
@@ -13617,47 +13460,56 @@ URL: https://docs.fused.io/python-sdk/api-reference/fused-secrets
 
 # secrets
 
-Access secrets stored in the Fused backend for the current kernel.
+Access team secrets stored in the Fused backend. Team secrets are scoped to the execution environment and shared across your team or organization. Requires a paid plan.
 
 ```python
-
-# Access a secret by name
-api_key = fused.secrets['MY_API_KEY']
+@fused.udf
+def udf():
+    api_key = fused.secrets["MY_API_KEY"]
+    ...
 ```
 
 ## Overview
 
-`fused.secrets` is a `SecretsManager` object that provides access to secrets stored in your Fused account. Secrets are accessed as attributes using dot notation.
+`fused.secrets` is a `SecretsManager` object that provides access to team secrets stored in your Fused account. Secrets can be accessed by name using bracket notation or dot notation.
 
-Secrets can be managed in Workbench Settings under the "Secrets" tab, or via the API.
+Secrets can be managed in Workbench under **Integrations & secrets**, or programmatically via the SDK.
 
 ## Usage
 
 ### Accessing secrets
 
 ```python
-
 @fused.udf
 def udf():
-    # Access a secret by name
-    api_key = fused.secrets['OPENAI_API_KEY']
-    
-    # Use the secret
+    api_key = fused.secrets["OPENAI_API_KEY"]
 
     client = openai.OpenAI(api_key=api_key)
     ...
 ```
 
+### Managing secrets
+
+```python
+@fused.udf
+def udf():
+    fused.secrets["MY_KEY"] = "value"
+
+    del fused.secrets["MY_KEY"]
+
+    dir(fused.secrets)
+```
+
 ## Security notes
 
+- Team secrets are accessible by anyone in your team
 - Secrets are stored encrypted in the Fused backend
-- Secrets are only accessible within UDFs running on Fused infrastructure
-- Secrets are scoped to your account/organization
 - Never log or return secret values from UDFs
 
 ## See also
 
-- Secrets Management for storing and managing secrets
+- `fused.user_secrets` for user-owned secrets that persist across environments
+- Secrets Management for a full guide on storing, accessing, and securing secrets
 - Cloud Storage for connecting to cloud providers
 
 ================================================================================
@@ -13920,6 +13772,65 @@ def udf(bbox):
     ...
     return result
 ```
+
+================================================================================
+
+## fused.user_secrets
+Path: python-sdk/api-reference/fused-user-secrets.mdx
+URL: https://docs.fused.io/python-sdk/api-reference/fused-user-secrets
+
+# user_secrets
+
+Access user-owned secrets that persist across all execution environments. User secrets are private to the authenticated user — they are not shared with your team. Requires a paid plan.
+
+```python
+
+@fused.udf
+def udf():
+    val = fused.user_secrets["MY_KEY"]
+    ...
+```
+
+## Overview
+
+`fused.user_secrets` is a `UserSecretsManager` object that provides read-only access to secrets owned by the authenticated user. Unlike `fused.secrets` (team secrets), user secrets follow you across execution environments and are not visible to other team members.
+
+To create, update, or delete user secrets, use the Workbench UI under **Integrations & secrets**.
+
+## Usage
+
+### Accessing secrets
+
+```python
+
+@fused.udf
+def udf():
+    val = fused.user_secrets["MY_KEY"]
+    # or
+    val = fused.user_secrets.MY_KEY
+    ...
+```
+
+### Listing secret keys
+
+```python
+
+@fused.udf
+def udf():
+    keys = list(fused.user_secrets)
+    ...
+```
+
+## Security notes
+
+- User secrets are private to the authenticated user
+- Secrets are stored encrypted in the Fused backend
+- Never log or return secret values from UDFs
+
+## See also
+
+- `fused.secrets` for team-shared secrets scoped to an execution environment
+- Secrets Management for a full guide on storing, accessing, and securing secrets
 
 ================================================================================
 
@@ -15994,46 +15905,17 @@ URL: https://docs.fused.io/python-sdk/changelog
 
 # Changelog
 
-## v2.6.0 (2026-04-24)
+## v2.6.1 (2026-04-29)
 
-**[Experimental] Snowflake integration**
+**New integrations: Notion, Google Cloud (BigQuery), Snowflake, and Airtable**
 
-Connect your Snowflake data warehouse directly to Fused — query Snowflake tables from UDFs and expose results through the Fused API without moving data.
+Connect Notion pages, BigQuery datasets, Snowflake tables, and Airtable bases directly to UDFs and expose results through the Fused API.
 
-See the Snowflake integration docs to get started.
+[Image: Integrations panel]
 
-**[Experimental] Airtable integration**
+**Widget AI Chat**
 
-Read and write Airtable bases from UDFs, making it easy to build data pipelines on top of your Airtable data.
-
-See the Airtable integration docs to get started.
-
-[Image: Integrations panel on the Fused home page]
-
-**Improvements**
-
-- Widgets: now generally available — no longer behind a feature flag
-- Widgets: AI auto-fix from the error log; copy/share button in the code editor
-- Canvas: "Folders" renamed to "Sections"; stale indicator added; edge improvements
-- Canvas: "Generate MCP" button added; AI suggestions now use canvas context
-- Clickable UDF names in the code editor — click to jump to the definition
-- Home page UI polish
-- Public Canvas now support preview images
-- `fused.submit` shows the first error before retrying; `delete_cache` renamed to `invalidate_cache`
-
-**Bug fixes**
-
-- Fixed: Slack connection issues
-- Fixed: login redirect on shared canvas pages
-- Fixed: ghost node on canvas
-- Fixed: reading chunks with no geometry
-- Fixed: widget props not syncing on shared pages
-
-## v2.5.0 (2026-04-16)
-
-**[Experimental] Talk to your data in Slack!**
-
-Connect any Canvas to a Slack bot and let anyone on your team ask questions directly in Slack — no Workbench needed.
+An AI assistant built into the Widgets builder that lets you iterate on widget layout and logic through natural language.
 
 See the Slack integration docs to get started.
 
@@ -17400,75 +17282,53 @@ When working with data, it can be time-consuming to track down datasets, request
 - Create a new UDF from a template to open the file
 - Connect an S3 or GCS bucket
 
-Alternatively, navigate to the Integrations page and enter your bucket name to automatically generate the IAM policy.
+<LazyReactPlayer wrapperStyle=} url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/file_explorer_intro9.mp4" />
 
-[Image: S3 Integrations Policy Generator]
+## Browse
 
-The bucket must enable the following CORS settings to allow uploading files from Fused.
+Browse directories and files in buckets. Use the search bar and filter options to quickly locate specific files, and "Favorite" files for quick access. To explore a bucket, find it in the "Favorites" dropdown or paste its path. To connect private buckets, contact Fused.
 
-### Google Cloud Storage (GCS)
+[Image: File Explorer Search]
 
-To connect a Google Cloud Storage bucket to your Fused environment, you'll need to follow these steps:
+## Preview
 
-1. Create a Service Account in GCS
-Set up a Google Cloud service account with permissions to read, write, and list from the GCS bucket. See the Google Cloud documentation for instructions to:
-- Create a Service Account
-- Set permissions for the Service Account
+The Explorer displays a bucket's directories and objects as folders. Each listed file shows metadata such as file size and path, along with utilities to download or delete the file, copy its path, generate a signed URL, and create a UDF to open it.
 
-2. Download the JSON Key File
-Download the JSON Key file associated with the Service Account. This file contains credentials that Fused will use to access the GCS bucket. It should look like this (replace placeholders with your values):
+Click on a file to preview its content. If the file has a spatial component, it will be displayed on the map, allowing you to zoom and pan to explore the rendered data. For images or other file types, Fused will make a best-effort to render and display the content.
 
-```json
+[Image: File Explorer Preview]
 
-```
+## Create UDF
 
-</Details>
+Create Fused UDFs using templates for common file types. Double-click on a file to create a new templated UDF that reads the file, or find additional readers in the file's kebab menu. Parquet tables show an "Open Table" button to open them at the directory level.
 
-3. Set the JSON Key as a Secret
-Set the JSON Key as a secret in the secrets management UI. The secret must be named `gcs_fused`.
+[Image: File Explorer Create UDF]
 
-You then need to write these credentials to a JSON file and pass them to Google as:
+## Template UDFs
 
-```python
-@fused.udf
-def udf():
+Template UDFs are available for common file types (like `CSV`, `Parquet`) and tools (like `DuckDB` and `GeoPandas`). See the latest template UDFs in the UDFs repo.
 
-    from google.cloud import storage
+Supported file types for vector tables include `parquet`, `JSON`, `CSV`, `excel`, `zip`, and `KML`. For raster files `GeoTIFF` and `NetCDF` are supported. If you need a file type that isn't supported, request it on the Fused Discord channel or contribute a template to the community.
 
-    # get GCP secrets
-    with open("/tmp/gcs_key.json", "w") as f:
-        f.write(fused.secrets["gcs_fused"])
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/tmp/gcs_key.json"
+## Upload / Download / Edit 
 
-    # your code here
-```
+File Explorer also allows you to:
+- Upload files (drag & drop)
+- Download files
+- Create new directories
 
-You can check your connection is working by listing some files:
+In File Explorer directories will not be saved if they do not have content in them.
 
-```python
-@fused.udf
-def udf():
-    from google.cloud import storage
+## Connect your own bucket
 
-    # get GCP secrets
-    with open("/tmp/gcs_key.json", "w") as f:
-        f.write(fused.secrets["gcs_fused"])
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/tmp/gcs_key.json"
+<Tag color="#3399ff">Professional and Enterprise</Tag> _This feature is accessible to organizations with a Fused Professional & Enterprise subscription._
 
-    client = storage.Client()
-    bucket_name = "your_bucket_name"
-    gcs_blob_prefix= "path/to/your/data"
-    
-    # connect to GCP
-    bucket = client.bucket(bucket_name)
+Connect S3 or GCS buckets to access their files interactively from within the File Explorer UI and programmatically from within UDFs. Contact Fused to set a bucket on the File Explorer for all users in your organization, or set a bucket as a "favorite" so it appears for your account only.
 
-    # list existing blobs in GCS under the prefix
-    gcs_existing = set(
-        blob.name.replace(gcs_blob_prefix, "")
-        for blob in bucket.list_blobs(prefix=gcs_blob_prefix)
-    )
-    print(gcs_existing)
-```
+For setup instructions, see the dedicated integration guides:
+
+- Amazon S3
+- Google Cloud Storage
 
 ================================================================================
 
@@ -17504,13 +17364,783 @@ The Integrations & Secrets page is where you connect third-party services to Fus
 
 ## Integrations
 
-Connect external services (like Slack) to Fused so canvases and UDFs can interact with them. See the Slack integration guide for setup details.
+Connect external services to Fused so canvases and UDFs can interact with them. See the dedicated integration guides:
+
+- Snowflake
+- BigQuery
+- Amazon S3
+- Google Cloud Storage
+- Airtable
+- [Slack [Experimental]](/workbench/integrations/slack)
 
 ## Secrets
 
 Store any keys or credentials you want to use in Workbench here. They're encrypted in the Fused backend and attached to your selected kernel. For details on managing secrets, see the Secrets management guide.
 
 To use a stored secret from a UDF, see `fused.secrets`.
+
+================================================================================
+
+## Airtable Integration
+Path: workbench/integrations/airtable.mdx
+URL: https://docs.fused.io/workbench/integrations/airtable
+
+# Airtable Integration
+
+Read and write Airtable records from Fused UDFs by connecting to your Airtable account in Fused.
+
+## Prerequisites
+
+- A Fused account on a paid plan and an Airtable account.
+
+## Setup
+
+### 1. Connect your Airtable account
+
+1. Open **Settings > Integrations & Secrets**, find the Airtable section, and click **Connect**.
+2. You will be redirected to Airtable to authorize access. During this flow you can grant access to **all bases** or select **specific bases**.
+
+[Image: Airtable OAuth consent screen]
+
+3. Once you confirm, you will be redirected back to the workbench.
+
+## Finding your base ID
+
+Every Airtable base has an ID that starts with `app`. To find it:
+
+1. Open the base in the Airtable web app.
+2. Look at the URL — it follows the pattern `https://airtable.com/appXXXXXXXXXXXXXX/...`. The `appXXXXXXXXXXXXXX` segment is your base ID.
+
+Alternatively, after connecting, you can list all accessible bases programmatically as shown below in the examples section.
+
+## Examples
+
+### List bases
+
+```python
+@fused.udf()
+def udf():
+
+    at = fused.api.airtable_connect()
+    bases = at.list_bases()
+    for base in bases:
+        print(base["id"], base["name"])
+```
+
+### Read records
+
+Use `list_records` to read all records from a table. It automatically paginates through all pages. Extra keyword arguments are forwarded as query parameters to the Airtable List Records endpoint.
+
+```python
+@fused.udf()
+def udf():
+
+    at = fused.api.airtable_connect(base_id="appXXXXXXXXXXXXXX")
+    records = at.list_records(
+        "Tasks",
+        view="Grid view",
+        filterByFormula=" = 'Done'",
+        maxRecords=100,
+    )
+
+    rows = [ for r in records]
+    return pd.DataFrame(rows)
+```
+
+### Create records
+
+Use `create_records` to insert new rows. Each record should be a dict with a `"fields"` key. Airtable allows up to 10 records per request.
+
+```python
+@fused.udf()
+def udf():
+
+    at = fused.api.airtable_connect(base_id="appXXXXXXXXXXXXXX")
+    created = at.create_records("Tasks", [
+        },
+        },
+    ])
+    for r in created:
+        print(r["id"])
+```
+
+### Update records
+
+Use `update_records` to patch existing records (PATCH semantics — only the specified fields are changed). Each record must include an `"id"` and a `"fields"` dict.
+
+```python
+@fused.udf()
+def udf():
+
+    at = fused.api.airtable_connect(base_id="appXXXXXXXXXXXXXX")
+    at.update_records("Tasks", [
+        },
+    ])
+```
+
+### Delete records
+
+Use `delete_records` to remove records by ID. Airtable allows up to 10 record IDs per request.
+
+```python
+@fused.udf()
+def udf():
+
+    at = fused.api.airtable_connect(base_id="appXXXXXXXXXXXXXX")
+    at.delete_records("Tasks", ["recAAAAAAAAAAAA", "recBBBBBBBBBBBB"])
+```
+
+## Disconnecting
+
+To revoke the integration, go to **Settings > Integrations & Secrets**, find the Airtable section, and click **Disconnect**.
+
+================================================================================
+
+## BigQuery Integration
+Path: workbench/integrations/bigquery.mdx
+URL: https://docs.fused.io/workbench/integrations/bigquery
+
+# BigQuery Integration
+
+Fused integrates with Google BigQuery via the Python `google-cloud-bigquery` library. Authentication uses the shared Google Cloud service account stored through the Integrations & Secrets page.
+
+## 1. Create a Service Account
+
+Set up a Google Cloud service account with permissions to query BigQuery. See the Google Cloud documentation for instructions to:
+- Create a Service Account
+- Set permissions for the Service Account
+
+The service account needs at minimum the `BigQuery Data Viewer` and `BigQuery Job User` roles.
+
+## 2. Download the JSON Key File
+
+Download the JSON key file associated with the Service Account. This file contains credentials that Fused will use to authenticate with BigQuery.
+
+## 3. Connect the Google Cloud integration in Fused
+
+In the Integrations & Secrets page, open the **Google Cloud** integration and paste the JSON key file contents. This stores the key as a secret named `gcs_fused`.
+
+## 4. Query BigQuery from a UDF
+
+Load the secret directly as a dict and create a BigQuery client:
+
+```python
+@fused.udf
+def udf():
+    import json
+    from google.cloud import bigquery
+    from google.oauth2 import service_account
+
+    credentials = service_account.Credentials.from_service_account_info(
+        json.loads(fused.secrets["gcs_fused"]),
+        scopes=["https://www.googleapis.com/auth/cloud-platform"],
+    )
+    client = bigquery.Client(credentials=credentials, project=credentials.project_id)
+
+    query = """
+        SELECT * FROM `bigquery-public-data.new_york.tlc_yellow_trips_2015`
+        LIMIT 10
+    """
+    return client.query(query).to_dataframe()
+```
+
+To return results as a GeoDataFrame, call `.to_geodataframe(geography_column="geometry")` instead of `.to_dataframe()`.
+
+## See also
+
+- Google Cloud Storage integration — connect a GCS bucket
+- Cloud storage — read and write cloud storage files from UDFs
+- Secrets management — store credentials securely
+================================================================================
+
+## Google Cloud Storage Integration
+Path: workbench/integrations/gcs.mdx
+URL: https://docs.fused.io/workbench/integrations/gcs
+
+# Google Cloud Storage Integration
+
+Connect a GCS bucket to Fused to browse files in the File Explorer and access them from UDFs.
+
+## 1. Create a Service Account
+
+Set up a Google Cloud service account with permissions to read, write, and list from the GCS bucket. See the Google Cloud documentation for instructions to:
+- Create a Service Account
+- Set permissions for the Service Account
+
+## 2. Download the JSON Key File
+
+Download the JSON key file associated with the Service Account. This file contains credentials that Fused will use to access the GCS bucket.
+
+```json
+
+```
+
+</Details>
+
+## 3. Store the key as a secret
+
+In the Secrets management UI, store the JSON key file contents as a secret named `gcs_fused`.
+
+## 4. Use the credentials in a UDF
+
+Write the secret to a temporary file and set `GOOGLE_APPLICATION_CREDENTIALS` so the GCS client picks it up:
+
+```python
+@fused.udf
+def udf():
+
+    from google.cloud import storage
+
+    with open("/tmp/gcs_key.json", "w") as f:
+        f.write(fused.secrets["gcs_fused"])
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/tmp/gcs_key.json"
+
+    # your code here
+```
+
+Verify the connection by listing files in your bucket:
+
+```python
+@fused.udf
+def udf():
+
+    from google.cloud import storage
+
+    with open("/tmp/gcs_key.json", "w") as f:
+        f.write(fused.secrets["gcs_fused"])
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/tmp/gcs_key.json"
+
+    client = storage.Client()
+    bucket = client.bucket("your_bucket_name")
+    blobs = bucket.list_blobs(prefix="path/to/your/data")
+    print()
+```
+
+## See also
+
+- Cloud storage — read and write GCS files from UDFs
+- S3 integration — connect an Amazon S3 bucket
+- Secrets management — store credentials securely
+
+================================================================================
+
+## Notion Integration
+Path: workbench/integrations/notion.mdx
+URL: https://docs.fused.io/workbench/integrations/notion
+
+# Notion Integration
+
+Read and write Notion pages, comments, and users from Fused UDFs using OAuth-managed tokens. No API keys need to be hardcoded — Fused handles token refresh automatically.
+
+## Prerequisites
+
+1. A Fused account on a paid plan (execution environment required).
+2. The Notion integration connected through the Fused workbench (your Fused deployment manages the OAuth app).
+
+## Setup
+
+### Connect your Notion account
+
+Open **Settings > Integrations & Secrets**, find the Notion section, and click **Connect Notion**. You will be redirected to Notion to select a workspace and authorize access, then back to the workbench.
+
+## Finding page and database IDs
+
+Every Notion page and database has a UUID. To find it:
+
+1. Open the page in the Notion web app.
+2. Click **Share > Copy link**. The URL follows the pattern `https://www.notion.so/Page-Title-<32-hex-chars>`. The last 32 hex characters (without dashes) are the ID.
+3. You can use the ID with or without dashes — the API accepts both formats.
+
+Alternatively, search for pages programmatically:
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+    results = client.search(query="Meeting Notes")
+    for page in results["results"]:
+        print(page["id"], page.get("url"))
+```
+
+## Quick start
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+
+    # Search for pages by title
+    results = client.search(query="Project Plan")
+
+    # Get a specific page
+    page = client.pages.retrieve(page_id="your-page-id")
+
+    # List workspace users
+    response = client.users.list()
+    for u in response["results"]:
+        print(u["name"], u["type"])
+```
+
+The `client()` method fetches the Fused-managed OAuth token and passes it to `notion_client.Client(auth=...)`. The `notion-client` package is pre-installed in the Fused runtime; no extra setup is needed.
+
+## Examples
+
+### Search
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+
+    # Search by title
+    results = client.search(query="Q4 Planning")
+
+    # Search only for pages (exclude databases)
+    pages = client.search(query="Meeting", filter=)
+
+    # Sort by last edited time
+    recent = client.search(
+        sort=,
+    )
+```
+
+### Get a page
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+    page = client.pages.retrieve(page_id="a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+    print(page["properties"])
+```
+
+### Create a page
+
+The `parent` dict specifies where the page lives — either under another page or inside a database.
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+
+    # Create a page inside a database
+    new_page = client.pages.create(
+        parent=,
+        properties=}]},
+            "Status": },
+        },
+    )
+
+    # Create a sub-page under an existing page, with body content
+    new_page = client.pages.create(
+        parent=,
+        properties=}],
+        },
+        children=[
+            }]
+                },
+            }
+        ],
+    )
+```
+
+### Update a page
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+
+    # Update a status property
+    client.pages.update(
+        page_id="your-page-id",
+        properties=}},
+    )
+
+    # Move to trash
+    client.pages.update(page_id="your-page-id", in_trash=True)
+
+    # Restore from trash
+    client.pages.update(page_id="your-page-id", in_trash=False)
+```
+
+> **Property type formats:** The inner key must match the property's `type`.
+> Common formats:
+> - `status`: `}`
+> - `select`: `}`
+> - `title`: `}]}`
+> - `rich_text`: `}]}`
+> - `checkbox`: ``
+
+### Delete a page
+
+Notion does not support permanent deletion via the API — this moves the page to trash.
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+    client.pages.update(page_id="your-page-id", in_trash=True)
+```
+
+### Query a database
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+    response = client.databases.query(database_id="your-database-id")
+    for page in response["results"]:
+        print(page["id"], page["properties"])
+```
+
+### List comments
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+    response = client.comments.list(block_id="your-page-id")
+    for c in response["results"]:
+        text = "".join(rt["plain_text"] for rt in c["rich_text"])
+        print(f": ")
+```
+
+### Create a comment
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+
+    # New top-level comment on a page
+    client.comments.create(
+        parent=,
+        rich_text=[}],
+    )
+
+    # Reply to an existing discussion thread
+    client.comments.create(
+        discussion_id="existing-discussion-id",
+        rich_text=[}],
+    )
+```
+
+### List users
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+    response = client.users.list()
+    for u in response["results"]:
+        print(u["id"], u["name"], u["type"])  # type is "person" or "bot"
+```
+
+### Get a user
+
+```python
+@fused.udf()
+def udf():
+    nt = fused.api.notion_connect()
+    client = nt.client()
+    user = client.users.retrieve(user_id="user-uuid")
+    print(user["name"], user.get("person", ).get("email"))
+```
+
+## Full example
+
+```python
+@fused.udf()
+def udf():
+
+    nt = fused.api.notion_connect()
+    client = nt.client()
+
+    # Pull all pages matching a query
+    response = client.search(filter=)
+
+    rows = []
+    for p in response["results"]:
+        props = p.get("properties", )
+        title_parts = props.get("Name", ).get("title", [])
+        title = "".join(t["plain_text"] for t in title_parts)
+        rows.append()
+    return pd.DataFrame(rows)
+```
+
+## Disconnecting
+
+To revoke the integration, go to **Settings > Integrations & Secrets**, find the Notion section, and click **Disconnect**.
+
+================================================================================
+
+## Amazon S3 Integration
+Path: workbench/integrations/s3.mdx
+URL: https://docs.fused.io/workbench/integrations/s3
+
+# Amazon S3 Integration
+
+Connect an S3 bucket to Fused to browse files in the File Explorer and access them from UDFs.
+
+Alternatively, navigate to the Integrations page and enter your bucket name to automatically generate the IAM policy.
+
+[Image: S3 Integrations Policy Generator]
+
+The bucket must also enable the following CORS settings to allow uploading files from Fused.
+
+## Connect an SSE-KMS encrypted bucket
+
+If your S3 bucket uses server-side encryption with AWS KMS (SSE-KMS), the Fused role needs access to both the bucket **and** the KMS key. The KMS key must reside in the same region as the bucket.
+
+### 1. Add a KMS key policy statement
+
+In the AWS KMS console, add the following statement to the key policy of the KMS key used by the bucket. Replace `<FUSED_ACCOUNT>` and `<FUSED_ROLE_NAME>` with the values provided by your Fused solutions engineer.
+
+```json
+,
+  "Action": [
+    "kms:Decrypt",
+    "kms:Encrypt",
+    "kms:GenerateDataKey*",
+    "kms:DescribeKey"
+  ],
+  "Resource": "*"
+}
+```
+
+### 2. Add an S3 bucket policy statement
+
+In the S3 console, add the following statement to the bucket policy. Replace `<FUSED_ACCOUNT>`, `<FUSED_ROLE_NAME>`, and `<BUCKET_NAME>` with your values.
+
+```json
+,
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3        "arn:aws:s3      ]
+    }
+  ]
+}
+```
+
+If you only need Fused to **read** from the bucket (not write), scope `Action` down to `["s3:GetObject", "s3:ListBucket"]` instead of `s3:*`.
+
+### 3. Verify access
+
+Once both policies are saved, your Fused solutions engineer can confirm connectivity. You can also verify from a UDF:
+
+```python
+@fused.udf
+def udf():
+    return fused.api.list("s3://<BUCKET_NAME>/")
+```
+
+## See also
+
+- Cloud storage — read and write S3 files from UDFs
+- GCS integration — connect a Google Cloud Storage bucket
+- Secrets management — store credentials securely
+
+================================================================================
+
+## Slack
+Path: workbench/integrations/slack.mdx
+URL: https://docs.fused.io/workbench/integrations/slack
+
+# Slack [Experimental]
+
+Let anyone in your team talk to your Canvas with a Slack Bot!
+
+This is an experimental feature. Enable it in **Preferences** by toggling on the Slack integration.
+
+Check your Fused home page — the **Integrations** panel shows whether Slack is connected for your team.
+
+## One-time setup
+
+If your Integrations panel already shows **SYNCED**, skip this section to avoid disrupting your team's existing connection.
+
+## Adding a new Canvas to Slack
+
+================================================================================
+
+## Snowflake
+Path: workbench/integrations/snowflake.mdx
+URL: https://docs.fused.io/workbench/integrations/snowflake
+
+# Snowflake
+
+Query data, browse metadata, read/write stages, and write DataFrames to tables in Snowflake -- all using Fused-managed OAuth tokens. No passwords or credentials are stored client-side.
+
+## Prerequisites
+
+### Connect your Snowflake account to Fused
+
+A Snowflake administrator runs a few one-time SQL commands in Snowflake (Steps 1–4), then you complete an OAuth flow in the Fused workbench (Step 5).
+
+If you're running Fused locally (outside the Workbench), install the Snowflake extras first:
+
+```bash
+pip install fused[snowflake]
+```
+
+This adds `snowflake-connector-python` alongside the core `fused` package. In the Workbench this is already pre-installed.
+
+</details>
+
+**Step 1 -- Create a security integration:**
+
+```sql
+CREATE SECURITY INTEGRATION fused_oauth
+  TYPE = OAUTH
+  OAUTH_CLIENT = CUSTOM
+  OAUTH_CLIENT_TYPE = 'CONFIDENTIAL'
+  OAUTH_REDIRECT_URI = 'https://www.fused.io/server/v1/integrations/snowflake/callback'
+  ENABLED = TRUE;
+```
+
+Replace the domain in `OAUTH_REDIRECT_URI` with your Fused deployment's origin if you are not on `www.fused.io`. The path must always be `/server/v1/integrations/snowflake/callback`.
+
+**Step 2 -- Retrieve the client ID and secret:**
+
+```sql
+SELECT SYSTEM$SHOW_OAUTH_CLIENT_SECRETS('FUSED_OAUTH');
+```
+
+This returns a JSON object. Copy the `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`, and `OAUTH_CLIENT_SECRET_2` values -- you'll paste them into the Fused UI in the last step.
+
+**Step 3 -- Create a role with warehouse usage:**
+
+```sql
+CREATE ROLE FUSED_WH_ROLE;
+GRANT USAGE ON WAREHOUSE COMPUTE_WH TO ROLE FUSED_WH_ROLE;
+```
+
+**Step 4 -- Create a dedicated service account user and grant it the role:**
+
+```sql
+CREATE USER fused_service_account
+  TYPE = PERSON
+  LOGIN_NAME = 'fused_service_account'
+  DISPLAY_NAME = 'Fused Service Account'
+  DEFAULT_ROLE = FUSED_WH_ROLE
+  DEFAULT_WAREHOUSE = COMPUTE_WH
+  MUST_CHANGE_PASSWORD = FALSE
+  PASSWORD = 'xxxxx';
+
+GRANT ROLE FUSED_WH_ROLE TO USER fused_service_account;
+```
+
+Do **not** sign in with an administrator account during the OAuth step. Snowflake blocks `ACCOUNTADMIN` and `SECURITYADMIN` for custom OAuth integrations, which is why a dedicated service account user is required.
+
+**Step 5 -- Connect in Workbench:**
+
+1. Open **Integration & secrets > Integrations** and click **Connect Snowflake**.
+2. Enter your account identifier (e.g. `ORGNAME-ACCTNAME`), the `OAUTH_CLIENT_ID`, both client secrets, and optionally a role.
+
+   [Image: Connect Snowflake modal in Fused Workbench]
+
+3. A Snowflake sign-in popup will open. Sign in with the **service account** user you created in Step 4 (not an administrator account) to complete the OAuth flow.
+
+   [Image: Snowflake OAuth sign-in screen]
+
+4. Click **Allow** on the OAuth consent screen to grant Fused access to your Snowflake account.
+
+   [Image: Snowflake OAuth confirmation screen]
+
+---
+
+## Examples
+
+### Query Snowflake in a UDF
+
+```python
+@fused.udf
+def udf():
+
+    df = fused.api.snowflake_query(
+        "SELECT * FROM my_db.my_schema.my_table LIMIT 10"
+    )
+    return df
+```
+
+### Use a connection for multiple operations
+
+```python
+@fused.udf
+def udf():
+
+    conn = fused.api.snowflake_connect(
+        warehouse="COMPUTE_WH",
+        database="ANALYTICS",
+        schema="PUBLIC",
+        role="ANALYST",
+    )
+
+    print("Tables:", conn.list_tables("ANALYTICS", "PUBLIC"))
+
+    sales = conn.query("""
+        SELECT region, SUM(amount) AS total
+        FROM orders
+        WHERE order_date >= '2025-01-01'
+        GROUP BY region
+        ORDER BY total DESC
+    """)
+    return sales
+```
+
+### Write results back to Snowflake
+
+```python
+@fused.udf
+def udf():
+
+    conn = fused.api.snowflake_connect(
+        warehouse="COMPUTE_WH",
+        database="ANALYTICS",
+        schema="PUBLIC",
+    )
+
+    df = pd.DataFrame()
+    conn.write(df, "ANALYTICS.PUBLIC.METRICS", mode="overwrite")
+    return df
+```
+
+### Read from a Snowflake stage
+
+```python
+@fused.udf
+def udf():
+
+    conn = fused.api.snowflake_connect(
+        warehouse="COMPUTE_WH",
+        database="RAW_DATA",
+        schema="INGEST",
+    )
+
+    files = conn.list_stage_files("@csv_stage", pattern=".*[.]csv")
+    if files:
+        df = conn.read_stage(f"@csv_stage/")
+        return df
+```
+
+For full API details, see the Snowflake section of the `fused.api` reference.
+
+---
+
+## How it works
+
+Fused manages the full OAuth token lifecycle on your behalf. Your Snowflake credentials never leave the Fused server -- the SDK only receives short-lived access tokens, which it uses to connect directly to Snowflake.
 
 ================================================================================
 
@@ -18597,210 +19227,6 @@ UDFs merged to GitHub are available in your Team UDFs in the UDF Explorer.
 ================================================================================
 
 # BLOG POSTS
-
-## The Modern Data Stack Is Dead. Who Killed It?
-Path: blog/2026-04-30-modern-data-stack/index.mdx
-URL: https://docs.fused.io/blog/2026-04-30-modern-data-stack
-
-# The Modern Data Stack Is Dead. Who Killed It?
-
-**TL;DR**
-The modern data stack (ETL + warehouses + orchestration tools) is breaking down
-AI can now write transformations and queries
-The new bottleneck is running that code safely, at scale
-Fused is a serverless execution layer for data and AI workflows
-
-Fused is a serverless execution layer for data and AI workflows. With Fused, teams can write simple Python functions and run them at scale—directly on their data—without having to manage any infrastructure.
-
-_We have a murder on our hands._
-
-_The victim? The modern data stack. 
-For years, data teams have relied on a patchwork of tools: ETL pipelines, warehouses, orchestration layers, and dashboards. Getting anything done often meant stitching together 5-6 different systems just to move and transform data.
-Something changed.
-The modern data stack wasn’t killed by one company or project. It was replaced by a shift across the entire ecosystem.
-We've rounded up the suspects as to who may have been at the scene of the crime, and we're going to round them up one after the other._
-
-<img src="/img/blog/2026-04-30-modern-data-stack/header.jpg" alt="The modern data stack murder scene" style=} />
-
----
-
-## Suspect A: AI Code Editors
-
-The most obvious suspect at this crime scene is AI.
-
-<img src="/img/blog/2026-04-30-modern-data-stack/suspect-a-ai.jpg" alt="Suspect A: AI code editors" style=} />
-
-Claude Code, OpenAI Codex, and Cursor are everywhere now and have radically transformed how data teams write and ship code. While AI hasn't fully replaced software engineers (yet), it has changed how we write code.
-
-As an example, our Developer Advocate, Max, never took the time to learn SQL but has seen a huge unlock in using AI models to write more and more complex queries — without needing to memorize every piece of SQL syntax.
-
-Our own Fused docs have shifted from being written purely for human developers to being written for human *and* AI developers, with things like simple `llms.txt` files that let AI models easily parse documentation and make sense of it.
-
-It would however be all too simple to pin this crime on the AI scapegoat. The inspection is probably worth continuing a little further.
-
----
-
-## Suspect B: S3 + Parquet
-
-Our next suspect is actually two working in tandem.
-
-<img src="/img/blog/2026-04-30-modern-data-stack/suspect-b-s3-parquet.jpg" alt="Suspect B: S3 + Parquet" style=} />
-
-File formats like Parquet allow large, partitioned files that store massive amounts of data directly on cloud storage — no complex database systems required. Parquet files are fast to read and write, and they're portable: openable anywhere, downloadable to disk, and compatible with everything from `pandas` in Python to DuckDB natively. They really shine when paired with cloud storage, since most modern libraries can read and write to the cloud directly:
-
-```python
-
-# Read from cloud
-df = pd.read_parquet("s3://bucket/file.parquet")
-
-# Transform
-df = ...
-
-# Save
-df.to_parquet("s3://bucket/processed_file.parquet")
-```
-
-Data management doesn't simply go away — it still requires clever sorting and partitioning so files are efficient to find and read. But all of that is now possible directly in Parquet files stored on a cloud bucket.
-
-<img src="/img/blog/2026-04-30-modern-data-stack/suspect-b-crop-layer.jpg" alt="USDA Crop Data Layer in H3 hexagons on S3" style=} />
-
-*Example of the USDA's Crop Data Layer dataset converted to H3 hexagons for partitioning, stored in Parquet files directly on S3. Each file covers a specific area of interest and each Parquet file is partitioned to access only a specific row group of data.*
-
-This leads us naturally to the next suspect: query engines that make it trivially easy to read from a whole directory of Parquet files.
-
----
-
-## Suspect C: DuckDB
-
-DuckDB is a top-tier suspect — close to the victim, practically family. A relative of the modern data stack that may have committed the crime on its own kin.
-
-<img src="/img/blog/2026-04-30-modern-data-stack/suspect-c-duckdb.jpg" alt="Suspect C: DuckDB" style=} />
-
-DuckDB is an open-source, in-process analytical database management system. Beyond the technical jargon: it lets you write SQL without needing a dedicated server to manage, and it runs incredibly fast on columnar data. It also queries a directory of Parquet files hosted on an S3 bucket directly, treating them like a database.
-
-```sql
--- Searching for a specific ID across 50GB of parquet files on S3 is a single query now
-SELECT *
-FROM read_parquet('s3://overturemaps-us-west-2/registry/*.parquet')
-WHERE id = 'fea28f69-7afa-460c-b270-61ef74cd340c';
-```
-
-This lets you take a simple query, run it from a laptop, and scale it to huge amounts of data on S3. Engines like DuckDB are optimized for analytics and benefit from Parquet's partitioning, which can skip entire files and row groups.
-
-Large queries that would blow up in a regular `pandas` run are now possible in-memory with minimal setup:
-
-```sql
-SELECT
-  user_id,
-  count(*) AS number_buildings,
-  approx_quantile(duration_ms, 0.95) AS p95
-FROM read_parquet('s3://bucket/events/*.parquet')
-GROUP BY user_id;
-```
-
-DuckDB is our main example here, but the pattern is bigger. Other engines like Polars reflect the same shift: open formats on object storage plus a query runtime that can move to the data. At the time of writing, the two libraries are neck and neck and DuckDB is gaining steam over Polars.
-
-<img src="/img/blog/2026-04-30-modern-data-stack/suspect-c-duckdb-polars.jpg" alt="DuckDB vs Polars momentum" style=} />
-
-DuckDB makes even more sense in a world where LLMs have gotten incredible at writing even complex SQL queries, lowering the bar to entry dramatically. That makes DuckDB a prime suspect in our case.
-
----
-
-## Suspect D: Serverless
-
-<img src="/img/blog/2026-04-30-modern-data-stack/suspect-d-serverless.jpg" alt="Suspect D: Serverless compute" style=} />
-
-Doing anything with data used to require a fleet of big servers. Code couldn't run without access to data, and that access lived on the servers. The servers had to be big because Spark jobs run out of memory and crash. Anyone who's tried to debug a crashing data processing job knows the feeling of hunting through logs looking for suspects and clues.
-
-That brings us to our fourth suspect: serverless, elastic compute. Serverless removes layers of orchestration from the user's way, making it easier to scale processing on demand, simplifying and speeding up iteration cycles.
-
-Serverless also plays well with all the other suspects: access to cloud storage is native and natural; DuckDB starts quickly, avoiding the cold-start tradeoff.
-
----
-
-## The Verdict
-
-The modern data stack wasn't killed by one thing. **It was killed by a shift across the whole stack:**
-
-- Large datasets can now be managed directly in the cloud, no additional management systems required.
-- Analytical engines like DuckDB can query all of this data directly.
-- AI makes it cheap to write the glue code.
-
-The bottleneck moved from *"writing transformations"* to *"running code safely, at scale, with credentials, reproducibility, and a stable interface."*
-
----
-
-## So What Should It Look Like Instead?
-
-Claude Code lets you build at the speed of your ideas. Teams can ship faster (we're seeing this at Fused), people who didn't have time to code anymore can now code again, and project backlogs are being filled.
-
-**But Claude can't directly ship.** It can help you write the code, but that's not enough. We see two paths forward:
-
-### Approach 1: Give Claude Code More and More Access
-
-Give it a credit card, a dedicated EC2, your database credentials. This is what we're seeing with fully autonomous AI models.
-
-While this works nicely for a local solo project, it doesn't scale to enterprise customers that need tight security and proper scope. You can't manage access across a whole team with proper permissions this way.
-
-### Approach 2: Give Claude Code Easy Access to Scoped Processing
-
-Ideally this means giving your AI agent:
-
-- **Serverless compute**: Spin up a node when you need it, scale on demand. The simpler to call, the better Claude can use it.
-- **Sandboxed, secure access**: Claude shouldn't be able to wreak havoc in your codebase or data. Projects should have clear permissions, and data access should be controlled (don't let data from customer A be exposed to customer B).
-
-The catch: now you need to manage an infra layer that scales up and down, handles auth, and manages permissions across teams. These are all things you want your AI agents to have access to — but probably not something you want to maintain yourself.
-
----
-
-## Our Answer: Why We're Building Fused
-
-We've been building Fused for data teams that need to get work done and have customers who need answers no matter where their data comes from.
-
-### Built on Python
-
-Python is the language of data. Whether you're loading from S3, Snowflake, or Google Drive — or extracting from a PDF, scraping a website, or processing a one-time download — there's a way to do it in Python. It's the most versatile tool for working with any data, regardless of type, origin, or size.
-
-We ship an opinionated and tested set of dependencies that covers most modern data use cases, so data scientists and engineers can start building in seconds, not hours.
-
-### Scalable Serverless Engine
-
-Python alone isn't enough. Scaling up compute on demand normally means building and deploying Docker containers. Fused lets you create User Defined Functions — simple, self-contained Python functions that run on our serverless compute infrastructure. All you need is a `@fused.udf` decorator:
-
-```python
-@fused.udf
-def udf():
-
-    return pd.read_parquet("s3://fused-sample/demo_data/airbnb_listings_sf.parquet")
-```
-
-You can call thousands of jobs at the same time:
-
-```python
-@fused.udf
-def udf():
-    basic_example = fused.load('process_data')  # Load existing UDF
-    results = basic_example.map(range(100_000), max_workers=500)  # Run in parallel
-    return results.df()
-```
-
-This spins up as many nodes as needed under the hood.
-
-<img src="/img/blog/2026-04-30-modern-data-stack/fused-parallel.jpg" alt="Fused parallel job execution" style=} />
-
-To put the performance in perspective: two thousand 90-second jobs can be done in 120 wall-clock seconds with Fused. That's only 30 seconds of total orchestration overhead across 2,000 concurrent, completely independent jobs — each on a dedicated 4-core machine with 10 GB of RAM. That's **0.015 seconds of overhead per job.**
-
-For context: a regular EC2 instance of 128 cores takes ~2 minutes just to turn on.
-
-Fused turns on the machine, installs dependencies, authenticates credentials, and completes a 90-second job in the same time it takes that EC2 instance to boot.
-
----
-
-### Try Fused
-
-You can try it out yourself at fused.io/workbench or read the docs to learn more.
-
-================================================================================
 
 ## Introducing Fused AI Canvas
 Path: blog/2025-10-30-intro-canvas/index.mdx
@@ -21466,5 +21892,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-05-18
+Generated automatically from Fused documentation. Last updated: 2026-05-01
 Total sections: 5
