@@ -6,9 +6,33 @@ sidebar_label: ComfyUI workflows
 
 # Run ComfyUI workflows in Fused
 
-**ComfyUI is a powerful node-based tool for diffusion model pipelines — but sharing, scheduling, and caching those runs requires orchestration outside ComfyUI. Fused acts as that layer: it calls ComfyUI (via [Comfy Cloud](https://cloud.comfy.org) or a self-hosted GPU), caches results so identical runs are instant, stores outputs to S3, and makes everything shareable as a live link.**
+**Using Fused to cache, orchestrate & reuse pipelines on top of [ComfyUI](https://cloud.comfy.org) to make easily repeatable image generation workflows.**
 
-This example walks through two pipelines — **Images to Video** and **Text to Image** — both living on the same canvas. The same pattern applies to any ComfyUI workflow you want to bring into Fused.
+ComfyUI is a powerful node-based tool for diffusion model pipelines — but sharing, scheduling, and caching those runs requires orchestration outside ComfyUI. Fused acts as that layer: it calls ComfyUI (via [Comfy Cloud](https://cloud.comfy.org) or a self-hosted GPU), caches results so identical runs are instant, stores outputs to S3, and makes everything shareable as a live link.
+
+:::tip Setting up your Comfy Cloud API key
+Add your key once as a [Fused secret](/workbench/preferences#secrets-management) named `COMFY_API_KEY`:
+
+1. Go to **Workbench → Integrations & secrets → Personal/Team secrets**
+2. Click **Add new secret**, name it `COMFY_API_KEY`, paste your key
+3. All UDFs on the canvas read it automatically — no code changes needed
+:::
+
+## Adapt this to your own workflow
+
+The pattern is the same for any ComfyUI workflow:
+
+1. **Export the API JSON** from ComfyUI (**Graph → Export (API)**). You can start from an existing shared workflow — for example, the [Images to Video graph](https://cloud.comfy.org/?share=77000df905db) or the [Text to Image graph](https://cloud.comfy.org/?share=b457ccdd9d91) on Comfy Cloud. Open it in ComfyUI, then export via **Graph → Export (API)**.
+
+   ![ComfyUI Graph menu with Export (API) highlighted](/img/examples/comfyui-fused/comfyui_export_api.png)
+
+2. **Upload the JSON to S3** (or any URL Fused can reach via `sign_url`).
+3. **Update the input and output nodes** to match your workflow. Node IDs are the top-level keys in the exported JSON.
+4. **Write a [`@fused.cache`](/python-sdk/api-reference/fused-cache) helper** that loads the workflow, patches those nodes, submits, polls, and uploads the result.
+5. **Write a thin [`@fused.udf`](/guide/working-with-udfs/writing-udfs) wrapper** that calls the helper and returns a signed URL or array. Use `engine='small'` if the job runs longer than 120 seconds — see [batch jobs](/guide/working-with-udfs/udf-best-practices/scaling-out).
+6. **Add a [widget](/guide/data-input-outputs/import-connection/widgets)** (JSON) to expose parameters as form controls on the canvas.
+
+The two pipelines below — **Images to Video** and **Text to Image** — are concrete examples of this pattern, both living on the same canvas.
 
 [Open the Canvas →](https://unstable.fused.io/canvas/fc_fused/comfyui_generativeAI)
 
@@ -18,12 +42,6 @@ This example walks through two pipelines — **Images to Video** and **Text to I
 ![Fused Canvas showing the Images to Video pipeline with three panels: Important Notes, Input Parameters, and Process & Output](/img/examples/comfyui-fused/canvas_images_to_video.gif)
 
 The goal is to generate b-roll footage: given a **scene image** (the background environment) and a **product image**, the [SeedDance 2 Fast](https://cloud.comfy.org) model running on Comfy Cloud produces a cinematic product video. Fused acts as the processing engine — it loads the workflow JSON, uploads the inputs, triggers the Comfy Cloud API, polls for completion, saves the output to S3, and returns a signed URL, all from a single UDF. The result is cached, the API key stays secret, and the output is instantly shareable.
-
-### The ComfyUI workflow
-
-The underlying graph is [shared on Comfy Cloud](https://cloud.comfy.org/?share=77000df905db) — inspect and fork it directly. To export it as JSON: **Graph → Export (API)**. That JSON is what Fused loads from S3 and patches with your parameters at runtime.
-
-![ComfyUI Graph menu with Export (API) highlighted](/img/examples/comfyui-fused/comfyui_export_api.png)
 
 ### The Fused UDF
 
@@ -143,11 +161,6 @@ def images_to_video(
 The IDs `"1"`, `"2"`, `"3"` above come from this particular workflow's exported JSON. Open your own exported API JSON and look up the top-level keys for the nodes you want to control — they will be different.
 :::
 
-### How caching works here
-
-`@fused.cache` on `run_comfy_job` stores the S3 path of the generated video, keyed by every argument. The next call with the same inputs returns that path immediately — no Comfy Cloud call, no GPU time.
-
-The outer `udf` is intentionally not cached: it re-signs the S3 URL on every call. Signed URLs expire; the video doesn't.
 
 
 ---
@@ -237,33 +250,16 @@ The IDs `"104:90"` and `"104:92"` above are specific to this z-image-turbo workf
 
 ---
 
-## Adapt this to your own workflow
-
-The pattern is the same for any ComfyUI workflow:
-
-1. **Export the API JSON** from ComfyUI (**Graph → Export (API)**).
-2. **Upload the JSON to S3** (or any URL Fused can reach via `sign_url`).
-3. **Update the input and output nodes** to match your workflow. Node IDs are the top-level keys in the exported JSON.
-4. **Write a [`@fused.cache`](/python-sdk/api-reference/fused-cache) helper** that loads the workflow, patches those nodes, submits, polls, and uploads the result.
-5. **Write a thin [`@fused.udf`](/guide/working-with-udfs/writing-udfs) wrapper** that calls the helper and returns a signed URL or array. Use `engine='small'` if the job runs longer than 120 seconds — see [batch jobs](/guide/working-with-udfs/udf-best-practices/scaling-out).
-6. **Add a [widget](/guide/data-input-outputs/import-connection/widgets)** (JSON) to expose parameters as form controls on the canvas.
-
 ## Why run this on Fused?
 
 - **[`@fused.cache`](/python-sdk/api-reference/fused-cache)** — identical inputs return instantly; no GPU charges for repeat runs.
 - **[`fused.secrets`](/python-sdk/api-reference/fused-secrets)** — your Comfy Cloud API key lives in Fused secrets, never in code.
 - **[`fused.api.sign_url`](/python-sdk/api-reference/api#sign_url)** — reference images and workflow JSONs on S3 without making them public.
+- **S3 output storage** — results are saved directly to S3 and accessible via signed URL; no manual download steps.
+- **Version controlled** — UDFs are plain Python files you can track in git alongside your workflow JSONs.
 - **Canvas** — organize multiple pipelines in one view and share the whole thing with one link.
 - **[Widgets](/guide/data-input-outputs/import-connection/widgets)** — expose parameters as sliders, inputs, and dropdowns without touching Python.
 - **Embed links** — any UDF output is a live HTTPS endpoint you can embed in docs, dashboards, or Notion.
-
-:::tip Setting up your Comfy Cloud API key
-Add your key once as a [Fused secret](/workbench/preferences#secrets-management) named `COMFY_API_KEY`:
-
-1. Go to **Workbench → Preferences → Secrets**
-2. Click **Add secret**, name it `COMFY_API_KEY`, paste your key
-3. All UDFs on the canvas read it automatically — no code changes needed
-:::
 
 ## See also
 
