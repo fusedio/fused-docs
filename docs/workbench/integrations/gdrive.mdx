@@ -1,0 +1,173 @@
+---
+id: gdrive
+title: Google Drive
+sidebar_label: Google Drive
+sidebar_position: 5
+---
+
+# Google Drive
+
+Connect your Google account to browse and read files directly in Fused UDFs using `gdrive://` paths. No credentials are stored client-side — Fused manages the OAuth token on your behalf.
+
+## Setup
+
+### 1. Connect Google Drive
+
+Open **Integrations & Secrets** in Workbench and click **Connect Google Drive**.
+
+<ClickZoomImage src="/img/gdrive_connect.png" alt="Connect Google Drive button in Fused Workbench" />
+
+Complete the Google OAuth consent screen. Once connected, the panel shows your account name and a **Connected** status.
+
+<ClickZoomImage src="/img/gdrive_connected.png" alt="Google Drive connected in Fused Workbench" />
+
+### 2. Grant file and folder access via the Picker
+
+Fused uses the `drive.file` scope — it can only access files and folders you explicitly grant through the **Choose files and folders** picker in Workbench. Files added to Drive after the initial grant will not appear until re-granted via the Picker.
+
+---
+
+## `gdrive://` path format
+
+```
+gdrive://root/                        # all Picker-granted files at root
+gdrive://<folder_id>/<folder_name>/   # a specific folder (trailing slash)
+gdrive://<file_id>/<filename>         # a specific file
+```
+
+The first segment after `gdrive://` is always the Drive object ID. The name that follows is decorative and ignored at read time.
+
+**List files to get their IDs:**
+
+```bash
+fused files list gdrive://root/
+fused files list "gdrive://<folder_id>/<name>/" --details
+```
+
+`--details` additionally returns `size`, `is_directory`, and `last_modified`.
+
+---
+
+## Examples
+
+### List files in a UDF
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+
+    items = fused.api.list("gdrive://root/")
+    rows = []
+    for item in items:
+        stripped = item.replace("gdrive://", "").rstrip("/")
+        item_id, item_name = stripped.split("/", 1)
+        rows.append({"id": item_id, "name": item_name, "is_dir": item.endswith("/")})
+    return pd.DataFrame(rows)
+```
+
+### Read a CSV or Excel file
+
+Use pandas directly with the `gdrive://` path — no manual download needed:
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+    return pd.read_csv("gdrive://<file_id>/<name>.csv")
+```
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+    return pd.read_excel("gdrive://<file_id>/<name>.xlsx")
+```
+
+### Read binary files
+
+Use `fused.api.get()` which returns raw bytes:
+
+```python
+@fused.udf
+def udf():
+    import io
+    data = fused.api.get("gdrive://<file_id>/<name>.png")
+    # wrap in io.BytesIO for libraries that need a file-like object
+```
+
+### Read Google-native formats
+
+Google Docs, Sheets, and Slides are automatically exported on read:
+
+| Google format | Exported as |
+|---|---|
+| Google Sheets | `.xlsx` |
+| Google Docs | `.docx` |
+| Google Slides | `.pptx` |
+| Google Drawings | `.png` |
+
+### Upload a file to Google Drive from a URL
+
+```python
+@fused.udf
+def udf(url: str = "https://example.com/data.csv", folder_id: str = "root"):
+    import io, urllib.request, requests, pandas as pd
+
+    file_name = url.split("?")[0].rstrip("/").split("/")[-1] or "upload.csv"
+
+    with urllib.request.urlopen(url) as resp:
+        data = resp.read()
+
+    api = fused.api.api
+    creds = api.AUTHORIZATION.credentials
+    r = requests.put(
+        f"{api.OPTIONS.base_url}/files/upload",
+        params={"path": f"gdrive://{folder_id}/{file_name}"},
+        data=data,
+        headers={
+            "Authorization": f"Bearer {creds.access_token}",
+            "Content-Type": "application/octet-stream",
+        },
+    )
+    r.raise_for_status()
+
+    buf = io.BytesIO(data)
+    return pd.read_csv(buf) if file_name.lower().endswith(".csv") else pd.read_excel(buf)
+```
+
+:::note
+A 401 response means the credentials belong to a different user (e.g., running a shared canvas you don't own). Make a copy of the canvas to use your own credentials.
+:::
+
+### Return a file to the frontend
+
+Base64-encode the raw bytes and return a data URI in the DataFrame — no additional staging needed:
+
+```python
+@fused.udf
+def udf(gdrive_path: str = "gdrive://<file_id>/<name>.jpg"):
+    import base64, mimetypes, io, pandas as pd
+
+    data = fused.api.get(gdrive_path)
+    file_name = gdrive_path.split("/")[-1]
+
+    if file_name.endswith(".csv"):
+        return pd.read_csv(io.BytesIO(data))
+    if file_name.endswith((".xlsx", ".xls")):
+        return pd.read_excel(io.BytesIO(data))
+
+    mime, _ = mimetypes.guess_type(file_name)
+    data_uri = f"data:{mime or 'application/octet-stream'};base64,{base64.b64encode(data).decode()}"
+    return pd.DataFrame([{"file": file_name, "size_kb": round(len(data)/1024, 1), "data_uri": data_uri}])
+```
+
+Use `data_uri` in the widget as an `<img src>`, `<video src>`, or `<embed src>`.
+
+---
+
+## Try it
+
+Explore a working Google Drive integration canvas:
+
+[Open gdrive_integration canvas](https://unstable.fused.io/canvas/fc_fused/gdrive_integration)

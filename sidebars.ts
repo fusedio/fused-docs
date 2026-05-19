@@ -303,6 +303,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "workbench/integrations/airtable", label: "Airtable" },
         { type: "doc", id: "workbench/integrations/slack", label: "Slack [Experimental]" },
         { type: "doc", id: "workbench/integrations/notion", label: "Notion" },
+        { type: "doc", id: "workbench/integrations/gdrive", label: "Google Drive" },
       ],
     },
 
