@@ -1,0 +1,186 @@
+---
+id: daytona
+title: Daytona Integration
+sidebar_label: Daytona
+keywords: [daytona, integration, sandbox, code execution, dev environment]
+---
+
+# Daytona Integration
+
+Use [Daytona](https://daytona.io) cloud sandboxes to run untrusted code, manage files, and clone repositories from Fused UDFs. Your API key is stored securely as a Fused secret — no keys need to be hardcoded.
+
+## Prerequisites
+
+1. A Fused account on a paid plan (execution environment required).
+2. A [Daytona API key](https://app.daytona.io/dashboard/keys).
+
+## Setup
+
+### Add your API key
+
+Open **Settings > Integrations & Secrets**, find the Daytona section, and enter your API key. It is stored as a Fused secret under the name `DAYTONA_API_KEY`.
+
+### Install the SDK (optional)
+
+The `daytona` package is pre-installed in the Fused runtime. Locally, install it with:
+
+```bash
+pip install daytona
+```
+
+## Quick start
+
+`fused.api.daytona_connect()` returns an authenticated [`Daytona`](https://www.daytona.io/docs/en/python-sdk/sync/daytona/) client, pre-configured with the API key from `fused.secrets["DAYTONA_API_KEY"]`. The full SDK surface is available.
+
+```python
+@fused.udf()
+def udf():
+    import fused
+
+    daytona = fused.api.daytona_connect()
+    sandbox = daytona.create()
+
+    response = sandbox.process.code_run('print("Hello from Daytona!")')
+    daytona.delete(sandbox)
+    return response.result
+```
+
+## API reference
+
+### `fused.api.daytona_connect() -> Daytona`
+
+Return a [`Daytona`](https://www.daytona.io/docs/en/python-sdk/sync/daytona/) client initialized with the API key from `fused.secrets["DAYTONA_API_KEY"]`.
+
+Key methods on the returned client:
+
+- `daytona.create()` — create a new sandbox
+- `daytona.get(sandbox_id)` — retrieve an existing sandbox
+- `daytona.list()` — list all sandboxes
+- `daytona.delete(sandbox)` — delete a sandbox
+
+See the [Daytona Python SDK documentation](https://www.daytona.io/docs/en/python-sdk/sync/daytona/) for the complete reference.
+
+## Common operations
+
+### Create a sandbox and run code
+
+```python
+@fused.udf()
+def udf():
+    import fused
+
+    daytona = fused.api.daytona_connect()
+    sandbox = daytona.create()
+
+    try:
+        response = sandbox.process.code_run('''
+import math
+print(f"Pi to 10 decimals: {math.pi:.10f}")
+''')
+        return response.result
+    finally:
+        daytona.delete(sandbox)
+```
+
+### Stateful code execution
+
+Use `code_interpreter` when you need variables to persist across executions:
+
+```python
+@fused.udf()
+def udf():
+    import fused
+
+    daytona = fused.api.daytona_connect()
+    sandbox = daytona.create()
+
+    try:
+        sandbox.code_interpreter.run_code("data = [1, 2, 3, 4, 5]")
+        result = sandbox.code_interpreter.run_code("print(sum(data))")
+        return result.result  # 15
+    finally:
+        daytona.delete(sandbox)
+```
+
+### Upload and download files
+
+```python
+@fused.udf()
+def udf():
+    import fused
+
+    daytona = fused.api.daytona_connect()
+    sandbox = daytona.create()
+
+    try:
+        sandbox.fs.upload_file("/home/daytona/input.txt", b"Hello, world!")
+        content = sandbox.fs.download_file("/home/daytona/input.txt")
+        return content.decode()
+    finally:
+        daytona.delete(sandbox)
+```
+
+### Clone a Git repository
+
+```python
+@fused.udf()
+def udf():
+    import fused
+
+    daytona = fused.api.daytona_connect()
+    sandbox = daytona.create()
+
+    try:
+        sandbox.git.clone(
+            url="https://github.com/fusedio/udfs",
+            path="/home/daytona/udfs",
+        )
+        listing = sandbox.process.code_run('import os; print(os.listdir("/home/daytona/udfs"))')
+        return listing.result
+    finally:
+        daytona.delete(sandbox)
+```
+
+### Custom sandbox configuration
+
+```python
+@fused.udf()
+def udf():
+    import fused
+    from daytona import CreateSandboxFromSnapshotParams
+
+    daytona = fused.api.daytona_connect()
+    params = CreateSandboxFromSnapshotParams(
+        language="python",
+        env_vars={"DEBUG": "true"},
+        auto_stop_interval=0,
+    )
+    sandbox = daytona.create(params, timeout=40)
+
+    try:
+        response = sandbox.process.code_run('import os; print(os.environ["DEBUG"])')
+        return response.result
+    finally:
+        daytona.delete(sandbox)
+```
+
+### Run user-supplied code from a UDF parameter
+
+```python
+@fused.udf()
+def udf(code: str = "print('hello')"):
+    import fused
+
+    daytona = fused.api.daytona_connect()
+    sandbox = daytona.create()
+
+    try:
+        response = sandbox.process.code_run(code)
+        return {"result": response.result, "exit_code": response.exit_code}
+    finally:
+        daytona.delete(sandbox)
+```
+
+## Disconnecting
+
+To revoke the integration, go to **Settings > Integrations & Secrets**, find the Daytona section, and remove your API key. You should also [revoke the key](https://app.daytona.io/dashboard/keys) in the Daytona dashboard if it is no longer needed.

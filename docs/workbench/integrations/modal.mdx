@@ -1,0 +1,142 @@
+---
+id: modal
+title: Modal Integration
+sidebar_label: Modal
+keywords: [modal, integration, inference, gpu, serverless]
+---
+
+# Modal Integration
+
+Run [Modal](https://modal.com) functions, apps, and serverless GPU workloads from Fused UDFs. Your Modal credentials are stored securely as Fused secrets — no tokens need to be hardcoded.
+
+## Prerequisites
+
+1. A Fused account on a paid plan (execution environment required).
+2. A Modal token. Generate one at [modal.com/settings/tokens](https://modal.com/settings/tokens) or run `modal token new` locally — you will get a **Token ID** (starts with `ak-`) and a **Token Secret** (starts with `as-`).
+
+## Setup
+
+### Add your Modal tokens
+
+Open **Settings > Integrations & Secrets**, find the Modal section, and paste both values:
+
+- `MODAL_TOKEN_ID`
+- `MODAL_TOKEN_SECRET`
+
+Each is stored as a Fused secret under the corresponding name.
+
+### Install the SDK (optional)
+
+The `modal` package is pre-installed in the Fused runtime. If you are working locally, install it with:
+
+```bash
+pip install modal
+```
+
+## Quick start
+
+`fused.api.modal_connect()` returns an authenticated [`modal.Client`](https://modal.com/docs/reference/modal.Client), pre-configured with the credentials stored in `fused.secrets`. From there you can look up deployed Modal apps and functions and invoke them.
+
+```python
+@fused.udf()
+def udf():
+    import fused
+    import modal
+
+    # Authenticate using the stored Modal token
+    fused.api.modal_connect()
+
+    # Look up a deployed function and call it
+    embed = modal.Function.from_name("my-app", "embed_text")
+    return embed.remote("Hello from Fused!")
+```
+
+## API reference
+
+### `fused.api.modal_connect() -> modal.Client`
+
+Return a [`modal.Client`](https://modal.com/docs/reference/modal.Client) initialized from `fused.secrets["MODAL_TOKEN_ID"]` and `fused.secrets["MODAL_TOKEN_SECRET"]`.
+
+```python
+import fused
+client = fused.api.modal_connect()
+```
+
+Calling `modal_connect()` configures the Modal SDK for the current process — subsequent calls to `modal.Function.from_name(...).remote(...)`, `modal.Cls.from_name(...)`, etc. authenticate automatically.
+
+See the [Modal Python SDK reference](https://modal.com/docs/reference) for the full API surface.
+
+## Common operations
+
+### Invoke a deployed function
+
+```python
+@fused.udf()
+def udf(prompt: str = "A high-resolution satellite image of a coastline"):
+    import fused
+    import modal
+
+    fused.api.modal_connect()
+
+    generate = modal.Function.from_name("image-gen", "generate")
+    image_bytes = generate.remote(prompt)
+    return image_bytes
+```
+
+### Map over inputs in parallel
+
+Use `.map()` to fan out work across Modal's serverless GPUs.
+
+```python
+@fused.udf()
+def udf():
+    import fused
+    import modal
+    import pandas as pd
+
+    fused.api.modal_connect()
+
+    embed = modal.Function.from_name("embeddings", "embed")
+    texts = ["hello", "world", "fused", "modal"]
+    vectors = list(embed.map(texts))
+
+    return pd.DataFrame({"text": texts, "embedding": vectors})
+```
+
+### Call a class-based service
+
+```python
+@fused.udf()
+def udf():
+    import fused
+    import modal
+
+    fused.api.modal_connect()
+
+    Model = modal.Cls.from_name("llm-app", "Llama")
+    model = Model()
+    return model.complete.remote("Explain GeoParquet in one paragraph.")
+```
+
+### Asynchronous invocation
+
+For long-running jobs, spawn the call and poll for the result instead of blocking the UDF.
+
+```python
+@fused.udf()
+def udf():
+    import fused
+    import modal
+
+    fused.api.modal_connect()
+
+    train = modal.Function.from_name("trainer", "train_model")
+    call = train.spawn(epochs=10)
+    return {"call_id": call.object_id}
+```
+
+You can then retrieve the result in a follow-up UDF with `modal.FunctionCall.from_id(call_id).get()`.
+
+## Disconnecting
+
+To revoke the integration, go to **Settings > Integrations & Secrets**, find the Modal section, and remove your tokens. You should also [revoke the token](https://modal.com/settings/tokens) in the Modal dashboard if it is no longer needed.

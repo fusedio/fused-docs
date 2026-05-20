@@ -1,0 +1,185 @@
+---
+id: huggingface
+title: Hugging Face Integration
+sidebar_label: Hugging Face
+keywords: [huggingface, hugging face, integration, inference, models, datasets]
+---
+
+# Hugging Face Integration
+
+Use the Hugging Face Hub — models, datasets, repos, and inference endpoints — from Fused UDFs. Your access token is stored securely as a Fused secret; no keys need to be hardcoded.
+
+## Prerequisites
+
+1. A Fused account on a paid plan (execution environment required).
+2. A [Hugging Face access token](https://huggingface.co/settings/tokens) with the scopes you need (read for downloading models/datasets, write for pushing to repos).
+
+## Setup
+
+### Add your access token
+
+Open **Settings > Integrations & Secrets**, find the Hugging Face section, and paste your token. It is stored as a Fused secret under the name `HUGGINGFACE_API_KEY`.
+
+### Install the SDK (optional)
+
+The `huggingface_hub` package is pre-installed in the Fused runtime. Locally, install it with:
+
+```bash
+pip install huggingface-hub
+```
+
+## Quick start
+
+There are two Fused helpers, one for each common use case:
+
+- `fused.api.huggingface_connect()` → `HfApi` — work with repos, models, datasets, files
+- `fused.api.huggingface_inference()` → `InferenceClient` — call hosted models for inference
+
+Both are pre-authenticated with the token from `fused.secrets["HUGGINGFACE_API_KEY"]`.
+
+```python
+@fused.udf()
+def udf():
+    import fused
+
+    # Repo / dataset operations
+    hf = fused.api.huggingface_connect()
+    info = hf.model_info("meta-llama/Llama-3.2-1B-Instruct")
+    print(info.id, info.downloads)
+
+    # Inference
+    client = fused.api.huggingface_inference()
+    reply = client.chat_completion(
+        model="meta-llama/Llama-3.2-1B-Instruct",
+        messages=[{"role": "user", "content": "Hello!"}],
+        max_tokens=64,
+    )
+    print(reply.choices[0].message.content)
+```
+
+## API reference
+
+### `fused.api.huggingface_connect() -> HfApi`
+
+Return an authenticated [`huggingface_hub.HfApi`](https://huggingface.co/docs/huggingface_hub/en/package_reference/hf_api) client. Use it for repos, models, datasets, files, and Spaces.
+
+### `fused.api.huggingface_inference() -> InferenceClient`
+
+Return an authenticated [`huggingface_hub.InferenceClient`](https://huggingface.co/docs/huggingface_hub/en/package_reference/inference_client) for hosted-model inference (chat, embeddings, image generation, ASR, and more).
+
+Both helpers read the token from `fused.secrets["HUGGINGFACE_API_KEY"]`.
+
+## Common operations
+
+### List or inspect models
+
+```python
+@fused.udf()
+def udf():
+    import fused
+    import pandas as pd
+
+    hf = fused.api.huggingface_connect()
+    models = hf.list_models(author="meta-llama", limit=20)
+    return pd.DataFrame([
+        {"id": m.id, "downloads": m.downloads, "likes": m.likes}
+        for m in models
+    ])
+```
+
+### Download a file from a repo
+
+```python
+@fused.udf()
+def udf():
+    import fused
+    from huggingface_hub import hf_hub_download
+
+    fused.api.huggingface_connect()  # configures token
+
+    path = hf_hub_download(
+        repo_id="meta-llama/Llama-3.2-1B-Instruct",
+        filename="config.json",
+    )
+    with open(path) as f:
+        return f.read()
+```
+
+### Load a dataset
+
+```python
+@fused.udf()
+def udf():
+    import fused
+    from datasets import load_dataset
+
+    fused.api.huggingface_connect()  # configures token
+
+    ds = load_dataset("squad", split="validation[:100]")
+    return ds.to_pandas()
+```
+
+### Chat completion (hosted inference)
+
+```python
+@fused.udf()
+def udf(question: str = "What is GeoParquet?"):
+    import fused
+
+    client = fused.api.huggingface_inference()
+    reply = client.chat_completion(
+        model="meta-llama/Llama-3.2-3B-Instruct",
+        messages=[{"role": "user", "content": question}],
+        max_tokens=256,
+    )
+    return reply.choices[0].message.content
+```
+
+### Embeddings
+
+```python
+@fused.udf()
+def udf():
+    import fused
+    import pandas as pd
+
+    client = fused.api.huggingface_inference()
+    texts = ["coastal erosion", "urban heat island", "permafrost thaw"]
+    vectors = [
+        client.feature_extraction(t, model="sentence-transformers/all-MiniLM-L6-v2")
+        for t in texts
+    ]
+    return pd.DataFrame({"text": texts, "embedding": vectors})
+```
+
+### Image generation
+
+```python
+@fused.udf()
+def udf(prompt: str = "an aerial photo of a vineyard at sunset"):
+    import fused
+
+    client = fused.api.huggingface_inference()
+    image = client.text_to_image(prompt, model="black-forest-labs/FLUX.1-schnell")
+    return image  # PIL.Image
+```
+
+### Push to a repo
+
+```python
+@fused.udf()
+def udf():
+    import fused
+
+    hf = fused.api.huggingface_connect()
+    hf.upload_file(
+        path_or_fileobj="results.parquet",
+        path_in_repo="results.parquet",
+        repo_id="my-org/my-dataset",
+        repo_type="dataset",
+    )
+```
+
+## Disconnecting
+
+To revoke the integration, go to **Settings > Integrations & Secrets**, find the Hugging Face section, and remove your token. You should also [revoke the token](https://huggingface.co/settings/tokens) in the Hugging Face dashboard if it is no longer needed.
