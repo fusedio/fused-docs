@@ -143,6 +143,7 @@ const sidebars: SidebarsConfig = {
         "examples/airbnb-explore-on-the-fly",
         "examples/rag-overture-docs",
         "examples/branded-text-to-image",
+        "examples/thumbnail-generator",
         "examples/overture-buildings-agents",
         "examples/overture-maps-mcp-agent",
         "examples/google-calendar-meetings",
