@@ -2,7 +2,7 @@ import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
 
 /**
  * Modal-style Sidebar Structure
- * 
+ *
  * - 3 separate sidebars: Guide, Examples, Reference
  * - All categories are non-collapsible (flat view)
  * - 2-level hierarchy: Section headers (white) → Pages (grey)
@@ -23,9 +23,21 @@ const sidebars: SidebarsConfig = {
       label: "Quickstart",
       collapsible: false,
       items: [
-        { type: "doc", id: "guide/getting-started/first-udf-basics", label: "First UDF & Basics" },
-        { type: "doc", id: "guide/getting-started/workbench-intro", label: "Workbench intro" },
-        { type: "doc", id: "guide/getting-started/using-ai", label: "Using AI" },
+        {
+          type: "doc",
+          id: "guide/getting-started/first-udf-basics",
+          label: "First UDF & Basics",
+        },
+        {
+          type: "doc",
+          id: "guide/getting-started/workbench-intro",
+          label: "Workbench intro",
+        },
+        {
+          type: "doc",
+          id: "guide/getting-started/using-ai",
+          label: "Using AI",
+        },
       ],
     },
 
@@ -35,12 +47,36 @@ const sidebars: SidebarsConfig = {
       label: "UDF Fundamentals",
       collapsible: false,
       items: [
-        { type: "doc", id: "guide/working-with-udfs/why-fused", label: "Why Fused" },
-        { type: "doc", id: "guide/working-with-udfs/writing-udfs", label: "Writing UDFs" },
-        { type: "doc", id: "guide/working-with-udfs/run-udfs-as-api", label: "UDFs as API" },
-        { type: "doc", id: "guide/working-with-udfs/fused-run", label: "Running UDFs" },
-        { type: "doc", id: "guide/working-with-udfs/fused-submit", label: "Parallel execution" },
-        { type: "doc", id: "guide/working-with-udfs/scheduling-udfs", label: "Scheduling UDFs" },
+        {
+          type: "doc",
+          id: "guide/working-with-udfs/why-fused",
+          label: "Why Fused",
+        },
+        {
+          type: "doc",
+          id: "guide/working-with-udfs/writing-udfs",
+          label: "Writing UDFs",
+        },
+        {
+          type: "doc",
+          id: "guide/working-with-udfs/run-udfs-as-api",
+          label: "UDFs as API",
+        },
+        {
+          type: "doc",
+          id: "guide/working-with-udfs/fused-run",
+          label: "Running UDFs",
+        },
+        {
+          type: "doc",
+          id: "guide/working-with-udfs/fused-submit",
+          label: "Parallel execution",
+        },
+        {
+          type: "doc",
+          id: "guide/working-with-udfs/scheduling-udfs",
+          label: "Scheduling UDFs",
+        },
       ],
     },
 
@@ -50,17 +86,61 @@ const sidebars: SidebarsConfig = {
       label: "UDF Best Practices",
       collapsible: false,
       items: [
-        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/security", label: "Secure UDFs" },
-        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/realtime", label: "Run UDFs efficiently" },
-        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/scaling-out", label: "Scaling out UDFs" },
-        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/caching", label: "Efficient caching" },
-        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/storage", label: "Storage Options" },
-        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/version-control", label: "Working as a Team" },
-        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", label: "Geospatial processing" },
-        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/agents", label: "Building for Agents" },
-        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/ai-coding-tools", label: "AI Coding Tools" },
-        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/debugging-playbook", label: "Debugging playbook" },
-        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/unpythonic", label: "Un-pythonic aspects" },
+        {
+          type: "doc",
+          id: "guide/working-with-udfs/udf-best-practices/security",
+          label: "Secure UDFs",
+        },
+        {
+          type: "doc",
+          id: "guide/working-with-udfs/udf-best-practices/realtime",
+          label: "Run UDFs efficiently",
+        },
+        {
+          type: "doc",
+          id: "guide/working-with-udfs/udf-best-practices/scaling-out",
+          label: "Scaling out UDFs",
+        },
+        {
+          type: "doc",
+          id: "guide/working-with-udfs/udf-best-practices/caching",
+          label: "Efficient caching",
+        },
+        {
+          type: "doc",
+          id: "guide/working-with-udfs/udf-best-practices/storage",
+          label: "Storage Options",
+        },
+        {
+          type: "doc",
+          id: "guide/working-with-udfs/udf-best-practices/version-control",
+          label: "Working as a Team",
+        },
+        {
+          type: "doc",
+          id: "guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile",
+          label: "Geospatial processing",
+        },
+        {
+          type: "doc",
+          id: "guide/working-with-udfs/udf-best-practices/agents",
+          label: "Building for Agents",
+        },
+        {
+          type: "doc",
+          id: "guide/working-with-udfs/udf-best-practices/ai-coding-tools",
+          label: "AI Coding Tools",
+        },
+        {
+          type: "doc",
+          id: "guide/working-with-udfs/udf-best-practices/debugging-playbook",
+          label: "Debugging playbook",
+        },
+        {
+          type: "doc",
+          id: "guide/working-with-udfs/udf-best-practices/unpythonic",
+          label: "Un-pythonic aspects",
+        },
       ],
     },
 
@@ -70,13 +150,41 @@ const sidebars: SidebarsConfig = {
       label: "Connecting to Data",
       collapsible: false,
       items: [
-        { type: "doc", id: "guide/data-input-outputs/import-connection/local-files", label: "Local files" },
-        { type: "doc", id: "guide/data-input-outputs/import-connection/cloud-storage", label: "Cloud storage" },
-        { type: "doc", id: "guide/data-input-outputs/import-connection/databases", label: "Databases" },
-        { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/stac", label: "STAC catalogs" },
-        { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/gee", label: "Google Earth Engine" },
-        { type: "doc", id: "guide/data-input-outputs/import-connection/using-ai-inside-udf", label: "Using AI inside a UDF" },
-        { type: "doc", id: "guide/data-input-outputs/import-connection/ai-data-connection", label: "Connecting AI to Data" },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/import-connection/local-files",
+          label: "Local files",
+        },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/import-connection/cloud-storage",
+          label: "Cloud storage",
+        },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/import-connection/databases",
+          label: "Databases",
+        },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/import-connection/geospatial/stac",
+          label: "STAC catalogs",
+        },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/import-connection/geospatial/gee",
+          label: "Google Earth Engine",
+        },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/import-connection/using-ai-inside-udf",
+          label: "Using AI inside a UDF",
+        },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/import-connection/ai-data-connection",
+          label: "Connecting AI to Data",
+        },
       ],
     },
 
@@ -86,11 +194,31 @@ const sidebars: SidebarsConfig = {
       label: "Reading & Writing Files",
       collapsible: false,
       items: [
-        { type: "doc", id: "guide/data-input-outputs/read-write/reading", label: "Reading files" },
-        { type: "doc", id: "guide/data-input-outputs/read-write/writing", label: "Writing files" },
-        { type: "doc", id: "guide/data-input-outputs/read-write/geospatial/geospatial-reading", label: "Reading geospatial" },
-        { type: "doc", id: "guide/data-input-outputs/read-write/geospatial/geospatial-writing", label: "Writing geospatial" },
-        { type: "doc", id: "guide/data-input-outputs/read-write/geospatial/ingestion", label: "Geospatial Ingestion" },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/read-write/reading",
+          label: "Reading files",
+        },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/read-write/writing",
+          label: "Writing files",
+        },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/read-write/geospatial/geospatial-reading",
+          label: "Reading geospatial",
+        },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/read-write/geospatial/geospatial-writing",
+          label: "Writing geospatial",
+        },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/read-write/geospatial/ingestion",
+          label: "Geospatial Ingestion",
+        },
       ],
     },
 
@@ -100,12 +228,36 @@ const sidebars: SidebarsConfig = {
       label: "Exporting Data",
       collapsible: false,
       items: [
-        { type: "doc", id: "guide/data-input-outputs/export-api/tokens-endpoints", label: "Tokens & endpoints" },
-        { type: "doc", id: "guide/data-input-outputs/export-api/securing-shared-tokens", label: "Securing Shared Tokens" },
-        { type: "doc", id: "guide/data-input-outputs/export-api/download", label: "Download" },
-        { type: "doc", id: "guide/data-input-outputs/export-api/geospatial-export", label: "Geospatial Integration" },
-        { type: "doc", id: "guide/data-input-outputs/export-api/audit-logs", label: "Audit Logs" },
-        { type: "doc", id: "guide/data-input-outputs/export-api/log-file-paths", label: "File system paths" },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/export-api/tokens-endpoints",
+          label: "Tokens & endpoints",
+        },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/export-api/securing-shared-tokens",
+          label: "Securing Shared Tokens",
+        },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/export-api/download",
+          label: "Download",
+        },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/export-api/geospatial-export",
+          label: "Geospatial Integration",
+        },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/export-api/audit-logs",
+          label: "Audit Logs",
+        },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/export-api/log-file-paths",
+          label: "File system paths",
+        },
       ],
     },
 
@@ -115,11 +267,31 @@ const sidebars: SidebarsConfig = {
       label: "Advanced Setup",
       collapsible: false,
       items: [
-        { type: "doc", id: "guide/advanced-setup/local-installation", label: "Python installation" },
-        { type: "doc", id: "guide/advanced-setup/git-integration", label: "Git integration" },
-        { type: "doc", id: "guide/advanced-setup/secrets-management", label: "Secrets management" },
-        { type: "doc", id: "guide/advanced-setup/dependencies", label: "Dependencies" },
-        { type: "doc", id: "guide/advanced-setup/on-prem-setup", label: "On-prem setup" },
+        {
+          type: "doc",
+          id: "guide/advanced-setup/local-installation",
+          label: "Python installation",
+        },
+        {
+          type: "doc",
+          id: "guide/advanced-setup/git-integration",
+          label: "Git integration",
+        },
+        {
+          type: "doc",
+          id: "guide/advanced-setup/secrets-management",
+          label: "Secrets management",
+        },
+        {
+          type: "doc",
+          id: "guide/advanced-setup/dependencies",
+          label: "Dependencies",
+        },
+        {
+          type: "doc",
+          id: "guide/advanced-setup/on-prem-setup",
+          label: "On-prem setup",
+        },
       ],
     },
 
@@ -158,10 +330,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Data & Scraping",
       collapsible: false,
-      items: [
-        "examples/web-scraping",
-        "examples/pdf-scraping",
-      ],
+      items: ["examples/web-scraping", "examples/pdf-scraping"],
     },
 
     // Geospatial
@@ -208,7 +377,6 @@ const sidebars: SidebarsConfig = {
         "examples/sharing-canvas-dashboards",
       ],
     },
-
   ],
 
   // ============================================
@@ -217,38 +385,133 @@ const sidebars: SidebarsConfig = {
   apiReferenceSidebar: [
     // Overview
     { type: "doc", id: "python-sdk/overview", label: "Overview" },
-    
+
     {
       type: "category",
       label: "API Reference",
       collapsible: false,
       items: [
         { type: "doc", id: "python-sdk/changelog", label: "Changelog" },
-        { type: "doc", id: "python-sdk/api-reference/udf", label: "Udf (class)" },
-        { type: "doc", id: "python-sdk/api-reference/jobpool", label: "JobPool (class)" },
-        { type: "doc", id: "python-sdk/api-reference/fused-cache", label: "@fused.cache" },
-        { type: "doc", id: "python-sdk/api-reference/fused-udf", label: "@fused.udf" },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/udf",
+          label: "Udf (class)",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/jobpool",
+          label: "JobPool (class)",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-cache",
+          label: "@fused.cache",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-udf",
+          label: "@fused.udf",
+        },
         { type: "doc", id: "python-sdk/api-reference/api", label: "fused.api" },
-        { type: "doc", id: "python-sdk/api-reference/fused-context", label: "fused.context" },
-        { type: "doc", id: "python-sdk/api-reference/fused-download", label: "fused.download" },
-        { type: "doc", id: "python-sdk/api-reference/fused-file-path", label: "fused.file_path" },
-        { type: "doc", id: "python-sdk/api-reference/fused-find-dataset", label: "fused.find_dataset" },
-        { type: "doc", id: "python-sdk/api-reference/fused-get-chunk-from-table", label: "fused.get_chunk_from_table" },
-        { type: "doc", id: "python-sdk/api-reference/fused-get-chunks-metadata", label: "fused.get_chunks_metadata" },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-context",
+          label: "fused.context",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-download",
+          label: "fused.download",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-file-path",
+          label: "fused.file_path",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-find-dataset",
+          label: "fused.find_dataset",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-get-chunk-from-table",
+          label: "fused.get_chunk_from_table",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-get-chunks-metadata",
+          label: "fused.get_chunks_metadata",
+        },
         { type: "doc", id: "python-sdk/api-reference/h3", label: "fused.h3" },
-        { type: "doc", id: "python-sdk/api-reference/fused-ingest", label: "fused.ingest" },
-        { type: "doc", id: "python-sdk/api-reference/fused-ingest-nongeospatial", label: "fused.ingest_nongeospatial" },
-        { type: "doc", id: "python-sdk/api-reference/fused-load", label: "fused.load" },
-        { type: "doc", id: "python-sdk/api-reference/fused-load-async", label: "fused.load_async" },
-        { type: "doc", id: "python-sdk/api-reference/options", label: "fused.options" },
-        { type: "doc", id: "python-sdk/api-reference/fused-register-dataset", label: "fused.register_dataset" },
-        { type: "doc", id: "python-sdk/api-reference/fused-secrets", label: "fused.secrets" },
-        { type: "doc", id: "python-sdk/api-reference/fused-user-secrets", label: "fused.user_secrets" },
-        { type: "doc", id: "python-sdk/api-reference/fused-types", label: "fused.types" },
-        { type: "doc", id: "python-sdk/api-reference/fused-run", label: "fused.run" },
-        { type: "doc", id: "python-sdk/api-reference/fused-run-async", label: "fused.run_async" },
-        { type: "doc", id: "python-sdk/api-reference/fused-submit", label: "fused.submit" },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-ingest",
+          label: "fused.ingest",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-ingest-nongeospatial",
+          label: "fused.ingest_nongeospatial",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-load",
+          label: "fused.load",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-load-async",
+          label: "fused.load_async",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/options",
+          label: "fused.options",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-register-dataset",
+          label: "fused.register_dataset",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-secrets",
+          label: "fused.secrets",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-user-secrets",
+          label: "fused.user_secrets",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-types",
+          label: "fused.types",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-run",
+          label: "fused.run",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-run-async",
+          label: "fused.run_async",
+        },
+        {
+          type: "doc",
+          id: "python-sdk/api-reference/fused-submit",
+          label: "fused.submit",
+        },
       ],
+    },
+
+    {
+      type: "category",
+      label: "Widget API",
+      collapsible: false,
+      items: [{ type: "autogenerated", dirName: "widget-api" }],
     },
   ],
 
@@ -266,15 +529,31 @@ const sidebars: SidebarsConfig = {
       collapsible: false,
       items: [
         { type: "doc", id: "workbench/udf-builder/canvas", label: "Overview" },
-        { type: "doc", id: "workbench/udf-builder/code-editor", label: "Code Editor" },
+        {
+          type: "doc",
+          id: "workbench/udf-builder/code-editor",
+          label: "Code Editor",
+        },
         { type: "doc", id: "workbench/udf-explorer", label: "UDF Explorer" },
         { type: "doc", id: "workbench/ai-chat", label: "AI Chat" },
         { type: "doc", id: "workbench/udf-builder/runtime", label: "Runtime" },
         { type: "doc", id: "workbench/file-explorer", label: "File Explorer" },
-        { type: "doc", id: "workbench/canvas-catalog", label: "Canvas Catalog" },
-        { type: "doc", id: "workbench/canvas-checkpoints", label: "Canvas Checkpoints" },
+        {
+          type: "doc",
+          id: "workbench/canvas-catalog",
+          label: "Canvas Catalog",
+        },
+        {
+          type: "doc",
+          id: "workbench/canvas-checkpoints",
+          label: "Canvas Checkpoints",
+        },
         { type: "doc", id: "workbench/versions", label: "Versions" },
-        { type: "doc", id: "guide/data-input-outputs/import-connection/widgets", label: "Widgets" },
+        {
+          type: "doc",
+          id: "guide/data-input-outputs/import-connection/widgets",
+          label: "Widgets",
+        },
       ],
     },
 
@@ -286,7 +565,11 @@ const sidebars: SidebarsConfig = {
       items: [
         { type: "doc", id: "workbench/profile", label: "Profile" },
         { type: "doc", id: "workbench/preferences", label: "Preferences" },
-        { type: "doc", id: "workbench/integrations-secrets", label: "Integrations & Secrets" },
+        {
+          type: "doc",
+          id: "workbench/integrations-secrets",
+          label: "Integrations & Secrets",
+        },
         { type: "doc", id: "workbench/free-tier", label: "Free Tier" },
         { type: "doc", id: "workbench/jobs", label: "Job logs" },
       ],
@@ -298,27 +581,63 @@ const sidebars: SidebarsConfig = {
       label: "Integrations",
       collapsible: false,
       items: [
-        { type: "doc", id: "workbench/integrations/snowflake", label: "Snowflake" },
-        { type: "doc", id: "workbench/integrations/bigquery", label: "BigQuery" },
+        {
+          type: "doc",
+          id: "workbench/integrations/snowflake",
+          label: "Snowflake",
+        },
+        {
+          type: "doc",
+          id: "workbench/integrations/bigquery",
+          label: "BigQuery",
+        },
         { type: "doc", id: "workbench/integrations/s3", label: "Amazon S3" },
-        { type: "doc", id: "workbench/integrations/gcs", label: "Google Cloud Storage" },
-        { type: "doc", id: "workbench/integrations/airtable", label: "Airtable" },
-        { type: "doc", id: "workbench/integrations/slack", label: "Slack [Experimental]" },
+        {
+          type: "doc",
+          id: "workbench/integrations/gcs",
+          label: "Google Cloud Storage",
+        },
+        {
+          type: "doc",
+          id: "workbench/integrations/airtable",
+          label: "Airtable",
+        },
+        {
+          type: "doc",
+          id: "workbench/integrations/slack",
+          label: "Slack [Experimental]",
+        },
         { type: "doc", id: "workbench/integrations/notion", label: "Notion" },
-        { type: "doc", id: "workbench/integrations/gdrive", label: "Google Drive" },
+        {
+          type: "doc",
+          id: "workbench/integrations/gdrive",
+          label: "Google Drive",
+        },
       ],
     },
 
-        // UDF Builder
+    // UDF Builder
     {
       type: "category",
       label: "Map Builder",
       collapsible: false,
       items: [
-        { type: "doc", id: "workbench/udf-builder/udf-builder", label: "Overview" },
-        { type: "doc", id: "workbench/udf-builder/navigation", label: "Map Navigation" },
+        {
+          type: "doc",
+          id: "workbench/udf-builder/udf-builder",
+          label: "Overview",
+        },
+        {
+          type: "doc",
+          id: "workbench/udf-builder/navigation",
+          label: "Map Navigation",
+        },
         { type: "doc", id: "workbench/udf-builder/map", label: "Map View" },
-        { type: "doc", id: "workbench/udf-builder/styling", label: "Map Layer Styling" },
+        {
+          type: "doc",
+          id: "workbench/udf-builder/styling",
+          label: "Map Layer Styling",
+        },
       ],
     },
 
@@ -328,8 +647,16 @@ const sidebars: SidebarsConfig = {
       label: "Fused Apps",
       collapsible: false,
       items: [
-        { type: "doc", id: "workbench/app-builder/app-builder", label: "App Builder" },
-        { type: "doc", id: "workbench/app-builder/app-overview", label: "App Overview" },
+        {
+          type: "doc",
+          id: "workbench/app-builder/app-builder",
+          label: "App Builder",
+        },
+        {
+          type: "doc",
+          id: "workbench/app-builder/app-overview",
+          label: "App Overview",
+        },
         { type: "doc", id: "workbench/app-builder/app-map", label: "App Map" },
       ],
     },

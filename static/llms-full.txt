@@ -986,6 +986,234 @@ Learn more about QGIS
 
 ================================================================================
 
+## File system paths reference
+Path: guide/data-input-outputs/export-api/log-file-paths.mdx
+URL: https://docs.fused.io/guide/data-input-outputs/export-api/log-file-paths
+
+Fused exposes two file systems to UDFs: a **mounted disk** at `/mount/` and a private **S3 home directory** at `s3://fused-users/<org>/<username>/`. Both are scoped at the organization level.
+
+This page maps every directory under each location so you know where things live and what they contain.
+
+---
+
+## `/mount/` — mounted disk
+
+Everything written here is shared across all UDFs in your environment and persists between executions. The `fused-system/` subdirectory is managed by the Fused runtime — do not write to it directly.
+
+```
+/mount/
+├── fused-system/
+│   ├── cached_data/
+│   │   └── /
+│   └── logs/
+│       └── /
+│           └── /
+│               └── /
+│                   └── /
+│                       ├── metadata.json
+│                       ├── udf.json
+│                       ├── stdout.log
+│                       └── stderr.log
+```
+
+### `cached_data/`
+
+Output cache for `@fused.cache`. Each subdirectory corresponds to a UDF by name; entries within are keyed by a hash of the function arguments.
+
+```
+/mount/fused-system/cached_data/
+└── /
+    └── data_
+```
+
+### `logs/`
+
+Per-request execution logs for UDF runs. One directory per request, organized by date and time.
+
+```
+/mount/fused-system/logs/
+└── /
+    └── /
+        └── /
+            └── /
+                ├── metadata.json    ← user_email, udf_name, collection_name, execution_time_seconds
+                ├── udf.json         ← UDF code at time of execution (key: "code")
+                ├── stdout.log       ← captured stdout
+                └── stderr.log       ← captured stderr; non-empty means an error occurred
+```
+
+List all execution directories for a date:
+
+```python showLineNumbers
+@fused.udf
+def udf(datestr: str = "2026-05-12"):
+
+    dirs = glob.glob(f"/mount/fused-system/logs//*/*/*")
+    df = pd.DataFrame()
+    df["hhmm"]       = df["file_path"].apply(lambda x: x.split("/")[5])
+    df["user"]        = df["file_path"].apply(lambda x: x.split("/")[6])
+    df["request_id"]  = df["file_path"].apply(lambda x: x.split("/")[7])
+    return df
+```
+
+Read the files for a specific request (replace the path with one from the listing above):
+
+```python showLineNumbers
+
+# Replace with an actual path from the listing above
+path = "/mount/fused-system/logs/2026-05-12/1430/user@example.com/abc123"
+
+with open(f"/metadata.json") as f:
+    meta = json.load(f)
+
+with open(f"/stderr.log") as f:
+    stderr = f.read()
+
+print(meta["udf_name"], meta["execution_time_seconds"])
+print(stderr or "no errors")
+```
+
+---
+
+## `s3://fused-users/<org>/` — S3 home
+
+Your organization's S3 space. Use the File Explorer to browse it and confirm the exact paths for your account.
+
+```
+s3://fused-users/<org>/
+├── /
+├── fused-system/
+│   ├── checkpoints/
+│   │   └── /
+│   │       └── /
+│   │           ├── <checkpoint_name>.json
+│   │           └── .json
+│   ├── fused-cache/
+│   │   └── /
+│   │       └── /
+│   │           └── output/
+│   │               └── /
+│   ├── history/
+│   │   └── /
+│   │       └── /
+│   │           └── /
+│   │               └── .json
+│   ├── integrations/
+│   │   └── slack.json
+│   ├── job-configs/
+│   │   └── /
+│   │       └── /
+│   │           └── file.json
+│   └── logs/
+│       └── /
+│           └── /
+│               └── /
+│                   └── /
+```
+
+### `s3://fused-users/<org>//`
+
+Your personal home directory for persistent storage. This is where you write output datasets, GeoTIFFs, and any files that need to be accessed outside of Fused. See Storage options for details.
+
+```python showLineNumbers
+@fused.udf(cache_max_age="0s")
+def udf():
+
+    val = fused.api.list("s3://fused-users/<org>/<username>/")
+    return pd.DataFrame(val, columns=["path"])
+```
+
+### `s3://fused-users/<org>/fused-system/`
+
+Organization-wide system data managed by Fused. Contents are described below.
+
+### `checkpoints/`
+
+Canvas checkpoint snapshots created when you save a checkpoint in Workbench. Each canvas has its own directory under the user's email, containing timestamped JSON snapshots.
+
+```
+s3://fused-users/<org>/fused-system/checkpoints/
+└── /
+    └── /
+        ├── <checkpoint_name>.json ← saved checkpoints, named by the user
+        └── .json ← auto-timestamped snapshots
+```
+
+See Canvas Checkpoints for how to create and restore them.
+
+### `fused-cache/`
+
+S3-backed output cache for `@fused.cache`. Stores results keyed by a hash of the function arguments, persisted per user and per UDF.
+
+```
+s3://fused-users/<org>/fused-system/fused-cache/
+└── /
+    └── /
+        └── output/
+            └── /
+```
+
+### `history/`
+
+Code history for every UDF in the organization. Each UDF is identified by its UUID; within that, every save is stored as a timestamped JSON snapshot grouped by day.
+
+```
+s3://fused-users/<org>/fused-system/history/
+└── /
+    └── /
+        └── /
+            └── .json    ← full UDF code snapshot at that point in time
+```
+
+### `integrations/`
+
+Integration configuration files. For example, `slack.json` holds the Slack webhook configuration set up via Integrations & Secrets.
+
+### `job-configs/`
+
+Configuration files for batch jobs, stored by submission date and job UUID. Each job writes a `file.json` with its execution parameters.
+
+```
+s3://fused-users/<org>/fused-system/job-configs/
+└── /
+    └── /
+        └── file.json
+```
+
+### `logs/`
+
+S3 mirror of the execution logs written to `/mount/fused-system/logs/`. Organized by the same date and time hierarchy, with one directory per request.
+
+```
+s3://fused-users/<org>/fused-system/logs/
+└── /
+    └── /
+        └── /
+            └── /
+                ├── metadata.json
+                ├── udf.json
+                ├── stdout.log
+                └── stderr.log
+```
+
+List available dates:
+
+```python showLineNumbers
+
+fused.api.list("s3://fused-users/<org>/fused-system/logs/")
+```
+
+---
+
+## See also
+
+- Storage options — when to use mount vs. S3 home
+- Audit Logs (`fused.api.log`) — query execution logs via the API
+- Debugging playbook — techniques for diagnosing failing UDFs
+- File Explorer — browse your S3 home directory in Workbench
+
+================================================================================
+
 ## Securing Shared Tokens
 Path: guide/data-input-outputs/export-api/securing-shared-tokens.mdx
 URL: https://docs.fused.io/guide/data-input-outputs/export-api/securing-shared-tokens
@@ -1859,37 +2087,37 @@ def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
 }
 ```
 
-*When you share a widget URL, Fused automatically appends all canvas parameters as query parameters so the shared view can be reproduced exactly.* Try it out →
+_When you share a widget URL, Fused automatically appends all canvas parameters as query parameters so the shared view can be reproduced exactly._ Try it out →
 
 ## Available Widgets
 
-| Category | Widget | Description | Key Features / Notes |
-| --- | --- | --- | --- |
-| Input | `slider` | Numeric range control | `min`, `max`, `step`, `defaultValue`, binds to `param` |
-| Input | `input` | Free-text input field | Syncs with canvas param |
-| Input | `dropdown` | Select menu | Static options OR dynamic via DuckDB SQL (`label`, `value`), supports search |
-| Input | `button` | Clickable trigger | Increments a canvas param on click |
-| Input | `code-editor` | Multi-language editor | Supports Python, SQL, JSON, Markdown; syncs content to a param |
-| Input | `form` | Input container | Wraps inputs and submits as one object |
-| Input | `map-bounds` | Interactive map viewport | Emits `[west, south, east, north]` bounds |
-| Input | `map-h3` | H3-based map input | Emits H3 hex cell; supports resolution, k-ring, multi-coordinates |
-| Output | `bar-chart` | Bar chart via SQL | `label` + `value`, sorting, animation, layout options |
-| Output | `line-chart` | Time-series chart | Supports multi-series (`series` column), zoom, curves |
-| Output | `big-number` | KPI display | Prefix/suffix, compact format |
-| Output | `sql-table` | Data table | Sortable, filterable |
-| Output | `text` | Static/dynamic text | Supports markdown + variants (`h1`, `muted`, etc.) |
-| Output | `image` | Image display | URL or base64 |
-| Output | `fused-map` | Full interactive map | Supports multiple layer types, tooltips, legends, basemaps |
-| Output | `widget-builder` | Meta widget | Renders widgets dynamically from JSON |
-| Output | `iframe` | Embedded web page | Pass any URL — a video, GIF, image, or web page |
-| Output | `stacked-bar-chart` | Stacked bar chart via DuckDB SQL | Multiple series stacked, `label` + `value` + `series` columns, driven by SQL query |
-| Output | `stacked-area-chart` | Stacked area chart via DuckDB SQL | Area version of stacked bar, good for time-series proportions, driven by SQL query |
-| Output | `scatter-chart` | Scatter/XY plot via DuckDB SQL | `x` and `y` axis columns, optional color/size encoding, driven by SQL query |
-| Output | `donut-chart` | Donut/pie chart via DuckDB SQL | `label` + `value` columns, shows proportions, driven by SQL query |
-| Output | `heatmap-chart` | Heatmap grid via DuckDB SQL | `x`, `y`, and `value` columns, color intensity encoding, driven by SQL query |
-| Utility | `sql-runner` | Named SQL data source | Shared SQL context for descendant components, avoids duplicating queries |
-| Utility | `div` | Layout container | Groups and wraps child components, supports layout/spacing control |
-| Utility | `ai-chat` | AI chat interface | Connects to a UDF for AI-powered Q&A, streams responses |
+| Category | Widget               | Description                       | Key Features / Notes                                                               |
+| -------- | -------------------- | --------------------------------- | ---------------------------------------------------------------------------------- |
+| Input    | `slider`             | Numeric range control             | `min`, `max`, `step`, `defaultValue`, binds to `param`                             |
+| Input    | `input`              | Free-text input field             | Syncs with canvas param                                                            |
+| Input    | `dropdown`           | Select menu                       | Static options OR dynamic via DuckDB SQL (`label`, `value`), supports search       |
+| Input    | `button`             | Clickable trigger                 | Increments a canvas param on click                                                 |
+| Input    | `code-editor`        | Multi-language editor             | Supports Python, SQL, JSON, Markdown; syncs content to a param                     |
+| Input    | `form`               | Input container                   | Wraps inputs and submits as one object                                             |
+| Input    | `map-bounds`         | Interactive map viewport          | Emits `[west, south, east, north]` bounds                                          |
+| Input    | `map-h3`             | H3-based map input                | Emits H3 hex cell; supports resolution, k-ring, multi-coordinates                  |
+| Output   | `bar-chart`          | Bar chart via SQL                 | `label` + `value`, sorting, animation, layout options                              |
+| Output   | `line-chart`         | Time-series chart                 | Supports multi-series (`series` column), zoom, curves                              |
+| Output   | `big-number`         | KPI display                       | Prefix/suffix, compact format                                                      |
+| Output   | `sql-table`          | Data table                        | Sortable, filterable                                                               |
+| Output   | `text`               | Static/dynamic text               | Supports markdown + variants (`h1`, `muted`, etc.)                                 |
+| Output   | `image`              | Image display                     | URL or base64                                                                      |
+| Output   | `fused-map`          | Full interactive map              | Supports multiple layer types, tooltips, legends, basemaps                         |
+| Output   | `widget-builder`     | Meta widget                       | Renders widgets dynamically from JSON                                              |
+| Output   | `iframe`             | Embedded web page                 | Pass any URL — a video, GIF, image, or web page                                    |
+| Output   | `stacked-bar-chart`  | Stacked bar chart via DuckDB SQL  | Multiple series stacked, `label` + `value` + `series` columns, driven by SQL query |
+| Output   | `stacked-area-chart` | Stacked area chart via DuckDB SQL | Area version of stacked bar, good for time-series proportions, driven by SQL query |
+| Output   | `scatter-chart`      | Scatter/XY plot via DuckDB SQL    | `x` and `y` axis columns, optional color/size encoding, driven by SQL query        |
+| Output   | `donut-chart`        | Donut/pie chart via DuckDB SQL    | `label` + `value` columns, shows proportions, driven by SQL query                  |
+| Output   | `heatmap-chart`      | Heatmap grid via DuckDB SQL       | `x`, `y`, and `value` columns, color intensity encoding, driven by SQL query       |
+| Utility  | `sql-runner`         | Named SQL data source             | Shared SQL context for descendant components, avoids duplicating queries           |
+| Utility  | `div`                | Layout container                  | Groups and wraps child components, supports layout/spacing control                 |
+| Utility  | `ai-chat`            | AI chat interface                 | Connects to a UDF for AI-powered Q&A, streams responses                            |
 
 ## Multi-Component Widgets
 
@@ -1916,6 +2144,7 @@ You can nest a `div` inside another `div` for more complex layouts.
 ### Combining input & output components
 
 Multiple components can also work together inside a single widget:
+
 - An input component (like a slider) publishes a value through `param`
 - An output component (like a chart) can read that value with `$param`
 
@@ -5200,34 +5429,6 @@ Click **Share → Open API** in Workbench to generate an MCP-compatible endpoint
 
 In the example above, the top canvas exposes all three UDFs to the agent, while the bottom canvas hides the two upstream UDFs and surfaces only the final analysis tool. Hiding intermediate steps keeps the agent's tool list focused on the UDFs that answer questions directly.
 
-### Connect your AI tool
-
-In Workbench, click **Share → OpenAPI** and copy the `.api.json` URL — it looks like `https://udf.ai/fc_<your_token>.api.json`. Paste it into any of the tools below so the agent knows which tools are available and what parameters they accept.
-
-#### Claude Code
-
-1. Paste the Fused skills into Claude Code so it understands how to interact with Fused endpoints. Tell it: "always use these skills when working with Fused."
-2. Paste the `.api.json` URL into the chat so Claude Code can discover your UDFs as callable tools.
-3. Ask questions — Claude Code will call your UDFs directly.
-
-#### Codex
-
-1. Open a Codex chat.
-2. Paste the `.api.json` URL and tell Codex to fetch it to discover available tools.
-3. Ask questions — Codex will call your UDFs directly.
-
-#### Cursor
-
-1. Open a Cursor chat in **Agent** mode.
-2. Paste the `.api.json` URL and tell Cursor to fetch it to discover available tools.
-3. Ask questions — Cursor will call your UDFs directly.
-
-#### Windsurf
-
-1. Open a Windsurf chat in **Cascade** mode.
-2. Paste the `.api.json` URL and tell Windsurf to fetch it to discover available tools.
-3. Ask questions — Windsurf will call your UDFs directly.
-
 ### Organize your canvas
 
 All UDFs on a canvas are exposed together through a single canvas token (`fc_XXX`). Group agent-facing UDFs on a dedicated canvas and move large batch jobs or internal utilities to a separate one:
@@ -5269,34 +5470,105 @@ See Write UDFs securely for full guidance.
 
 ================================================================================
 
-## Using AI Coding Tools with Fused
+## Using AI Coding Tools with Fused CLI
 Path: guide/working-with-udfs/udf-best-practices/ai-coding-tools.mdx
 URL: https://docs.fused.io/guide/working-with-udfs/udf-best-practices/ai-coding-tools
 
-Fused publishes a skills plugin that teaches AI coding tools the Fused-specific formats they need to author canvases: the `canvas.toml` schema, JSON UI widget definitions, and the `fused` CLI. Once installed, the AI understands how to create and modify Fused canvases without you having to explain the format every time.
+Fused publishes a skills plugin that teaches AI coding tools the Fused-specific formats they need to author canvases and write UDFs. Once installed, the AI understands how to create and modify Fused canvases, call integrations, and use the CLI without you having to explain the format every time.
 
-The plugin covers three skill areas:
+The plugin covers five skill areas:
 
 | Skill | What it teaches |
 |---|---|
 | `canvas-toml` | `canvas.toml` format — nodes, edges, viewport, folder layout |
 | `fused-cli` | `fused` CLI — push, run, share, and manage UDFs from the terminal |
+| `fused-integrations` | Built-in integration helpers — Snowflake, BigQuery, GCS, S3, Airtable, Notion, Google Drive |
+| `fused-udfs` | Writing Fused UDFs — structure, parameters, return types, caching, agent-friendly design |
 | `json-ui-schemas` | Widget JSON schemas — text inputs, dropdowns, charts, maps, SQL tables |
+
+---
+
+## Fused CLI
+
+Install the `fused` Python package to get the CLI:
+
+```bash
+pip install --upgrade fused
+```
+
+If you don't want to install the package, prefix any command with `uvx` to run it standalone:
+
+```bash
+uvx fused <command>
+```
+
+Run `fused --help` to confirm it's available and see all commands:
+
+```
+$ fused --help
+
+Usage: fused [OPTIONS] COMMAND [ARGS]...
+
+Options:
+  --env TEXT            [env var: FUSED_ENV]
+  --format [json|text]  [env var: FUSED_CLI_FORMAT]
+
+Commands:
+  canvas        Manage canvases.
+  claude        Manage Fused for Claude Code (via the `claude` CLI).
+  completion    Print or install shell tab completion for the fused CLI.
+  files         Manage files stored in Fused.
+  integrations  Manage third-party integrations in Fused.
+  json-ui       Inspect and run JSON-UI widgets.
+  login         Authenticate and persist credentials.
+  logout        Log out and clear local credentials.
+  run           Run a UDF and print the result.
+  secrets       Manage kernel and user secrets.
+  udf-schema    Print the API schema for a UDF.
+  whoami        Show info about the authenticated user or team.
+```
+
+Run `fused <command> --help` to see options for any subcommand, e.g. `fused canvas --help` or `fused run --help`.
+
+### Login
+
+Before using the CLI, authenticate with your Fused account:
+
+```bash
+fused login
+```
+
+This opens a browser window for OAuth sign-in and persists your credentials locally. Run `fused whoami` to confirm you're logged in.
+
+### List your canvases
+
+```bash
+fused canvas list
+```
+
+```
+Analytics_in_Fused
+MCP_Building_blocks
+Ragging_Overture_Docs
+default
+...
+```
+
+Add `--team` to list canvases shared with your team.
 
 ---
 
 ## Claude Code
 
-Claude Code supports the Fused plugin natively via its plugin marketplace.
+Claude Code supports the Fused plugin natively via its plugin marketplace. Once installed, Claude Code automatically applies the Fused skills whenever you work on canvas files.
 
-**Option A — via the `fused` CLI:**
+**Via the `fused` CLI (recommended):**
 
 ```bash
-pip install fused
 fused claude plugin add
 ```
 
-**Option B — via Claude Code directly:**
+**Via Claude Code directly:**
 
 ```bash
 claude plugin marketplace add fusedio/claude-plugins
@@ -5310,56 +5582,12 @@ claude plugin update fused@fused-marketplace
 claude plugin remove fused
 ```
 
-Once installed, Claude Code automatically applies the Fused skills whenever you work on canvas files.
-
----
-
-## Codex
-
-OpenAI Codex CLI uses `AGENTS.md` files to provide persistent context, similar to how Claude Code uses `CLAUDE.md`. There is no plugin marketplace, so paste the skill content directly.
-
-1. Download the skill files from github.com/fusedio/skills — copy `canvas-toml`, `fused-cli`, and `json-ui-schemas`.
-2. Paste the relevant content into your project's `AGENTS.md` file.
-3. Codex will apply that context automatically on every run in that directory.
-
----
-
-## Cursor
-
-Cursor uses **Rules** to inject persistent context into every chat. There is no plugin install — create a rules file and paste the skill content into it.
-
-**Project-level (recommended):** create a `.cursor/rules/fused.md` file in your project root and paste the skill content from github.com/fusedio/skills. This file is version-controlled and scoped to your repo.
-
-**Global:** go to **Cursor Settings → Rules for AI** and paste the content there to apply it across all projects.
-
-Once set, Cursor's Agent mode will understand Fused canvas structure without additional prompting.
-
----
-
-## Windsurf
-
-Windsurf uses **Rules** files to inject persistent context into Cascade. There is no plugin install.
-
-**Project-level (recommended):** create a `.windsurf/rules/fused.md` file in your project root. Add frontmatter to control when it activates, then paste the skill content from github.com/fusedio/skills:
-
-```markdown
----
-trigger: always_on
----
-
-<paste skill content here>
-```
-
-**Global:** add the skill content to `~/.codeium/windsurf/memories/global_rules.md` to apply it across all projects.
-
-Windsurf's Cascade mode will pick up the rules automatically.
-
 ---
 
 ## See also
 
+- Connect an AI agent — step-by-step walkthrough of connecting Claude Code to a canvas
 - Building for Agents — expose your canvas as an MCP endpoint for AI agents to query
-- fused CLI reference — full CLI command reference
 - Working as a Team — GitHub integration for canvas version control
 
 ================================================================================
@@ -8393,6 +8621,235 @@ You can then share your graph:
 Any time you make an update, your graph will automatically update!
 
 <LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/examples/climate_dashboard/sharing_grpah.mp4" />
+
+================================================================================
+
+## Run ComfyUI workflows in Fused
+Path: examples/comfyui-fused-workflows.mdx
+URL: https://docs.fused.io/examples/comfyui-fused-workflows
+
+# Run ComfyUI workflows in Fused
+
+**Using Fused to cache, orchestrate & reuse pipelines on top of ComfyUI to make easily repeatable image generation workflows.**
+
+ComfyUI is a powerful node-based tool for diffusion model pipelines — but sharing, scheduling, and caching those runs requires orchestration outside ComfyUI. Fused acts as that layer: it calls ComfyUI (via Comfy Cloud or a self-hosted GPU), caches results so identical runs are instant, stores outputs to S3, and makes everything shareable as a live link.
+
+Add your key once as a Fused secret named `COMFY_API_KEY`:
+
+1. Go to **Workbench → Integrations & secrets → Personal/Team secrets**
+2. Click **Add new secret**, name it `COMFY_API_KEY`, paste your key
+3. All UDFs on the canvas read it automatically — no code changes needed
+
+## Adapt this to your own workflow
+
+The pattern is the same for any ComfyUI workflow:
+
+1. **Export the API JSON** from ComfyUI (**Graph → Export (API)**). You can start from an existing shared workflow — for example, the Images to Video graph or the Text to Image graph on Comfy Cloud. Open it in ComfyUI, then    [Image: ComfyUI Graph menu with Export (API) highlighted]
+
+2. **Upload the JSON to S3** (or any URL Fused can reach via `sign_url`).
+3. **Update the input and output nodes** to match your workflow. Node IDs are the top-level keys in the exported JSON.
+4. **Write a `@fused.cache` helper** that loads the workflow, patches those nodes, submits, polls, and uploads the result.
+5. **Write a thin `@fused.udf` wrapper** that calls the helper and returns a signed URL or array. Use `engine='small'` if the job runs longer than 120 seconds — see batch jobs.
+6. **Add a widget** (JSON) to expose parameters as form controls on the canvas.
+
+The two pipelines below — **Images to Video** and **Text to Image** — are concrete examples of this pattern, both living on the same canvas.
+
+Open the Canvas →
+
+## Deep dive: Images to Video
+
+[Image: Fused Canvas showing the Images to Video pipeline with three panels: Important Notes, Input Parameters, and Process & Output]
+
+The goal is to generate b-roll footage: given a **scene image** (the background environment) and a **product image**, the SeedDance 2 Fast model running on Comfy Cloud produces a cinematic product video. Fused acts as the processing engine — it loads the workflow JSON, uploads the inputs, triggers the Comfy Cloud API, polls for completion, saves the output to S3, and returns a signed URL, all from a single UDF. The result is cached, the API key stays secret, and the output is instantly shareable.
+
+### The Fused UDF
+
+The UDF is split into two parts: a `@fused.cache` helper that runs the expensive GPU job, and a thin `@fused.udf` wrapper that refreshes the signed URL. The wrapper uses `engine='small'`, which runs it as a batch job — necessary because video generation can take several minutes, well beyond the 120-second limit of realtime UDFs.
+
+```python
+
+from urllib.parse import urlsplit
+
+@fused.cache
+def run_comfy_job(
+    workflow_s3_path, scene_image_path, product_image_path,
+    text_prompt, vid_duration, seed, s3_base
+):
+
+    from pathlib import Path
+
+    BASE_URL = "https://cloud.comfy.org"
+    headers = 
+
+    workflow = requests.get(fused.api.sign_url(workflow_s3_path)).json()
+
+    def _upload_to_comfy(image_path: str) -> str:
+        if image_path.startswith("s3://"):
+            img_bytes = requests.get(fused.api.sign_url(image_path)).content
+            fname = image_path.split("/")[-1]
+        else:
+            fname = Path(image_path).name
+            img_bytes = Path(image_path).read_bytes()
+        resp = requests.post(
+            f"/api/upload/image",
+            headers=headers,
+            files=,
+        )
+        resp.raise_for_status()
+        return resp.json()["name"]
+
+    workflow["3"]["inputs"]["image"] = _upload_to_comfy(scene_image_path)
+    workflow["2"]["inputs"]["image"] = _upload_to_comfy(product_image_path)
+    workflow["1"]["inputs"]["model.prompt"] = text_prompt
+    workflow["1"]["inputs"]["model.duration"] = int(vid_duration)
+    workflow["1"]["inputs"]["seed"] = seed
+
+    api_key = fused.secrets["COMFY_API_KEY"]
+    prompt_id = requests.post(
+        f"/api/prompt",
+        headers=,
+        json=},
+    ).json()["prompt_id"]
+
+    history = 
+    for _ in range(120):
+        job = requests.get(f"/api/job//status", headers=headers).json()
+        if job.get("status") in ("failed", "cancelled", "error"):
+            raise RuntimeError(f"Comfy job failed: ")
+        if job.get("status") in ("success", "completed"):
+            resp = requests.get(f"/api/history_v2/", headers=headers)
+            if resp.status_code == 200 and resp.text.strip():
+                history = resp.json().get(prompt_id, )
+            break
+        time.sleep(5)
+
+    first_video_s3_path = None
+    for node_outputs in history.get("outputs", ).values():
+        for media_key in ("images", "video", "audio"):
+            for file_info in node_outputs.get(media_key, []):
+                data = requests.get(
+                    f"/api/view",
+                    headers=headers,
+                    params=,
+                ).content
+                local_tmp = f"/tmp/"
+                with open(local_tmp, "wb") as f:
+                    f.write(data)
+                s3_path = s3_base + file_info["filename"]
+                fused.api.upload(local_tmp, s3_path)
+                first_video_s3_path = s3_path
+
+    return first_video_s3_path
+
+@fused.udf(engine='small')
+def images_to_video(
+    workflow_s3_path: str = "s3://fused-users/fused/aman/comfyui-brole-workflow.json",
+    scene_image_path: str = "s3://fused-users/fused/aman/reference_scene.png",
+    product_image_path: str = "s3://fused-users/fused/aman/think-pad-product.png",
+    text_prompt: str = "Use @image1 to match the scene...",
+    vid_duration: str = "5",
+    seed: int = 387457956,
+    s3_base: str = "s3://fused-users/fused/aman/comfyui-text-to-image/",
+):
+    video_s3_path = run_comfy_job(
+        workflow_s3_path, scene_image_path, product_image_path,
+        text_prompt, vid_duration, seed, s3_base
+    )
+    signed_url = fused.api.sign_url(video_s3_path)
+    source_type = mimetypes.guess_type(urlsplit(signed_url).path)[0] or "video/mp4"
+
+    return f"""
+
+    """
+```
+
+```python
+
+@fused.udf(cache_max_age="0s")
+def text_to_image(
+    text_prompt: str = "A beautiful sunset over mountains",
+    workflow_s3_path: str = "s3://fused-users/fused/aman/01_get_started_text_to_image.json",
+    seed: int = 0,
+    output_dir: str = "./outputs",
+):
+
+    from PIL import Image
+
+    BASE_URL = "https://cloud.comfy.org"
+    headers = 
+
+    workflow = requests.get(fused.api.sign_url(workflow_s3_path)).json()
+    workflow["104:90"]["inputs"]["text"] = text_prompt
+    workflow["104:92"]["inputs"]["seed"] = seed
+
+    prompt_id = requests.post(
+        f"/api/prompt",
+        headers=,
+        json=,
+    ).json()["prompt_id"]
+
+    history = 
+    for _ in range(30):
+        resp = requests.get(f"/api/history_v2/", headers=headers)
+        if resp.status_code == 200 and resp.text.strip():
+            history = resp.json().get(prompt_id, )
+            if history.get("status", ).get("completed"):
+                break
+        time.sleep(2)
+
+    outputs = history.get("outputs", )
+
+    def _download(filename, output_type="output"):
+        return requests.get(
+            f"/api/view",
+            headers=headers,
+            params=,
+        ).content
+
+    os.makedirs(output_dir, exist_ok=True)
+    first_image = None
+    s3_base = "s3://fused-users/fused/aman/comfyui-text-to-image/"
+
+    for node_outputs in outputs.values():
+        for media_key in ("images", "video", "audio"):
+            for file_info in node_outputs.get(media_key, []):
+                data = _download(file_info["filename"], file_info.get("type", "output"))
+                local_path = os.path.join(output_dir, file_info["filename"])
+                with open(local_path, "wb") as f:
+                    f.write(data)
+                s3_path = s3_base + file_info["filename"]
+                fused.api.upload(local_path, s3_path)
+                if media_key == "images" and first_image is None:
+                    first_image = data
+
+    arr = np.array(Image.open(io.BytesIO(first_image)).convert("RGB"))
+    return np.moveaxis(arr, -1, 0)
+```
+
+</details>
+
+The IDs `"104:90"` and `"104:92"` above are specific to this z-image-turbo workflow. Check the top-level keys in your own exported API JSON to find the correct IDs for your text prompt and seed nodes.
+
+---
+
+## Why run this on Fused?
+
+- **`@fused.cache`** — identical inputs return instantly; no GPU charges for repeat runs.
+- **`fused.secrets`** — your Comfy Cloud API key lives in Fused secrets, never in code.
+- **`fused.api.sign_url`** — reference images and workflow JSONs on S3 without making them public.
+- **S3 output storage** — results are saved directly to S3 and accessible via signed URL; no manual download steps.
+- **Version controlled** — UDFs are plain Python files you can track in git alongside your workflow JSONs.
+- **Canvas** — organize multiple pipelines in one view and share the whole thing with one link.
+- **Widgets** — expose parameters as sliders, inputs, and dropdowns without touching Python.
+- **Embed links** — any UDF output is a live HTTPS endpoint you can embed in docs, dashboards, or Notion.
+
+## See also
+
+- `@fused.cache` — result caching reference
+- Secrets management — storing API keys
+- Widgets — building canvas controls
+- Sharing canvas dashboards — sharing your work
+- Branded text to image — another generative AI pipeline on Fused
 
 ================================================================================
 
@@ -11436,6 +11893,117 @@ We put together a template Canvas you can use to see how to visualize:
 You can download this canvas and then import it by drag & dropping the `.zip` file in your Workbench.
 
 <LazyReactPlayer wrapperStyle=} url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/dashboards/map_templates_canvas_compressed.mp4" />
+
+================================================================================
+
+## Building a Repeatable Thumbnail Generator with Claude Code
+Path: examples/thumbnail-generator.mdx
+URL: https://docs.fused.io/examples/thumbnail-generator
+
+[Image: The thumbnail generator canvas — inputs panel on the left, live preview on the right]
+
+Every time we host a LinkedIn Live webinar, we need a thumbnail — speaker photos, title, brand colors, consistent layout. This example shows how we replaced a repetitive workflow with a Fused Canvas that anyone on the team can open, fill in, and download in under a minute.
+
+## The problem
+
+Making a good-looking thumbnail from scratch every time has three failure modes:
+
+- **Inconsistency** — fonts, spacing, and colors drift between events.
+- **Bottleneck** — only the person who made the first one knows how.
+- **Friction** — a Figma file or Photoshop template is hard to share, version, or hand off.
+
+What we wanted: one URL, shared with the team, where swapping speakers and a title produces a pixel-perfect 960×540 PNG ready for LinkedIn.
+
+## How we built it
+
+### 1. Start with an HTML prototype
+
+Before touching Fused, we had Claude Code generate a self-contained HTML file that matched the thumbnail design: dark background with a grid overlay, a large Barlow Condensed title with an accent-color highlight, circular speaker avatars, and the Fused logo in the top corner.
+
+This step is fast and visual — you can open the file in a browser and iterate on styling without any infrastructure. The HTML becomes the ground truth for everything that follows.
+
+### 2. Set up the Fused Claude Code skill
+
+Install the Fused plugin for Claude Code so Claude understands how Fused canvases, widgets, and the CLI work:
+
+```bash
+fused claude plugin add
+```
+
+This gives Claude Code access to the `canvas-toml`, `json-ui-schemas`, and `fused-cli` skills — the context it needs to write correct canvas files without guessing.
+
+### 3. Ask Claude Code to build the canvas
+
+With the HTML prototype and Fused skills loaded, we asked Claude Code to turn the HTML file into a Fused Canvas. It produced three files:
+
+**`canvas.toml`** — defines the two-node layout: an inputs panel on the left and an HTML preview on the right, wired together with an edge so parameter changes propagate live.
+
+```toml
+type = "canvas"
+version = 2
+name = "Thumbnail Generator"
+
+[canvas]
+edges = [["inputs", "preview"]]
+
+[[canvas.nodes]]
+udfName = "inputs"
+title = "Inputs"
+x = 0.0
+y = 0.0
+zIndex = 1
+width = 460
+height = 860
+
+[[canvas.nodes]]
+udfName = "preview"
+title = "Preview"
+x = 490.0
+y = 0.0
+zIndex = 2
+width = 1020
+height = 660
+```
+
+**`inputs.json`** — a JSON UI widget with all the controls: accent color picker, title text area, camera inputs for speaker photos with crop-position sliders, and a resolution dropdown for the export.
+
+**`preview.html`** — the thumbnail HTML from step 1, with `$param_name` placeholders substituted live as inputs change. A download button at the bottom uses html2canvas to The three-file structure (`canvas.toml` + `inputs.json` + `preview.html`) is the full spec for a Fused Canvas. An agent with the Fused skills loaded can generate all three from a description or an existing HTML file without any manual steps.
+
+### 4. Validate and push
+
+Before pushing, validate the widget JSON:
+
+```bash
+fused json-ui validate inputs.json
+```
+
+Then push the canvas folder directly to Fused:
+
+```bash
+fused canvas push ./LinkedIn_Live_thumbnail_generator --canvas LinkedIn_Live_thumbnail_generator
+```
+
+Canvas names must match `[a-zA-Z0-9_]` — no spaces or hyphens.
+
+That's it. The canvas is live at `fused.io/workbench/<team>/LinkedIn_Live_thumbnail_generator` and the whole team can open it immediately.
+
+### 5. Iterate in the canvas, version in git
+
+The canvas folder lives in a git repo. Changing a color, adjusting spacing, or adding a third speaker slot means editing the files locally, running `fused canvas push` again, and committing. The canvas URL stays the same — teammates refresh and get the update.
+
+The inputs panel in the final canvas:
+
+- **Accent color** — color picker, default `#E5FF44`
+- **Title** — text area; `\n` for line breaks, `<hl>word</hl>` to highlight a word in accent color
+- **Fused Logo** — camera/upload input with the logo pre-loaded as default
+- **Speaker 1 & 2** — photo upload, crop-position slider (0 = top of photo, 100 = bottom), name, role
+- **Download resolution** — 1× (960×540), 2× (1920×1080), 3× (2880×1620)
+
+## Try it out
+
+Open the live canvas, swap in your own speakers and title, and hit **Download PNG**.
+
+Clone the canvas folder, edit `inputs.json` to change defaults (pre-load your team's logo and headshots), and push under a new canvas name. Anyone with the URL can generate on-brand thumbnails without Figma, Photoshop, or any design tool.
 
 ================================================================================
 
@@ -16729,11 +17297,11 @@ URL: https://docs.fused.io/python-sdk/changelog
 
 # Changelog
 
-## v2.7.1 (2026-05-14)
+## v2.8.0 (2026-05-19)
 
-**Widgets: new components and capabilities**
+**Canvas MCP**
 
-Widgets gain a transformer component for custom JavaScript logic, per-widget background colors, an AI chat preset (beta), and schema linting with autocompletion in the JSON UI editor.
+The Canvas now exposes an MCP server so AI tools like Claude and Cursor can connect directly to your canvas. Register it from the CLI with a single command.
 
 See the Slack integration docs to get started.
 
@@ -18447,6 +19015,148 @@ def udf():
 
 ================================================================================
 
+## Google Drive
+Path: workbench/integrations/gdrive.mdx
+URL: https://docs.fused.io/workbench/integrations/gdrive
+
+# Google Drive
+
+Connect your Google account to browse and read files directly in Fused UDFs using `gdrive://` paths. No credentials are stored client-side — Fused manages the OAuth token on your behalf.
+
+Try it out →
+
+## Setup
+
+### 1. Connect Google Drive
+
+Open **Integrations & Secrets** in Workbench and click **Connect Google Drive**.
+
+<ClickZoomImage src="/img/gdrive_connect.png" alt="Connect Google Drive button in Fused Workbench" />
+
+Complete the Google OAuth consent screen. Once connected, the panel shows your account name and a **Connected** status.
+
+<ClickZoomImage src="/img/gdrive_connected.png" alt="Google Drive connected in Fused Workbench" />
+
+### 2. Grant file and folder access via the Picker
+
+Fused uses the `drive.file` scope — it can only access files and folders you explicitly grant through the **Choose files and folders** picker in Workbench. Files added to Drive after the initial grant will not appear until re-granted via the Picker.
+
+---
+
+### `gdrive://` path format
+
+```
+gdrive://root/                        # all Picker-granted files at root
+gdrive://<folder_id>/<folder_name>/   # a specific folder (trailing slash)
+gdrive://<file_id>/<filename>         # a specific file
+```
+
+The first segment after `gdrive://` is always the Drive object ID. The name that follows is decorative and ignored at read time. To find file and folder IDs, use the **List files** example below — it returns each item's full `gdrive://<id>/<name>` path so IDs are always visible.
+
+---
+
+## Examples
+
+### List files in a UDF
+
+```python
+@fused.udf
+def udf():
+
+    items = fused.api.list("gdrive://root/")
+    rows = []
+    for item in items:
+        stripped = item.replace("gdrive://", "").rstrip("/")
+        item_id, item_name = stripped.split("/", 1)
+        rows.append()
+    return pd.DataFrame(rows)
+```
+
+### Read a CSV or Excel file
+
+Use pandas directly with the `gdrive://` path — no manual download needed:
+
+```python
+@fused.udf
+def udf():
+
+    return pd.read_csv("gdrive://<file_id>/<name>.csv")
+```
+
+```python
+@fused.udf
+def udf():
+
+    return pd.read_excel("gdrive://<file_id>/<name>.xlsx")
+```
+
+### Read binary files
+
+Use `fused.api.get()` which returns raw bytes:
+
+```python
+@fused.udf
+def udf():
+
+    data = fused.api.get("gdrive://<file_id>/<name>.png")
+    # wrap in io.BytesIO for libraries that need a file-like object
+```
+
+### Read Google-native formats
+
+Google Docs, Sheets, and Slides are automatically exported on read:
+
+| Google format | Exported as |
+|---|---|
+| Google Sheets | `.xlsx` |
+| Google Docs | `.docx` |
+| Google Slides | `.pptx` |
+| Google Drawings | `.png` |
+
+### Upload a file to Google Drive from a URL
+
+```python
+@fused.udf
+def udf(url: str = "https://example.com/data.csv", folder_id: str = "root"):
+
+    file_name = url.split("?")[0].rstrip("/").split("/")[-1] or "upload.csv"
+
+    with urllib.request.urlopen(url) as resp:
+        data = resp.read()
+
+    api = fused.api.api
+    creds = api.AUTHORIZATION.credentials
+    r = requests.put(
+        f"/files/upload",
+        params=/"},
+        data=data,
+        headers=",
+            "Content-Type": "application/octet-stream",
+        },
+    )
+    r.raise_for_status()
+
+    buf = io.BytesIO(data)
+    return pd.read_csv(buf) if file_name.lower().endswith(".csv") else pd.read_excel(buf)
+```
+
+### Download a file
+
+Fetch a file's raw bytes and encode it as a data URI to use directly in a widget:
+
+```python
+@fused.udf
+def udf(gdrive_path: str = "gdrive://<file_id>/<name>.jpg"):
+
+    data = fused.api.get(gdrive_path)
+    file_name = gdrive_path.split("/")[-1]
+    mime, _ = mimetypes.guess_type(file_name)
+    data_uri = f"data:;base64,"
+    return pd.DataFrame([])
+```
+
+================================================================================
+
 ## Notion Integration
 Path: workbench/integrations/notion.mdx
 URL: https://docs.fused.io/workbench/integrations/notion
@@ -19048,9 +19758,9 @@ A Canvas is a way for users to organize their UDFs into different projects. This
 
 With Canvas, you can:
 - Save all current visible UDFs into a Canvas (after giving it a name)
-- Upload / Download Canvas via Workbench (Click the 3 dots next to Canvas name)
+- Upload / Download Canvas via Workbench
 
-<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/canvas9.mp4" />
+<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/canvas10.mp4" />
 
 We are actively working on expanding Canvas features!
 
@@ -19062,7 +19772,7 @@ We are actively working on expanding Canvas features!
 
 The Share modal allows you to control access to your canvas, choosing between team-only or public visibility. **Sharing the canvas creates a canvas token** (`fc_***`) so that any UDF on the canvas can be called via HTTPS at `udf.ai/fc_<token>/<udf_name>.<ext>`. See Tokens & Endpoints for details. Shared canvases open in read-only mode. You can select from various display options, and by copying the link, you can easily share and access the canvas.
 
-<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/share_modal4.mp4" />
+<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/share_modal6.mp4" />
 
 ================================================================================
 
@@ -19221,13 +19931,13 @@ The Navigation pane on the left side of the Map Builder displays the UDFs availa
 "Zoom to layer" allows you to quickly zoom the map to the location of the relevant UDF layer. You would use it when you want to focus the map on a specific area or features defined by the layer, especially when the UDF has a spatial component or a default view state.
 UDFs that return an object with a spatial component or have a default view state show a "zoom to layer". Clicking it zooms the map to the relevant location.
 
-<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/zoom_to_layer_edit7.mp4" />
+<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/zoom_to_layer_edit8.mp4" />
 
 ## Layer Visibility
 
 The layer toggle feature allows users to show or hide specific visualizations on the map. These layers provide enhanced map insights, making spatial data easier to understand and interpret.
 
-<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/layers_edit7.mp4" />
+<LazyReactPlayer url="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/layers_edit8.mp4" />
 
 ## UDF Options
 
@@ -20030,6 +20740,214 @@ UDFs merged to GitHub are available in your Team UDFs in the UDF Explorer.
 ================================================================================
 
 # BLOG POSTS
+
+## The Modern Data Stack Is Dead. Who Killed It?
+Path: blog/2026-04-30-modern-data-stack/index.mdx
+URL: https://docs.fused.io/blog/2026-04-30-modern-data-stack
+
+# The Modern Data Stack Is Dead. Who Killed It?
+
+**TL;DR**
+The modern data stack (ETL + warehouses + orchestration tools) is breaking down.
+AI can now write transformations and queries.
+The new bottleneck is running that code safely, at scale.
+Fused is a serverless execution layer for data and AI workflows.
+
+Fused is a serverless execution layer for data and AI workflows. With Fused, teams can write simple Python functions and run them at scale—directly on their data—without having to manage any infrastructure.
+
+_We have a murder on our hands._
+
+_The victim? The modern data stack. 
+For years, data teams have relied on a patchwork of tools: ETL pipelines, warehouses, orchestration layers, and dashboards. Getting anything done often meant stitching together 5-6 different systems just to move and transform data.
+Something changed.
+The modern data stack wasn’t killed by one company or project. It was replaced by a shift across the entire ecosystem.
+We've rounded up the suspects as to who may have been at the scene of the crime, and we're going to round them up one after the other._
+
+<img src= alt="The modern data stack murder scene" style=} />
+
+---
+
+## Suspect A: AI Code Editors
+
+The most obvious suspect at this crime scene is AI.
+
+<img src= alt="Suspect A: AI code editors" style=} />
+
+Claude Code, OpenAI Codex, and Cursor are everywhere now and have radically transformed how data teams write and ship code. While AI hasn't fully replaced software engineers (yet), it has changed how we write code.
+
+As an example, our Developer Advocate, Max, never took the time to learn SQL but has seen a huge unlock in using AI models to write more and more complex queries — without needing to memorize every piece of SQL syntax.
+
+Our own Fused docs have shifted from being written purely for human developers to being written for human *and* AI developers, with things like simple `llms.txt` files that let AI models easily parse documentation and make sense of it.
+
+It would however be all too simple to pin this crime on the AI scapegoat. The inspection is probably worth continuing a little further.
+
+---
+
+## Suspect B: S3 + Parquet
+
+Our next suspect is actually two working in tandem.
+
+<img src= alt="Suspect B: S3 + Parquet" style=} />
+
+File formats like Parquet allow large, partitioned files that store massive amounts of data directly on cloud storage — no complex database systems required. Parquet files are fast to read and write, and they're portable: openable anywhere, downloadable to disk, and compatible with everything from `pandas` in Python to DuckDB natively. They really shine when paired with cloud storage, since most modern libraries can read and write to the cloud directly:
+
+```python
+
+# Read from cloud
+df = pd.read_parquet("s3://bucket/file.parquet")
+
+# Transform
+df = ...
+
+# Save
+df.to_parquet("s3://bucket/processed_file.parquet")
+```
+
+Data management doesn't simply go away — it still requires clever sorting and partitioning so files are efficient to find and read. But all of that is now possible directly in Parquet files stored on a cloud bucket.
+
+<img src= alt="USDA Crop Data Layer in H3 hexagons on S3" style=} />
+
+*Example of the USDA's Crop Data Layer dataset converted to H3 hexagons for partitioning, stored in Parquet files directly on S3. Each file covers a specific area of interest and each Parquet file is partitioned to access only a specific row group of data.*
+
+This leads us naturally to the next suspect: query engines that make it trivially easy to read from a whole directory of Parquet files.
+
+---
+
+## Suspect C: DuckDB
+
+DuckDB is a top-tier suspect — close to the victim, practically family. A relative of the modern data stack that may have committed the crime on its own kin.
+
+<img src= alt="Suspect C: DuckDB" style=} />
+
+DuckDB is an open-source, in-process analytical database management system. Beyond the technical jargon: it lets you write SQL without needing a dedicated server to manage, and it runs incredibly fast on columnar data. It also queries a directory of Parquet files hosted on an S3 bucket directly, treating them like a database.
+
+```sql
+-- Searching for a specific ID across 50GB of parquet files on S3 is a single query now
+SELECT *
+FROM read_parquet('s3://overturemaps-us-west-2/registry/*.parquet')
+WHERE id = 'fea28f69-7afa-460c-b270-61ef74cd340c';
+```
+
+This lets you take a simple query, run it from a laptop, and scale it to huge amounts of data on S3. Engines like DuckDB are optimized for analytics and benefit from Parquet's partitioning, which can skip entire files and row groups.
+
+Large queries that would blow up in a regular `pandas` run are now possible in-memory with minimal setup:
+
+```sql
+SELECT
+  user_id,
+  count(*) AS event_count,
+  approx_quantile(duration_ms, 0.95) AS p95
+FROM read_parquet('s3://bucket/events/*.parquet')
+GROUP BY user_id;
+```
+
+DuckDB is our main example here, but the pattern is bigger. Other engines like Polars reflect the same shift: open formats on object storage plus a query runtime that can move to the data. At the time of writing, the two libraries are neck and neck and DuckDB is gaining steam over Polars.
+
+<img src= alt="DuckDB vs Polars momentum" style=} />
+
+DuckDB makes even more sense in a world where LLMs have gotten incredible at writing even complex SQL queries, lowering the bar to entry dramatically. That makes DuckDB a prime suspect in our case.
+
+---
+
+## Suspect D: Serverless
+
+<img src= alt="Suspect D: Serverless compute" style=} />
+
+Doing anything with data used to require a fleet of big servers. Code couldn't run without access to data, and that access lived on the servers. The servers had to be big because Spark jobs run out of memory and crash. Anyone who's tried to debug a crashing data processing job knows the feeling of hunting through logs looking for suspects and clues.
+
+That brings us to our fourth suspect: serverless, elastic compute. Serverless removes layers of orchestration from the user's way, making it easier to scale processing on demand, simplifying and speeding up iteration cycles.
+
+Serverless also plays well with all the other suspects: access to cloud storage is native and natural; DuckDB starts quickly, avoiding the cold-start tradeoff.
+
+---
+
+## The Verdict
+
+The modern data stack wasn't killed by one thing. **It was killed by a shift across the whole stack:**
+
+- Large datasets can now be managed directly in the cloud, no additional management systems required.
+- Analytical engines like DuckDB can query all of this data directly.
+- AI makes it cheap to write the glue code.
+
+The bottleneck moved from *"writing transformations"* to *"running code safely, at scale, with credentials, reproducibility, and a stable interface."*
+
+---
+
+## So What Should It Look Like Instead?
+
+Claude Code lets you build at the speed of your ideas. Teams can ship faster (we're seeing this at Fused), people who didn't have time to code anymore can now code again, and project backlogs are being filled.
+
+**But Claude can't directly ship.** It can help you write the code, but that's not enough. We see two paths forward:
+
+### Approach 1: Give Claude Code More and More Access
+
+Give it a credit card, a dedicated EC2, your database credentials. This is what we're seeing with fully autonomous AI models.
+
+While this works nicely for a local solo project, it doesn't scale to enterprise customers that need tight security and proper scope. You can't manage access across a whole team with proper permissions this way.
+
+### Approach 2: Give Claude Code Easy Access to Scoped Processing
+
+Ideally this means giving your AI agent:
+
+- **Serverless compute**: Spin up a node when you need it, scale on demand. The simpler to call, the better Claude can use it.
+- **Sandboxed, secure access**: Claude shouldn't be able to wreak havoc in your codebase or data. Projects should have clear permissions, and data access should be controlled (don't let data from customer A be exposed to customer B).
+
+The catch: now you need to manage an infra layer that scales up and down, handles auth, and manages permissions across teams. These are all things you want your AI agents to have access to — but probably not something you want to maintain yourself.
+
+---
+
+## Our Answer: Why We're Building Fused
+
+We've been building Fused for data teams that need to get work done and have customers who need answers no matter where their data comes from.
+
+### Built on Python
+
+Python is the language of data. Whether you're loading from S3, Snowflake, or Google Drive — or extracting from a PDF, scraping a website, or processing a one-time download — there's a way to do it in Python. It's the most versatile tool for working with any data, regardless of type, origin, or size.
+
+We ship an opinionated and tested set of dependencies that covers most modern data use cases, so data scientists and engineers can start building in seconds, not hours.
+
+### Scalable Serverless Engine
+
+Python alone isn't enough. Scaling up compute on demand normally means building and deploying Docker containers. Fused lets you create User Defined Functions — simple, self-contained Python functions that run on our serverless compute infrastructure. All you need is a `@fused.udf` decorator:
+
+```python
+@fused.udf
+def udf():
+
+    return pd.read_parquet("s3://fused-sample/demo_data/airbnb_listings_sf.parquet")
+```
+
+You can call thousands of jobs at the same time:
+
+```python
+@fused.udf
+def udf():
+    basic_example = fused.load('process_data')  # Load existing UDF
+    results = basic_example.map(range(100_000), max_workers=500)  # Run in parallel
+    return results.df()
+```
+
+This spins up as many nodes as needed under the hood.
+
+<img src= alt="Fused parallel job execution" style=} />
+
+To put the performance in perspective: two thousand 90-second jobs can be done in 120 wall-clock seconds with Fused. That's only 30 seconds of total orchestration overhead across 2,000 concurrent, completely independent jobs — each on a dedicated 4-core machine with 10 GB of RAM. That's **0.015 seconds of overhead per job.**
+
+For context: a regular EC2 instance of 128 cores takes ~2 minutes just to turn on.
+
+Fused turns on the machine, installs dependencies, authenticates credentials, and completes a 90-second job in the same time it takes that EC2 instance to boot.
+
+### The takeaway
+
+AI is writing the code. Open formats are simplifying data. Serverless is removing infrastructure. What’s missing is a way to run all of this reliably.
+
+That’s what we’re building with Fused.
+
+### Try Fused
+
+You can try it out yourself at fused.io/workbench or read the docs to learn more.
+
+================================================================================
 
 ## Introducing Fused AI Canvas
 Path: blog/2025-10-30-intro-canvas/index.mdx
@@ -22695,5 +23613,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-05-18
+Generated automatically from Fused documentation. Last updated: 2026-05-20
 Total sections: 5
