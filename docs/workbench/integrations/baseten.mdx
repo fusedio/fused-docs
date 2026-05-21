@@ -1,0 +1,156 @@
+---
+id: baseten
+title: Baseten Integration
+sidebar_label: Baseten
+keywords: [baseten, integration, inference, llm, model serving]
+---
+
+# Baseten Integration
+
+Call models served on [Baseten](https://baseten.co) — both [model APIs](https://docs.baseten.co/development/model-apis) and your own [dedicated deployments](https://docs.baseten.co/development/model/overview) — from Fused UDFs. Your API key is stored securely as a Fused secret, no keys need to be hardcoded.
+
+## Prerequisites
+
+1. A Fused account on a paid plan (execution environment required).
+2. A [Baseten API key](https://docs.baseten.co/organization/api-keys).
+
+## Setup
+
+### Add your API key
+
+Open **Settings > Integrations & Secrets**, find the Baseten section, and paste your API key. It is stored as a Fused secret under the name `BASETEN_API_KEY`.
+
+Inside UDFs, retrieve it with `fused.secrets["BASETEN_API_KEY"]`.
+
+## Quick start
+
+Baseten exposes an OpenAI-compatible inference endpoint at `https://inference.baseten.co/v1`. The easiest way to call it is with the `openai` SDK, which is pre-installed in the Fused runtime.
+
+```python
+@fused.udf()
+def udf(prompt: str = "Summarize what GeoParquet is in one sentence."):
+    import fused
+    from openai import OpenAI
+
+    client = OpenAI(
+        api_key=fused.secrets["BASETEN_API_KEY"],
+        base_url="https://inference.baseten.co/v1",
+    )
+
+    response = client.chat.completions.create(
+        model="deepseek-ai/DeepSeek-V3.1",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=256,
+    )
+    return response.choices[0].message.content
+```
+
+## Common operations
+
+### Chat completion
+
+```python
+@fused.udf()
+def udf():
+    import fused
+    from openai import OpenAI
+
+    client = OpenAI(
+        api_key=fused.secrets["BASETEN_API_KEY"],
+        base_url="https://inference.baseten.co/v1",
+    )
+
+    response = client.chat.completions.create(
+        model="moonshotai/Kimi-K2-Instruct",
+        messages=[
+            {"role": "system", "content": "You are a concise geospatial assistant."},
+            {"role": "user", "content": "Which projection should I use for area calculations in California?"},
+        ],
+        max_tokens=512,
+    )
+    return response.choices[0].message.content
+```
+
+### Streaming
+
+```python
+@fused.udf()
+def udf():
+    import fused
+    from openai import OpenAI
+
+    client = OpenAI(
+        api_key=fused.secrets["BASETEN_API_KEY"],
+        base_url="https://inference.baseten.co/v1",
+    )
+
+    stream = client.chat.completions.create(
+        model="deepseek-ai/DeepSeek-V3.1",
+        messages=[{"role": "user", "content": "Write a haiku about S3."}],
+        stream=True,
+    )
+
+    chunks = []
+    for chunk in stream:
+        delta = chunk.choices[0].delta.content or ""
+        chunks.append(delta)
+    return "".join(chunks)
+```
+
+### Batched calls in a DataFrame
+
+```python
+@fused.udf()
+def udf():
+    import fused
+    import pandas as pd
+    from openai import OpenAI
+
+    client = OpenAI(
+        api_key=fused.secrets["BASETEN_API_KEY"],
+        base_url="https://inference.baseten.co/v1",
+    )
+
+    prompts = [
+        "Define remote sensing in one sentence.",
+        "Define spatial join in one sentence.",
+        "Define raster tiling in one sentence.",
+    ]
+
+    rows = []
+    for p in prompts:
+        r = client.chat.completions.create(
+            model="deepseek-ai/DeepSeek-V3.1",
+            messages=[{"role": "user", "content": p}],
+            max_tokens=80,
+        )
+        rows.append({"prompt": p, "response": r.choices[0].message.content})
+    return pd.DataFrame(rows)
+```
+
+### Call a dedicated model deployment
+
+For models you have deployed to your own Baseten workspace, call the model-specific endpoint directly with the API key in the `Authorization` header.
+
+```python
+@fused.udf()
+def udf():
+    import fused
+    import requests
+
+    api_key = fused.secrets["BASETEN_API_KEY"]
+    model_id = "abcd1234"  # your Baseten model ID
+
+    response = requests.post(
+        f"https://model-{model_id}.api.baseten.co/production/predict",
+        headers={"Authorization": f"Api-Key {api_key}"},
+        json={"prompt": "Hello, world!"},
+        timeout=60,
+    )
+    response.raise_for_status()
+    return response.json()
+```
+
+## Disconnecting
+
+To revoke the integration, go to **Settings > Integrations & Secrets**, find the Baseten section, and remove your API key. You should also [revoke the key](https://docs.baseten.co/organization/api-keys) in the Baseten dashboard if it is no longer needed.

@@ -1,0 +1,158 @@
+---
+id: comfy
+title: ComfyOrg Integration
+sidebar_label: ComfyOrg
+keywords: [comfy, comfyui, comfy cloud, integration, image generation, video generation, diffusion]
+---
+
+# ComfyOrg Integration
+
+Run [ComfyUI](https://www.comfy.org) workflows on [Comfy Cloud](https://cloud.comfy.org) from Fused UDFs — image generation, video generation, and any other node-based diffusion pipeline. Your API key is stored as a Fused secret so workflows are reproducible and shareable without exposing credentials.
+
+## Prerequisites
+
+1. A Fused account on a paid plan (execution environment required).
+2. A [Comfy Cloud API key](https://platform.comfy.org).
+3. A ComfyUI workflow exported as JSON (**Graph → Export (API)** in ComfyUI), uploaded somewhere Fused can read — typically S3.
+
+## Setup
+
+### Add your API key
+
+Open **Settings > Integrations & Secrets**, find the Comfy section, and paste your API key. It is stored as a Fused secret under the name `COMFY_API_KEY`. UDFs read it with `fused.secrets["COMFY_API_KEY"]`.
+
+## Quick start
+
+Comfy Cloud exposes a REST API at `https://cloud.comfy.org`. The pattern is:
+
+1. Load a workflow JSON (typically from S3 via [`fused.api.sign_url`](/python-sdk/api-reference/api#sign_url)).
+2. Patch the input nodes (prompt, seed, image references, etc.).
+3. `POST /api/prompt` to submit the job.
+4. Poll `/api/job/{prompt_id}/status` until it completes.
+5. Download the output files from `/api/view`.
+
+```python
+@fused.udf()
+def udf(prompt: str = "A high-resolution satellite image of a coastline"):
+    import io, time
+    import requests
+    from PIL import Image
+    import numpy as np
+    import fused
+
+    BASE_URL = "https://cloud.comfy.org"
+    headers = {"X-API-Key": fused.secrets["COMFY_API_KEY"]}
+
+    # 1. Load workflow JSON from S3
+    workflow_path = "s3://your-bucket/text_to_image_workflow.json"
+    workflow = requests.get(fused.api.sign_url(workflow_path)).json()
+
+    # 2. Patch input nodes — node IDs are top-level keys in the exported JSON
+    workflow["104:90"]["inputs"]["text"] = prompt
+    workflow["104:92"]["inputs"]["seed"] = 42
+
+    # 3. Submit
+    api_key = fused.secrets["COMFY_API_KEY"]
+    prompt_id = requests.post(
+        f"{BASE_URL}/api/prompt",
+        headers={**headers, "Content-Type": "application/json"},
+        json={"prompt": workflow, "extra_data": {"api_key_comfy_org": api_key}},
+    ).json()["prompt_id"]
+
+    # 4. Poll until complete
+    history = {}
+    for _ in range(120):
+        job = requests.get(f"{BASE_URL}/api/job/{prompt_id}/status", headers=headers).json()
+        if job.get("status") in ("failed", "cancelled", "error"):
+            raise RuntimeError(f"Comfy job failed: {job.get('error_message')}")
+        if job.get("status") in ("success", "completed"):
+            history = requests.get(f"{BASE_URL}/api/history_v2/{prompt_id}", headers=headers).json().get(prompt_id, {})
+            break
+        time.sleep(5)
+
+    # 5. Download the first output image
+    for node_outputs in history.get("outputs", {}).values():
+        for file_info in node_outputs.get("images", []):
+            data = requests.get(
+                f"{BASE_URL}/api/view",
+                headers=headers,
+                params={"filename": file_info["filename"], "type": file_info.get("type", "output")},
+            ).content
+            return np.array(Image.open(io.BytesIO(data)))
+```
+
+:::note Node IDs are workflow-specific
+The keys `"104:90"`, `"104:92"` come from a particular workflow's exported JSON. Open your own exported API JSON and look up the top-level keys for the nodes you want to control — they will be different in every workflow.
+:::
+
+## Patterns
+
+### Cache the expensive job, wrap with a thin UDF
+
+Generation jobs are slow and expensive; you only want to run them once per parameter combination. Split the work in two:
+
+- A [`@fused.cache`](/python-sdk/api-reference/fused-cache) helper that submits the workflow, waits, and uploads results to S3.
+- A thin [`@fused.udf`](/guide/working-with-udfs/writing-udfs) wrapper that calls the helper and returns a signed URL or array.
+
+```python
+import fused
+
+@fused.cache
+def run_comfy_job(workflow_s3_path, prompt, seed, s3_base):
+    # ...submit, poll, download, upload to s3_base...
+    return output_s3_path
+
+@fused.udf(engine="small")
+def udf(prompt: str = "a vineyard at sunset", seed: int = 0):
+    output_s3 = run_comfy_job(
+        "s3://your-bucket/workflow.json",
+        prompt, seed,
+        "s3://your-bucket/outputs/",
+    )
+    return fused.api.sign_url(output_s3)
+```
+
+Use `engine="small"` to run as a [batch job](/guide/working-with-udfs/udf-best-practices/scaling-out) when generation takes longer than the 120-second realtime UDF limit (common for video).
+
+### Upload images as workflow inputs
+
+If your workflow takes images as inputs (e.g. image-to-video, style transfer), upload them with `POST /api/upload/image`:
+
+```python
+def _upload_to_comfy(image_path: str) -> str:
+    import requests
+    from pathlib import Path
+    import fused
+
+    BASE_URL = "https://cloud.comfy.org"
+    headers = {"X-API-Key": fused.secrets["COMFY_API_KEY"]}
+
+    if image_path.startswith("s3://"):
+        img_bytes = requests.get(fused.api.sign_url(image_path)).content
+        fname = image_path.split("/")[-1]
+    else:
+        fname = Path(image_path).name
+        img_bytes = Path(image_path).read_bytes()
+
+    resp = requests.post(
+        f"{BASE_URL}/api/upload/image",
+        headers=headers,
+        files={"image": (fname, img_bytes, "image/png")},
+    )
+    resp.raise_for_status()
+    return resp.json()["name"]
+```
+
+Then reference the returned filename in the workflow:
+
+```python
+workflow["3"]["inputs"]["image"] = _upload_to_comfy("s3://your-bucket/scene.png")
+```
+
+## Full example
+
+See the [Run ComfyUI workflows in Fused](/examples/comfyui-fused-workflows) example for end-to-end **Text to Image** and **Images to Video** pipelines built on the patterns above.
+
+## Disconnecting
+
+To revoke the integration, go to **Settings > Integrations & Secrets**, find the Comfy section, and remove your API key. You should also revoke the key in your [Comfy account](https://platform.comfy.org) if it is no longer needed.

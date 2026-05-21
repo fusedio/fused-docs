@@ -613,6 +613,15 @@ const sidebars: SidebarsConfig = {
           id: "workbench/integrations/gdrive",
           label: "Google Drive",
         },
+        { type: "doc", id: "workbench/integrations/modal", label: "Modal" },
+        {
+          type: "doc",
+          id: "workbench/integrations/huggingface",
+          label: "Hugging Face",
+        },
+        { type: "doc", id: "workbench/integrations/daytona", label: "Daytona" },
+        { type: "doc", id: "workbench/integrations/baseten", label: "Baseten" },
+        { type: "doc", id: "workbench/integrations/comfy", label: "ComfyOrg" },
       ],
     },
 
