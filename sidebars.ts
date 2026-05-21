@@ -271,7 +271,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "workbench/ai-chat", label: "AI Chat" },
         { type: "doc", id: "workbench/udf-builder/runtime", label: "Runtime" },
         { type: "doc", id: "workbench/file-explorer", label: "File Explorer" },
-        { type: "doc", id: "workbench/canvas-catalog", label: "Canvas Catalog" },
+        { type: "doc", id: "workbench/browse-canvases", label: "Browse Canvases" },
         { type: "doc", id: "workbench/canvas-checkpoints", label: "Canvas Checkpoints" },
         { type: "doc", id: "workbench/versions", label: "Versions" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/widgets", label: "Widgets" },
