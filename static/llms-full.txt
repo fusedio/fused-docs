@@ -5786,17 +5786,9 @@ Call `invalidate_cache()` on any saved UDF object to clear its cached results.
 ### Full cache
 
 ```python
-
-udf = fused.load("my_udf")
-udf.invalidate_cache()
-```
-
-This works from inside another UDF too — useful when a child UDF calls a parent and you want to force-refresh the parent without disabling caching for every run:
-
-```python
 @fused.udf
-def child_udf():
-    parent = fused.load("parent_udf")
+def udf():
+    parent = fused.load("udf_to_invalidate")
     parent.invalidate_cache()
     data = parent()
     return data
@@ -5807,7 +5799,7 @@ def child_udf():
 For Tile UDFs, you can invalidate the cache for a specific tile instead of the entire UDF. Pass `z`, `x`, and `y` as keyword arguments:
 
 ```python
-udf = fused.load("my_tile_udf")
+udf = fused.load("udf_to_invalidate")
 
 udf.invalidate_cache(z=15, x=9647, y=12320)
 ```
@@ -5827,12 +5819,14 @@ DELETE https://www.fused.io/server/v1/realtime-shared//udf-cache/by-id//delete
 Both values can be looked up with the Python SDK:
 
 ```python
+@fused.udf
+def udf():
 
-udf = fused.load("my_udf")
-udf_id = udf.metadata["fused:id"]
+    my_udf = fused.load("udf_to_invalidate")
+    udf_id = my_udf.metadata["fused:id"]
+    client_id = fused.options.realtime_client_id
 
-# client_id is resolved automatically after any SDK call that contacts the server
-client_id = fused.options.realtime_client_id
+    return pd.DataFrame()
 ```
 
 These values stay stable and can be stored as environment variables. The service account token should be stored securely as a secret.
@@ -5867,12 +5861,6 @@ response.raise_for_status()
 ```
 
 All three query parameters (`z`, `x`, `y`) must be provided together. The server returns `422 Unprocessable Entity` if only some are present.
-
-## Things to know
-
-- **Each execution context has its own cache.** Workbench, HTTP endpoints, and different response formats maintain separate caches. Invalidating in one context does not affect the others. See Efficient caching — execution contexts for details.
-- **Realtime and dedicated instances have separate caches.** `my_udf()` and `my_udf(engine="small")` use different cache stores.
-- **The service token must have write access** to the UDF being invalidated — the authenticated service account must belong to the same team that owns the UDF.
 
 ## See also
 
@@ -5995,7 +5983,7 @@ def child_udf():
 
 ### Invalidate cache
 
-You can also invalidate a UDF's cache programmatically — including purging specific tiles. See Cache invalidation for details.
+You can invalidate the UDF cache programmatically — including purging specific tiles. See Cache invalidation for details.
 
 ### @fused.cache is shared across UDFs
 
@@ -6042,18 +6030,6 @@ def cached_sleep_udf1():
 def cached_sleep_udf2():
     ...
 ```
-
-### Each execution context has its own cache
-
-Workbench and HTTP endpoints maintain **separate caches**, even when running the exact same UDF with the same parameters. Clearing cache in one context does not affect the others.
-
-| Execution context | Cache |
-|---|---|
-| Run in Workbench | Cache A |
-| HTTP request (shared link, API, curl) | Cache B |
-| `.json` response format | Cache C |
-
-This means cache invalidation triggered inside Workbench won't propagate to your live HTTP endpoints—and vice versa. If you've updated a UDF and need fresh results everywhere, you'll need to bust the cache in each context (e.g. by passing `cache_max_age=0` in the request).
 
 ### Realtime vs dedicated instance have separate caches
 
@@ -24501,5 +24477,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-05-21
+Generated automatically from Fused documentation. Last updated: 2026-05-22
 Total sections: 5
