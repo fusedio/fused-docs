@@ -1,0 +1,212 @@
+---
+id: gdrive-to-slides-infographic
+title: From a Google Sheet to a Google Slides infographic
+sidebar_label: GDrive → infographic → Slides
+sidebar_position: 18
+---
+
+This example shows how to take a spreadsheet sitting in **Google Drive**, turn it into an editorial-style **infographic** using an image model via **OpenRouter**, and **insert it as a new slide** into an existing Google Slides deck — all from one Fused Canvas. No intermediate S3, no `python-pptx`, no clicking through the Google Slides UI.
+
+![The generated infographic produced from a 12-row CSV in Google Drive](/img/examples/gdrive-to-slides-infographic.png)
+
+*Above: a 12-row `airtravel.csv` from Google Drive, turned into a board-ready infographic by Gemini 2.5 Flash Image, then inserted as a slide into a Google Slides deck — all triggered from the Canvas. [Try the Canvas](https://unstable.fused.io/canvas/fc_2sa9BO3LSvy9JE9LOLNIax) →*
+
+Spreadsheets are great for analysts; they're not great for board meetings. Going from "I have a CSV" to "I have a slide ready for the deck" usually means: download the file, open it in Excel, screenshot a chart, drop it into Slides, fight the formatting. With Fused's Google Drive integration plus an image model, you can do the whole thing in one click — and the source file never leaves Drive.
+
+## What this pipeline does
+
+Three vertical columns on the Canvas, one user click each:
+
+1. **Pick data from Google Drive** — folder dropdown, then a CSV/XLSX dropdown, with a live preview table.
+2. **Generate the infographic** — pick a style reference (BBC, FiveThirtyEight, dark-mode, etc.), type a title, click **Generate**. Gemini 2.5 Flash Image renders the chart, and the PNG is uploaded straight to your Drive.
+3. **Publish to Slides** — pick a target deck, choose the insertion index, click **Publish**. The Slides API inserts a new slide pointing at the Drive-hosted image.
+
+The infographic image is generated once, lives in Drive as a regular PNG file, and is referenced by `file_id` in the slide. No intermediate storage, no base64 round-trips.
+
+## Building the canvas
+
+### 1. Read CSV/XLSX from Google Drive on the fly
+
+The Google Drive integration in Fused exposes any picker-granted file as a `gdrive://<file_id>/<name>` path. Fetch it with `fused.api.get` and parse it through `io.BytesIO` — no temp files, no S3 intermediates.
+
+<details>
+<summary>Show `gdrive_data_loader` UDF</summary>
+
+```python
+import fused
+
+
+@fused.udf(cache_max_age="10m")
+def udf(gdrive_path: str = ""):
+    """Fetch a CSV/XLSX from Google Drive on the fly and return a DataFrame."""
+    import io
+    import pandas as pd
+
+    if not gdrive_path.strip():
+        return pd.DataFrame([{"info": "Pick a CSV or XLSX file."}])
+
+    if not fused.api.whoami().get("is_connected_to_gdrive"):
+        return pd.DataFrame([{"info": "Connect Google Drive in Workbench → Integrations & Secrets."}])
+
+    data = fused.api.get(gdrive_path)
+    file_name = gdrive_path.rstrip("/").split("/")[-1].lower()
+
+    if file_name.endswith(".csv"):
+        return pd.read_csv(io.BytesIO(data))
+    if file_name.endswith((".xlsx", ".xls")):
+        return pd.read_excel(io.BytesIO(data))
+
+    return pd.DataFrame([{"info": f"Unsupported file type: {file_name}."}])
+```
+
+</details>
+
+A sibling `gdrive_list` UDF calls `fused.api.list("gdrive://<folder_id>/")` to populate the folder + file dropdowns in the picker widget.
+
+:::info Why `cache_max_age="10m"`?
+Spreadsheets change less often than the user clicks. A short cache means downstream UDFs that re-call this loader (with the same `gdrive_path`) get the bytes back instantly. Bump it down to `0` if you need every run to re-fetch.
+:::
+
+### 2. Generate the infographic with Gemini via OpenRouter
+
+The image generation step is intentionally one shot. There's no separate "chart suggester" LLM step — the image model is more than capable of reading raw tabular data (head + summary stats) and designing a layout itself. Fewer moving parts, less drift.
+
+The UDF:
+
+1. Calls `gdrive_data_loader` to get the DataFrame.
+2. Builds a short text description (first 30 rows + `df.describe()`).
+3. Sends it to `google/gemini-2.5-flash-image` via OpenRouter, optionally with a style reference image.
+4. Uploads the returned PNG bytes to Google Drive in two API calls (`POST /files` for metadata, then `PATCH /upload/files/{id}?uploadType=media` for the bytes) and makes the file world-readable so the Slides API can fetch it.
+5. Returns an HTML preview that **sets two canvas parameters via `postMessage`** — `generated_image_url` and `generated_image_title` — so Part 3 can grab them without re-running the whole pipeline.
+
+<details>
+<summary>Show `Infographic_Generator` UDF (helpers omitted for brevity)</summary>
+
+```python
+import fused
+
+
+@fused.udf(cache_max_age="30m")
+def udf(
+    gdrive_path: str = "",
+    style_image_url: str = "",
+    title_hint: str = "",
+):
+    if not gdrive_path.strip() or not title_hint.strip():
+        return _placeholder_html("Pick a file and enter a title, then click Generate.")
+
+    df = fused.run(fused.load("gdrive_data_loader"), gdrive_path=gdrive_path)
+    title = title_hint.strip()
+
+    prompt = _build_prompt(df, gdrive_path, title, has_style_ref=bool(style_image_url.strip()))
+    style_ref = _fetch_style_image(style_image_url)
+
+    png_bytes = _gemini_generate_png(prompt, style_ref)  # OpenRouter call
+    if png_bytes is None:
+        return _placeholder_html("Image generation returned no image.")
+
+    from fused._global_api import get_api
+    token = get_api()._integrations_google_picker_token()["access_token"]
+    drive_id, drive_url = _drive_upload_png(token, png_bytes, title)
+
+    return _render_preview(png_bytes, drive_id, drive_url, title, df)
+```
+
+</details>
+
+:::tip Style reference for the image model
+Image models follow style cues much better than they follow long text descriptions of style. Picking a reference image (BBC News, FiveThirtyEight, dark mode, etc.) and passing it to Gemini alongside the prompt is the single biggest quality lever in this pipeline.
+:::
+
+### 3. Insert the image as a new slide
+
+Once Part 2 has uploaded the PNG to Drive, the `generated_image_url` canvas parameter holds a public Drive view URL. `slides_publish` reads that URL, picks a layout from the deck's master, and sends one `presentations.batchUpdate` call.
+
+The interesting detail is layout selection. Google Slides' `predefinedLayout: BLANK` enum only works if the deck's master has tagged a layout as `BLANK` — and **custom themes / decks imported from PowerPoint usually don't have these tags**. The same is true for `TITLE_AND_BODY`, `SECTION_HEADER`, etc. The reliable fix is to look at the slides that already exist in the deck, grab their `layoutObjectId`, and use that — it's guaranteed to be a layout in the "current master" at the insertion point.
+
+<details>
+<summary>Show `slides_publish` UDF (excerpt)</summary>
+
+```python
+@fused.udf(cache_max_age=0)
+def udf(
+    image_url: str = "",
+    title: str = "",
+    presentation_id: str = "",
+    insert_at_index: int = 1,
+):
+    import requests, time, pandas as pd
+
+    if not presentation_id.strip():
+        return pd.DataFrame([{"status": "idle", "message": "Pick a deck and click Publish."}])
+
+    from fused._global_api import get_api
+    token = get_api()._integrations_google_picker_token()["access_token"]
+    auth = {"Authorization": f"Bearer {token}"}
+
+    # Borrow a layout from a neighbouring slide — guaranteed to be in
+    # the right master (decks can have several).
+    layout_id = _layout_at_insertion(presentation_id, insert_at_index, auth)
+
+    suffix = str(int(time.time() * 1000))
+    slide_id, title_box_id, image_obj_id = (
+        f"fused_slide_{suffix}",
+        f"fused_title_{suffix}",
+        f"fused_image_{suffix}",
+    )
+
+    batch = {"requests": _build_batch(
+        slide_id, title_box_id, image_obj_id,
+        insert_at_index, title, image_url, layout_id,
+    )}
+    r = requests.post(
+        f"https://slides.googleapis.com/v1/presentations/{presentation_id}:batchUpdate",
+        headers={**auth, "Content-Type": "application/json"},
+        json=batch,
+    )
+    r.raise_for_status()
+    return pd.DataFrame([{
+        "status": "ok",
+        "deck_url": f"https://docs.google.com/presentation/d/{presentation_id}/edit#slide=id.{slide_id}",
+    }])
+```
+
+</details>
+
+The deck dropdown and insertion index live inside a `form` component — Fused only broadcasts the form's child values when the user clicks the form's **Publish to Slides** submit button. So Part 3 stays idle (no API calls) until the user explicitly confirms.
+
+### 4. The output
+
+After clicking **Publish**, refresh the target deck — there's a new slide at the chosen position with the generated infographic as a full-bleed image and a bold title text box on top:
+
+![Infographic inserted as a Slides slide via batchUpdate](/img/examples/gdrive-to-slides-infographic.png)
+
+The Drive PNG is a regular `image/png` file under your account — you can rename, share, or delete it like any other Drive file. The slide references it by Drive `file_id`, so the image keeps loading as long as the file exists.
+
+## Build it yourself
+
+To run this with your own data you need:
+
+**Google Drive** — picker-granted access:
+1. In Fused Workbench, go to **Integrations & Secrets** → **Google Drive** → **Connect**.
+2. Use the **Picker** to grant access to the spreadsheet folder you want to read and the Slides deck you want to publish into. With the `drive.file` scope, Fused only sees files the user explicitly grants — files you create later won't show up until you re-pick.
+
+**Google Slides API** — must be enabled on Fused's GCP project. As of this writing it's enabled on the `unstable` environment; if you hit `PERMISSION_DENIED: Google Slides API has not been used...`, file a ticket with the Fused team.
+
+**OpenRouter API key** — for the image model:
+1. Get a key from [OpenRouter](https://openrouter.ai/keys). Free credits are usually enough to play with.
+2. In Workbench, go to **Preferences** → **Environment** → **Secrets management** ([docs](/workbench/preferences#secrets-management)) and add it as `openrouter_api_key`. The UDF reads it via `fused.secrets["openrouter_api_key"]`.
+
+## Try it out
+
+Open the [Fused Canvas](https://unstable.fused.io/canvas/fc_2sa9BO3LSvy9JE9LOLNIax) to explore the live pipeline:
+
+- **Part 1** lists files in your Drive — pick a CSV or XLSX.
+- **Part 2** picks a style reference and asks for a title, then generates the infographic and saves it to Drive on submit.
+- **Part 3** picks a target deck and slide index, then inserts the new slide on submit.
+
+The Drive PNG and the new slide are both real artifacts in your account — nothing is faked, nothing is staged.
+
+:::tip Other data sources
+The same pattern works for any tabular Google file. Swap `gdrive_data_loader`'s CSV/XLSX parsing for a Sheets API call (`spreadsheets.values.get`) and you can read directly from a native Google Sheet. Swap the `createImage` call for a `createSheetsChart` request and you can drop a live linked chart into the slide instead of a static PNG.
+:::
