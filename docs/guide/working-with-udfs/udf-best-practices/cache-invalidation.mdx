@@ -1,0 +1,105 @@
+---
+id: cache-invalidation
+title: Cache invalidation
+sidebar_label: Cache invalidation
+sidebar_position: 5
+---
+
+Fused caches UDF results automatically (see [Efficient caching](caching)). When you need to force-refresh cached results — after updating source data, fixing a bug in a UDF, or redeploying a pipeline — you can invalidate the cache programmatically.
+
+## Python SDK
+
+Call `invalidate_cache()` on any saved UDF object to clear its cached results.
+
+### Full cache
+
+```python
+@fused.udf
+def udf():
+    parent = fused.load("udf_to_invalidate")
+    parent.invalidate_cache()
+    data = parent()
+    return data
+```
+
+### Single tile
+
+For [Tile UDFs](/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile#tile-udf), you can invalidate the cache for a specific tile instead of the entire UDF. Pass `z`, `x`, and `y` as keyword arguments:
+
+```python
+udf = fused.load("udf_to_invalidate")
+
+udf.invalidate_cache(z=15, x=9647, y=12320)
+```
+
+:::note
+All three tile coordinates (`z`, `x`, `y`) must be provided together. You cannot invalidate by zoom level alone.
+:::
+
+## HTTP API with service token
+
+You can also invalidate cache via the HTTP API, authenticated with a [Fused Service Account](/guide/data-input-outputs/export-api/securing-shared-tokens#fused-service-accounts). This is useful for CI/CD pipelines, cron jobs, or any automation that runs outside of Fused.
+
+The endpoint is:
+
+```
+DELETE https://www.fused.io/server/v1/realtime-shared/{client_id}/udf-cache/by-id/{udf_id}/delete
+```
+
+Both values can be looked up with the Python SDK:
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+    
+    my_udf = fused.load("udf_to_invalidate")
+    udf_id = my_udf.metadata["fused:id"]
+    client_id = fused.options.realtime_client_id
+
+    return pd.DataFrame({"udf_id": [udf_id], "client_id": [client_id]})
+```
+
+These values stay stable and can be stored as environment variables. The service account token should be stored securely as a secret.
+
+### Full cache
+
+```python
+import requests
+import os
+
+fused_service_account_token = os.getenv("FUSED_SERVICE_ACCOUNT_TOKEN")
+
+headers = {
+    "Authorization": f"fused-service-token {fused_service_account_token}",
+}
+
+response = requests.delete(
+    f"https://www.fused.io/server/v1/realtime-shared/{client_id}/udf-cache/by-id/{udf_id}/delete",
+    headers=headers,
+)
+response.raise_for_status()
+```
+
+### Single tile
+
+Append `z`, `x`, and `y` as query parameters to scope the purge to one tile:
+
+```python
+response = requests.delete(
+    f"https://www.fused.io/server/v1/realtime-shared/{client_id}/udf-cache/by-id/{udf_id}/delete",
+    headers=headers,
+    params={"z": 15, "x": 9647, "y": 12320},
+)
+response.raise_for_status()
+```
+
+:::note
+All three query parameters (`z`, `x`, `y`) must be provided together. The server returns `422 Unprocessable Entity` if only some are present.
+:::
+
+## See also
+
+- [Efficient caching](caching) — how caching works, `cache_max_age`, and common gotchas
+- [Securing Shared Tokens](/guide/data-input-outputs/export-api/securing-shared-tokens) — creating service accounts and session tokens
+- [`Udf` API reference](/python-sdk/api-reference/udf) — full SDK details
