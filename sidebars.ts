@@ -149,6 +149,7 @@ const sidebars: SidebarsConfig = {
         "examples/overture-buildings-agents",
         "examples/overture-maps-mcp-agent",
         "examples/google-calendar-meetings",
+        "examples/gdrive-to-slides-infographic",
         "examples/messy-data-agents",
         "examples/comfyui-fused-workflows",
       ],
