@@ -171,7 +171,12 @@ with open(ROOT / "docs" / "python-sdk" / "top-level-functions.mdx", "w") as f:
 ## `fused.api` page
 
 api_listing = [
+    # Auth
     "whoami",
+    "access_token",
+    "auth_scheme",
+    "logout",
+    # File operations
     "delete",
     "list",
     "get",
@@ -179,7 +184,11 @@ api_listing = [
     "upload",
     "sign_url",
     "sign_url_prefix",
+    "resolve",
+    # UDFs / apps
     "get_udfs",
+    "get_apps",
+    # Jobs
     "job_get_logs",
     "job_print_logs",
     "job_tail_logs",
@@ -187,6 +196,19 @@ api_listing = [
     "job_cancel",
     "job_get_exec_time",
     "job_wait_for_job",
+    "job_get_results",
+    "job_wait_for_results",
+    # Scheduling
+    "schedule_udf",
+    "schedule_list",
+    # Utilities
+    "session_token",
+    "team_info",
+    "enable_gcs",
+    "log",
+    # Snowflake
+    "snowflake_connect",
+    "snowflake_query",
     # Note: Functions that no longer exist will be automatically skipped with a warning
 ]
 
@@ -276,6 +298,41 @@ for meth in methods:
 **Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.{meth}()`
 """
     result += docstring + "\n" + usage_note + "\n---\n\n"
+
+# fused.api.FusedSnowflakeConnection class
+
+snowflake_methods = [
+    "connect",
+    "query",
+    "execute",
+    "list_databases",
+    "list_schemas",
+    "list_tables",
+    "list_stages",
+    "list_stage_files",
+    "read_stage",
+    "write",
+]
+
+if "FusedSnowflakeConnection" in mod_api.members:
+    snowflake_note = """\
+## Snowflake
+
+## FusedSnowflakeConnection
+
+"""
+    config_sf = dict(default_config)
+    config_sf["filters"] = ["__init__"]
+    config_sf["summary"] = False
+    result += snowflake_note + render_object_docs(mod_api["FusedSnowflakeConnection"], config_sf) + "\n---\n\n"
+
+    config_sf["heading_level"] = default_config["heading_level"] + 1
+    config_sf["show_root_full_path"] = False
+    for meth in snowflake_methods:
+        if meth not in mod_api["FusedSnowflakeConnection"].members:
+            print(f"Warning: {meth} not found in FusedSnowflakeConnection class, skipping")
+            continue
+        result += render_object_docs(mod_api["FusedSnowflakeConnection"][meth], config_sf) + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w") as f:
     f.write(result)
@@ -411,6 +468,10 @@ with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w") as f:
 
 api_listing = [
     "run_ingest_raster_to_h3",
+    "persist_hex_table_metadata",
+    "read_hex_table",
+    "read_hex_table_slow",
+    "read_hex_table_with_persisted_metadata",
 ]
 
 result = """\
