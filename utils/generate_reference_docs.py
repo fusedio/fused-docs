@@ -586,40 +586,32 @@ a saved UDF with [`fused.load()`](/python-sdk/api-reference/fused-load).
 """
 
 methods = [
-    # Pydantic fields (Udf)
-    "entrypoint",
     "cache_max_age",
-    "engine",
-    "disk_size_gb",
-    # Pydantic fields (BaseUdf)
+    "catalog_url",
     "code",
-    "metadata",
     "collection_id",
     "collection_name",
-    # Properties
-    "catalog_url",
-    # Save / load
-    "to_fused",
-    "to_directory",
-    "to_file",
-    "from_gist",
-    # Sharing
-    "shared_url",
-    "get_canvas_share_token",
-    # Access tokens
     "create_access_token",
+    "delete_saved",
+    "disk_size_gb",
+    "engine",
+    "entrypoint",
+    "from_gist",
     "get_access_token",
     "get_access_tokens",
-    # Lifecycle
-    "delete_saved",
-    "invalidate_cache",
+    "get_canvas_share_token",
     "get_schedule",
-    "schedule",
-    "set_parameters",
-    # Execution
-    "run_local",
+    "invalidate_cache",
     "map",
     "map_async",
+    "metadata",
+    "run_local",
+    "schedule",
+    "set_parameters",
+    "shared_url",
+    "to_directory",
+    "to_file",
+    "to_fused",
 ]
 
 # Methods are defined across Udf and BaseUdf; look in both
