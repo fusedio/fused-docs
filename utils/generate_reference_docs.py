@@ -603,6 +603,9 @@ methods = [
     "to_directory",
     "to_file",
     "from_gist",
+    # Sharing
+    "shared_url",
+    "get_canvas_share_token",
     # Access tokens
     "create_access_token",
     "get_access_token",
@@ -611,7 +614,10 @@ methods = [
     "delete_saved",
     "invalidate_cache",
     "get_schedule",
+    "schedule",
+    "set_parameters",
     # Execution
+    "run_local",
     "map",
     "map_async",
 ]
