@@ -4,8 +4,6 @@ title: "fused.submit [Legacy]"
 sidebar_label: "fused.submit [Legacy]"
 ---
 
-# submit [Legacy]
-
 :::warning
 This function is deprecated and will be removed in a future version. Use [`udf.map()`](/python-sdk/api-reference/udf#map) instead.
 
@@ -19,8 +17,9 @@ udf.map(
     cache_max_age=None,
 )
 ```
-
 :::
+
+# submit
 
 ```python
 submit(
@@ -36,64 +35,110 @@ submit(
     collect: bool = True,
     execution_type: ExecutionType = "thread_pool",
     cache_max_age: str | None = None,
+    run_cache_max_age: str | int | None = None,
     cache: bool = True,
     ignore_exceptions: bool = False,
     flatten: bool = True,
-    **kwargs
+    _before_run: float | None = None,
+    _before_submit: float | None = 0.01,
+    _isolate_streams: bool = True,
+    drop_index: bool = False,
+    **kwargs: bool
 ) -> JobPool | ResultType | pd.DataFrame
 ```
 
-Executes a user-defined function (UDF) multiple times for a list of input parameters, and returns immediately a "lazy" JobPool object allowing to inspect the jobs and wait on the results.
+Executes a user-defined function (UDF) multiple times for a list of input
+parameters, and return immediately a "lazy" JobPool object allowing
+to inspect the jobs and wait on the results.
 
-Each individual UDF run will be cached following the standard caching logic as with `fused.run()` and the specified `cache_max_age`. Additionally, when `collect=True` (the default), the collected results are cached locally for the duration of `cache_max_age` or 12h by default.
+Each individual UDF run will be cached following the standard caching logic as with `fused.run()`
+and the specified `cache_max_age`. Additionally, when `collect=True` (the default), the collected results
+are cached locally for the duration of `cache_max_age` or 12h by default.
 
-## Parameters
+See `fused.run` for more details on the UDF execution.
 
-- **udf** (`AnyBaseUdf | FunctionType | str`) – The UDF to execute. See `fused.run` for more details on how to specify the UDF.
-- **arg_list** (`list | pd.DataFrame`) – A list of input parameters for the UDF. Can be specified as:
-  - a list of values for parametrizing over a single parameter
+**Parameters:**
+
+- **udf** (<code>AnyBaseUdf | FunctionType | str</code>) – the UDF to execute.
+  See `fused.run` for more details on how to specify the UDF.
+- **arg_list** (<code>list | pd.DataFrame</code>) – a list of input parameters for the UDF. Can be specified as:
+  - a list of values for parametrizing over a single parameter, i.e.
+    the first parameter of the UDF
   - a list of dictionaries for parametrizing over multiple parameters
-  - A DataFrame for parametrizing over multiple parameters where each row is a set of parameters
-- **engine** (`Literal['remote', 'local'] | None`) – The execution engine to use. Defaults to 'remote'.
-- **instance_type** (`InstanceType | None`) – The type of instance to use for remote execution ('realtime', or 'small', 'medium', 'large' or one of the whitelisted instance types). Defaults to 'realtime'.
-- **max_workers** (`int | None`) – The maximum number of workers to use. Defaults to 32 for realtime (max 1024), and 1 for batch instances (max 5).
-- **n_processes_per_worker** (`int | None`) – The number of processes to use per worker. For realtime instances, defaults to 1. For batch instances, defaults to the number of cores.
-- **max_retry** (`int`) – The maximum number of retries for failed jobs. Defaults to 2.
-- **debug_mode** (`bool`) – If True, executes only the first item in arg_list directly using `fused.run()`, useful for debugging. Default is False.
-- **collect** (`bool`) – If True, waits for all jobs to complete and returns the collected DataFrame. If False, returns a JobPool object. Default is True.
-- **execution_type** (`ExecutionType`) – The type of batching to use. Either "thread_pool" (default) or "async_loop".
-- **cache_max_age** (`str | None`) – The maximum age when returning a result from the cache.
-- **cache** (`bool`) – Set to False to disable caching.
-- **ignore_exceptions** (`bool`) – Set to True to ignore exceptions when collecting results. Defaults to False.
-- **flatten** (`bool`) – Set to True to receive a flat DataFrame of results. Defaults to True.
-- **\*\*kwargs** – Additional (constant) keyword arguments to pass to the UDF.
+  - A DataFrame for parametrizing over multiple parameters where each
+    row is a set of parameters
+- **engine** (<code>Literal['remote', 'local'] | None</code>) – The execution engine to use. Defaults to 'remote'.
+- **instance_type** (<code>InstanceType | None</code>) – The type of instance to use for remote execution ('realtime',
+  or 'small', 'medium', 'large' or one of the whitelisted instance types).
+  If not specified, gets the default from the UDF (if specified in the
+  `@fused.udf()` decorator, and the UDF is not run as a shared token),
+  or otherwise defaults to 'realtime'.
+- **max_workers** (<code>int | None</code>) – The maximum number of workers to use. Defaults to 32 for
+  the realtime engine (with a maximum of 1024), and 1 for other batch
+  instances (with a maximum of 5).
+- **n_processes_per_worker** (<code>int | None</code>) – The number of processes to use per worker.
+  For realtime instances, defaults to 1 (each arg processes in its own lambda).
+  Set to >1 to chunk the arg_list and process multiple items in parallel within
+  each realtime lambda instance, reducing the total number of lambda invocations.
+  For batch instances, defaults to the number of cores.
+- **max_retry** (<code>int</code>) – The maximum number of retries for failed jobs. Defaults to 2.
+  Note that retries will only be attempted if the JobPool object is waited on,
+  e.g. with `pool.wait()`, `pool.tail()`, or `pool.df()`.
+- **debug_mode** (<code>bool</code>) – If True, executes only the first item in arg_list directly using
+  `fused.run()`, useful for debugging UDF execution. Default is False.
+- **collect** (<code>bool</code>) – If True, waits for all jobs to complete and returns the collected DataFrame
+  containing the results. If False, returns a JobPool object, which is non-blocking
+  and allows you to inspect the individual results and logs.
+  Default is True.
+- **execution_type** (<code>ExecutionType</code>) – The type of batching to use. Either "thread_pool" (default) for
+  ThreadPoolExecutor-based concurrency or "async_loop" for asyncio-based concurrency.
+- **cache_max_age** (<code>str | None</code>) – The maximum age when returning a result from the cache.
+  Supported units are seconds (s), minutes (m), hours (h), and days (d)
+  (e.g. "48h", "10s", etc.).
+  Default is `None` so a UDF run with `fused.run()` will follow
+  `cache_max_age` defined in `@fused.udf()` unless this value is changed.
+- **cache** (<code>bool</code>) – Set to False as a shortcut for `cache_max_age='0s'` to disable caching.
+- **run_cache_max_age** (<code>str | int | None</code>) – When set, wraps each inner `fused.run` with `fused.cache` so
+  cache hits skip the HTTP round-trip (client-side disk cache). Uses the same
+  `cache_reset`, `cache_storage`, and `cache_verbose` as the submit-level cache.
+- **ignore_exceptions** (<code>bool</code>) – Set to True to ignore exceptions when collecting results.
+  Runs that result in exceptions will be silently ignored. Defaults to False.
+- **flatten** (<code>bool</code>) – Set to True to receive a DataFrame of results, without nesting of a
+  `results` column, when collecting results. When False, results will be nested
+  in a `results` column. If the UDF does not return a DataFrame (e.g. a string
+  instead,) results will be nested in a `results` column regardless of this setting.
+  Defaults to False.
+- **drop_index** (<code>bool</code>) – Set to False to use the position of the argument as the index instead
+  of the argument values. Defaults to True.
+- \*\***kwargs** – Additional (constant) keyword arguments to pass to the UDF.
 
-## Returns
+**Returns:**
 
-`JobPool | ResultType | pd.DataFrame` – JobPool, or DataFrame depending on execution_type and collect parameters.
+- <code>[JobPool](#fused._submit.JobPool) | [ResultType](#fused._run.ResultType) | [DataFrame](#pandas.DataFrame)</code> – JobPool, or DataFrame depending on execution_type and collect parameters
 
-## Examples
+**Examples:**
 
-Run a UDF multiple times for the values 0 to 9:
+Run a UDF multiple times for the values 0 to 9 passed to as the first
+positional argument of the UDF:
 
-```python
+```py
 df = fused.submit("username@fused.io/my_udf_name", range(10))
 ```
 
 Using async batch type:
 
-```python
+```py
 df = fused.submit(udf, range(10), execution_type="async_loop")
 ```
 
 Being explicit about the parameter name:
 
-```python
+```py
 df = fused.submit(udf, [dict(n=i) for i in range(10)])
 ```
 
 Get the pool of ongoing tasks:
 
-```python
+```py
 pool = fused.submit(udf, [dict(n=i) for i in range(10)], collect=False)
 ```
