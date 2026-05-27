@@ -11,11 +11,26 @@
 #
 # Use as `uv run --reinstall-package fused utils/generate_reference_docs.py` in the root of this repo
 
+import re
 from pathlib import Path
 
 import griffe
 from griffe2md.rendering import default_config
 from griffe2md.main import render_object_docs
+
+
+def escape_mdx_braces(text: str) -> str:
+    """Escape bare {identifier} patterns in MDX prose.
+
+    Docstring path placeholders like {source_dir} are valid Python but MDX
+    parses them as JSX expressions, crashing the Docusaurus build.  Split on
+    code spans/fences so we only touch prose text, not code blocks.
+    """
+    parts = re.split(r"(```[\s\S]*?```|`[^`\n]*`)", text)
+    return "".join(
+        re.sub(r"\{([A-Za-z_]\w*)\}", r"\\{\1\\}", p) if i % 2 == 0 else p
+        for i, p in enumerate(parts)
+    )
 
 
 import fused
@@ -24,7 +39,7 @@ print(f"Generating reference docs for fused version {fused.__version__}")
 
 ROOT = Path(__file__).parent / ".."
 
-# We assume `fused` is installed in the env where we run this script (when running 
+# We assume `fused` is installed in the env where we run this script (when running
 # with `uv run`, this will be the latest released fused which uv installs in an isolated env)
 mod = griffe.load("fused", docstring_parser="google")
 
@@ -34,30 +49,13 @@ default_config["show_root_full_path"] = True
 default_config["show_root_members_full_path"] = False
 default_config["show_object_full_path"] = True
 
-## Top-level API page
+## Top-level functions — individual pages
 
-api_listing = [
-    "udf",
-    "cache",
-    "load",
-    "run",
-    "submit",
-    "download",
-    "ingest",
-    "ingest_nongeospatial",
-    "file_path",
-    "get_chunks_metadata",
-    "get_chunk_from_table",
+TOP_LEVEL_FUNCS = [
+    "udf", "cache", "load", "load_async", "run", "run_async",
+    "submit", "download", "ingest", "ingest_nongeospatial", "file_path",
+    "find_dataset", "register_dataset", "get_chunk_from_table", "get_chunks_metadata",
 ]
-
-result = """\
----
-sidebar_label: Top-Level Functions
-title: Top-Level Functions
-toc_max_heading_level: 4
----
-
-"""
 
 run_batch_addition = """
 #### `job.run_batch`
@@ -146,71 +144,85 @@ for details.
 
 """
 
-for obj in api_listing:
-    if obj not in mod.members:
-        print(f"Warning: {obj} not found in fused module, skipping")
+top_level_dir = ROOT / "docs" / "python-sdk" / "api-reference" / "top-level"
+top_level_dir.mkdir(parents=True, exist_ok=True)
+
+# Remove stale .mdx files from a previous run
+for stale in top_level_dir.glob("*.mdx"):
+    stale.unlink()
+
+for idx, func_name in enumerate(TOP_LEVEL_FUNCS, start=1):
+    if func_name not in mod.members:
+        print(f"Warning: {func_name} not found in fused module, skipping")
         continue
-    docstring = render_object_docs(mod[obj], default_config)
+
+    slug = func_name.replace("_", "-")
+    # @fused.udf conflicts with the Udf class page (udf.mdx) — use udf-decorator
+    url_slug = "udf-decorator" if func_name == "udf" else slug
+    label = f"@fused.{func_name}" if func_name in ("udf", "cache") else f"fused.{func_name}"
+
+    result = f"""\
+---
+sidebar_label: "{label}"
+title: "{label}"
+slug: /python-sdk/api-reference/{url_slug}
+toc_max_heading_level: 4
+sidebar_position: {idx}
+---
+
+"""
+    docstring = render_object_docs(mod[func_name], default_config)
     result += docstring + "\n---\n\n"
-    if obj == "ingest":
-        # TODO run_batch does not yet have a proper docstring to include automatically
+
+    if func_name == "ingest":
         result += run_batch_addition
 
+    # post-processing
+    result = result.replace("## fused.udf", "## @fused.udf")
+    result = result.replace("## fused.cache", "## @fused.cache")
+    result = result.replace("**x,** (<code>y, z</code>)", "**x, y, z** (<code>int</code>)")
 
-# some post-processing
-result = result.replace("## fused.udf", "## @fused.udf")
-result = result.replace("## fused.cache", "## @fused.cache")
-# griffe cannot handl the x, y, z multiple parameters on one line
-result = result.replace("**x,** (<code>y, z</code>)", "**x, y, z** (<code>int</code>)")
+    with open(top_level_dir / f"{slug}.mdx", "w") as f:
+        f.write(escape_mdx_braces(result))
 
-with open(ROOT / "docs" / "python-sdk" / "top-level-functions.mdx", "w") as f:
-    f.write(result)
-
+with open(top_level_dir / "_category_.json", "w") as f:
+    f.write("""\
+{
+  "label": "Top-Level Functions",
+  "collapsible": true,
+  "collapsed": false
+}
+""")
 
 
 ## `fused.api` page
 
-api_listing = [
-    # Auth
-    "whoami",
-    "access_token",
-    "auth_scheme",
-    "logout",
-    # File operations
-    "delete",
-    "list",
-    "get",
-    "download",
-    "upload",
-    "sign_url",
-    "sign_url_prefix",
-    "resolve",
-    # UDFs / apps
-    "get_udfs",
-    "get_apps",
-    # Jobs
-    "job_get_logs",
-    "job_print_logs",
-    "job_tail_logs",
-    "job_get_status",
-    "job_cancel",
-    "job_get_exec_time",
-    "job_wait_for_job",
-    "job_get_results",
-    "job_wait_for_results",
-    # Scheduling
-    "schedule_udf",
-    "schedule_list",
-    # Utilities
-    "session_token",
-    "team_info",
-    "enable_gcs",
-    "log",
-    # Snowflake
-    "snowflake_connect",
-    "snowflake_query",
-    # Note: Functions that no longer exist will be automatically skipped with a warning
-]
+API_BLOCKLIST = {
+    "_session_token", "FusedDockerAPI", "DriveFileSystem", "FdFileSystem",
+    "NotebookCredentials",
+    # Handled separately in Layer 2/3:
+    "FusedAPI", "FusedSnowflakeConnection", "FusedAirtableConnection", "FusedNotionConnection",
+}
+
+mod_api = mod["api"]
+
+# Layer 1: auto-detect from fused.api.__all__ minus blocklist minus classes,
+# plus explicit extras not in __all__
+import fused.api as _fused_api
+_api_all = list(getattr(_fused_api, "__all__", []))
+_extra_api = ["access_token", "auth_scheme", "logout"]
+
+layer1_funcs = []
+for name in _api_all:
+    if name in API_BLOCKLIST:
+        continue
+    obj = getattr(_fused_api, name, None)
+    if obj is not None and isinstance(obj, type):
+        continue
+    layer1_funcs.append(name)
+for name in _extra_api:
+    if name not in layer1_funcs:
+        layer1_funcs.append(name)
 
 result = """\
 ---
@@ -234,23 +246,18 @@ fused.api.function_name()
 
 """
 
-mod_api = mod["api"]
-
-# fused.api functions
-
-for obj in api_listing:
+for obj in layer1_funcs:
     if obj not in mod_api.members:
         print(f"Warning: {obj} not found in fused.api module, skipping")
         continue
     docstring = render_object_docs(mod_api[obj], default_config)
     result += docstring + "\n---\n\n"
 
-# fused.api.FusedAPI class
-
+# Layer 2: FusedAPI class (hardcoded methods list)
 methods = [
     "create_udf_access_token",
     "upload",
-    "start_job", 
+    "start_job",
     "get_jobs",
     "get_status",
     "get_logs",
@@ -261,12 +268,9 @@ methods = [
 ]
 config = dict(default_config)
 config["filters"] = ["__init__"]
-# config["members"] = methods
-# config["members_order"] = "source"
 config["summary"] = False
 docstring = render_object_docs(mod_api["FusedAPI"], config)
 
-# Add usage note for FusedAPI instance methods directly into the class documentation
 fusedapi_note = """\
 ## FusedAPI Class Methods
 
@@ -281,8 +285,6 @@ api.method_name()
 """
 result += fusedapi_note + docstring + "\n---\n\n"
 
-# `default_config["show_root_members_full_path"] = False` does not seem to work for the
-# FusedAPI methods, so add them manually with root_full_path set to False
 config["heading_level"] = default_config["heading_level"] + 1
 config["show_root_full_path"] = False
 
@@ -291,51 +293,74 @@ for meth in methods:
         print(f"Warning: {meth} not found in FusedAPI class, skipping")
         continue
     docstring = render_object_docs(mod_api["FusedAPI"][meth], config)
-    
-    # Add explicit usage instructions after each method
-    # Use inline format so it survives the ultra-compact formatting in llms.txt
     usage_note = f"""
 **Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.{meth}()`
 """
     result += docstring + "\n" + usage_note + "\n---\n\n"
 
-# fused.api.FusedSnowflakeConnection class
-
-snowflake_methods = [
-    "connect",
-    "query",
-    "execute",
-    "list_databases",
-    "list_schemas",
-    "list_tables",
-    "list_stages",
-    "list_stage_files",
-    "read_stage",
-    "write",
+# Layer 3: auto-detect all Fused*Connection classes
+connection_classes = [
+    name for name in list(getattr(_fused_api, "__all__", [])) + ["FusedSnowflakeConnection", "FusedAirtableConnection", "FusedNotionConnection"]
+    if name.startswith("Fused") and name.endswith("Connection") and name in mod_api.members
 ]
+# deduplicate while preserving order
+seen = set()
+connection_classes = [c for c in connection_classes if not (c in seen or seen.add(c))]
 
-if "FusedSnowflakeConnection" in mod_api.members:
-    snowflake_note = """\
-## Snowflake
+for cls_name in connection_classes:
+    cls_obj = getattr(_fused_api, cls_name, None)
+    if cls_obj is None:
+        print(f"Warning: {cls_name} not found in fused.api, skipping")
+        continue
 
-## FusedSnowflakeConnection
+    cls_methods = [
+        k for k in cls_obj.__dict__
+        if not k.startswith("_")
+    ]
 
-"""
-    config_sf = dict(default_config)
-    config_sf["filters"] = ["__init__"]
-    config_sf["summary"] = False
-    result += snowflake_note + render_object_docs(mod_api["FusedSnowflakeConnection"], config_sf) + "\n---\n\n"
+    label = cls_name.replace("Fused", "").replace("Connection", "")
+    result += f"## {label}\n\n## {cls_name}\n\n"
 
-    config_sf["heading_level"] = default_config["heading_level"] + 1
-    config_sf["show_root_full_path"] = False
-    for meth in snowflake_methods:
-        if meth not in mod_api["FusedSnowflakeConnection"].members:
-            print(f"Warning: {meth} not found in FusedSnowflakeConnection class, skipping")
+    config_cls = dict(default_config)
+    config_cls["filters"] = ["__init__"]
+    config_cls["summary"] = False
+    result += render_object_docs(mod_api[cls_name], config_cls) + "\n---\n\n"
+
+    config_cls["heading_level"] = default_config["heading_level"] + 1
+    config_cls["show_root_full_path"] = False
+    for meth in cls_methods:
+        if meth not in mod_api[cls_name].members:
+            print(f"Warning: {meth} not found in {cls_name} class, skipping")
             continue
-        result += render_object_docs(mod_api["FusedSnowflakeConnection"][meth], config_sf) + "\n---\n\n"
+        result += render_object_docs(mod_api[cls_name][meth], config_cls) + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w") as f:
-    f.write(result)
+    f.write(escape_mdx_braces(result))
+
+
+## `fused.context` page
+
+result = """\
+---
+sidebar_label: fused.context
+title: fused.context
+toc_max_heading_level: 4
+---
+
+"""
+
+mod_context = mod["context"]
+context_funcs = [
+    name for name, member in mod_context.members.items()
+    if not name.startswith("_") and hasattr(member, "kind") and member.kind.value in ("function",)
+]
+
+for func_name in context_funcs:
+    docstring = render_object_docs(mod_context[func_name], default_config)
+    result += docstring + "\n---\n\n"
+
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "context.mdx", "w") as f:
+    f.write(escape_mdx_braces(result))
 
 
 ## `fused.options` page
@@ -372,7 +397,7 @@ docstring = render_object_docs(mod["_options"]["Options"], config)
 result += docstring
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "options.mdx", "w") as f:
-    f.write(result)
+    f.write(escape_mdx_braces(result))
 
 
 ## `JobPool` page
@@ -391,28 +416,40 @@ result += """\
 ## JobPool
 
 The `JobPool` class is used to manage, inspect and retrieve results from
-submitted jobs from [`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit).
+submitted jobs from [`fused.submit()`](/python-sdk/api-reference/top-level/submit).
 
 """
 
-# listing and rendering the methods separately to avoid including the JobPool 
-# class signature and docstring (which is not public -> use submit() to get this object)
-import fused
-methods = [key for key in fused._submit.JobPool.__dict__.keys() if not key.startswith("_")]
+# Combine JobPool and AsyncJobPool methods, deduplicated
+_jobpool_methods = [k for k in fused._submit.JobPool.__dict__ if not k.startswith("_")]
+_async_methods = [k for k in fused._submit.AsyncJobPool.__dict__ if not k.startswith("_")]
+_seen = set()
+methods = []
+for m in _jobpool_methods + _async_methods:
+    if m not in _seen:
+        _seen.add(m)
+        methods.append(m)
 
 config = dict(default_config)
 config["heading_level"] = default_config["heading_level"] + 1
 config["show_root_full_path"] = False
 
 for meth in methods:
-    if meth not in mod["_submit"]["JobPool"].members:
-        print(f"Warning: {meth} not found in JobPool class, skipping")
-        continue
-    docstring = render_object_docs(mod["_submit"]["JobPool"][meth], config)
-    result += docstring + "\n---\n\n"
+    found = False
+    for cls_path in ("_submit", ):
+        for cls_name in ("JobPool", "AsyncJobPool"):
+            if cls_name in mod[cls_path].members and meth in mod[cls_path][cls_name].members:
+                docstring = render_object_docs(mod[cls_path][cls_name][meth], config)
+                result += docstring + "\n---\n\n"
+                found = True
+                break
+        if found:
+            break
+    if not found:
+        print(f"Warning: {meth} not found in JobPool/AsyncJobPool, skipping")
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "jobpool.mdx", "w") as f:
-    f.write(result)
+    f.write(escape_mdx_braces(result))
 
 
 ## `Udf` page
@@ -431,13 +468,11 @@ result += """\
 ## Udf
 
 The `Udf` class is the object you get when defining a UDF with the
-[`@fused.udf`](/python-sdk/top-level-functions/#fusedudf) decorator, or when loading
-a saved UDF with [`fused.load()`](/python-sdk/top-level-functions/#fusedload).
+[`@fused.udf`](/python-sdk/api-reference/top-level/udf) decorator, or when loading
+a saved UDF with [`fused.load()`](/python-sdk/api-reference/top-level/load).
 
 """
 
-# listing and rendering the methods separately to avoid including the Udf 
-# class signature and docstring (which is not public)
 methods = [
     "to_fused",
     "to_directory",
@@ -461,18 +496,13 @@ for meth in methods:
     result += docstring + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w") as f:
-    f.write(result)
+    f.write(escape_mdx_braces(result))
 
 
 ## `fused.h3` page
 
-api_listing = [
-    "run_ingest_raster_to_h3",
-    "persist_hex_table_metadata",
-    "read_hex_table",
-    "read_hex_table_slow",
-    "read_hex_table_with_persisted_metadata",
-]
+import fused.h3 as _fused_h3
+h3_funcs = list(getattr(_fused_h3, "__all__", []))
 
 result = """\
 ---
@@ -484,16 +514,87 @@ sidebar_position: 3
 
 """
 
-mod_api = mod["h3"]
+mod_h3 = mod["_h3"]
 
-for obj in api_listing:
-    if obj not in mod_api.members:
+for obj in h3_funcs:
+    if obj not in mod_h3.members:
         print(f"Warning: {obj} not found in fused.h3 module, skipping")
         continue
-    docstring = render_object_docs(mod_api[obj], default_config)
+    docstring = render_object_docs(mod_h3[obj], default_config)
     result += docstring + "\n---\n\n"
 
-result = result.replace("`fused.submit()`", "[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)")
+result = result.replace("`fused.submit()`", "[`fused.submit()`](/python-sdk/api-reference/top-level/submit)")
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "h3.mdx", "w") as f:
-    f.write(result)
+    f.write(escape_mdx_braces(result))
+
+
+## `fused.types` page
+
+result = """\
+---
+sidebar_label: fused.types
+title: fused.types
+toc_max_heading_level: 4
+---
+
+"""
+
+mod_types = mod["types"]
+types_classes = [
+    name for name, member in mod_types.members.items()
+    if not name.startswith("_") and hasattr(member, "kind") and member.kind.value in ("class",)
+]
+
+config_types = dict(default_config)
+config_types["summary"] = False
+
+for cls_name in types_classes:
+    docstring = render_object_docs(mod_types[cls_name], config_types)
+    result += docstring + "\n---\n\n"
+
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "types.mdx", "w") as f:
+    f.write(escape_mdx_braces(result))
+
+
+## `fused.secrets` page
+
+result = """\
+---
+sidebar_label: fused.secrets
+title: fused.secrets
+toc_max_heading_level: 4
+---
+
+"""
+
+mod_secrets = mod["_secrets"]
+secrets_classes = ["SecretsManager", "UserSecretsManager"]
+
+config_secrets = dict(default_config)
+config_secrets["filters"] = ["__init__"]
+config_secrets["summary"] = False
+
+config_secrets_methods = dict(default_config)
+config_secrets_methods["heading_level"] = default_config["heading_level"] + 1
+config_secrets_methods["show_root_full_path"] = False
+
+for cls_name in secrets_classes:
+    if cls_name not in mod_secrets.members:
+        print(f"Warning: {cls_name} not found in fused._secrets, skipping")
+        continue
+
+    import fused._secrets as _fused_secrets
+    cls_obj = getattr(_fused_secrets, cls_name, None)
+    cls_methods = [k for k in (cls_obj.__dict__ if cls_obj else {}) if not k.startswith("_")]
+
+    result += render_object_docs(mod_secrets[cls_name], config_secrets) + "\n---\n\n"
+
+    for meth in cls_methods:
+        if meth not in mod_secrets[cls_name].members:
+            print(f"Warning: {meth} not found in {cls_name}, skipping")
+            continue
+        result += render_object_docs(mod_secrets[cls_name][meth], config_secrets_methods) + "\n---\n\n"
+
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "secrets.mdx", "w") as f:
+    f.write(escape_mdx_braces(result))

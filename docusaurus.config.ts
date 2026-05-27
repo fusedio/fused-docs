@@ -322,6 +322,28 @@ const config: Config = {
           { to: "/workbench/integrations/airtable", from: ["/guide/data-input-outputs/import-connection/airtable"] },
           { to: "/workbench/integrations/slack", from: ["/guide/data-input-outputs/export-api/slack"] },
           { to: "/workbench/integrations/s3", from: ["/guide/advanced-setup/encrypted-s3-bucket"] },
+
+          // Top-level function page redirects (old fused-*.mdx → flat api-reference/*)
+          { from: "/python-sdk/api-reference/fused-udf", to: "/python-sdk/api-reference/udf-decorator" },
+          { from: "/python-sdk/api-reference/fused-cache", to: "/python-sdk/api-reference/cache" },
+          { from: "/python-sdk/api-reference/fused-load", to: "/python-sdk/api-reference/load" },
+          { from: "/python-sdk/api-reference/fused-load-async", to: "/python-sdk/api-reference/load-async" },
+          { from: "/python-sdk/api-reference/fused-run", to: "/python-sdk/api-reference/run" },
+          { from: "/python-sdk/api-reference/fused-run-async", to: "/python-sdk/api-reference/run-async" },
+          { from: "/python-sdk/api-reference/fused-submit", to: "/python-sdk/api-reference/submit" },
+          { from: "/python-sdk/api-reference/fused-download", to: "/python-sdk/api-reference/download" },
+          { from: "/python-sdk/api-reference/fused-ingest", to: "/python-sdk/api-reference/ingest" },
+          { from: "/python-sdk/api-reference/fused-ingest-nongeospatial", to: "/python-sdk/api-reference/ingest-nongeospatial" },
+          { from: "/python-sdk/api-reference/fused-file-path", to: "/python-sdk/api-reference/file-path" },
+          { from: "/python-sdk/api-reference/fused-find-dataset", to: "/python-sdk/api-reference/find-dataset" },
+          { from: "/python-sdk/api-reference/fused-register-dataset", to: "/python-sdk/api-reference/register-dataset" },
+          { from: "/python-sdk/api-reference/fused-get-chunk-from-table", to: "/python-sdk/api-reference/get-chunk-from-table" },
+          { from: "/python-sdk/api-reference/fused-get-chunks-metadata", to: "/python-sdk/api-reference/get-chunks-metadata" },
+          // Module page redirects
+          { from: "/python-sdk/api-reference/fused-context", to: "/python-sdk/api-reference/context" },
+          { from: "/python-sdk/api-reference/fused-secrets", to: "/python-sdk/api-reference/secrets" },
+          { from: "/python-sdk/api-reference/fused-user-secrets", to: "/python-sdk/api-reference/secrets" },
+          { from: "/python-sdk/api-reference/fused-types", to: "/python-sdk/api-reference/types" },
         ],
         // createRedirects(existingPath) {
         //   if (existingPath.includes("/user-guide/out")) {
