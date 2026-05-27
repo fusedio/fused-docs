@@ -586,25 +586,53 @@ a saved UDF with [`fused.load()`](/python-sdk/api-reference/fused-load).
 """
 
 methods = [
+    # Pydantic fields (Udf)
+    "entrypoint",
+    "cache_max_age",
+    "engine",
+    "disk_size_gb",
+    # Pydantic fields (BaseUdf)
+    "code",
+    "metadata",
+    "collection_id",
+    "collection_name",
+    # Properties
+    "catalog_url",
+    # Save / load
     "to_fused",
     "to_directory",
     "to_file",
+    "from_gist",
+    # Access tokens
     "create_access_token",
+    "get_access_token",
     "get_access_tokens",
+    # Lifecycle
     "delete_saved",
     "invalidate_cache",
-    "catalog_url",
+    "get_schedule",
+    # Execution
+    "map",
+    "map_async",
 ]
+
+# Methods are defined across Udf and BaseUdf; look in both
+_udf_cls = mod["models"]["udf"]["udf"]["Udf"]
+_base_udf_cls = mod["models"]["udf"]["base_udf"]["BaseUdf"]
 
 config = dict(default_config)
 config["heading_level"] = default_config["heading_level"] + 1
 config["show_root_full_path"] = False
 
 for meth in methods:
-    if meth not in mod["models"]["Udf"].members:
-        print(f"Warning: {meth} not found in Udf class, skipping")
+    if meth in _udf_cls.members:
+        griffe_cls = _udf_cls
+    elif meth in _base_udf_cls.members:
+        griffe_cls = _base_udf_cls
+    else:
+        print(f"Warning: {meth} not found in Udf or BaseUdf class, skipping")
         continue
-    docstring = render_object_docs(mod["models"]["Udf"][meth], config)
+    docstring = render_object_docs(griffe_cls[meth], config)
     result += escape_mdx_braces(wrap_example_code_blocks(docstring)) + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w", encoding="utf-8") as f:
