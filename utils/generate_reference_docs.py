@@ -19,12 +19,22 @@ from griffe2md.rendering import default_config
 from griffe2md.main import render_object_docs
 
 
+def fix_code_tags(text: str) -> str:
+    """Replace <code>...</code> with backtick inline code for readability.
+
+    griffe2md templates hardcode <code> HTML tags for parameter/return types.
+    Backticks render identically but are far more readable in raw markdown.
+    """
+    return re.sub(r'<code>(.*?)</code>', r'`\1`', text, flags=re.DOTALL)
+
+
 def escape_mdx_braces(text: str) -> str:
-    """Escape bare {expr} outside fenced code blocks so MDX doesn't evaluate them as JSX.
+    """Escape bare {expr} outside fenced code blocks and inline code spans.
 
     griffe2md sometimes renders docstring template variables like {source_dir} directly
     into text sections. MDX 3 treats those as JSX expressions and fails to render. Using
     backslash escapes (\{ \}) renders them as literal characters.
+    Inline code spans (`...`) are left untouched — their content is already safe.
     """
     lines = text.split('\n')
     result = []
@@ -35,7 +45,15 @@ def escape_mdx_braces(text: str) -> str:
         if in_fence:
             result.append(line)
         else:
-            result.append(re.sub(r'\{', r'\\{', re.sub(r'\}', r'\\}', line)))
+            # Split by inline code spans so we don't escape inside them
+            parts = re.split(r'(`[^`]*`)', line)
+            escaped = []
+            for i, part in enumerate(parts):
+                if i % 2 == 1:  # inside a backtick span — leave as-is
+                    escaped.append(part)
+                else:
+                    escaped.append(re.sub(r'\{', r'\\{', re.sub(r'\}', r'\\}', part)))
+            result.append(''.join(escaped))
     return '\n'.join(result)
 
 
@@ -182,10 +200,10 @@ for obj in api_listing:
 result = result.replace("## fused.udf", "## @fused.udf")
 result = result.replace("## fused.cache", "## @fused.cache")
 # griffe cannot handl the x, y, z multiple parameters on one line
-result = result.replace("**x,** (<code>y, z</code>)", "**x, y, z** (<code>int</code>)")
+result = result.replace("**x,** (<code>y, z</code>)", "**x, y, z** (`int`)")
 
 with open(ROOT / "docs" / "python-sdk" / "top-level-functions.mdx", "w") as f:
-    f.write(escape_mdx_braces(result))
+    f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
 
@@ -358,7 +376,7 @@ if "FusedSnowflakeConnection" in mod_api.members:
         result += render_object_docs(mod_api["FusedSnowflakeConnection"][meth], config_sf) + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w") as f:
-    f.write(escape_mdx_braces(result))
+    f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
 ## `fused.options` page
@@ -395,7 +413,7 @@ docstring = render_object_docs(mod["_options"]["Options"], config)
 result += docstring
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "options.mdx", "w") as f:
-    f.write(escape_mdx_braces(result))
+    f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
 ## `JobPool` page
@@ -435,7 +453,7 @@ for meth in methods:
     result += docstring + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "jobpool.mdx", "w") as f:
-    f.write(escape_mdx_braces(result))
+    f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
 ## `Udf` page
@@ -483,7 +501,7 @@ for meth in methods:
     result += docstring + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w") as f:
-    f.write(escape_mdx_braces(result))
+    f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
 ## `fused.h3` page
@@ -523,4 +541,4 @@ for obj in api_listing:
 result = result.replace("`fused.submit()`", "[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)")
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "h3.mdx", "w") as f:
-    f.write(escape_mdx_braces(result))
+    f.write(escape_mdx_braces(fix_code_tags(result)))
