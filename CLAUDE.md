@@ -32,9 +32,13 @@ Every code block in the docs must be runnable. Before committing:
         # your test code here
         return result
     ```
-2. Run it locally:
+2. Run it with the fused CLI (`CANVAS` is required but `""` works for local files):
     ```bash
-    fused run udf.py
+    fused run "" udf.py
+    ```
+    Or run it locally without hitting the remote server:
+    ```bash
+    fused run "" udf.py --engine local
     ```
 3. Confirm the output matches what the docs claim. Only then update the doc.
 
