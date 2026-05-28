@@ -362,7 +362,7 @@ _auto_detected = [
 if _auto_detected:
     print(f"Auto-detected new fused.api functions: {_auto_detected}")
 
-api_listing = _KNOWN_API_FUNCTIONS + _auto_detected
+api_listing = sorted(_KNOWN_API_FUNCTIONS + _auto_detected)
 
 # Auto-detect Fused*Connection classes
 connection_classes = [
@@ -395,30 +395,34 @@ fused.api.function_name()
 
 mod_api = mod["api"]
 
+api_func_config = dict(default_config)
+api_func_config["show_root_full_path"] = False
+
 for obj in api_listing:
     if obj not in mod_api.members:
         print(f"Warning: {obj} not found in fused.api module, skipping")
         continue
-    docstring = render_object_docs(mod_api[obj], default_config)
+    docstring = render_object_docs(mod_api[obj], api_func_config)
     result += escape_mdx_braces(wrap_example_code_blocks(docstring)) + "\n---\n\n"
 
 # fused.api.FusedAPI class
 
-methods = [
-    "create_udf_access_token",
-    "upload",
-    "start_job",
-    "get_jobs",
-    "get_status",
-    "get_logs",
-    "tail_logs",
-    "wait_for_job",
-    "cancel_job",
+methods = sorted([
     "auth_token",
-]
+    "cancel_job",
+    "create_udf_access_token",
+    "get_jobs",
+    "get_logs",
+    "get_status",
+    "start_job",
+    "tail_logs",
+    "upload",
+    "wait_for_job",
+])
 config = dict(default_config)
 config["filters"] = ["__init__"]
 config["summary"] = False
+config["show_root_full_path"] = False
 docstring = render_object_docs(mod_api["FusedAPI"], config)
 
 fusedapi_note = """\
@@ -456,11 +460,12 @@ for class_name in connection_classes:
         continue
 
     cls = getattr(_fused_api, class_name)
-    cls_methods = [name for name in cls.__dict__ if not name.startswith("_")]
+    cls_methods = sorted(name for name in cls.__dict__ if not name.startswith("_"))
 
     config_cls = dict(default_config)
     config_cls["filters"] = ["__init__"]
     config_cls["summary"] = False
+    config_cls["show_root_full_path"] = False
     result += f"## {class_name}\n\n"
     result += escape_mdx_braces(wrap_example_code_blocks(render_object_docs(mod_api[class_name], config_cls))) + "\n---\n\n"
 
