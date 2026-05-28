@@ -5,7 +5,307 @@ toc_max_heading_level: 5
 sidebar_position: 3
 ---
 
-## fused.h3.run_ingest_raster_to_h3
+## persist_hex_table_metadata
+
+```python
+persist_hex_table_metadata(
+    dataset_path: str,
+    output_path: str | None = None,
+    metadata_path: str | None = None,
+    verbose: bool = False,
+    row_group_size: int = 500,
+    indexed_columns: list[str] | None = None,
+    pool_size: int = 10,
+    metadata_compression_level: int | None = None,
+) -> str
+```
+
+Persist metadata for a hex table to enable serverless queries.
+
+Scans all parquet files in the dataset, extracts metadata needed for
+fast reconstruction, and writes one .metadata.parquet file per source file.
+
+Each metadata file contains:
+
+- Row group metadata (offsets, H3 ranges, etc.)
+- Full metadata_json stored as custom metadata in the parquet schema
+
+Requires a 'hex' column (or variant like h3, h3_index) in all files.
+Raises ValueError if no hex column is found.
+
+**Parameters:**
+
+- **dataset_path** (<code>str</code>) – Path to the dataset directory (e.g., "s3://bucket/dataset/")
+- **output_path** (<code>str | None</code>) – Deprecated - use metadata_path instead
+- **metadata_path** (<code>str | None</code>) – Directory path where metadata files should be written.
+  If None, writes to \{source_dir\}/.fused/\{source_filename\}.metadata.parquet
+  for each source file. If provided, writes to
+  \{metadata_path\}/\{full_source_path\}.metadata.parquet using the full
+  source path as the filename. This allows storing metadata in a
+  different location when you don't have write access to the dataset directory.
+- **verbose** (<code>bool</code>) – If True, print timing/progress information.
+- **row_group_size** (<code>int</code>) – Number of rows per row group in output parquet file.
+  Default is 500. Larger values reduce file size but may
+  increase memory usage during writes.
+- **indexed_columns** (<code>list[str] | None</code>) – List of column names to index. If None (default),
+  indexes only the first identified indexed column
+  (typically the hex column). If an empty list, indexes
+  all detected indexed columns.
+- **pool_size** (<code>int</code>) – Number of parallel workers to use for processing files.
+  Default is 10 (parallel processing enabled by default).
+  Set to 1 for sequential processing. This can significantly speed up
+  metadata extraction for large datasets with many files.
+- **metadata_compression_level** (<code>int | None</code>) – Optional zstd compression level for metadata
+  parquet files. If None, uses PyArrow's default for zstd. Valid
+  levels are typically in the range [1, 22].
+
+**Returns:**
+
+- <code>[str](#str)</code> – Path to metadata directory (if metadata_path provided) or first metadata file path
+
+**Raises:**
+
+- <code>[ImportError](#ImportError)</code> – If job2 package is not available
+- <code>[ValueError](#ValueError)</code> – If no hex column is found in any file
+- <code>[FileNotFoundError](#FileNotFoundError)</code> – If no parquet files are found in the dataset
+
+<details class="example" open>
+<summary>Example</summary>
+>>> fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/")
+'s3://my-bucket/my-dataset/.fused/file1.metadata.parquet'
+>>> fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/", metadata_path="s3://my-bucket/metadata/")
+'s3://my-bucket/metadata/'
+>>> fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/", pool_size=4)
+'s3://my-bucket/my-dataset/.fused/file1.metadata.parquet'
+</details>
+
+---
+
+## read_hex_table
+
+```python
+read_hex_table(
+    dataset_path: str,
+    hex_ranges_list: List[List[int]],
+    columns: Optional[List[str]] = None,
+    base_url: Optional[str] = None,
+    verbose: bool = False,
+    return_timing_info: bool = False,
+    batch_size: Optional[int] = None,
+    max_concurrent_downloads: Optional[int] = None,
+) -> "pa.Table" | tuple["pa.Table", Dict[str, Any]]
+```
+
+Read data from an H3-indexed dataset by querying hex ranges.
+
+This is an optimized version that assumes the server always provides full metadata
+(start_offset, end_offset, metadata, and row_group_bytes) for all row groups.
+If any row group is missing required metadata, this function will raise an error
+indicating that the dataset needs to be re-indexed.
+
+This function eliminates all metadata API calls by using prefetched metadata from
+the /datasets/items-with-metadata endpoint.
+
+This function imports the implementation from job2 at runtime,
+similar to how read_parquet_row_group works.
+
+**Parameters:**
+
+- **dataset_path** (<code>str</code>) – Path to the H3-indexed dataset (e.g., "s3://bucket/dataset/")
+- **hex_ranges_list** (<code>List\[List[int]\]</code>) – List of [min_hex, max_hex] pairs as integers.
+  Example: \[[622236719905341439, 622246719905341439]\]
+- **columns** (<code>Optional\[List[str]\]</code>) – Optional list of column names to read. If None, reads all columns.
+- **base_url** (<code>Optional[str]</code>) – Base URL for API. If None, uses current environment.
+- **verbose** (<code>bool</code>) – If True, print progress information. Default is False.
+- **return_timing_info** (<code>bool</code>) – If True, return a tuple of (table, timing_info) instead of just the table.
+  Default is False for backward compatibility.
+- **batch_size** (<code>Optional[int]</code>) – Target size in bytes for combining row groups. If None, uses
+  `fused.options.row_group_batch_size` (default: 32KB).
+- **max_concurrent_downloads** (<code>Optional[int]</code>) – Maximum number of simultaneous download operations. If None,
+  uses a default based on the number of files. Default is None.
+
+**Returns:**
+
+- <code>'pa.Table' | [tuple](#tuple)\['pa.Table', [Dict](#typing.Dict)\[[str](#str), [Any](#typing.Any)\]\]</code> – PyArrow Table containing the concatenated data from all matching row groups.
+- <code>'pa.Table' | [tuple](#tuple)\['pa.Table', [Dict](#typing.Dict)\[[str](#str), [Any](#typing.Any)\]\]</code> – If return_timing_info is True, returns a tuple of (table, timing_info dict).
+
+**Raises:**
+
+- <code>[ValueError](#ValueError)</code> – If any row group is missing required metadata (start_offset, end_offset,
+  metadata, or row_group_bytes). This indicates the dataset needs to be re-indexed.
+
+<details class="example" open>
+<summary>Example</summary>
+import fused
+
+# Read data for a specific H3 hex range
+
+table = fused.h3.read_hex_table(
+dataset_path="s3://my-bucket/my-h3-dataset/",
+hex_ranges_list=\[[622236719905341439, 622246719905341439]\]
+)
+df = table.to_pandas()
+
+</details>
+
+---
+
+## read_hex_table_slow
+
+```python
+read_hex_table_slow(
+    dataset_path: str,
+    hex_ranges_list: List[List[int]],
+    columns: Optional[List[str]] = None,
+    base_url: Optional[str] = None,
+    verbose: bool = False,
+    return_timing_info: bool = False,
+    metadata_batch_size: int = 50,
+) -> "pa.Table" | tuple["pa.Table", Dict[str, Any]]
+```
+
+Read data from an H3-indexed dataset by querying hex ranges.
+
+This function queries the dataset index for row groups that match the given
+H3 hex ranges, downloads them in parallel with optimized batching, and returns
+a concatenated table.
+
+Adjacent row groups from the same file are combined into single downloads
+for better S3 performance. The batch size is controlled by
+`fused.options.row_group_batch_size` (default: 32KB).
+
+**Parameters:**
+
+- **dataset_path** (<code>str</code>) – Path to the H3-indexed dataset (e.g., "s3://bucket/dataset/")
+- **hex_ranges_list** (<code>List\[List[int]\]</code>) – List of [min_hex, max_hex] pairs as integers.
+  Example: \[[622236719905341439, 622246719905341439]\]
+- **columns** (<code>Optional\[List[str]\]</code>) – Optional list of column names to read. If None, reads all columns.
+- **base_url** (<code>Optional[str]</code>) – Base URL for API. If None, uses current environment.
+- **verbose** (<code>bool</code>) – If True, print progress information. Default is False.
+- **return_timing_info** (<code>bool</code>) – If True, return a tuple of (table, timing_info) instead of just the table.
+  Default is False for backward compatibility.
+- **metadata_batch_size** (<code>int</code>) – Maximum number of row group metadata requests to batch together
+  in a single API call. Larger batches reduce API overhead. Default is 50.
+  Consider MongoDB's 16KB document limit when adjusting this value.
+
+**Returns:**
+
+- <code>'pa.Table' | [tuple](#tuple)\['pa.Table', [Dict](#typing.Dict)\[[str](#str), [Any](#typing.Any)\]\]</code> – PyArrow Table containing the concatenated data from all matching row groups.
+- <code>'pa.Table' | [tuple](#tuple)\['pa.Table', [Dict](#typing.Dict)\[[str](#str), [Any](#typing.Any)\]\]</code> – If return_timing_info is True, returns a tuple of (table, timing_info dict).
+
+<details class="example" open>
+<summary>Example</summary>
+import fused
+
+# Read data for a specific H3 hex range
+
+table = fused.h3.read_hex_table_slow(
+dataset_path="s3://my-bucket/my-h3-dataset/",
+hex_ranges_list=\[[622236719905341439, 622246719905341439]\]
+)
+df = table.to_pandas()
+
+</details>
+
+---
+
+## read_hex_table_with_persisted_metadata
+
+```python
+read_hex_table_with_persisted_metadata(
+    dataset_path: str,
+    hex_ranges_list: List[List[int]],
+    columns: Optional[List[str]] = None,
+    metadata_path: Optional[str] = None,
+    verbose: bool = False,
+    return_timing_info: bool = False,
+    batch_size: Optional[int] = None,
+    max_concurrent_downloads: Optional[int] = None,
+    max_concurrent_metadata_reads: Optional[int] = None,
+) -> "pa.Table" | tuple["pa.Table", Dict[str, Any]]
+```
+
+Read data from an H3-indexed dataset using persisted metadata parquet.
+
+This function reads from per-file metadata parquet files instead of
+querying a server. Each source parquet file has a corresponding
+.metadata.parquet file stored at:
+\{source_dir\}/.fused/\{source_filename\}.metadata.parquet
+
+Or at the specified metadata_path if provided:
+\{metadata_path\}/\{full_source_path\}.metadata.parquet
+
+Supports subdirectory queries - if dataset_path points to a subdirectory,
+the function will look for metadata files for files in that subdirectory.
+
+**Parameters:**
+
+- **dataset_path** (<code>str</code>) – Path to the H3-indexed dataset (e.g., "s3://bucket/dataset/")
+  Can also be a subdirectory path for filtering (e.g., "s3://bucket/dataset/year=2024/")
+- **hex_ranges_list** (<code>List\[List[int]\]</code>) – List of [min_hex, max_hex] pairs as integers.
+  Example: \[[622236719905341439, 622246719905341439]\]
+- **columns** (<code>Optional\[List[str]\]</code>) – Optional list of column names to read. If None, reads all columns.
+- **metadata_path** (<code>Optional[str]</code>) – Directory path where metadata files are stored.
+  If None, looks for metadata at \{source_dir\}/.fused/ for each source file.
+  If provided, reads metadata files from this location using full source paths.
+  This allows reading metadata from a different location when
+  you don't have access to the original dataset directory.
+- **verbose** (<code>bool</code>) – If True, print progress information. Default is False.
+- **return_timing_info** (<code>bool</code>) – If True, return a tuple of (table, timing_info) instead of just the table.
+  Default is False for backward compatibility.
+- **batch_size** (<code>Optional[int]</code>) – Target size in bytes for combining row groups. If None, uses
+  `fused.options.row_group_batch_size` (default: 32KB).
+- **max_concurrent_downloads** (<code>Optional[int]</code>) – Maximum number of simultaneous download operations. If None,
+  uses a default based on the number of files. Default is None.
+- **max_concurrent_metadata_reads** (<code>Optional[int]</code>) – Maximum number of simultaneous metadata file reads. If None,
+  defaults to min(10, len(source_files)).
+
+**Returns:**
+
+- <code>'pa.Table' | [tuple](#tuple)\['pa.Table', [Dict](#typing.Dict)\[[str](#str), [Any](#typing.Any)\]\]</code> – PyArrow Table containing the concatenated data from all matching row groups.
+- <code>'pa.Table' | [tuple](#tuple)\['pa.Table', [Dict](#typing.Dict)\[[str](#str), [Any](#typing.Any)\]\]</code> – If return_timing_info is True, returns a tuple of (table, timing_info dict).
+
+**Raises:**
+
+- <code>[FileNotFoundError](#FileNotFoundError)</code> – If the metadata parquet file is not found.
+- <code>[ValueError](#ValueError)</code> – If any row group is missing required metadata.
+
+<details class="example" open>
+<summary>Example</summary>
+import fused
+
+# First, persist metadata (one-time operation)
+
+fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/")
+
+# Then read using persisted metadata (no server required)
+
+table = fused.h3.read_hex_table_with_persisted_metadata(
+dataset_path="s3://my-bucket/my-dataset/",
+hex_ranges_list=\[[622236719905341439, 622246719905341439]\]
+)
+df = table.to_pandas()
+
+# Read from subdirectory (filters by path prefix)
+
+table = fused.h3.read_hex_table_with_persisted_metadata(
+dataset_path="s3://my-bucket/my-dataset/year=2024/",
+hex_ranges_list=\[[622236719905341439, 622246719905341439]\]
+)
+
+# Read with metadata in alternate location
+
+table = fused.h3.read_hex_table_with_persisted_metadata(
+dataset_path="s3://my-bucket/my-dataset/",
+metadata_path="s3://my-bucket/metadata/",
+hex_ranges_list=\[[622236719905341439, 622246719905341439]\]
+)
+
+</details>
+
+---
+
+## run_ingest_raster_to_h3
 
 ```python
 run_ingest_raster_to_h3(
@@ -148,307 +448,7 @@ run_ingest_raster_to_h3(..., engine="local")
 
 ---
 
-## fused.h3.persist_hex_table_metadata
-
-```python
-persist_hex_table_metadata(
-    dataset_path: str,
-    output_path: str | None = None,
-    metadata_path: str | None = None,
-    verbose: bool = False,
-    row_group_size: int = 500,
-    indexed_columns: list[str] | None = None,
-    pool_size: int = 10,
-    metadata_compression_level: int | None = None,
-) -> str
-```
-
-Persist metadata for a hex table to enable serverless queries.
-
-Scans all parquet files in the dataset, extracts metadata needed for
-fast reconstruction, and writes one .metadata.parquet file per source file.
-
-Each metadata file contains:
-
-- Row group metadata (offsets, H3 ranges, etc.)
-- Full metadata_json stored as custom metadata in the parquet schema
-
-Requires a 'hex' column (or variant like h3, h3_index) in all files.
-Raises ValueError if no hex column is found.
-
-**Parameters:**
-
-- **dataset_path** (<code>str</code>) – Path to the dataset directory (e.g., "s3://bucket/dataset/")
-- **output_path** (<code>str | None</code>) – Deprecated - use metadata_path instead
-- **metadata_path** (<code>str | None</code>) – Directory path where metadata files should be written.
-  If None, writes to {source_dir}/.fused/{source_filename}.metadata.parquet
-  for each source file. If provided, writes to
-  {metadata_path}/{full_source_path}.metadata.parquet using the full
-  source path as the filename. This allows storing metadata in a
-  different location when you don't have write access to the dataset directory.
-- **verbose** (<code>bool</code>) – If True, print timing/progress information.
-- **row_group_size** (<code>int</code>) – Number of rows per row group in output parquet file.
-  Default is 500. Larger values reduce file size but may
-  increase memory usage during writes.
-- **indexed_columns** (<code>list[str] | None</code>) – List of column names to index. If None (default),
-  indexes only the first identified indexed column
-  (typically the hex column). If an empty list, indexes
-  all detected indexed columns.
-- **pool_size** (<code>int</code>) – Number of parallel workers to use for processing files.
-  Default is 10 (parallel processing enabled by default).
-  Set to 1 for sequential processing. This can significantly speed up
-  metadata extraction for large datasets with many files.
-- **metadata_compression_level** (<code>int | None</code>) – Optional zstd compression level for metadata
-  parquet files. If None, uses PyArrow's default for zstd. Valid
-  levels are typically in the range [1, 22].
-
-**Returns:**
-
-- <code>[str](#str)</code> – Path to metadata directory (if metadata_path provided) or first metadata file path
-
-**Raises:**
-
-- <code>[ImportError](#ImportError)</code> – If job2 package is not available
-- <code>[ValueError](#ValueError)</code> – If no hex column is found in any file
-- <code>[FileNotFoundError](#FileNotFoundError)</code> – If no parquet files are found in the dataset
-
-<details class="example" open>
-<summary>Example</summary>
->>> fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/")
-'s3://my-bucket/my-dataset/.fused/file1.metadata.parquet'
->>> fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/", metadata_path="s3://my-bucket/metadata/")
-'s3://my-bucket/metadata/'
->>> fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/", pool_size=4)
-'s3://my-bucket/my-dataset/.fused/file1.metadata.parquet'
-</details>
-
----
-
-## fused.h3.read_hex_table
-
-```python
-read_hex_table(
-    dataset_path: str,
-    hex_ranges_list: List[List[int]],
-    columns: Optional[List[str]] = None,
-    base_url: Optional[str] = None,
-    verbose: bool = False,
-    return_timing_info: bool = False,
-    batch_size: Optional[int] = None,
-    max_concurrent_downloads: Optional[int] = None,
-) -> "pa.Table" | tuple["pa.Table", Dict[str, Any]]
-```
-
-Read data from an H3-indexed dataset by querying hex ranges.
-
-This is an optimized version that assumes the server always provides full metadata
-(start_offset, end_offset, metadata, and row_group_bytes) for all row groups.
-If any row group is missing required metadata, this function will raise an error
-indicating that the dataset needs to be re-indexed.
-
-This function eliminates all metadata API calls by using prefetched metadata from
-the /datasets/items-with-metadata endpoint.
-
-This function imports the implementation from job2 at runtime,
-similar to how read_parquet_row_group works.
-
-**Parameters:**
-
-- **dataset_path** (<code>str</code>) – Path to the H3-indexed dataset (e.g., "s3://bucket/dataset/")
-- **hex_ranges_list** (<code>List\[List[int]\]</code>) – List of [min_hex, max_hex] pairs as integers.
-  Example: \[[622236719905341439, 622246719905341439]\]
-- **columns** (<code>Optional\[List[str]\]</code>) – Optional list of column names to read. If None, reads all columns.
-- **base_url** (<code>Optional[str]</code>) – Base URL for API. If None, uses current environment.
-- **verbose** (<code>bool</code>) – If True, print progress information. Default is False.
-- **return_timing_info** (<code>bool</code>) – If True, return a tuple of (table, timing_info) instead of just the table.
-  Default is False for backward compatibility.
-- **batch_size** (<code>Optional[int]</code>) – Target size in bytes for combining row groups. If None, uses
-  `fused.options.row_group_batch_size` (default: 32KB).
-- **max_concurrent_downloads** (<code>Optional[int]</code>) – Maximum number of simultaneous download operations. If None,
-  uses a default based on the number of files. Default is None.
-
-**Returns:**
-
-- <code>'pa.Table' | [tuple](#tuple)\['pa.Table', [Dict](#typing.Dict)\[[str](#str), [Any](#typing.Any)\]\]</code> – PyArrow Table containing the concatenated data from all matching row groups.
-- <code>'pa.Table' | [tuple](#tuple)\['pa.Table', [Dict](#typing.Dict)\[[str](#str), [Any](#typing.Any)\]\]</code> – If return_timing_info is True, returns a tuple of (table, timing_info dict).
-
-**Raises:**
-
-- <code>[ValueError](#ValueError)</code> – If any row group is missing required metadata (start_offset, end_offset,
-  metadata, or row_group_bytes). This indicates the dataset needs to be re-indexed.
-
-<details class="example" open>
-<summary>Example</summary>
-import fused
-
-# Read data for a specific H3 hex range
-
-table = fused.h3.read_hex_table(
-dataset_path="s3://my-bucket/my-h3-dataset/",
-hex_ranges_list=\[[622236719905341439, 622246719905341439]\]
-)
-df = table.to_pandas()
-
-</details>
-
----
-
-## fused.h3.read_hex_table_slow
-
-```python
-read_hex_table_slow(
-    dataset_path: str,
-    hex_ranges_list: List[List[int]],
-    columns: Optional[List[str]] = None,
-    base_url: Optional[str] = None,
-    verbose: bool = False,
-    return_timing_info: bool = False,
-    metadata_batch_size: int = 50,
-) -> "pa.Table" | tuple["pa.Table", Dict[str, Any]]
-```
-
-Read data from an H3-indexed dataset by querying hex ranges.
-
-This function queries the dataset index for row groups that match the given
-H3 hex ranges, downloads them in parallel with optimized batching, and returns
-a concatenated table.
-
-Adjacent row groups from the same file are combined into single downloads
-for better S3 performance. The batch size is controlled by
-`fused.options.row_group_batch_size` (default: 32KB).
-
-**Parameters:**
-
-- **dataset_path** (<code>str</code>) – Path to the H3-indexed dataset (e.g., "s3://bucket/dataset/")
-- **hex_ranges_list** (<code>List\[List[int]\]</code>) – List of [min_hex, max_hex] pairs as integers.
-  Example: \[[622236719905341439, 622246719905341439]\]
-- **columns** (<code>Optional\[List[str]\]</code>) – Optional list of column names to read. If None, reads all columns.
-- **base_url** (<code>Optional[str]</code>) – Base URL for API. If None, uses current environment.
-- **verbose** (<code>bool</code>) – If True, print progress information. Default is False.
-- **return_timing_info** (<code>bool</code>) – If True, return a tuple of (table, timing_info) instead of just the table.
-  Default is False for backward compatibility.
-- **metadata_batch_size** (<code>int</code>) – Maximum number of row group metadata requests to batch together
-  in a single API call. Larger batches reduce API overhead. Default is 50.
-  Consider MongoDB's 16KB document limit when adjusting this value.
-
-**Returns:**
-
-- <code>'pa.Table' | [tuple](#tuple)\['pa.Table', [Dict](#typing.Dict)\[[str](#str), [Any](#typing.Any)\]\]</code> – PyArrow Table containing the concatenated data from all matching row groups.
-- <code>'pa.Table' | [tuple](#tuple)\['pa.Table', [Dict](#typing.Dict)\[[str](#str), [Any](#typing.Any)\]\]</code> – If return_timing_info is True, returns a tuple of (table, timing_info dict).
-
-<details class="example" open>
-<summary>Example</summary>
-import fused
-
-# Read data for a specific H3 hex range
-
-table = fused.h3.read_hex_table_slow(
-dataset_path="s3://my-bucket/my-h3-dataset/",
-hex_ranges_list=\[[622236719905341439, 622246719905341439]\]
-)
-df = table.to_pandas()
-
-</details>
-
----
-
-## fused.h3.read_hex_table_with_persisted_metadata
-
-```python
-read_hex_table_with_persisted_metadata(
-    dataset_path: str,
-    hex_ranges_list: List[List[int]],
-    columns: Optional[List[str]] = None,
-    metadata_path: Optional[str] = None,
-    verbose: bool = False,
-    return_timing_info: bool = False,
-    batch_size: Optional[int] = None,
-    max_concurrent_downloads: Optional[int] = None,
-    max_concurrent_metadata_reads: Optional[int] = None,
-) -> "pa.Table" | tuple["pa.Table", Dict[str, Any]]
-```
-
-Read data from an H3-indexed dataset using persisted metadata parquet.
-
-This function reads from per-file metadata parquet files instead of
-querying a server. Each source parquet file has a corresponding
-.metadata.parquet file stored at:
-{source_dir}/.fused/{source_filename}.metadata.parquet
-
-Or at the specified metadata_path if provided:
-{metadata_path}/{full_source_path}.metadata.parquet
-
-Supports subdirectory queries - if dataset_path points to a subdirectory,
-the function will look for metadata files for files in that subdirectory.
-
-**Parameters:**
-
-- **dataset_path** (<code>str</code>) – Path to the H3-indexed dataset (e.g., "s3://bucket/dataset/")
-  Can also be a subdirectory path for filtering (e.g., "s3://bucket/dataset/year=2024/")
-- **hex_ranges_list** (<code>List\[List[int]\]</code>) – List of [min_hex, max_hex] pairs as integers.
-  Example: \[[622236719905341439, 622246719905341439]\]
-- **columns** (<code>Optional\[List[str]\]</code>) – Optional list of column names to read. If None, reads all columns.
-- **metadata_path** (<code>Optional[str]</code>) – Directory path where metadata files are stored.
-  If None, looks for metadata at {source_dir}/.fused/ for each source file.
-  If provided, reads metadata files from this location using full source paths.
-  This allows reading metadata from a different location when
-  you don't have access to the original dataset directory.
-- **verbose** (<code>bool</code>) – If True, print progress information. Default is False.
-- **return_timing_info** (<code>bool</code>) – If True, return a tuple of (table, timing_info) instead of just the table.
-  Default is False for backward compatibility.
-- **batch_size** (<code>Optional[int]</code>) – Target size in bytes for combining row groups. If None, uses
-  `fused.options.row_group_batch_size` (default: 32KB).
-- **max_concurrent_downloads** (<code>Optional[int]</code>) – Maximum number of simultaneous download operations. If None,
-  uses a default based on the number of files. Default is None.
-- **max_concurrent_metadata_reads** (<code>Optional[int]</code>) – Maximum number of simultaneous metadata file reads. If None,
-  defaults to min(10, len(source_files)).
-
-**Returns:**
-
-- <code>'pa.Table' | [tuple](#tuple)\['pa.Table', [Dict](#typing.Dict)\[[str](#str), [Any](#typing.Any)\]\]</code> – PyArrow Table containing the concatenated data from all matching row groups.
-- <code>'pa.Table' | [tuple](#tuple)\['pa.Table', [Dict](#typing.Dict)\[[str](#str), [Any](#typing.Any)\]\]</code> – If return_timing_info is True, returns a tuple of (table, timing_info dict).
-
-**Raises:**
-
-- <code>[FileNotFoundError](#FileNotFoundError)</code> – If the metadata parquet file is not found.
-- <code>[ValueError](#ValueError)</code> – If any row group is missing required metadata.
-
-<details class="example" open>
-<summary>Example</summary>
-import fused
-
-# First, persist metadata (one-time operation)
-
-fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/")
-
-# Then read using persisted metadata (no server required)
-
-table = fused.h3.read_hex_table_with_persisted_metadata(
-dataset_path="s3://my-bucket/my-dataset/",
-hex_ranges_list=\[[622236719905341439, 622246719905341439]\]
-)
-df = table.to_pandas()
-
-# Read from subdirectory (filters by path prefix)
-
-table = fused.h3.read_hex_table_with_persisted_metadata(
-dataset_path="s3://my-bucket/my-dataset/year=2024/",
-hex_ranges_list=\[[622236719905341439, 622246719905341439]\]
-)
-
-# Read with metadata in alternate location
-
-table = fused.h3.read_hex_table_with_persisted_metadata(
-dataset_path="s3://my-bucket/my-dataset/",
-metadata_path="s3://my-bucket/metadata/",
-hex_ranges_list=\[[622236719905341439, 622246719905341439]\]
-)
-
-</details>
-
----
-
-## fused.h3.run_partition_to_h3
+## run_partition_to_h3
 
 ```python
 run_partition_to_h3(
@@ -511,7 +511,7 @@ further aggregating. For overview files, it will then create aggregated data.
   appended to the `GROUP BY` clause.
   For non-"cnt" metrics, the list of columns that will be aggregated
   according to the metrics (the result contains the cartesian product
-  of data columns and metrics, i.e. all `{data_col}_{metric}` combinations).
+  of data columns and metrics, i.e. all `\{data_col\}_\{metric\}` combinations).
 - **window_cols** (<code>list</code>) – The columns for which to calculate total counts
   over using a window function. This will add an additional column to
   the output (one for each of the columns in this list) with the total

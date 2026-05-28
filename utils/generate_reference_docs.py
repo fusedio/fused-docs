@@ -11,11 +11,32 @@
 #
 # Use as `uv run --reinstall-package fused utils/generate_reference_docs.py` in the root of this repo
 
+import re
 from pathlib import Path
 
 import griffe
 from griffe2md.rendering import default_config
 from griffe2md.main import render_object_docs
+
+
+def escape_mdx_braces(text: str) -> str:
+    """Escape bare {expr} outside fenced code blocks so MDX doesn't evaluate them as JSX.
+
+    griffe2md sometimes renders docstring template variables like {source_dir} directly
+    into text sections. MDX 3 treats those as JSX expressions and fails to render. Using
+    backslash escapes (\{ \}) renders them as literal characters.
+    """
+    lines = text.split('\n')
+    result = []
+    in_fence = False
+    for line in lines:
+        if re.match(r'^\s*```', line):
+            in_fence = not in_fence
+        if in_fence:
+            result.append(line)
+        else:
+            result.append(re.sub(r'\{', r'\\{', re.sub(r'\}', r'\\}', line)))
+    return '\n'.join(result)
 
 
 import fused
@@ -48,8 +69,6 @@ api_listing = [
     "file_path",
     "get_chunks_metadata",
     "get_chunk_from_table",
-    "find_dataset",
-    "register_dataset",
 ]
 
 result = """\
@@ -166,7 +185,7 @@ result = result.replace("## fused.cache", "## @fused.cache")
 result = result.replace("**x,** (<code>y, z</code>)", "**x, y, z** (<code>int</code>)")
 
 with open(ROOT / "docs" / "python-sdk" / "top-level-functions.mdx", "w") as f:
-    f.write(result)
+    f.write(escape_mdx_braces(result))
 
 
 
@@ -211,14 +230,6 @@ api_listing = [
     # Snowflake
     "snowflake_connect",
     "snowflake_query",
-    # Integrations (added in fused-py v2.8.0)
-    "anthropic_connect",
-    "huggingface_connect",
-    "huggingface_inference",
-    "airtable_connect",
-    "airtable_list_records",
-    "hubspot_connect",
-    "notion_connect",
     # Note: Functions that no longer exist will be automatically skipped with a warning
 ]
 
@@ -246,13 +257,15 @@ fused.api.function_name()
 
 mod_api = mod["api"]
 
-# fused.api functions
+# fused.api functions — bare name headings (## access_token, not ## fused.api.access_token)
+config_api_mod = dict(default_config)
+config_api_mod["show_root_full_path"] = False
 
-for obj in api_listing:
+for obj in sorted(api_listing):
     if obj not in mod_api.members:
         print(f"Warning: {obj} not found in fused.api module, skipping")
         continue
-    docstring = render_object_docs(mod_api[obj], default_config)
+    docstring = render_object_docs(mod_api[obj], config_api_mod)
     result += docstring + "\n---\n\n"
 
 # fused.api.FusedAPI class
@@ -260,7 +273,7 @@ for obj in api_listing:
 methods = [
     "create_udf_access_token",
     "upload",
-    "start_job",
+    "start_job", 
     "get_jobs",
     "get_status",
     "get_logs",
@@ -268,31 +281,6 @@ methods = [
     "wait_for_job",
     "cancel_job",
     "auth_token",
-    # Secrets (added in fused-py v2.8.0)
-    "get_secret_value",
-    "set_secret_value",
-    "delete_secret_value",
-    "list_secrets",
-    "get_user_custom_secret",
-    "list_user_custom_secrets",
-    # Cron jobs (added in fused-py v2.8.0)
-    "list_cronjobs",
-    "create_cronjob",
-    "update_cronjob",
-    "delete_cronjob",
-    "get_cronjob",
-    "get_cronjobs_for_udf",
-    "run_cronjob",
-    # Collections (added in fused-py v2.8.0)
-    "list_collections",
-    "get_collection_by_name",
-    "get_team_collection_by_name",
-    "get_collection_by_id",
-    "create_collection",
-    "update_collection",
-    "delete_collection",
-    "share_collection",
-    "unshare_collection",
 ]
 config = dict(default_config)
 config["filters"] = ["__init__"]
@@ -369,74 +357,8 @@ if "FusedSnowflakeConnection" in mod_api.members:
             continue
         result += render_object_docs(mod_api["FusedSnowflakeConnection"][meth], config_sf) + "\n---\n\n"
 
-# fused.api.FusedAirtableConnection class
-
-airtable_methods = [
-    "list_bases",
-    "list_tables",
-    "list_records",
-    "get_record",
-    "create_records",
-    "update_records",
-    "delete_records",
-]
-
-if "FusedAirtableConnection" in mod_api.members:
-    airtable_note = """\
-## Airtable
-
-## FusedAirtableConnection
-
-"""
-    config_at = dict(default_config)
-    config_at["filters"] = ["__init__"]
-    config_at["summary"] = False
-    result += airtable_note + render_object_docs(mod_api["FusedAirtableConnection"], config_at) + "\n---\n\n"
-
-    config_at["heading_level"] = default_config["heading_level"] + 1
-    config_at["show_root_full_path"] = False
-    for meth in airtable_methods:
-        if meth not in mod_api["FusedAirtableConnection"].members:
-            print(f"Warning: {meth} not found in FusedAirtableConnection class, skipping")
-            continue
-        result += render_object_docs(mod_api["FusedAirtableConnection"][meth], config_at) + "\n---\n\n"
-
-# fused.api.FusedNotionConnection class
-
-notion_methods = [
-    "get_page",
-    "create_page",
-    "update_page",
-    "delete_page",
-    "list_comments",
-    "create_comment",
-    "list_users",
-    "get_user",
-    "search",
-]
-
-if "FusedNotionConnection" in mod_api.members:
-    notion_note = """\
-## Notion
-
-## FusedNotionConnection
-
-"""
-    config_no = dict(default_config)
-    config_no["filters"] = ["__init__"]
-    config_no["summary"] = False
-    result += notion_note + render_object_docs(mod_api["FusedNotionConnection"], config_no) + "\n---\n\n"
-
-    config_no["heading_level"] = default_config["heading_level"] + 1
-    config_no["show_root_full_path"] = False
-    for meth in notion_methods:
-        if meth not in mod_api["FusedNotionConnection"].members:
-            print(f"Warning: {meth} not found in FusedNotionConnection class, skipping")
-            continue
-        result += render_object_docs(mod_api["FusedNotionConnection"][meth], config_no) + "\n---\n\n"
-
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w") as f:
-    f.write(result)
+    f.write(escape_mdx_braces(result))
 
 
 ## `fused.options` page
@@ -473,7 +395,7 @@ docstring = render_object_docs(mod["_options"]["Options"], config)
 result += docstring
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "options.mdx", "w") as f:
-    f.write(result)
+    f.write(escape_mdx_braces(result))
 
 
 ## `JobPool` page
@@ -499,7 +421,7 @@ submitted jobs from [`fused.submit()`](/python-sdk/top-level-functions/#fusedsub
 # listing and rendering the methods separately to avoid including the JobPool 
 # class signature and docstring (which is not public -> use submit() to get this object)
 import fused
-methods = [key for key in fused._submit.JobPool.__dict__.keys() if not key.startswith("_")]
+methods = sorted(key for key in fused._submit.JobPool.__dict__.keys() if not key.startswith("_"))
 
 config = dict(default_config)
 config["heading_level"] = default_config["heading_level"] + 1
@@ -513,7 +435,7 @@ for meth in methods:
     result += docstring + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "jobpool.mdx", "w") as f:
-    f.write(result)
+    f.write(escape_mdx_braces(result))
 
 
 ## `Udf` page
@@ -539,15 +461,15 @@ a saved UDF with [`fused.load()`](/python-sdk/top-level-functions/#fusedload).
 
 # listing and rendering the methods separately to avoid including the Udf 
 # class signature and docstring (which is not public)
-methods = [
-    "to_directory",
-    "to_file",
-    "set_parameters",
+methods = sorted([
     "eval_schema",
-    "run_local",
     "map",
     "map_async",
-]
+    "run_local",
+    "set_parameters",
+    "to_directory",
+    "to_file",
+])
 
 config = dict(default_config)
 config["heading_level"] = default_config["heading_level"] + 1
@@ -561,19 +483,19 @@ for meth in methods:
     result += docstring + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w") as f:
-    f.write(result)
+    f.write(escape_mdx_braces(result))
 
 
 ## `fused.h3` page
 
-api_listing = [
-    "run_ingest_raster_to_h3",
+api_listing = sorted([
     "persist_hex_table_metadata",
     "read_hex_table",
     "read_hex_table_slow",
     "read_hex_table_with_persisted_metadata",
+    "run_ingest_raster_to_h3",
     "run_partition_to_h3",
-]
+])
 
 result = """\
 ---
@@ -587,14 +509,18 @@ sidebar_position: 3
 
 mod_api = mod["h3"]
 
+# bare name headings (## run_ingest_raster_to_h3, not ## fused.h3.run_ingest_raster_to_h3)
+config_h3 = dict(default_config)
+config_h3["show_root_full_path"] = False
+
 for obj in api_listing:
     if obj not in mod_api.members:
         print(f"Warning: {obj} not found in fused.h3 module, skipping")
         continue
-    docstring = render_object_docs(mod_api[obj], default_config)
+    docstring = render_object_docs(mod_api[obj], config_h3)
     result += docstring + "\n---\n\n"
 
 result = result.replace("`fused.submit()`", "[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)")
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "h3.mdx", "w") as f:
-    f.write(result)
+    f.write(escape_mdx_braces(result))

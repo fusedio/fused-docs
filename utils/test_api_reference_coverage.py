@@ -37,8 +37,6 @@ TOP_LEVEL_FUNCTIONS = [
     "file_path",
     "get_chunks_metadata",
     "get_chunk_from_table",
-    "find_dataset",
-    "register_dataset",
 ]
 
 FUSED_API_FUNCTIONS = [
@@ -73,14 +71,6 @@ FUSED_API_FUNCTIONS = [
     "log",
     "snowflake_connect",
     "snowflake_query",
-    # Integrations (added in fused-py v2.8.0)
-    "anthropic_connect",
-    "huggingface_connect",
-    "huggingface_inference",
-    "airtable_connect",
-    "airtable_list_records",
-    "hubspot_connect",
-    "notion_connect",
 ]
 
 FUSED_API_CLASS_METHODS = [
@@ -94,77 +84,30 @@ FUSED_API_CLASS_METHODS = [
     "wait_for_job",
     "cancel_job",
     "auth_token",
-    # Secrets (added in fused-py v2.8.0)
-    "get_secret_value",
-    "set_secret_value",
-    "delete_secret_value",
-    "list_secrets",
-    "get_user_custom_secret",
-    "list_user_custom_secrets",
-    # Cron jobs (added in fused-py v2.8.0)
-    "list_cronjobs",
-    "create_cronjob",
-    "update_cronjob",
-    "delete_cronjob",
-    "get_cronjob",
-    "get_cronjobs_for_udf",
-    "run_cronjob",
-    # Collections (added in fused-py v2.8.0)
-    "list_collections",
-    "get_collection_by_name",
-    "get_team_collection_by_name",
-    "get_collection_by_id",
-    "create_collection",
-    "update_collection",
-    "delete_collection",
-    "share_collection",
-    "unshare_collection",
-]
-
-FUSED_AIRTABLE_METHODS = [
-    "list_bases",
-    "list_tables",
-    "list_records",
-    "get_record",
-    "create_records",
-    "update_records",
-    "delete_records",
-]
-
-FUSED_NOTION_METHODS = [
-    "get_page",
-    "create_page",
-    "update_page",
-    "delete_page",
-    "list_comments",
-    "create_comment",
-    "list_users",
-    "get_user",
-    "search",
 ]
 
 JOBPOOL_METHODS = sorted(
     k for k in fused._submit.JobPool.__dict__ if not k.startswith("_")
 )
 
-UDF_METHODS = [
-    "to_directory",
-    "to_file",
-    "set_parameters",
+UDF_METHODS = sorted([
     "eval_schema",
-    "run_local",
     "map",
     "map_async",
-]
+    "run_local",
+    "set_parameters",
+    "to_directory",
+    "to_file",
+])
 
-H3_FUNCTIONS = [
-    "run_ingest_raster_to_h3",
+H3_FUNCTIONS = sorted([
     "persist_hex_table_metadata",
     "read_hex_table",
     "read_hex_table_slow",
     "read_hex_table_with_persisted_metadata",
+    "run_ingest_raster_to_h3",
     "run_partition_to_h3",
-]
+])
 
 # ── Griffe module load ─────────────────────────────────────────────────────────
 
@@ -179,9 +122,9 @@ checks_run = 0
 
 # Heading format per file (from inspecting generate_reference_docs.py output):
 #   top-level-functions.mdx : ## @fused.udf / ## fused.run  (level 2, full path)
-#   api.mdx module functions : ## fused.api.{name}           (level 2, full path)
+#   api.mdx module functions : ## {name}                     (level 2, bare name)
 #   api.mdx FusedAPI methods : ### {name}                    (level 3, bare name)
-#   h3.mdx                  : ## fused.h3.{name}             (level 2, full path)
+#   h3.mdx                  : ## {name}                      (level 2, bare name)
 #   udf.mdx methods         : ### {name}                     (level 3, bare name)
 #   jobpool.mdx methods     : ### {name}                     (level 3, bare name)
 
@@ -240,38 +183,22 @@ for name in TOP_LEVEL_FUNCTIONS:
     check_in_mdx(top_level_mdx, heading, f"fused.{name}", level=2)
 
 # ── fused.api module functions ─────────────────────────────────────────────────
-# Headings: ## fused.api.{name}
+# Headings: ## {name}  (bare name, not fused.api.{name})
 
 api_mdx = ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx"
 mod_api = mod["api"]
 
 for name in FUSED_API_FUNCTIONS:
     if check_in_package(mod_api, name, "fused.api"):
-        check_in_mdx(api_mdx, f"fused.api.{name}", f"fused.api.{name}", level=2)
+        check_in_mdx(api_mdx, name, f"fused.api.{name}", level=2)
 
 # ── FusedAPI class methods ─────────────────────────────────────────────────────
-# Headings: ### {name}  (under ## fused.api.FusedAPI)
+# Headings: ### {name}  (under ## FusedAPI)
 
 if "FusedAPI" in mod_api.members:
     for name in FUSED_API_CLASS_METHODS:
         if check_in_package(mod_api["FusedAPI"], name, "fused.api.FusedAPI"):
             check_in_mdx(api_mdx, name, f"FusedAPI.{name}", level=3)
-
-# ── FusedAirtableConnection methods ───────────────────────────────────────────
-# Headings: ### {name}  (under ## FusedAirtableConnection)
-
-if "FusedAirtableConnection" in mod_api.members:
-    for name in FUSED_AIRTABLE_METHODS:
-        if check_in_package(mod_api["FusedAirtableConnection"], name, "FusedAirtableConnection"):
-            check_in_mdx(api_mdx, name, f"FusedAirtableConnection.{name}", level=3)
-
-# ── FusedNotionConnection methods ─────────────────────────────────────────────
-# Headings: ### {name}  (under ## FusedNotionConnection)
-
-if "FusedNotionConnection" in mod_api.members:
-    for name in FUSED_NOTION_METHODS:
-        if check_in_package(mod_api["FusedNotionConnection"], name, "FusedNotionConnection"):
-            check_in_mdx(api_mdx, name, f"FusedNotionConnection.{name}", level=3)
 
 # ── JobPool methods ────────────────────────────────────────────────────────────
 # Headings: ### {name}  (under ## JobPool)
@@ -292,14 +219,14 @@ for name in UDF_METHODS:
         check_in_mdx(udf_mdx, name, f"Udf.{name}", level=3)
 
 # ── fused.h3 functions ─────────────────────────────────────────────────────────
-# Headings: ## fused.h3.{name}
+# Headings: ## {name}  (bare name, not fused.h3.{name})
 
 h3_mdx = ROOT / "docs" / "python-sdk" / "api-reference" / "h3.mdx"
 mod_h3 = mod["h3"]
 
 for name in H3_FUNCTIONS:
     if check_in_package(mod_h3, name, "fused.h3"):
-        check_in_mdx(h3_mdx, f"fused.h3.{name}", f"fused.h3.{name}", level=2)
+        check_in_mdx(h3_mdx, name, f"fused.h3.{name}", level=2)
 
 # ── Report ────────────────────────────────────────────────────────────────────
 
