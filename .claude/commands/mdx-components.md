@@ -51,7 +51,7 @@ import Tag from '@site/src/components/Tag';
 
 Renders a notebook-style output cell below a code block.
 
-```mdx
+````mdx
 import CellOutput from "@site/src/components/CellOutput.jsx";
 
 ```python
@@ -60,7 +60,7 @@ df.head()
 <CellOutput>
 {/* paste rendered output here */}
 </CellOutput>
-```
+````
 
 ### `<LazyReactPlayer>`
 
