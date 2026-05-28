@@ -109,6 +109,19 @@ H3_FUNCTIONS = sorted([
     "run_partition_to_h3",
 ])
 
+FUSED_SNOWFLAKE_METHODS = [
+    "connect",
+    "query",
+    "execute",
+    "list_databases",
+    "list_schemas",
+    "list_tables",
+    "list_stages",
+    "list_stage_files",
+    "read_stage",
+    "write",
+]
+
 # ── Griffe module load ─────────────────────────────────────────────────────────
 
 print(f"Testing API reference coverage for fused v{fused.__version__}\n")
@@ -227,6 +240,14 @@ mod_h3 = mod["h3"]
 for name in H3_FUNCTIONS:
     if check_in_package(mod_h3, name, "fused.h3"):
         check_in_mdx(h3_mdx, name, f"fused.h3.{name}", level=2)
+
+# ── FusedSnowflakeConnection methods ──────────────────────────────────────────
+# Headings: ### {name}  (under ## FusedSnowflakeConnection)
+
+if "FusedSnowflakeConnection" in mod_api.members:
+    for name in FUSED_SNOWFLAKE_METHODS:
+        if check_in_package(mod_api["FusedSnowflakeConnection"], name, "fused.api.FusedSnowflakeConnection"):
+            check_in_mdx(api_mdx, name, f"FusedSnowflakeConnection.{name}", level=3)
 
 # ── Report ────────────────────────────────────────────────────────────────────
 
