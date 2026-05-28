@@ -11,11 +11,50 @@
 #
 # Use as `uv run --reinstall-package fused utils/generate_reference_docs.py` in the root of this repo
 
+import re
 from pathlib import Path
 
 import griffe
 from griffe2md.rendering import default_config
 from griffe2md.main import render_object_docs
+
+
+def fix_code_tags(text: str) -> str:
+    """Replace <code>...</code> with backtick inline code for readability.
+
+    griffe2md templates hardcode <code> HTML tags for parameter/return types.
+    Backticks render identically but are far more readable in raw markdown.
+    """
+    return re.sub(r'<code>(.*?)</code>', r'`\1`', text, flags=re.DOTALL)
+
+
+def escape_mdx_braces(text: str) -> str:
+    """Escape bare {expr} outside fenced code blocks and inline code spans.
+
+    griffe2md sometimes renders docstring template variables like {source_dir} directly
+    into text sections. MDX 3 treats those as JSX expressions and fails to render. Using
+    backslash escapes (\{ \}) renders them as literal characters.
+    Inline code spans (`...`) are left untouched — their content is already safe.
+    """
+    lines = text.split('\n')
+    result = []
+    in_fence = False
+    for line in lines:
+        if re.match(r'^\s*```', line):
+            in_fence = not in_fence
+        if in_fence:
+            result.append(line)
+        else:
+            # Split by inline code spans so we don't escape inside them
+            parts = re.split(r'(`[^`]*`)', line)
+            escaped = []
+            for i, part in enumerate(parts):
+                if i % 2 == 1:  # inside a backtick span — leave as-is
+                    escaped.append(part)
+                else:
+                    escaped.append(re.sub(r'\{', r'\\{', re.sub(r'\}', r'\\}', part)))
+            result.append(''.join(escaped))
+    return '\n'.join(result)
 
 
 import fused
@@ -161,10 +200,10 @@ for obj in api_listing:
 result = result.replace("## fused.udf", "## @fused.udf")
 result = result.replace("## fused.cache", "## @fused.cache")
 # griffe cannot handl the x, y, z multiple parameters on one line
-result = result.replace("**x,** (<code>y, z</code>)", "**x, y, z** (<code>int</code>)")
+result = result.replace("**x,** (<code>y, z</code>)", "**x, y, z** (`int`)")
 
 with open(ROOT / "docs" / "python-sdk" / "top-level-functions.mdx", "w") as f:
-    f.write(result)
+    f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
 
@@ -236,13 +275,15 @@ fused.api.function_name()
 
 mod_api = mod["api"]
 
-# fused.api functions
+# fused.api functions — bare name headings (## access_token, not ## fused.api.access_token)
+config_api_mod = dict(default_config)
+config_api_mod["show_root_full_path"] = False
 
-for obj in api_listing:
+for obj in sorted(api_listing):
     if obj not in mod_api.members:
         print(f"Warning: {obj} not found in fused.api module, skipping")
         continue
-    docstring = render_object_docs(mod_api[obj], default_config)
+    docstring = render_object_docs(mod_api[obj], config_api_mod)
     result += docstring + "\n---\n\n"
 
 # fused.api.FusedAPI class
@@ -335,7 +376,7 @@ if "FusedSnowflakeConnection" in mod_api.members:
         result += render_object_docs(mod_api["FusedSnowflakeConnection"][meth], config_sf) + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w") as f:
-    f.write(result)
+    f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
 ## `fused.options` page
@@ -372,7 +413,7 @@ docstring = render_object_docs(mod["_options"]["Options"], config)
 result += docstring
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "options.mdx", "w") as f:
-    f.write(result)
+    f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
 ## `JobPool` page
@@ -398,7 +439,7 @@ submitted jobs from [`fused.submit()`](/python-sdk/top-level-functions/#fusedsub
 # listing and rendering the methods separately to avoid including the JobPool 
 # class signature and docstring (which is not public -> use submit() to get this object)
 import fused
-methods = [key for key in fused._submit.JobPool.__dict__.keys() if not key.startswith("_")]
+methods = sorted(key for key in fused._submit.JobPool.__dict__.keys() if not key.startswith("_"))
 
 config = dict(default_config)
 config["heading_level"] = default_config["heading_level"] + 1
@@ -412,7 +453,7 @@ for meth in methods:
     result += docstring + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "jobpool.mdx", "w") as f:
-    f.write(result)
+    f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
 ## `Udf` page
@@ -438,16 +479,15 @@ a saved UDF with [`fused.load()`](/python-sdk/top-level-functions/#fusedload).
 
 # listing and rendering the methods separately to avoid including the Udf 
 # class signature and docstring (which is not public)
-methods = [
-    "to_fused",
+methods = sorted([
+    "eval_schema",
+    "map",
+    "map_async",
+    "run_local",
+    "set_parameters",
     "to_directory",
     "to_file",
-    "create_access_token",
-    "get_access_tokens",
-    "delete_saved",
-    "invalidate_cache",
-    "catalog_url",
-]
+])
 
 config = dict(default_config)
 config["heading_level"] = default_config["heading_level"] + 1
@@ -461,18 +501,19 @@ for meth in methods:
     result += docstring + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w") as f:
-    f.write(result)
+    f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
 ## `fused.h3` page
 
-api_listing = [
-    "run_ingest_raster_to_h3",
+api_listing = sorted([
     "persist_hex_table_metadata",
     "read_hex_table",
     "read_hex_table_slow",
     "read_hex_table_with_persisted_metadata",
-]
+    "run_ingest_raster_to_h3",
+    "run_partition_to_h3",
+])
 
 result = """\
 ---
@@ -486,14 +527,18 @@ sidebar_position: 3
 
 mod_api = mod["h3"]
 
+# bare name headings (## run_ingest_raster_to_h3, not ## fused.h3.run_ingest_raster_to_h3)
+config_h3 = dict(default_config)
+config_h3["show_root_full_path"] = False
+
 for obj in api_listing:
     if obj not in mod_api.members:
         print(f"Warning: {obj} not found in fused.h3 module, skipping")
         continue
-    docstring = render_object_docs(mod_api[obj], default_config)
+    docstring = render_object_docs(mod_api[obj], config_h3)
     result += docstring + "\n---\n\n"
 
 result = result.replace("`fused.submit()`", "[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)")
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "h3.mdx", "w") as f:
-    f.write(result)
+    f.write(escape_mdx_braces(fix_code_tags(result)))
