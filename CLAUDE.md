@@ -2,11 +2,43 @@
 
 See @README.md for project overview and @package.json for available npm scripts.
 
+## Docs structure
+
+Understanding where content belongs and how each section is written:
+
+| Section | Purpose | Writing style |
+|---|---|---|
+| **Guide** (`docs/guide/`) | Explore all aspects of Fused — concepts, setup, workflows | Concept-first. Explain the why, then the how. Link to API Reference for method details. |
+| **Examples** (`docs/examples/`) | Hands-on, concrete things you can build | Task-first. Show the code, explain what it does. Link back to Guide for concepts, API Reference for method signatures. |
+| **API Reference** (`docs/python-sdk/`) | Exhaustive source of truth for the `fused` Python API and all available widgets | Generated — do not hand-edit. Every method, every parameter. No prose beyond what the docstring provides. |
+| **Workbench Manual** (`docs/workbench/`) | Reference for the Workbench UI — same philosophy as API Reference but for the interface | UI-first. Screenshot-heavy. Describe what each element does, not how to build with it. |
+
+Before adding a page, ask: is this a concept (Guide), a recipe (Examples), a reference entry (API Reference), or a UI element (Workbench Manual)? Put it in the right section and write it in that section's voice.
+
 ## Core rules
 
-- **Test before documenting**: Before changing any doc reference or code block, run the code yourself. Spin up a small UDF with the fused CLI and confirm it works.
+- **Test before documenting**: Before changing any doc reference or code block, verify the code runs. See [Testing code](#testing-code) below.
 - **Write for humans and agents**: Humans can click — link to the UI, to other pages, to live examples. Agents use the CLI — include the exact commands to run.
 - **Use absolute links**: `[page](/python-sdk/quickstart)` not `[page](../quickstart)`. Relative links break when pages move.
+
+## Testing code
+
+Every code block in the docs must be runnable. Before committing:
+
+1. Write a minimal UDF that exercises the feature:
+    ```python
+    @fused.udf
+    def udf():
+        # your test code here
+        return result
+    ```
+2. Run it locally:
+    ```bash
+    fused run udf.py
+    ```
+3. Confirm the output matches what the docs claim. Only then update the doc.
+
+For code that requires credentials or external services, note this explicitly in the doc with a `:::note` admonition.
 
 ## Do not
 
