@@ -12,9 +12,10 @@ Each section has a distinct purpose and writing voice. Put content in the right 
 | **Examples** | `docs/examples/` | Hands-on, concrete things you can build | Task-first. Show the code, explain what it does. Link back to Guide for concepts, API Reference for method signatures. |
 | **Python SDK** | `docs/python-sdk/` | Exhaustive reference for the `fused` Python API | Generated — do not hand-edit. Every method, every parameter. No prose beyond what the docstring provides. |
 | **Widget API** | `docs/widget-api/` | Reference for all available Fused widgets and their configuration | Schema-driven. Exhaustive props list, show minimal and full examples. |
+| **CLI Reference** | `docs/cli/` | One page per `fused` CLI command — flags, subcommands, examples | Reference-style. One page per top-level command. Flags table + examples, no prose beyond what's needed to understand the flag. |
 | **Workbench Manual** | `docs/workbench/` | Reference for the Workbench UI | UI-first. Screenshot-heavy. Describe what each element does, not how to build with it. |
 
-Before adding a page, ask: is this a concept (Guide), a recipe (Examples), a reference entry (Python SDK / Widget API), or a UI element (Workbench)? Put it in the right section and write in that section's voice.
+Before adding a page, ask: is this a concept (Guide), a recipe (Examples), a reference entry (Python SDK / Widget API / CLI), or a UI element (Workbench)? Put it in the right section and write in that section's voice.
 
 ## Core rules
 
