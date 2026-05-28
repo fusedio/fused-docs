@@ -151,6 +151,7 @@ const sidebars: SidebarsConfig = {
         "examples/google-calendar-meetings",
         "examples/gdrive-to-slides-infographic",
         "examples/messy-data-agents",
+        "examples/live-data-mcp-endpoint",
         "examples/comfyui-fused-workflows",
       ],
     },
@@ -250,6 +251,23 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "python-sdk/api-reference/fused-run", label: "fused.run" },
         { type: "doc", id: "python-sdk/api-reference/fused-run-async", label: "fused.run_async" },
         { type: "doc", id: "python-sdk/api-reference/fused-submit", label: "fused.submit" },
+      ],
+    },
+
+    {
+      type: "category",
+      label: "CLI Reference",
+      collapsible: false,
+      items: [
+        { type: "doc", id: "cli/overview", label: "Overview" },
+        { type: "doc", id: "cli/canvas", label: "fused canvas" },
+        { type: "doc", id: "cli/claude", label: "fused claude" },
+        { type: "doc", id: "cli/files", label: "fused files" },
+        { type: "doc", id: "cli/integrations", label: "fused integrations" },
+        { type: "doc", id: "cli/json-ui", label: "fused json-ui" },
+        { type: "doc", id: "cli/run", label: "fused run" },
+        { type: "doc", id: "cli/secrets", label: "fused secrets" },
+        { type: "doc", id: "cli/udf-schema", label: "fused udf-schema" },
       ],
     },
 
