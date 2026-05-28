@@ -1,0 +1,96 @@
+name: Update API Reference on fused-py Release
+
+on:
+  # Triggered from fusedlabs/application after a fused-py release
+  # gh api repos/fusedio/fused-docs/dispatches \
+  #   -f event_type=fused-py-release \
+  #   -f 'client_payload[version]=2.8.0'
+  repository_dispatch:
+    types: [fused-py-release]
+
+  # Manual trigger for testing without waiting for a real release
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'fused-py version (e.g. 2.8.0) — used only for branch/PR naming'
+        required: false
+        default: 'manual'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-api-reference:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Regenerate API reference docs
+        run: uv run --reinstall-package fused utils/generate_reference_docs.py
+
+      - name: Check if docs changed
+        id: diff
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No changes detected — docs are already up to date"
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Changes detected:"
+            git diff --stat
+          fi
+
+      - name: Run coverage test
+        run: uv run utils/test_api_reference_coverage.py
+
+      - name: Create PR with updated docs
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ github.event.client_payload.version || inputs.version || 'manual' }}"
+          BRANCH="auto/api-ref-fused-py-${VERSION}"
+          FUSED_VERSION=$(python -c "import fused; print(fused.__version__)" 2>/dev/null || echo "$VERSION")
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH"
+          git add docs/python-sdk/
+          git commit -m "docs: regenerate API reference for fused-py v${FUSED_VERSION}"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "docs: update API reference for fused-py v${FUSED_VERSION}" \
+            --body "$(cat <<EOF
+          ## Summary
+
+          Auto-generated API reference update for **fused-py v${FUSED_VERSION}**.
+
+          This PR was created automatically after a new fused-py release. It re-runs
+          \`utils/generate_reference_docs.py\` against the latest published package and
+          commits any changes to the API reference MDX files.
+
+          ## What changed
+
+          \`\`\`
+          $(git diff HEAD~1 --stat)
+          \`\`\`
+
+          ## Checklist
+
+          - [ ] Review the diff for any unexpected removals or missing new methods
+          - [ ] Confirm \`test_api_reference_coverage.py\` passes (runs automatically in CI)
+
+          ---
+          *Triggered by: \`${{ github.event_name }}\` — fused-py v${VERSION}*
+          EOF
+          )" \
+            --head "$BRANCH" \
+            --base main
