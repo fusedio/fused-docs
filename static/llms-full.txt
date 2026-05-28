@@ -241,6 +241,10 @@ fused.api.access_token()
 
 Do not share your Bearer token. It allows impersonation of your account.
 
+## See also
+
+The same `fused` package also provides a CLI for managing canvases, running UDFs, and more from the terminal. See the CLI Reference.
+
 ## Quick test
 
 Verify your installation works:
@@ -5441,65 +5445,7 @@ Install the `fused` Python package to get the CLI:
 pip install --upgrade fused
 ```
 
-If you don't want to install the package, prefix any command with `uvx` to run it standalone:
-
-```bash
-uvx fused <command>
-```
-
-Run `fused --help` to confirm it's available and see all commands:
-
-```
-$ fused --help
-
-Usage: fused [OPTIONS] COMMAND [ARGS]...
-
-Options:
-  --env TEXT            [env var: FUSED_ENV]
-  --format [json|text]  [env var: FUSED_CLI_FORMAT]
-
-Commands:
-  canvas        Manage canvases.
-  claude        Manage Fused for Claude Code (via the `claude` CLI).
-  completion    Print or install shell tab completion for the fused CLI.
-  files         Manage files stored in Fused.
-  integrations  Manage third-party integrations in Fused.
-  json-ui       Inspect and run JSON-UI widgets.
-  login         Authenticate and persist credentials.
-  logout        Log out and clear local credentials.
-  run           Run a UDF and print the result.
-  secrets       Manage kernel and user secrets.
-  udf-schema    Print the API schema for a UDF.
-  whoami        Show info about the authenticated user or team.
-```
-
-Run `fused <command> --help` to see options for any subcommand, e.g. `fused canvas --help` or `fused run --help`.
-
-### Login
-
-Before using the CLI, authenticate with your Fused account:
-
-```bash
-fused login
-```
-
-This opens a browser window for OAuth sign-in and persists your credentials locally. Run `fused whoami` to confirm you're logged in.
-
-### List your canvases
-
-```bash
-fused canvas list
-```
-
-```
-Analytics_in_Fused
-MCP_Building_blocks
-Ragging_Overture_Docs
-default
-...
-```
-
-Add `--team` to list canvases shared with your team.
+The CLI covers running UDFs, managing canvases, uploading files, handling secrets and integrations, and more. See the CLI Reference for the full command reference.
 
 ---
 
@@ -9255,6 +9201,191 @@ First, make a copy of the Canvas. Then follow the Share Modal guide to publish i
 
 ================================================================================
 
+## Serving Live Team Data as an MCP Tool
+Path: examples/live-data-mcp-endpoint.mdx
+URL: https://docs.fused.io/examples/live-data-mcp-endpoint
+
+Your team's automation writes fresh data somewhere every day. This example shows how to wrap that data in a Fused UDF so any agent — on any machine — can query it with a single command, without sharing credentials. The entire project — writing UDFs, testing, deploying, connecting — runs from Claude Code.
+
+This is the pattern behind daily-digest, an internal Fused tool where a Claude routine scrapes AI market signals daily, writes them to a Notion page, and a Fused canvas exposes them as queryable MCP tools for the whole team.
+
+## How it works
+
+```
+Automation (Claude routine, cron job, script…)
+  → writes structured JSON to a Notion page
+          ↓
+Fused Canvas (always-on HTTP endpoint)
+  → get_latest_signals  — returns the N most recent entries
+  → get_by_date         — filters by a specific date
+          ↓
+Team agents (any machine, no Notion access needed)
+  fused claude add-mcp signals-canvas
+  → "What are this week's top AI signals?"
+```
+
+The canvas sits between the data store and the agents. The Notion token and page ID stay inside Fused; consumers only need the canvas token. The endpoint URL is stable — if the Notion page structure changes, only the UDF needs updating, not every agent consuming it.
+
+## Set up the Fused skill in Claude Code
+
+Before writing any UDFs, install the Fused plugin. It teaches Claude Code how to use the `fused` CLI so you can push, test, and manage the canvas without leaving your editor:
+
+```bash
+fused claude plugin add
+```
+
+Once installed, you can ask Claude to run UDFs locally, push changes, manage secrets, and register MCP endpoints — all via `fused` commands.
+
+## Building the canvas
+
+### `get_latest_signals`
+
+The primary tool — returns the N most recent entries from the shared Notion store.
+
+This UDF reads from Notion. Set `NOTION_TOKEN` and `SIGNALS_PAGE_ID` in Fused Secrets before deploying. The UDF uses the `notion-client` package.
+
+```python
+# get_latest_signals
+
+@fused.udf
+def udf(n: int = 5):
+    """
+    Returns the N most recent signals from the team signals store.
+    Use when the user asks about recent highlights, what's new this week,
+    or the latest updates — not for questions about a specific past date.
+
+    n: number of signals to return (default 5, max 20)
+    """
+
+    from notion_client import Client
+
+    notion = Client(auth=fused.secrets["NOTION_TOKEN"])
+    blocks = notion.blocks.children.list(
+        block_id=fused.secrets["SIGNALS_PAGE_ID"]
+    )["results"]
+
+    code_block = next(b for b in blocks if b["type"] == "code")
+    signals = json.loads(code_block["code"]["rich_text"][0]["text"]["content"])
+
+    df = pd.DataFrame(signals)
+    df["date"] = pd.to_datetime(df["date"])
+    return df.sort_values("date", ascending=False).head(min(n, 20))
+```
+
+### `get_by_date`
+
+A companion tool for historical lookups — lets agents answer questions about a specific day:
+
+```python
+# get_by_date
+
+@fused.udf
+def udf(date: str = "2026-05-28"):
+    """
+    Returns signals for a specific date (YYYY-MM-DD).
+    Use when the user references a particular past date.
+    For recent or latest signals, use get_latest_signals instead.
+
+    date: ISO date string (e.g. "2026-05-20")
+    """
+
+    from notion_client import Client
+
+    notion = Client(auth=fused.secrets["NOTION_TOKEN"])
+    blocks = notion.blocks.children.list(
+        block_id=fused.secrets["SIGNALS_PAGE_ID"]
+    )["results"]
+
+    code_block = next(b for b in blocks if b["type"] == "code")
+    signals = json.loads(code_block["code"]["rich_text"][0]["text"]["content"])
+
+    df = pd.DataFrame(signals)
+    return df[df["date"] == date]
+```
+
+Both UDFs read the same Notion page. The canvas wires them together, and the MCP endpoint exposes both as distinct tools. The docstrings tell agents which one to pick.
+
+## Test and deploy from Claude Code
+
+With the Fused skill installed, the full workflow runs from Claude Code.
+
+### Test locally
+
+Ask Claude to run the UDF before pushing it:
+
+```bash
+fused run "" get_latest_signals.py --engine local
+```
+
+The `--engine local` flag runs in your environment — no network call, no Fused compute. Use it to catch import errors and logic bugs before deploying.
+
+### Push to Fused
+
+Put both UDFs in a directory and push the canvas:
+
+```bash
+fused canvas push ./signals-canvas/
+```
+
+This creates (or updates) a canvas named `signals-canvas` with both UDFs. Any UDFs missing from the local directory are removed from the remote canvas, so the canvas always reflects what's in the directory.
+
+### Set secrets
+
+Add the Notion credentials to Fused Secrets so the UDFs can authenticate:
+
+```bash
+fused secrets set NOTION_TOKEN your_token_here
+fused secrets set SIGNALS_PAGE_ID your_page_id_here
+```
+
+### Register the MCP with Claude Code
+
+Once the canvas is live, register it as an MCP server:
+
+```bash
+fused claude add-mcp signals-canvas
+```
+
+Claude Code can now discover and call both tools. Share the canvas name with teammates — they run the same command to connect.
+
+## Update the endpoint
+
+When the UDF needs changing, edit the file locally and push again:
+
+```bash
+fused canvas push ./signals-canvas/
+```
+
+The endpoint updates immediately. Agents connected to it get the new behavior on the next call — no reconnection needed.
+
+## Using it from Claude Code
+
+Once connected, Claude picks the right tool based on the query:
+
+- *"What are the top 3 AI signals from this week?"* → calls `get_latest_signals(n=3)`
+- *"Were there any notable open-source releases yesterday?"* → calls `get_latest_signals(n=10)`, filters in reasoning
+- *"What was in the digest on May 20th?"* → calls `get_by_date(date="2026-05-20")`
+
+## Why not connect agents directly to Notion?
+
+The Notion MCP server exists and works. The Fused layer earns its place in three specific situations:
+
+- **You don't want to share Notion credentials.** The `NOTION_TOKEN` lives in Fused Secrets. Each teammate connects via a canvas token — revokable independently of the Notion setup.
+- **The endpoint needs to stay stable.** If you restructure the Notion page, only the UDF changes. Any agent connected to the canvas continues working without reconfiguration.
+- **The raw Notion structure is noisy.** A UDF normalizes field names, drops internal columns, and enforces a clean schema — so agents get predictable output rather than "whatever Notion returns."
+
+If you own the workspace end-to-end and only one agent reads from it, direct Notion MCP is simpler. The Fused layer is worth adding when multiple people or agents consume the same endpoint.
+
+## See also
+
+- Building UDFs for Agents
+- Connecting AI to Data
+- Fused Secrets
+- Tokens & endpoints
+- Querying Overture Maps with an AI Agent — a more complex MCP example with multiple tools
+
+================================================================================
+
 ## Maxar Satellite Imagery
 Path: examples/maxar-satellite-imagery.mdx
 URL: https://docs.fused.io/examples/maxar-satellite-imagery
@@ -12462,8 +12593,8 @@ Delete the files at the path.
 
 **Parameters:**
 
-- **path** (<code>str</code>) – Directory or file to delete, like `fd://my-old-table/`
-- **max_deletion_depth** (<code>int | Literal['unlimited']</code>) – If set (defaults to 3), the maximum depth the operation will recurse to.
+- **path** (`str`) – Directory or file to delete, like `fd://my-old-table/`
+- **max_deletion_depth** (`int | Literal['unlimited']`) – If set (defaults to 3), the maximum depth the operation will recurse to.
   This option is to help avoid accidentally deleting more data that intended.
   Pass `"unlimited"` for unlimited.
 
@@ -12485,8 +12616,8 @@ Download the contents at the path to disk.
 
 **Parameters:**
 
-- **path** (<code>str</code>) – URL to a file, like `fd://bucket-name/file.parquet`
-- **local_path** (<code>str | Path</code>) – Path to a local file.
+- **path** (`str`) – URL to a file, like `fd://bucket-name/file.parquet`
+- **local_path** (`str | Path`) – Path to a local file.
 
 ---
 
@@ -12510,11 +12641,11 @@ Download the contents at the path to memory.
 
 **Parameters:**
 
-- **path** (<code>str</code>) – URL to a file, like `fd://bucket-name/file.parquet`
+- **path** (`str`) – URL to a file, like `fd://bucket-name/file.parquet`
 
 **Returns:**
 
-- <code>bytes</code> – bytes of the file
+- `bytes` – bytes of the file
 
 **Examples:**
 
@@ -12540,15 +12671,15 @@ Fetches a list of apps.
 
 **Parameters:**
 
-- **n** (<code>int | None</code>) – The total number of UDFs to fetch. Defaults to All.
-- **skip** (<code>int</code>) – The number of UDFs to skip before starting to collect the result set. Defaults to 0.
-- **by** (<code>Literal['name', 'id', 'slug']</code>) – The attribute by which to sort the apps. Can be "name", "id", or "slug". Defaults to "name".
-- **whose** (<code>Literal['self', 'public']</code>) – Specifies whose apps to fetch. Can be "self" for the user's own apps or "public" for
+- **n** (`int | None`) – The total number of UDFs to fetch. Defaults to All.
+- **skip** (`int`) – The number of UDFs to skip before starting to collect the result set. Defaults to 0.
+- **by** (`Literal['name', 'id', 'slug']`) – The attribute by which to sort the apps. Can be "name", "id", or "slug". Defaults to "name".
+- **whose** (`Literal['self', 'public']`) – Specifies whose apps to fetch. Can be "self" for the user's own apps or "public" for
   UDFs available publicly. Defaults to "self".
 
 **Returns:**
 
-- <code>dict</code> – A list of apps.
+- `dict` – A list of apps.
 
 **Examples:**
 
@@ -12577,16 +12708,16 @@ Fetches a list of UDFs.
 
 **Parameters:**
 
-- **n** (<code>int | None</code>) – The total number of UDFs to fetch. Defaults to All.
-- **skip** (<code>int</code>) – The number of UDFs to skip before starting to collect the result set. Defaults to 0.
-- **by** (<code>Literal['name', 'id', 'slug']</code>) – The attribute by which to sort the UDFs. Can be "name", "id", or "slug". Defaults to "name".
-- **whose** (<code>Literal['self', 'public', 'community', 'team']</code>) – Specifies whose UDFs to fetch. Can be "self" for the user's own UDFs or "public" for
+- **n** (`int | None`) – The total number of UDFs to fetch. Defaults to All.
+- **skip** (`int`) – The number of UDFs to skip before starting to collect the result set. Defaults to 0.
+- **by** (`Literal['name', 'id', 'slug']`) – The attribute by which to sort the UDFs. Can be "name", "id", or "slug". Defaults to "name".
+- **whose** (`Literal['self', 'public', 'community', 'team']`) – Specifies whose UDFs to fetch. Can be "self" for the user's own UDFs or "public" for
   UDFs available publicly or "community" for all community UDFs. Defaults to "self".
-- **collection_name** (<code>str | None</code>) – Filter UDFs by collection name. If not provided, defaults to "default".
+- **collection_name** (`str | None`) – Filter UDFs by collection name. If not provided, defaults to "default".
 
 **Returns:**
 
-- <code>dict</code> – A list of UDFs.
+- `dict` – A list of UDFs.
 
 **Examples:**
 
@@ -12608,11 +12739,11 @@ Cancel an existing job
 
 **Parameters:**
 
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
 
 **Returns:**
 
-- <code>RunResponse</code> – A new job object.
+- `RunResponse` – A new job object.
 
 ---
 
@@ -12626,7 +12757,7 @@ Determine the execution time of this job, using the logs.
 
 **Returns:**
 
-- <code>timedelta</code> – Time the job took. If the job is in progress, time from first to last log message is returned.
+- `timedelta` – Time the job took. If the job is in progress, time from first to last log message is returned.
 
 ---
 
@@ -12640,12 +12771,12 @@ Fetch logs for a job
 
 **Parameters:**
 
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
-- **since_ms** (<code>int | None</code>) – Timestamp, in milliseconds since epoch, to get logs for. Defaults to None for all logs.
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
+- **since_ms** (`int | None`) – Timestamp, in milliseconds since epoch, to get logs for. Defaults to None for all logs.
 
 **Returns:**
 
-- <code>list\[Any\]</code> – Log messages for the given job.
+- `list\[Any\]` – Log messages for the given job.
 
 ---
 
@@ -12667,11 +12798,11 @@ Fetch the status of a running job
 
 **Parameters:**
 
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
 
 **Returns:**
 
-- <code>RunResponse</code> – The status of the given job.
+- `RunResponse` – The status of the given job.
 
 ---
 
@@ -12687,13 +12818,13 @@ Fetch and print logs for a job
 
 **Parameters:**
 
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
-- **since_ms** (<code>int | None</code>) – Timestamp, in milliseconds since epoch, to get logs for. Defaults to None for all logs.
-- **file** (<code>IO | None</code>) – Where to print logs to. Defaults to sys.stdout.
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
+- **since_ms** (`int | None`) – Timestamp, in milliseconds since epoch, to get logs for. Defaults to None for all logs.
+- **file** (`IO | None`) – Where to print logs to. Defaults to sys.stdout.
 
 **Returns:**
 
-- <code>None</code> – None
+- `None` – None
 
 ---
 
@@ -12712,10 +12843,10 @@ Continuously print logs for a job
 
 **Parameters:**
 
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
-- **refresh_seconds** (<code>float</code>) – how frequently, in seconds, to check for new logs. Defaults to 1.
-- **sample_logs** (<code>bool</code>) – if true, print out only a sample of logs. Defaults to True.
-- **timeout** (<code>float | None</code>) – if not None, how long to continue tailing logs for. Defaults to None for indefinite.
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
+- **refresh_seconds** (`float`) – how frequently, in seconds, to check for new logs. Defaults to 1.
+- **sample_logs** (`bool`) – if true, print out only a sample of logs. Defaults to True.
+- **timeout** (`float | None`) – if not None, how long to continue tailing logs for. Defaults to None for indefinite.
 
 ---
 
@@ -12733,16 +12864,16 @@ Block the Python kernel until this job has finished
 
 **Parameters:**
 
-- **poll_interval_seconds** (<code>float</code>) – How often (in seconds) to poll for status updates. Defaults to 5.
-- **timeout** (<code>float | None</code>) – The length of time in seconds to wait for the job. Defaults to None.
+- **poll_interval_seconds** (`float`) – How often (in seconds) to poll for status updates. Defaults to 5.
+- **timeout** (`float | None`) – The length of time in seconds to wait for the job. Defaults to None.
 
 **Raises:**
 
-- <code>TimeoutError</code> – if waiting for the job timed out.
+- `TimeoutError` – if waiting for the job timed out.
 
 **Returns:**
 
-- <code>RunResponse</code> – The status of the given job.
+- `RunResponse` – The status of the given job.
 
 ---
 
@@ -12768,12 +12899,12 @@ List the files at the path.
 
 **Parameters:**
 
-- **path** (<code>str</code>) – Parent directory URL, like `fd://bucket-name/`
-- **details** (<code>bool</code>) – If True, return additional metadata about each record.
+- **path** (`str`) – Parent directory URL, like `fd://bucket-name/`
+- **details** (`bool`) – If True, return additional metadata about each record.
 
 **Returns:**
 
-- <code>list\[str\] | list\[ListDetails\]</code> – A list of paths as URLs, or as metadata objects.
+- `list\[str\] | list\[ListDetails\]` – A list of paths as URLs, or as metadata objects.
 
 **Examples:**
 
@@ -12810,23 +12941,23 @@ Routes to the appropriate audit log method based on the provided arguments.
 
 **Parameters:**
 
-- **id** (<code>str | None</code>) – Get audit log by record ID. If provided, other filters are ignored.
-- **udf_id** (<code>str | None</code>) – Filter logs by UDF ID.
-- **udf_name** (<code>str | None</code>) – Filter logs by UDF name.
-- **shared_token** (<code>str | None</code>) – Filter logs by shared token.
-- **exec_env** (<code>bool</code>) – If True, filter by execution environment. Defaults to False.
-- **distinct** (<code>bool</code>) – If True, return distinct values instead of full logs. Defaults to False.
-- **distinct_type** (<code>Literal['names', 'ids'] | None</code>) – When distinct=True, specify "names" or "ids" to get distinct UDF names or IDs.
-- **start_timestamp** (<code>str | None</code>) – Start timestamp (ISO format, inclusive). Defaults to None.
-- **end_timestamp** (<code>str | None</code>) – End timestamp (ISO format, inclusive). Defaults to None.
-- **limit** (<code>int</code>) – Maximum number of items to return (max 300). Used for regular log queries. Defaults to 100.
-- **scan_forward** (<code>bool</code>) – If True, scan forward in time; if False, scan backward. Defaults to True.
-- **page_token** (<code>str | None</code>) – Pagination token from previous response. Defaults to None.
-- **max_records_to_scan** (<code>int</code>) – Maximum number of records to scan (max 5000). Used for distinct queries. Defaults to 1000.
+- **id** (`str | None`) – Get audit log by record ID. If provided, other filters are ignored.
+- **udf_id** (`str | None`) – Filter logs by UDF ID.
+- **udf_name** (`str | None`) – Filter logs by UDF name.
+- **shared_token** (`str | None`) – Filter logs by shared token.
+- **exec_env** (`bool`) – If True, filter by execution environment. Defaults to False.
+- **distinct** (`bool`) – If True, return distinct values instead of full logs. Defaults to False.
+- **distinct_type** (`Literal['names', 'ids'] | None`) – When distinct=True, specify "names" or "ids" to get distinct UDF names or IDs.
+- **start_timestamp** (`str | None`) – Start timestamp (ISO format, inclusive). Defaults to None.
+- **end_timestamp** (`str | None`) – End timestamp (ISO format, inclusive). Defaults to None.
+- **limit** (`int`) – Maximum number of items to return (max 300). Used for regular log queries. Defaults to 100.
+- **scan_forward** (`bool`) – If True, scan forward in time; if False, scan backward. Defaults to True.
+- **page_token** (`str | None`) – Pagination token from previous response. Defaults to None.
+- **max_records_to_scan** (`int`) – Maximum number of records to scan (max 5000). Used for distinct queries. Defaults to 1000.
 
 **Returns:**
 
-- <code>dict\[str, Any\]</code> – Dictionary containing items, limit, and next_page_token.
+- `dict\[str, Any\]` – Dictionary containing items, limit, and next_page_token.
 
 **Examples:**
 
@@ -12880,11 +13011,11 @@ Resolve a path from fd:// to the full S3 URI.
 
 **Parameters:**
 
-- **path** (<code>str</code>) – The path to resolve.
+- **path** (`str`) – The path to resolve.
 
 **Returns:**
 
-- <code>str</code> – S3 resolved path
+- `str` – S3 resolved path
 
 ---
 
@@ -12919,15 +13050,15 @@ Schedule a UDF to run on a cron schedule.
 
 **Parameters:**
 
-- **udf** (<code>BaseUdf | str</code>) – The UDF to schedule.
-- **minute** (<code>list[int] | int</code>) – The minute to run the UDF on.
-- **hour** (<code>list[int] | int</code>) – The hour to run the UDF on.
-- **day_of_month** (<code>list[int] | int | None</code>) – The day of the month to run the UDF on. (Default every day)
-- **month** (<code>list[int] | int | None</code>) – The month to run the UDF on. (Default every month)
-- **day_of_week** (<code>list[int] | int | None</code>) – The day of the week to run the UDF on. (Default every day)
-- **udf_args** (<code>dict[str, Any] | None</code>) – The arguments to pass to the UDF. (Default None)
-- **enabled** (<code>bool</code>) – Whether the cron job is enabled. (Default True)
-- **\_create_udf** (<code>bool</code>) – Save the UDF to Fused before creating the CronJob. (Default True)
+- **udf** (`BaseUdf | str`) – The UDF to schedule.
+- **minute** (`list[int] | int`) – The minute to run the UDF on.
+- **hour** (`list[int] | int`) – The hour to run the UDF on.
+- **day_of_month** (`list[int] | int | None`) – The day of the month to run the UDF on. (Default every day)
+- **month** (`list[int] | int | None`) – The month to run the UDF on. (Default every month)
+- **day_of_week** (`list[int] | int | None`) – The day of the week to run the UDF on. (Default every day)
+- **udf_args** (`dict[str, Any] | None`) – The arguments to pass to the UDF. (Default None)
+- **enabled** (`bool`) – Whether the cron job is enabled. (Default True)
+- **\_create_udf** (`bool`) – Save the UDF to Fused before creating the CronJob. (Default True)
 
 ---
 
@@ -12944,13 +13075,13 @@ running UDF context. Must be called from within the Fused workbench.
 
 **Parameters:**
 
-- **session_max_age** (<code>str | int</code>) – Lifetime of the session token. Accepts an integer
+- **session_max_age** (`str | int`) – Lifetime of the session token. Accepts an integer
   (seconds) or a duration string such as `"30m"`, `"1h"`,
   `"1d"`. Defaults to `"1h"`.
 
 **Returns:**
 
-- **A** (<code>SessionToken</code>) – class:`SessionToken` with `session_token` and `expires_at` fields.
+- **A** (`SessionToken`) – class:`SessionToken` with `session_token` and `expires_at` fields.
 
 ---
 
@@ -12966,11 +13097,11 @@ This function may not check that the file represented by the path exists.
 
 **Parameters:**
 
-- **path** (<code>str</code>) – URL to a file, like `fd://bucket-name/file.parquet`
+- **path** (`str`) – URL to a file, like `fd://bucket-name/file.parquet`
 
 **Returns:**
 
-- <code>str</code> – HTTPS URL to access the file using signed access.
+- `str` – HTTPS URL to access the file using signed access.
 
 **Examples:**
 
@@ -12990,11 +13121,11 @@ Create signed URLs to access all blobs under the path.
 
 **Parameters:**
 
-- **path** (<code>str</code>) – URL to a prefix, like `fd://bucket-name/some_directory/`
+- **path** (`str`) – URL to a prefix, like `fd://bucket-name/some_directory/`
 
 **Returns:**
 
-- <code>dict\[str, str\]</code> – Dictionary mapping from blob store key to signed HTTPS URL.
+- `dict\[str, str\]` – Dictionary mapping from blob store key to signed HTTPS URL.
 
 **Examples:**
 
@@ -13020,14 +13151,14 @@ Create a Snowflake connection using Fused-managed OAuth.
 
 **Parameters:**
 
-- **role** (<code>str | None</code>) – Snowflake role to USE after connecting.
-- **warehouse** (<code>str | None</code>) – Snowflake warehouse to USE after connecting.
-- **database** (<code>str | None</code>) – Default database context.
-- **schema** (<code>str | None</code>) – Default schema context.
+- **role** (`str | None`) – Snowflake role to USE after connecting.
+- **warehouse** (`str | None`) – Snowflake warehouse to USE after connecting.
+- **database** (`str | None`) – Default database context.
+- **schema** (`str | None`) – Default schema context.
 
 **Returns:**
 
-- **A** (<code>FusedSnowflakeConnection</code>) – class:`FusedSnowflakeConnection` instance.
+- **A** (`FusedSnowflakeConnection`) – class:`FusedSnowflakeConnection` instance.
 
 ---
 
@@ -13051,15 +13182,15 @@ This is a convenience wrapper around
 
 **Parameters:**
 
-- **sql** (<code>str</code>) – The SQL statement to execute.
-- **role** (<code>str | None</code>) – Snowflake role to USE after connecting.
-- **warehouse** (<code>str | None</code>) – Snowflake warehouse to USE after connecting.
-- **database** (<code>str | None</code>) – Default database context.
-- **schema** (<code>str | None</code>) – Default schema context.
+- **sql** (`str`) – The SQL statement to execute.
+- **role** (`str | None`) – Snowflake role to USE after connecting.
+- **warehouse** (`str | None`) – Snowflake warehouse to USE after connecting.
+- **database** (`str | None`) – Default database context.
+- **schema** (`str | None`) – Default schema context.
 
 **Returns:**
 
-- **A** (<code>DataFrame</code>) – class:`~pandas.DataFrame` with the query results.
+- **A** (`DataFrame`) – class:`~pandas.DataFrame` with the query results.
 
 ---
 
@@ -13073,7 +13204,7 @@ Fetch the team execution environment details.
 
 **Returns:**
 
-- <code>dict</code> – A dictionary with information about the execution environment.
+- `dict` – A dictionary with information about the execution environment.
 
 ---
 
@@ -13091,12 +13222,12 @@ Upload local file to S3.
 
 **Parameters:**
 
-- **local_path** (<code>str | Path | bytes | BinaryIO | pd.DataFrame | gpd.GeoDataFrame</code>) – Either a path to a local file (`str`, `Path`), a (Geo)DataFrame
+- **local_path** (`str | Path | bytes | BinaryIO | pd.DataFrame | gpd.GeoDataFrame`) – Either a path to a local file (`str`, `Path`), a (Geo)DataFrame
   (which will get uploaded as Parquet file), or the contents to upload.
   Any string will be treated as a Path, if you wish to upload the contents of
   the string, first encode it: `s.encode("utf-8")`
-- **remote_path** (<code>str</code>) – URL to upload to, like `fd://new-file.txt`
-- **timeout** (<code>float | None</code>) – Optional timeout in seconds for the upload (will default to `OPTIONS.request_timeout` if not specified).
+- **remote_path** (`str`) – URL to upload to, like `fd://new-file.txt`
+- **timeout** (`float | None`) – Optional timeout in seconds for the upload (will default to `OPTIONS.request_timeout` if not specified).
 
 **Examples:**
 
@@ -13146,10 +13277,10 @@ Create a FusedAPI instance.
 
 **Other Parameters:**
 
-- **base_url** (<code>str | None</code>) – The Fused instance to send requests to. Defaults to `https://www.fused.io/server/v1`.
-- **shared_udf_base_url** (<code>str | None</code>) – The shared UDF instance to send requests to. Defaults to `https://www.udf.ai`.
-- **set_global_api** (<code>bool</code>) – Set this as the global API object. Defaults to True.
-- **credentials_needed** (<code>bool</code>) – If True, automatically attempt to log in. Defaults to True.
+- **base_url** (`str | None`) – The Fused instance to send requests to. Defaults to `https://www.fused.io/server/v1`.
+- **shared_udf_base_url** (`str | None`) – The shared UDF instance to send requests to. Defaults to `https://www.udf.ai`.
+- **set_global_api** (`bool`) – Set this as the global API object. Defaults to True.
+- **credentials_needed** (`bool`) – If True, automatically attempt to log in. Defaults to True.
 
 ---
 
@@ -13179,17 +13310,17 @@ The token does not allow running any other UDF on your account.
 
 **Parameters:**
 
-- **udf_email_or_name_or_id** (<code>str | None</code>) – A UDF ID, email address (for use with udf_name), or UDF name.
-- **udf_name** (<code>str | None</code>) – The name of the UDF to create the token for.
+- **udf_email_or_name_or_id** (`str | None`) – A UDF ID, email address (for use with udf_name), or UDF name.
+- **udf_name** (`str | None`) – The name of the UDF to create the token for.
 
 **Other Parameters:**
 
-- **udf_email** (<code>str | None</code>) – The email of the user owning the UDF, or, if udf_name is None, the name of the UDF.
-- **udf_id** (<code>str | None</code>) – The backend ID of the UDF to create the token for.
-- **client_id** (<code>str | Ellipsis | None</code>) – If specified, overrides which realtime environment to run the UDF under.
-- **cache** (<code>bool</code>) – If True, UDF tiles will be cached.
-- **metadata_json** (<code>dict\[str, Any\] | None</code>) – Additional metadata to serve as part of the tiles metadata.json.
-- **enabled** (<code>bool</code>) – If True, the token can be used.
+- **udf_email** (`str | None`) – The email of the user owning the UDF, or, if udf_name is None, the name of the UDF.
+- **udf_id** (`str | None`) – The backend ID of the UDF to create the token for.
+- **client_id** (`str | Ellipsis | None`) – If specified, overrides which realtime environment to run the UDF under.
+- **cache** (`bool`) – If True, UDF tiles will be cached.
+- **metadata_json** (`dict\[str, Any\] | None`) – Additional metadata to serve as part of the tiles metadata.json.
+- **enabled** (`bool`) – If True, the token can be used.
 
 **Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.create_udf_access_token()`
 
@@ -13232,16 +13363,16 @@ Execute an operation
 
 **Parameters:**
 
-- **config** (<code>JobConfig | JobStepConfig</code>) – the configuration object to run in the job.
+- **config** (`JobConfig | JobStepConfig`) – the configuration object to run in the job.
 
 **Other Parameters:**
 
-- **instance_type** (<code>WHITELISTED_INSTANCE_TYPES | None</code>) – The AWS EC2 instance type to use for the job. Acceptable strings are "m5.large", "m5.xlarge", "m5.2xlarge", "m5.4xlarge", "r5.large", "r5.xlarge", "r5.2xlarge", "r5.4xlarge". Defaults to None.
-- **region** (<code>str | None</code>) – The AWS region in which to run. Defaults to None.
-- **disk_size_gb** (<code>int | None</code>) – The disk size to specify for the job. Defaults to None.
-- **additional_env** (<code>Sequence\[str\] | None</code>) – Any additional environment variables to be passed into the job, each in the form KEY=value. Defaults to None.
-- **image_name** (<code>str | None</code>) – Custom image name to run. Defaults to None for default image.
-- **send_status_email** (<code>bool | None</code>) – Whether to send a status email to the user when the job is complete.
+- **instance_type** (`WHITELISTED_INSTANCE_TYPES | None`) – The AWS EC2 instance type to use for the job. Acceptable strings are "m5.large", "m5.xlarge", "m5.2xlarge", "m5.4xlarge", "r5.large", "r5.xlarge", "r5.2xlarge", "r5.4xlarge". Defaults to None.
+- **region** (`str | None`) – The AWS region in which to run. Defaults to None.
+- **disk_size_gb** (`int | None`) – The disk size to specify for the job. Defaults to None.
+- **additional_env** (`Sequence\[str\] | None`) – Any additional environment variables to be passed into the job, each in the form KEY=value. Defaults to None.
+- **image_name** (`str | None`) – Custom image name to run. Defaults to None for default image.
+- **send_status_email** (`bool | None`) – Whether to send a status email to the user when the job is complete.
 
 **Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.start_job()`
 
@@ -13263,17 +13394,17 @@ Get the job history.
 
 **Parameters:**
 
-- **n** (<code>int</code>) – The number of jobs to fetch. Defaults to 5.
+- **n** (`int`) – The number of jobs to fetch. Defaults to 5.
 
 **Other Parameters:**
 
-- **skip** (<code>int</code>) – Where in the job history to begin. Defaults to 0, which retrieves the most recent job.
-- **per_request** (<code>int</code>) – Number of jobs per request to fetch. Defaults to 25.
-- **max_requests** (<code>int | None</code>) – Maximum number of requests to make. May be None to fetch all jobs. Defaults to 1.
+- **skip** (`int`) – Where in the job history to begin. Defaults to 0, which retrieves the most recent job.
+- **per_request** (`int`) – Number of jobs per request to fetch. Defaults to 25.
+- **max_requests** (`int | None`) – Maximum number of requests to make. May be None to fetch all jobs. Defaults to 1.
 
 **Returns:**
 
-- <code>Jobs</code> – The job history.
+- `Jobs` – The job history.
 
 **Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.get_jobs()`
 
@@ -13289,11 +13420,11 @@ Fetch the status of a running job
 
 **Parameters:**
 
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
 
 **Returns:**
 
-- <code>RunResponse</code> – The status of the given job.
+- `RunResponse` – The status of the given job.
 
 **Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.get_status()`
 
@@ -13309,12 +13440,12 @@ Fetch logs for a job
 
 **Parameters:**
 
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
-- **since_ms** (<code>int | None</code>) – Timestamp, in milliseconds since epoch, to get logs for. Defaults to None for all logs.
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
+- **since_ms** (`int | None`) – Timestamp, in milliseconds since epoch, to get logs for. Defaults to None for all logs.
 
 **Returns:**
 
-- <code>list\[Any\]</code> – Log messages for the given job.
+- `list\[Any\]` – Log messages for the given job.
 
 **Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.get_logs()`
 
@@ -13335,10 +13466,10 @@ Continuously print logs for a job
 
 **Parameters:**
 
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
-- **refresh_seconds** (<code>float</code>) – how frequently, in seconds, to check for new logs. Defaults to 1.
-- **sample_logs** (<code>bool</code>) – if true, print out only a sample of logs. Defaults to False.
-- **timeout** (<code>float | None</code>) – if not None, how long to continue tailing logs for. Defaults to None for indefinite.
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
+- **refresh_seconds** (`float`) – how frequently, in seconds, to check for new logs. Defaults to 1.
+- **sample_logs** (`bool`) – if true, print out only a sample of logs. Defaults to False.
+- **timeout** (`float | None`) – if not None, how long to continue tailing logs for. Defaults to None for indefinite.
 
 **Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.tail_logs()`
 
@@ -13358,17 +13489,17 @@ Block the Python kernel until the given job has finished
 
 **Parameters:**
 
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
-- **poll_interval_seconds** (<code>float</code>) – How often (in seconds) to poll for status updates. Defaults to 5.
-- **timeout** (<code>float | None</code>) – The length of time in seconds to wait for the job. Defaults to None.
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
+- **poll_interval_seconds** (`float`) – How often (in seconds) to poll for status updates. Defaults to 5.
+- **timeout** (`float | None`) – The length of time in seconds to wait for the job. Defaults to None.
 
 **Raises:**
 
-- <code>TimeoutError</code> – if waiting for the job timed out.
+- `TimeoutError` – if waiting for the job timed out.
 
 **Returns:**
 
-- <code>RunResponse</code> – The status of the given job.
+- `RunResponse` – The status of the given job.
 
 **Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.wait_for_job()`
 
@@ -13384,11 +13515,11 @@ Cancel an existing job
 
 **Parameters:**
 
-- **job** (<code>CoerceableToJobId</code>) – the identifier of a job or a `RunResponse` object.
+- **job** (`CoerceableToJobId`) – the identifier of a job or a `RunResponse` object.
 
 **Returns:**
 
-- <code>RunResponse</code> – A new job object.
+- `RunResponse` – A new job object.
 
 **Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.cancel_job()`
 
@@ -13429,10 +13560,10 @@ to talk directly to Snowflake.
 
 **Parameters:**
 
-- **role** (<code>str | None</code>) – Snowflake role to USE after connecting.
-- **warehouse** (<code>str | None</code>) – Snowflake warehouse to USE after connecting.
-- **database** (<code>str | None</code>) – Default database context.
-- **schema** (<code>str | None</code>) – Default schema context.
+- **role** (`str | None`) – Snowflake role to USE after connecting.
+- **warehouse** (`str | None`) – Snowflake warehouse to USE after connecting.
+- **database** (`str | None`) – Default database context.
+- **schema** (`str | None`) – Default schema context.
 
 ---
 
@@ -13526,8 +13657,8 @@ List files in a stage (`LIST @stage`).
 
 **Parameters:**
 
-- **stage** (<code>str</code>) – Stage reference, e.g. `"@my_stage"` or `"@db.schema.stage"`.
-- **pattern** (<code>str | None</code>) – Optional SQL LIKE pattern to filter files.
+- **stage** (`str`) – Stage reference, e.g. `"@my_stage"` or `"@db.schema.stage"`.
+- **pattern** (`str | None`) – Optional SQL LIKE pattern to filter files.
 
 Note: stage and pattern are not escaped.
 
@@ -13546,7 +13677,7 @@ CSV / semi-structured data that Snowflake can auto-detect.
 
 **Parameters:**
 
-- **stage_path** (<code>str</code>) – Full stage path, e.g. `"@my_stage/data.csv"`.
+- **stage_path** (`str`) – Full stage path, e.g. `"@my_stage/data.csv"`.
 
 Note: stage_path is not escaped.
 
@@ -13562,10 +13693,10 @@ Write a DataFrame to a Snowflake table using `write_pandas`.
 
 **Parameters:**
 
-- **df** (<code>pd.DataFrame</code>) – DataFrame to write.
-- **table** (<code>str</code>) – Fully-qualified or simple table name.
-- **mode** (<code>str</code>) – `"append"` (default) or `"overwrite"`.
-- \*\***kwargs** (<code>Any</code>) – Extra keyword arguments forwarded to
+- **df** (`pd.DataFrame`) – DataFrame to write.
+- **table** (`str`) – Fully-qualified or simple table name.
+- **mode** (`str`) – `"append"` (default) or `"overwrite"`.
+- \*\***kwargs** (`Any`) – Extra keyword arguments forwarded to
   `snowflake.connector.pandas_tools.write_pandas`.
 
 ---
@@ -15144,39 +15275,39 @@ Raises ValueError if no hex column is found.
 
 **Parameters:**
 
-- **dataset_path** (<code>str</code>) – Path to the dataset directory (e.g., "s3://bucket/dataset/")
-- **output_path** (<code>str | None</code>) – Deprecated - use metadata_path instead
-- **metadata_path** (<code>str | None</code>) – Directory path where metadata files should be written.
-  If None, writes to /.fused/.metadata.parquet
+- **dataset_path** (`str`) – Path to the dataset directory (e.g., "s3://bucket/dataset/")
+- **output_path** (`str | None`) – Deprecated - use metadata_path instead
+- **metadata_path** (`str | None`) – Directory path where metadata files should be written.
+  If None, writes to \/.fused/\.metadata.parquet
   for each source file. If provided, writes to
-  /.metadata.parquet using the full
+  \/\.metadata.parquet using the full
   source path as the filename. This allows storing metadata in a
   different location when you don't have write access to the dataset directory.
-- **verbose** (<code>bool</code>) – If True, print timing/progress information.
-- **row_group_size** (<code>int</code>) – Number of rows per row group in output parquet file.
+- **verbose** (`bool`) – If True, print timing/progress information.
+- **row_group_size** (`int`) – Number of rows per row group in output parquet file.
   Default is 500. Larger values reduce file size but may
   increase memory usage during writes.
-- **indexed_columns** (<code>list[str] | None</code>) – List of column names to index. If None (default),
+- **indexed_columns** (`list[str] | None`) – List of column names to index. If None (default),
   indexes only the first identified indexed column
   (typically the hex column). If an empty list, indexes
   all detected indexed columns.
-- **pool_size** (<code>int</code>) – Number of parallel workers to use for processing files.
+- **pool_size** (`int`) – Number of parallel workers to use for processing files.
   Default is 10 (parallel processing enabled by default).
   Set to 1 for sequential processing. This can significantly speed up
   metadata extraction for large datasets with many files.
-- **metadata_compression_level** (<code>int | None</code>) – Optional zstd compression level for metadata
+- **metadata_compression_level** (`int | None`) – Optional zstd compression level for metadata
   parquet files. If None, uses PyArrow's default for zstd. Valid
   levels are typically in the range [1, 22].
 
 **Returns:**
 
-- <code>str</code> – Path to metadata directory (if metadata_path provided) or first metadata file path
+- `str` – Path to metadata directory (if metadata_path provided) or first metadata file path
 
 **Raises:**
 
-- <code>ImportError</code> – If job2 package is not available
-- <code>ValueError</code> – If no hex column is found in any file
-- <code>FileNotFoundError</code> – If no parquet files are found in the dataset
+- `ImportError` – If job2 package is not available
+- `ValueError` – If no hex column is found in any file
+- `FileNotFoundError` – If no parquet files are found in the dataset
 
 >>> fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/")
 's3://my-bucket/my-dataset/.fused/file1.metadata.parquet'
@@ -15275,87 +15406,87 @@ This process involves multiple steps:
 
 **Parameters:**
 
-- **input_path** (<code>str, list</code>) – Path(s) to the input raster data.
+- **input_path** (`str, list`) – Path(s) to the input raster data.
   When this is a single path, the file is chunked up for processing
   based on `target_chunk_size`. When this is a list of paths, each
   file is processed as one chunk.
-- **output_path** (<code>str</code>) – Path for the resulting Parquet dataset.
-- **metrics** (<code>str or list of str</code>) – The metrics to compute per H3 cell.
+- **output_path** (`str`) – Path for the resulting Parquet dataset.
+- **metrics** (`str or list of str`) – The metrics to compute per H3 cell.
   Supported metrics are either "cnt" or a list containing any of
   "avg", "min", "max", "stddev", "mode" (i.e. most common value),
   and "sum".
-- **res** (<code>int</code>) – The resolution of the H3 cells in the output data.
+- **res** (`int`) – The resolution of the H3 cells in the output data.
   The pixel values are assigned to H3 cells at resolution
   `res + res_offset` and then aggregated to `res`.
   By default, this is inferred based on the resolution of the
   input data ensuring the H3 cell size is close to the pixel size
   (e.g. for a raster with pixel size of 30x30m, a resolution of 11
   is inferred).
-- **k_ring** (<code>int</code>) – The k-ring distance at resolution `res + res_offset`
+- **k_ring** (`int`) – The k-ring distance at resolution `res + res_offset`
   to which the pixel value is assigned (in addition to the center
   cell). Defaults to 1.
-- **res_offset** (<code>int</code>) – Offset to child resolution (relative to `res`) at
+- **res_offset** (`int`) – Offset to child resolution (relative to `res`) at
   which to assign the raw pixel values to H3 cells.
-- **file_res** (<code>int</code>) – The H3 resolution to chunk the resulting files of the
+- **file_res** (`int`) – The H3 resolution to chunk the resulting files of the
   Parquet dataset. By default will be inferred based on the target
   resolution `res`. You can specify `file_res=-1` to have a single
   output file.
-- **chunk_res** (<code>int</code>) – The H3 resolution to chunk the row groups within
+- **chunk_res** (`int`) – The H3 resolution to chunk the row groups within
   each file of the Parquet dataset (ignored when `max_rows_per_chunk`
   is specified). By default will be inferred based on the target
   resolution `res`.
-- **overview_res** (<code>list of int</code>) – The H3 resolutions for which to create
+- **overview_res** (`list of int`) – The H3 resolutions for which to create
   overview files. By default, overviews are created for resolutions 3
   to 7 (or capped at a lower value if the `res` of the output dataset
   is lower).
-- **overview_chunk_res** (<code>int or list of int</code>) – The H3 resolution(s) to chunk
+- **overview_chunk_res** (`int or list of int`) – The H3 resolution(s) to chunk
   the row groups within each overview file of the Parquet dataset. By
   default, each overview file is chunked at the overview resolution
   minus 5 (clamped between 0 and the `res` of the output dataset).
-- **max_rows_per_chunk** (<code>int</code>) – The maximum number of rows per chunk in the
+- **max_rows_per_chunk** (`int`) – The maximum number of rows per chunk in the
   resulting data and overview files. If 0 (the default), `chunk_res`
   and `overview_chunk_res` are used to determine the chunking.
-- **include_source_url** (<code>bool</code>) – If True, include a `"source_url"` column in
+- **include_source_url** (`bool`) – If True, include a `"source_url"` column in
   the output dataset that contains a list of source URLs that
   contributed data to each H3 cell. Defaults to True, set to False
   to omit this column.
-- **target_chunk_size** (<code>int</code>) – The approximate number of pixel values to
+- **target_chunk_size** (`int`) – The approximate number of pixel values to
   process per chunk in the first "extract" step. Defaults to
   10,000,000 for ingesting a single file or a few files. If ingesting
   more than 20 files, each file is processed as a single chunk by
   default, but you can override this by specifying a specific
   `target_chunk_size` value, or by specifying `target_chunk_size=0` to
   always process each file as a single chunk.
-- **nodata** (<code>int or float</code>) – By default, the "nodata" value indicated in the
+- **nodata** (`int or float`) – By default, the "nodata" value indicated in the
   raster metadata will be used to ignore pixels with this value when
   ingesting the data. If this information is missing or wrong in the
   raster metadata, you can override the value by specifying this
   keyword.
-- **debug_mode** (<code>bool</code>) – If True, run only the first two chunks for
+- **debug_mode** (`bool`) – If True, run only the first two chunks for
   debugging purposes. Defaults to False.
-- **remove_tmp_files** (<code>bool</code>) – If True, remove the temporary files after
+- **remove_tmp_files** (`bool`) – If True, remove the temporary files after
   ingestion is complete. Defaults to True.
-- **tmp_path** (<code>str</code>) – Optional path to use for the temporary files.
+- **tmp_path** (`str`) – Optional path to use for the temporary files.
   If specified, the extract step is skipped and it is assumed that
   the temporary files are already present at this path.
-- **overwrite** (<code>bool</code>) – If True, overwrite the output path if it already
+- **overwrite** (`bool`) – If True, overwrite the output path if it already
   exists, by first removing the existing content before writing the
   new files. Defaults to False, in which case an error is raised if
   the `output_path` is not empty.
-- **steps** (<code>list of str</code>) – The processing steps to run. Can include
+- **steps** (`list of str`) – The processing steps to run. Can include
   "extract", "partition", "metadata", and "overview". By default, all
   steps are run.
-- **extract_engine** (<code>str</code>) – The engine to use for the extract step.
+- **extract_engine** (`str`) – The engine to use for the extract step.
   By default, tries first with "realtime" and then falls back to "large".
-- **extract_max_workers** (<code>int</code>) – The maximum number of workers to use for the extract step.
+- **extract_max_workers** (`int`) – The maximum number of workers to use for the extract step.
   Defaults to 256.
-- **partition_engine** (<code>str</code>) – The engine to use for the partition step.
+- **partition_engine** (`str`) – The engine to use for the partition step.
   By default, tries first with "realtime" and then falls back to "large".
-- **partition_max_workers** (<code>int</code>) – The maximum number of workers to use for the partition step.
+- **partition_max_workers** (`int`) – The maximum number of workers to use for the partition step.
   Defaults to 256.
-- **overview_engine** (<code>str</code>) – The engine to use for the overview step.
+- **overview_engine** (`str`) – The engine to use for the overview step.
   By default, tries first with "realtime" and then falls back to "large".
-- **overview_max_workers** (<code>int</code>) – The maximum number of workers to use for the overview step.
+- **overview_max_workers** (`int`) – The maximum number of workers to use for the overview step.
   Defaults to 256.
 
 The extract, partition and overview steps are run in parallel using
@@ -15419,70 +15550,70 @@ further aggregating. For overview files, it will then create aggregated data.
 
 **Parameters:**
 
-- **input_path** (<code>str, list</code>) – Path(s) to the input data.
+- **input_path** (`str, list`) – Path(s) to the input data.
   Can be a path to file or directory, or list of file paths). The
   first step of the processing is parallelized per input file.
-- **output_path** (<code>str</code>) – Path for the resulting Parquet dataset.
-- **metrics** (<code>str or list of str</code>) – The metrics to compute per H3 cell.
+- **output_path** (`str`) – Path for the resulting Parquet dataset.
+- **metrics** (`str or list of str`) – The metrics to compute per H3 cell.
   Supported metrics are either "cnt" or a list containing any of
   "avg", "min", "max", "stddev", and "sum".
-- **groupby_cols** (<code>list</code>) – The columns indicating the groups for which
+- **groupby_cols** (`list`) – The columns indicating the groups for which
   the aggregated metrics are calculated. By default, for the "cnt"
   metric, this is the "hex" column, which is further combined with
   the `data_cols` (by default "data"). For the default "cnt" metric,
   this means counts are calculated (summed) per unique combination
   of "hex" and "data".
   For the other metrics, this should typically always be the "hex" column.
-- **data_cols** (<code>list[str]</code>) – Value column names (default `["data"]`). For
+- **data_cols** (`list[str]`) – Value column names (default `["data"]`). For
   "cnt", this column contains the categories that are counted and is
   appended to the `GROUP BY` clause.
   For non-"cnt" metrics, the list of columns that will be aggregated
   according to the metrics (the result contains the cartesian product
   of data columns and metrics, i.e. all `_` combinations).
-- **window_cols** (<code>list</code>) – The columns for which to calculate total counts
+- **window_cols** (`list`) – The columns for which to calculate total counts
   over using a window function. This will add an additional column to
   the output (one for each of the columns in this list) with the total
   counts per unique value of the specified column.
   By default, this is only done for the "hex" column.
   This only applies when the "cnt" metric is specified.
-- **additional_cols** (<code>list</code>) – Additional columns from the input data to
+- **additional_cols** (`list`) – Additional columns from the input data to
   include in the output dataset. These columns are assumed to have a
   unique value per group defined by the `groupby_cols`. If this is not
   the case, the output will contain arbitrary values from one of the
   rows in each group.
   By default, this is empty.
   This only applies when the "cnt" metric is specified.
-- **res** (<code>int</code>) – The resolution at which to assign the pixel values to H3 cells.
-- **file_res** (<code>int</code>) – The H3 resolution to chunk the resulting files of the
+- **res** (`int`) – The resolution at which to assign the pixel values to H3 cells.
+- **file_res** (`int`) – The H3 resolution to chunk the resulting files of the
   Parquet dataset. By default will be inferred based on the target
   resolution `res`. You can specify `file_res=-1` to have a single
   output file.
-- **chunk_res** (<code>int</code>) – The H3 resolution to chunk the row groups within
+- **chunk_res** (`int`) – The H3 resolution to chunk the row groups within
   each file of the Parquet dataset (ignored when `max_rows_per_chunk`
   is specified). By default will be inferred based on the target
   resolution `res`.
-- **overview_res** (<code>list of int</code>) – The H3 resolutions for which to create
+- **overview_res** (`list of int`) – The H3 resolutions for which to create
   overview files. By default, overviews are created for resolutions 3
   to 7 (or capped at a lower value if the `res` of the output dataset
   is lower).
-- **overview_chunk_res** (<code>int or list of int</code>) – The H3 resolution(s) to chunk
+- **overview_chunk_res** (`int or list of int`) – The H3 resolution(s) to chunk
   the row groups within each overview file of the Parquet dataset. By
   default, each overview file is chunked at the overview resolution
   minus 5 (clamped between 0 and the `res` of the output dataset).
-- **max_rows_per_chunk** (<code>int</code>) – The maximum number of rows per chunk in the
+- **max_rows_per_chunk** (`int`) – The maximum number of rows per chunk in the
   resulting data and overview files. If 0 (the default), `chunk_res`
   and `overview_chunk_res` are used to determine the chunking.
-- **remove_tmp_files** (<code>bool</code>) – If True, remove the temporary files after
+- **remove_tmp_files** (`bool`) – If True, remove the temporary files after
   ingestion is complete. Defaults to True.
-- **overwrite** (<code>bool</code>) – If True, overwrite the output path if it already
+- **overwrite** (`bool`) – If True, overwrite the output path if it already
   exists, by first removing the existing content before writing the
   new files. Defaults to False, in which case an error is raised if
   the `output_path` is not empty.
-- **extract_kwargs** (<code>dict</code>) – Additional keyword arguments to pass to
+- **extract_kwargs** (`dict`) – Additional keyword arguments to pass to
   `fused.submit` for the extract step.
-- **partition_kwargs** (<code>dict</code>) – Additional keyword arguments to pass to
+- **partition_kwargs** (`dict`) – Additional keyword arguments to pass to
   `fused.submit` for the partition step.
-- **overview_kwargs** (<code>dict</code>) – Additional keyword arguments to pass to
+- **overview_kwargs** (`dict`) – Additional keyword arguments to pass to
   `fused.submit` for the overview step.
 
 See the docstring of `run_ingest_raster_to_h3` for more details on
@@ -16444,7 +16575,7 @@ Note that this will evaluate the UDF function.
 
 **Parameters:**
 
-- **inplace** (<code>bool</code>) – If True, update this UDF object. Otherwise return a new UDF object (default).
+- **inplace** (`bool`) – If True, update this UDF object. Otherwise return a new UDF object (default).
 
 Deprecated: Do not call this.
 
@@ -16475,44 +16606,44 @@ Submit a job for each element in arg_list.
 
 **Parameters:**
 
-- **arg_list** (<code>list[Any] | pd.DataFrame</code>) – A list of arguments to pass to the UDF. Each element
+- **arg_list** (`list[Any] | pd.DataFrame`) – A list of arguments to pass to the UDF. Each element
   in arg_list will become a job and run.
-- **engine** (<code>Engine | None</code>) – The engine to use for execution.
+- **engine** (`Engine | None`) – The engine to use for execution.
   "remote": Run on a realtime instance. (Default)
   "local": Run locally.
   "small", "medium", "large": Run on a batch instance.
   Other values will be interpreted as a batch instance type.
-- **max_workers** (<code>int | None</code>) – The maximum number of workers to use.
+- **max_workers** (`int | None`) – The maximum number of workers to use.
   For running on realtime instances, this is the number of
   instances to use. (Default 32)
   For running locally, this is the number of threads to use.
   (Default 1)
   For running on batch instances, this is the number of worker
   machines to use. (Default 1)
-- **worker_concurrency** (<code>int | None</code>) – The concurrency level for each worker.
+- **worker_concurrency** (`int | None`) – The concurrency level for each worker.
   For running on realtime instances, this is the number of
   arguments to run in each instance at a time. (Default 1)
   For running locally, this cannot be set.
   For running on batch instances, this is the number of processes
   to use in each worker machine. (Default based on the number of
   cores in the machine.)
-- **max_retry** (<code>int</code>) – The maximum number of retries for failed jobs. (Default 2)
+- **max_retry** (`int`) – The maximum number of retries for failed jobs. (Default 2)
   Note that retries will only be attempted if the object is waited on,
   e.g. with `pool.wait()`, `pool.tail()`, or `pool.df()`.
-- **debug_mode** (<code>bool</code>) – If True, executes only the first item in arg_list directly using
+- **debug_mode** (`bool`) – If True, executes only the first item in arg_list directly using
   `fused.run()`, useful for debugging UDF execution. Default is False.
-- **cache_max_age** (<code>str | None</code>) – The maximum age when returning a result from the cache.
+- **cache_max_age** (`str | None`) – The maximum age when returning a result from the cache.
   Supported units are seconds (s), minutes (m), hours (h), and days (d) (e.g. “48h”, “10s”, etc.).
   Default is `None` so a UDF will follow `cache_max_age` defined in `@fused.udf()` unless this value is changed.
-- **run_cache_max_age** (<code>str | int | None</code>) – When set, wraps each inner `fused.run` with `fused.cache` so
+- **run_cache_max_age** (`str | int | None`) – When set, wraps each inner `fused.run` with `fused.cache` so
   cache hits skip the HTTP round-trip (client-side disk cache). Uses the same
   `cache_reset`, `cache_storage`, and `cache_verbose` as the submit-level cache.
-- **cache** (<code>bool</code>) – Set to False as a shortcut for `cache_max_age='0s'` to disable caching. (Default True)
+- **cache** (`bool`) – Set to False as a shortcut for `cache_max_age='0s'` to disable caching. (Default True)
 - \*\***kwargs** – Additional (constant) keyword arguments to pass to the UDF.
 
 **Returns:**
 
-- <code>'JobPool'</code> – A JobPool object. Call `.df()` to get the results.
+- `'JobPool'` – A JobPool object. Call `.df()` to get the results.
 
 For remote runs (default or ``engine="remote"``) without ``worker_concurrency``,
 an asyncio-based pool is used. Local runs and batch instance types still use a
@@ -16549,7 +16680,7 @@ Evaluate this UDF against a sample.
 
 **Parameters:**
 
-- **inplace** (<code>bool</code>) – If True, update this UDF object with schema information. (default)
+- **inplace** (`bool`) – If True, update this UDF object with schema information. (default)
 
 Deprecated: Call the UDF instead.
 
@@ -16569,9 +16700,9 @@ Set the parameters on this UDF.
 
 **Parameters:**
 
-- **parameters** (<code>dict[str, Any]</code>) – The new parameters dictionary.
-- **replace_parameters** (<code>bool</code>) – If True, unset any parameters not in the parameters argument. Defaults to False.
-- **inplace** (<code>bool</code>) – If True, modify this object. If False, return a new object. Defaults to True.
+- **parameters** (`dict[str, Any]`) – The new parameters dictionary.
+- **replace_parameters** (`bool`) – If True, unset any parameters not in the parameters argument. Defaults to False.
+- **inplace** (`bool`) – If True, modify this object. If False, return a new object. Defaults to True.
 
 Deprecated: Set parameters when calling the UDF or using `UDF.map()` instead.
 
@@ -16587,11 +16718,11 @@ Write the UDF to disk as a directory (folder).
 
 **Parameters:**
 
-- **where** (<code>str | Path | None</code>) – A path to a directory. If not provided, uses the UDF function name.
+- **where** (`str | Path | None`) – A path to a directory. If not provided, uses the UDF function name.
 
 **Other Parameters:**
 
-- **overwrite** (<code>bool</code>) – If true, overwriting is allowed.
+- **overwrite** (`bool`) – If true, overwriting is allowed.
 
 ---
 
@@ -16607,11 +16738,11 @@ The UDF will be written as a Zip file.
 
 **Parameters:**
 
-- **where** (<code>str | Path | BinaryIO</code>) – A path to a file or a file-like object.
+- **where** (`str | Path | BinaryIO`) – A path to a file or a file-like object.
 
 **Other Parameters:**
 
-- **overwrite** (<code>bool</code>) – If true, overwriting is allowed.
+- **overwrite** (`bool`) – If true, overwriting is allowed.
 
 ---
 
@@ -17716,22 +17847,22 @@ A decorator that transforms a function into a Fused UDF.
 
 **Parameters:**
 
-- **name** (<code>Optional[str]</code>) – The name of the UDF object. Defaults to the name of the function.
+- **name** (`Optional[str]`) – The name of the UDF object. Defaults to the name of the function.
 
-- **cache_max_age** (<code>Optional[str]</code>) – The maximum age when returning a result from the cache.
+- **cache_max_age** (`Optional[str]`) – The maximum age when returning a result from the cache.
 
-- **engine** (<code>Optional[str]</code>) – The execution engine to use ('remote', 'local', 'realtime', or a batch
+- **engine** (`Optional[str]`) – The execution engine to use ('remote', 'local', 'realtime', or a batch
   instance type like 'small', 'medium', 'large', 'm5.large', etc.).
   If not specified (and also not specified in `fused.run()`), defaults
   to 'realtime'.
 
-- **disk_size_gb** (<code>Optional[int]</code>) – The size of the disk in GB to use for remote execution
+- **disk_size_gb** (`Optional[int]`) – The size of the disk in GB to use for remote execution
   (only supported for a batch instance type).
 
-- **default_parameters** (<code>Optional\[Dict[str, Any]\]</code>) – Parameters to embed in the UDF object, separately from the arguments
+- **default_parameters** (`Optional\[Dict[str, Any]\]`) – Parameters to embed in the UDF object, separately from the arguments
   list of the function. Defaults to None for empty parameters.
 
-- **headers** (<code>Optional\[Sequence\[Union[str, Header]\]\]</code>) – A list of files to include as modules when running the UDF. For example,
+- **headers** (`Optional\[Sequence\[Union[str, Header]\]\]`) – A list of files to include as modules when running the UDF. For example,
   when specifying `headers=['my_header.py']`, inside the UDF function it may be
   referenced as:
 
@@ -17744,8 +17875,8 @@ A decorator that transforms a function into a Fused UDF.
 
 **Returns:**
 
-- <code>Callable\..., [Udf\]</code> – A callable that represents the transformed UDF. This callable can be used
-- <code>Callable\..., [Udf\]</code> – within GeoPandas workflows to apply the defined operation on geospatial data.
+- `Callable\..., [Udf\]` – A callable that represents the transformed UDF. This callable can be used
+- `Callable\..., [Udf\]` – within GeoPandas workflows to apply the defined operation on geospatial data.
 
 **Examples:**
 
@@ -17794,22 +17925,22 @@ keyword arguments.
 
 **Parameters:**
 
-- **func** (<code>Callable</code>) – The function to be decorated. If None, this
+- **func** (`Callable`) – The function to be decorated. If None, this
   returns a partial decorator with the passed keyword arguments.
-- **cache_max_age** (<code>str | int | None</code>) – A string with a numbered component and units. Supported units are seconds (s), minutes (m), hours (h), and
+- **cache_max_age** (`str | int | None`) – A string with a numbered component and units. Supported units are seconds (s), minutes (m), hours (h), and
   days (d) (e.g. "48h", "10s", etc.).
-- **cache_folder_path** (<code>str</code>) – Folder to append to the configured cache directory.
-- **concurrent_lock_timeout** (<code>str | int</code>) – Max amount of time in seconds for subsequent concurrent calls to wait for a previous
+- **cache_folder_path** (`str`) – Folder to append to the configured cache directory.
+- **concurrent_lock_timeout** (`str | int`) – Max amount of time in seconds for subsequent concurrent calls to wait for a previous
   concurrent call to finish execution and to write the cache file.
-- **cache_reset** (<code>bool | None</code>) – Ignore `cache_max_age` and overwrite cached result.
-- **cache_storage** (<code>StorageStr | None</code>) – Set where the cache data is stored. Supported values are "auto", "mount" and "local". Auto will
+- **cache_reset** (`bool | None`) – Ignore `cache_max_age` and overwrite cached result.
+- **cache_storage** (`StorageStr | None`) – Set where the cache data is stored. Supported values are "auto", "mount" and "local". Auto will
   automatically select the storage location defined in options (mount if it exists, otherwise local) and
   ensures that it exists and is writable. Mount gets shared across executions where local will only be shared
   within the same execution.
-- **cache_key_exclude** (<code>Iterable[str]</code>) – An iterable of parameter names to exclude from the cache key calculation. Useful for
+- **cache_key_exclude** (`Iterable[str]`) – An iterable of parameter names to exclude from the cache key calculation. Useful for
   arguments that do not affect the result of the function and could cause unintended cache expiry (e.g.
   database connection objects)
-- **cache_verbose** (<code>bool | None</code>) – Print a message when a cached result is returned
+- **cache_verbose** (`bool | None`) – Print a message when a cached result is returned
 
 Returns:
 Callable: A decorator that, when applied to a function, caches its
@@ -17859,27 +17990,27 @@ accordingly.
 
 **Parameters:**
 
-- **url_or_udf** (<code>Union[str, Path]</code>) – A string representing the location of the UDF, or the raw code of the UDF.
+- **url_or_udf** (`Union[str, Path]`) – A string representing the location of the UDF, or the raw code of the UDF.
   The location can be a GitHub URL starting with "https://github.com",
   a Fused platform-specific identifier in the format "email/udf_name",
   or a local file path pointing to a Python file.
-- **cache_key** (<code>Any</code>) – An optional key used for caching the loaded UDF. If provided, the function
+- **cache_key** (`Any`) – An optional key used for caching the loaded UDF. If provided, the function
   will attempt to load the UDF from cache using this key before attempting to
   load it from the specified source. Defaults to None, indicating no caching.
-- **import_globals** (<code>bool</code>) – Expose the globals defined in the UDF's context as attributes on the UDF object (default True).
+- **import_globals** (`bool`) – Expose the globals defined in the UDF's context as attributes on the UDF object (default True).
   This requires executing the code of the UDF. To globally configure this behavior, use `fused.options.never_import`.
-- **collection_name** (<code>str | None</code>) – Collection name to load the UDF from. If not provided, will attempt to
+- **collection_name** (`str | None`) – Collection name to load the UDF from. If not provided, will attempt to
   use the collection of the currently executing UDF, or default to "default".
 
 **Returns:**
 
-- **AnyBaseUdf** (<code>AnyBaseUdf</code>) – An instance of the loaded UDF.
+- **AnyBaseUdf** (`AnyBaseUdf`) – An instance of the loaded UDF.
 
 **Raises:**
 
-- <code>ValueError</code> – If the URL or Fused platform-specific identifier format is incorrect or
+- `ValueError` – If the URL or Fused platform-specific identifier format is incorrect or
   cannot be parsed.
-- <code>Exception</code> – For errors related to network issues, file access permissions, or other
+- `Exception` – For errors related to network issues, file access permissions, or other
   unforeseen errors during the loading process.
 
 **Examples:**
@@ -17937,41 +18068,41 @@ path based on the provided parameters.
 
 **Parameters:**
 
-- **udf** (<code>str, Udf or UdfJobStepConfig</code>) – the UDF to execute.
+- **udf** (`str, Udf or UdfJobStepConfig`) – the UDF to execute.
   The UDF can be specified in several ways:
   - A string representing a UDF name or UDF shared token.
   - A UDF object.
   - A UdfJobStepConfig object for detailed execution configuration.
 - **x, y, z** – Tile coordinates for tile-based UDF execution.
-- **sync** (<code>bool</code>) – If True, execute the UDF synchronously. If False, execute asynchronously.
-- **engine** (<code>Optional\[Literal['remote', 'local']\]</code>) – The execution engine to use ('remote' or 'local').
-- **instance_type** (<code>Optional[InstanceType]</code>) – The type of instance to use for remote execution ('realtime',
+- **sync** (`bool`) – If True, execute the UDF synchronously. If False, execute asynchronously.
+- **engine** (`Optional\[Literal['remote', 'local']\]`) – The execution engine to use ('remote' or 'local').
+- **instance_type** (`Optional[InstanceType]`) – The type of instance to use for remote execution ('realtime',
   or 'small', 'medium', 'large' or one of the whitelisted instance types).
   If not specified, gets the default from the UDF (if specified in the
   `@fused.udf()` decorator, and the UDF is not run as a shared token),
   or otherwise defaults to 'realtime'.
-- **disk_size_gb** (<code>Optional[int]</code>) – The size of the disk in GB to use for remote execution
+- **disk_size_gb** (`Optional[int]`) – The size of the disk in GB to use for remote execution
   (only supported for a batch (non-realtime) instance type).
-- **type** (<code>Optional\[Literal['tile', 'file']\]</code>) – The type of UDF execution ('tile' or 'file').
-- **max_retry** (<code>int</code>) – The maximum number of retries to attempt if the UDF fails.
+- **type** (`Optional\[Literal['tile', 'file']\]`) – The type of UDF execution ('tile' or 'file').
+- **max_retry** (`int`) – The maximum number of retries to attempt if the UDF fails.
   By default does not retry.
-- **cache_max_age** (<code>Optional[str]</code>) – The maximum age when returning a result from the cache.
+- **cache_max_age** (`Optional[str]`) – The maximum age when returning a result from the cache.
   Supported units are seconds (s), minutes (m), hours (h), and days (d) (e.g. “48h”, “10s”, etc.).
   Default is `None` so a UDF run with `fused.run()` will follow `cache_max_age` defined in `@fused.udf()` unless this value is changed.
-- **cache** (<code>bool</code>) – Set to False as a shortcut for `cache_max_age='0s'` to disable caching.
+- **cache** (`bool`) – Set to False as a shortcut for `cache_max_age='0s'` to disable caching.
 - **verbose** – Set to False to suppress any print statements from the UDF.
-- **parameters** (<code>Optional\[Dict[str, Any]\]</code>) – Additional parameters to pass to the UDF.
+- **parameters** (`Optional\[Dict[str, Any]\]`) – Additional parameters to pass to the UDF.
 - \*\***kw_parameters** – Additional parameters to pass to the UDF.
 
 **Raises:**
 
-- <code>ValueError</code> – If the UDF is not specified or is specified in more than one way.
-- <code>TypeError</code> – If the first parameter is not of an expected type.
-- <code>Warning</code> – Various warnings are issued for ignored parameters based on the execution path chosen.
+- `ValueError` – If the UDF is not specified or is specified in more than one way.
+- `TypeError` – If the first parameter is not of an expected type.
+- `Warning` – Various warnings are issued for ignored parameters based on the execution path chosen.
 
 **Returns:**
 
-- <code>Union\[ResultType, Coroutine\[ResultType, None, None\], UdfEvaluationResult, Coroutine\[UdfEvaluationResult, None, None\]\]</code> – The result of the UDF execution, which varies based on the UDF and execution path.
+- `Union\[ResultType, Coroutine\[ResultType, None, None\], UdfEvaluationResult, Coroutine\[UdfEvaluationResult, None, None\]\]` – The result of the UDF execution, which varies based on the UDF and execution path.
 
 **Examples:**
 
@@ -18041,62 +18172,62 @@ See `fused.run` for more details on the UDF execution.
 
 **Parameters:**
 
-- **udf** (<code>AnyBaseUdf | FunctionType | str</code>) – the UDF to execute.
+- **udf** (`AnyBaseUdf | FunctionType | str`) – the UDF to execute.
   See `fused.run` for more details on how to specify the UDF.
-- **arg_list** (<code>list | pd.DataFrame</code>) – a list of input parameters for the UDF. Can be specified as:
+- **arg_list** (`list | pd.DataFrame`) – a list of input parameters for the UDF. Can be specified as:
   - a list of values for parametrizing over a single parameter, i.e.
     the first parameter of the UDF
   - a list of dictionaries for parametrizing over multiple parameters
   - A DataFrame for parametrizing over multiple parameters where each
     row is a set of parameters
-- **engine** (<code>Literal['remote', 'local'] | None</code>) – The execution engine to use. Defaults to 'remote'.
-- **instance_type** (<code>InstanceType | None</code>) – The type of instance to use for remote execution ('realtime',
+- **engine** (`Literal['remote', 'local'] | None`) – The execution engine to use. Defaults to 'remote'.
+- **instance_type** (`InstanceType | None`) – The type of instance to use for remote execution ('realtime',
   or 'small', 'medium', 'large' or one of the whitelisted instance types).
   If not specified, gets the default from the UDF (if specified in the
   `@fused.udf()` decorator, and the UDF is not run as a shared token),
   or otherwise defaults to 'realtime'.
-- **max_workers** (<code>int | None</code>) – The maximum number of workers to use. Defaults to 32 for
+- **max_workers** (`int | None`) – The maximum number of workers to use. Defaults to 32 for
   the realtime engine (with a maximum of 1024), and 1 for other batch
   instances (with a maximum of 5).
-- **n_processes_per_worker** (<code>int | None</code>) – The number of processes to use per worker.
+- **n_processes_per_worker** (`int | None`) – The number of processes to use per worker.
   For realtime instances, defaults to 1 (each arg processes in its own lambda).
   Set to >1 to chunk the arg_list and process multiple items in parallel within
   each realtime lambda instance, reducing the total number of lambda invocations.
   For batch instances, defaults to the number of cores.
-- **max_retry** (<code>int</code>) – The maximum number of retries for failed jobs. Defaults to 2.
+- **max_retry** (`int`) – The maximum number of retries for failed jobs. Defaults to 2.
   Note that retries will only be attempted if the JobPool object is waited on,
   e.g. with `pool.wait()`, `pool.tail()`, or `pool.df()`.
-- **debug_mode** (<code>bool</code>) – If True, executes only the first item in arg_list directly using
+- **debug_mode** (`bool`) – If True, executes only the first item in arg_list directly using
   `fused.run()`, useful for debugging UDF execution. Default is False.
-- **collect** (<code>bool</code>) – If True, waits for all jobs to complete and returns the collected DataFrame
+- **collect** (`bool`) – If True, waits for all jobs to complete and returns the collected DataFrame
   containing the results. If False, returns a JobPool object, which is non-blocking
   and allows you to inspect the individual results and logs.
   Default is True.
-- **execution_type** (<code>ExecutionType</code>) – The type of batching to use. Either "thread_pool" (default) for
+- **execution_type** (`ExecutionType`) – The type of batching to use. Either "thread_pool" (default) for
   ThreadPoolExecutor-based concurrency or "async_loop" for asyncio-based concurrency.
-- **cache_max_age** (<code>str | None</code>) – The maximum age when returning a result from the cache.
+- **cache_max_age** (`str | None`) – The maximum age when returning a result from the cache.
   Supported units are seconds (s), minutes (m), hours (h), and days (d)
   (e.g. "48h", "10s", etc.).
   Default is `None` so a UDF run with `fused.run()` will follow
   `cache_max_age` defined in `@fused.udf()` unless this value is changed.
-- **cache** (<code>bool</code>) – Set to False as a shortcut for `cache_max_age='0s'` to disable caching.
-- **run_cache_max_age** (<code>str | int | None</code>) – When set, wraps each inner `fused.run` with `fused.cache` so
+- **cache** (`bool`) – Set to False as a shortcut for `cache_max_age='0s'` to disable caching.
+- **run_cache_max_age** (`str | int | None`) – When set, wraps each inner `fused.run` with `fused.cache` so
   cache hits skip the HTTP round-trip (client-side disk cache). Uses the same
   `cache_reset`, `cache_storage`, and `cache_verbose` as the submit-level cache.
-- **ignore_exceptions** (<code>bool</code>) – Set to True to ignore exceptions when collecting results.
+- **ignore_exceptions** (`bool`) – Set to True to ignore exceptions when collecting results.
   Runs that result in exceptions will be silently ignored. Defaults to False.
-- **flatten** (<code>bool</code>) – Set to True to receive a DataFrame of results, without nesting of a
+- **flatten** (`bool`) – Set to True to receive a DataFrame of results, without nesting of a
   `results` column, when collecting results. When False, results will be nested
   in a `results` column. If the UDF does not return a DataFrame (e.g. a string
   instead,) results will be nested in a `results` column regardless of this setting.
   Defaults to False.
-- **drop_index** (<code>bool</code>) – Set to False to use the position of the argument as the index instead
+- **drop_index** (`bool`) – Set to False to use the position of the argument as the index instead
   of the argument values. Defaults to True.
 - \*\***kwargs** – Additional (constant) keyword arguments to pass to the UDF.
 
 **Returns:**
 
-- <code>JobPool | ResultType | DataFrame</code> – JobPool, or DataFrame depending on execution_type and collect parameters
+- `JobPool | ResultType | DataFrame` – JobPool, or DataFrame depending on execution_type and collect parameters
 
 **Examples:**
 
@@ -18147,16 +18278,16 @@ Fused addresses the latency of downloading files with the download utility funct
 
 **Parameters:**
 
-- **url** (<code>str</code>) – The URL to download.
-- **file_path** (<code>str</code>) – The local path where to save the file.
-- **storage** (<code>StorageStr</code>) – Set where the cache data is stored. Supported values are "auto", "mount" and "local". Auto will
+- **url** (`str`) – The URL to download.
+- **file_path** (`str`) – The local path where to save the file.
+- **storage** (`StorageStr`) – Set where the cache data is stored. Supported values are "auto", "mount" and "local". Auto will
   automatically select the storage location defined in options (mount if it exists, otherwise local) and
   ensures that it exists and is writable. Mount gets shared across executions where local will only be shared
   within the same execution.
 
 **Returns:**
 
-- <code>str</code> – The function downloads the file only on the first execution, and returns the file path.
+- `str` – The function downloads the file only on the first execution, and returns the file path.
 
 **Examples:**
 
@@ -18211,61 +18342,61 @@ Ingest a dataset into the Fused partitioned format.
 
 **Parameters:**
 
-- **input** (<code>str | Path | Sequence[str | Path] | gpd.GeoDataFrame</code>) – A GeoPandas `GeoDataFrame` or a path to file or files on S3 to ingest. Files may be Parquet or another geo data format.
+- **input** (`str | Path | Sequence[str | Path] | gpd.GeoDataFrame`) – A GeoPandas `GeoDataFrame` or a path to file or files on S3 to ingest. Files may be Parquet or another geo data format.
 
-- **output** (<code>str | None</code>) – Location on S3 to write the `main` table to.
+- **output** (`str | None`) – Location on S3 to write the `main` table to.
 
-- **output_metadata** (<code>str | None</code>) – Location on S3 to write the `fused` table to.
+- **output_metadata** (`str | None`) – Location on S3 to write the `fused` table to.
 
-- **schema** (<code>Schema | None</code>) – Schema of the data to be ingested. This is optional and will be inferred from the data if not provided.
+- **schema** (`Schema | None`) – Schema of the data to be ingested. This is optional and will be inferred from the data if not provided.
 
-- **file_suffix** (<code>str | None</code>) – filter which files are used for ingestion. If `input` is a directory on S3, all files under that directory will be listed and used for ingestion. If `file_suffix` is not None, it will be used to filter paths by checking the trailing characters of each filename. E.g. pass `file_suffix=".geojson"` to include only GeoJSON files inside the directory.
+- **file_suffix** (`str | None`) – filter which files are used for ingestion. If `input` is a directory on S3, all files under that directory will be listed and used for ingestion. If `file_suffix` is not None, it will be used to filter paths by checking the trailing characters of each filename. E.g. pass `file_suffix=".geojson"` to include only GeoJSON files inside the directory.
 
-- **load_columns** (<code>Sequence[str] | None</code>) – Read only this set of columns when ingesting geospatial datasets. Defaults to all columns.
+- **load_columns** (`Sequence[str] | None`) – Read only this set of columns when ingesting geospatial datasets. Defaults to all columns.
 
-- **remove_cols** (<code>Sequence[str] | None</code>) – The named columns to drop when ingesting geospatial datasets. Defaults to not drop any columns.
+- **remove_cols** (`Sequence[str] | None`) – The named columns to drop when ingesting geospatial datasets. Defaults to not drop any columns.
 
-- **explode_geometries** (<code>bool</code>) – Whether to unpack multipart geometries to single geometries when ingesting geospatial datasets, saving each part as its own row. Defaults to `False`.
+- **explode_geometries** (`bool`) – Whether to unpack multipart geometries to single geometries when ingesting geospatial datasets, saving each part as its own row. Defaults to `False`.
 
-- **drop_out_of_bounds** (<code>bool | None</code>) – Whether to drop geometries outside of the expected WGS84 bounds. Defaults to True.
+- **drop_out_of_bounds** (`bool | None`) – Whether to drop geometries outside of the expected WGS84 bounds. Defaults to True.
 
-- **partitioning_method** (<code>Literal['area', 'length', 'coords', 'rows']</code>) – The method to use for grouping rows into partitions. Defaults to `"rows"`.
+- **partitioning_method** (`Literal['area', 'length', 'coords', 'rows']`) – The method to use for grouping rows into partitions. Defaults to `"rows"`.
 
   - `"area"`: Construct partitions where all contain a maximum total area among geometries.
   - `"length"`: Construct partitions where all contain a maximum total length among geometries.
   - `"coords"`: Construct partitions where all contain a maximum total number of coordinates among geometries.
   - `"rows"`: Construct partitions where all contain a maximum number of rows.
 
-- **partitioning_maximum_per_file** (<code>int | float | None</code>) – Maximum value for `partitioning_method` to use per file. If `None`, defaults to _1/10th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will have no more than 1/10th the total area of all geometries. Defaults to `None`.
+- **partitioning_maximum_per_file** (`int | float | None`) – Maximum value for `partitioning_method` to use per file. If `None`, defaults to _1/10th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will have no more than 1/10th the total area of all geometries. Defaults to `None`.
 
-- **partitioning_maximum_per_chunk** (<code>int | float | None</code>) – Maximum value for `partitioning_method` to use per chunk. If `None`, defaults to _1/100th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will have no more than 1/100th the total area of all geometries. Defaults to `None`.
+- **partitioning_maximum_per_chunk** (`int | float | None`) – Maximum value for `partitioning_method` to use per chunk. If `None`, defaults to _1/100th_ of the total value of `partitioning_method`. So if the value is `None` and `partitioning_method` is `"area"`, then each file will have no more than 1/100th the total area of all geometries. Defaults to `None`.
 
-- **partitioning_max_width_ratio** (<code>int | float</code>) – The maximum ratio of width to height of each partition to use in the ingestion process. So for example, if the value is `2`, then if the width divided by the height is greater than `2`, the box will be split in half along the horizontal axis. Defaults to `2`.
+- **partitioning_max_width_ratio** (`int | float`) – The maximum ratio of width to height of each partition to use in the ingestion process. So for example, if the value is `2`, then if the width divided by the height is greater than `2`, the box will be split in half along the horizontal axis. Defaults to `2`.
 
-- **partitioning_max_height_ratio** (<code>int | float</code>) – The maximum ratio of height to width of each partition to use in the ingestion process. So for example, if the value is `2`, then if the height divided by the width is greater than `2`, the box will be split in half along the vertical axis. Defaults to `2`.
+- **partitioning_max_height_ratio** (`int | float`) – The maximum ratio of height to width of each partition to use in the ingestion process. So for example, if the value is `2`, then if the height divided by the width is greater than `2`, the box will be split in half along the vertical axis. Defaults to `2`.
 
-- **partitioning_force_utm** (<code>Literal['file', 'chunk', None]</code>) – Whether to force partitioning within UTM zones. If set to `"file"`, this will ensure that the centroid of all geometries per _file_ are contained in the same UTM zone. If set to `"chunk"`, this will ensure that the centroid of all geometries per _chunk_ are contained in the same UTM zone. If set to `None`, then no UTM-based partitioning will be done. Defaults to "chunk".
+- **partitioning_force_utm** (`Literal['file', 'chunk', None]`) – Whether to force partitioning within UTM zones. If set to `"file"`, this will ensure that the centroid of all geometries per _file_ are contained in the same UTM zone. If set to `"chunk"`, this will ensure that the centroid of all geometries per _chunk_ are contained in the same UTM zone. If set to `None`, then no UTM-based partitioning will be done. Defaults to "chunk".
 
-- **partitioning_split_method** (<code>Literal['mean', 'median']</code>) – How to split one partition into children. Defaults to `"mean"` (this may change in the future).
+- **partitioning_split_method** (`Literal['mean', 'median']`) – How to split one partition into children. Defaults to `"mean"` (this may change in the future).
 
   - `"mean"`: Split each axis according to the mean of the centroid values.
   - `"median"`: Split each axis according to the median of the centroid values.
 
-- **subdivide_method** (<code>Literal['area', None]</code>) – The method to use for subdividing large geometries into multiple rows. Currently the only option is `"area"`, where geometries will be subdivided based on their area (in WGS84 degrees).
+- **subdivide_method** (`Literal['area', None]`) – The method to use for subdividing large geometries into multiple rows. Currently the only option is `"area"`, where geometries will be subdivided based on their area (in WGS84 degrees).
 
-- **subdivide_start** (<code>float | None</code>) – The value above which geometries will be subdivided into smaller parts, according to `subdivide_method`.
+- **subdivide_start** (`float | None`) – The value above which geometries will be subdivided into smaller parts, according to `subdivide_method`.
 
-- **subdivide_stop** (<code>float | None</code>) – The value below which geometries will not be subdivided into smaller parts, according to `subdivide_method`. Recommended to be equal to subdivide_start. If `None`, geometries will be subdivided up to a recursion depth of 100 or until the subdivided geometry is rectangular.
+- **subdivide_stop** (`float | None`) – The value below which geometries will not be subdivided into smaller parts, according to `subdivide_method`. Recommended to be equal to subdivide_start. If `None`, geometries will be subdivided up to a recursion depth of 100 or until the subdivided geometry is rectangular.
 
-- **split_identical_centroids** (<code>bool</code>) – If `True`, should split a partition that has
+- **split_identical_centroids** (`bool`) – If `True`, should split a partition that has
   identical centroids (such as if all geometries in the partition are the
   same) if there are more such rows than defined in "partitioning_maximum_per_file" and
   "partitioning_maximum_per_chunk".
 
-- **target_num_chunks** (<code>int</code>) – The target for the number of files if `partitioning_maximum_per_file` is None. Note that this number is only a _target_ and the actual number of files generated can be higher or lower than this number, depending on the spatial distribution of the data itself.
+- **target_num_chunks** (`int`) – The target for the number of files if `partitioning_maximum_per_file` is None. Note that this number is only a _target_ and the actual number of files generated can be higher or lower than this number, depending on the spatial distribution of the data itself.
   Defaults to 500, rough default to use in most cases.
 
-- **lonlat_cols** (<code>tuple[str, str] | None</code>) – Names of longitude, latitude columns to construct point geometries from.
+- **lonlat_cols** (`tuple[str, str] | None`) – Names of longitude, latitude columns to construct point geometries from.
 
   If your point columns are named `"x"` and `"y"`, then pass:
 
@@ -18278,7 +18409,7 @@ Ingest a dataset into the Fused partitioned format.
 
   This only applies to reading from Parquet files. For reading from CSV files, pass options to `gdal_config`.
 
-- **gdal_config** (<code>GDALOpenConfig | dict[str, Any] | None</code>) – Configuration options to pass to GDAL for how to read these files. For all files other than Parquet files, Fused uses GDAL as a step in the ingestion process. For some inputs, like CSV files or zipped shapefiles, you may need to pass some parameters to GDAL to tell it how to open your files.
+- **gdal_config** (`GDALOpenConfig | dict[str, Any] | None`) – Configuration options to pass to GDAL for how to read these files. For all files other than Parquet files, Fused uses GDAL as a step in the ingestion process. For some inputs, like CSV files or zipped shapefiles, you may need to pass some parameters to GDAL to tell it how to open your files.
 
   This config is expected to be a dictionary with up to two keys:
 
@@ -18296,22 +18427,22 @@ Ingest a dataset into the Fused partitioned format.
   )
   ```
 
-- **overwrite** (<code>bool</code>) – If True, overwrite the output directory if it already exists
+- **overwrite** (`bool`) – If True, overwrite the output directory if it already exists
   (by first removing all existing content of the directory, i.e. it
   does not only overwrite conflicting files).
   Defaults to False.
 
-- **write_covering_bbox** (<code>bool</code>) – If True, write output as GeoParquet 1.1 with a per-row
+- **write_covering_bbox** (`bool`) – If True, write output as GeoParquet 1.1 with a per-row
   bbox covering column, enabling efficient spatial filtering. Defaults to False.
 
-- **as_udf** (<code>bool</code>) – Return the ingestion workflow as a UDF that can be executed using
+- **as_udf** (`bool`) – Return the ingestion workflow as a UDF that can be executed using
   `fused.run()`. Local files or python objects passed to `input` or
   `partitioning_schema_input` are still uploaded to S3 first such that
   those are available when executing the UDF remotely. Defaults to False.
 
 **Returns:**
 
-- <code>GeospatialPartitionJobStepConfig</code> – Configuration object describing the ingestion process. Call `.execute` on this object to start a job.
+- `GeospatialPartitionJobStepConfig` – Configuration object describing the ingestion process. Call `.execute` on this object to start a job.
 
 **Examples:**
 
@@ -18432,16 +18563,16 @@ Ingest a dataset into the Fused partitioned format.
 
 **Parameters:**
 
-- **input** (<code>str | Path | Sequence[str, Path] | pd.DataFrame | gpd.GeoDataFrame</code>) – A GeoPandas `GeoDataFrame` or a path to file or files on S3 to ingest. Files may be Parquet or another geo data format.
-- **output** (<code>str | None</code>) – Location on S3 to write the `main` table to.
-- **output_metadata** (<code>str | None</code>) – Location on S3 to write the `fused` table to.
-- **partition_col** (<code>str | None</code>) – Partition along this column for nongeospatial datasets.
-- **partitioning_maximum_per_file** (<code>int</code>) – Maximum number of items to store in a single file. Defaults to 2,500,000.
-- **partitioning_maximum_per_chunk** (<code>int</code>) – Maximum number of items to store in a single file. Defaults to 65,000.
+- **input** (`str | Path | Sequence[str, Path] | pd.DataFrame | gpd.GeoDataFrame`) – A GeoPandas `GeoDataFrame` or a path to file or files on S3 to ingest. Files may be Parquet or another geo data format.
+- **output** (`str | None`) – Location on S3 to write the `main` table to.
+- **output_metadata** (`str | None`) – Location on S3 to write the `fused` table to.
+- **partition_col** (`str | None`) – Partition along this column for nongeospatial datasets.
+- **partitioning_maximum_per_file** (`int`) – Maximum number of items to store in a single file. Defaults to 2,500,000.
+- **partitioning_maximum_per_chunk** (`int`) – Maximum number of items to store in a single file. Defaults to 65,000.
 
 **Returns:**
 
-- <code>NonGeospatialPartitionJobStepConfig</code> – Configuration object describing the ingestion process. Call `.execute` on this object to start a job.
+- `NonGeospatialPartitionJobStepConfig` – Configuration object describing the ingestion process. Call `.execute` on this object to start a job.
 
 **Examples:**
 
@@ -18475,16 +18606,16 @@ The directory is kept for 12h.
 
 **Parameters:**
 
-- **file_path** (<code>str</code>) – The relative file path to locate.
-- **mkdir** (<code>bool</code>) – If True, create the directory if it doesn't already exist. Defaults to True.
-- **storage** (<code>StorageStr</code>) – Set where the cache data is stored. Supported values are "auto", "mount" and "local". Auto will
+- **file_path** (`str`) – The relative file path to locate.
+- **mkdir** (`bool`) – If True, create the directory if it doesn't already exist. Defaults to True.
+- **storage** (`StorageStr`) – Set where the cache data is stored. Supported values are "auto", "mount" and "local". Auto will
   automatically select the storage location defined in options (mount if it exists, otherwise local) and
   ensures that it exists and is writable. Mount gets shared across executions where local will only be shared
   within the same execution.
 
 **Returns:**
 
-- <code>str</code> – The located file path.
+- `str` – The located file path.
 
 ---
 
@@ -18498,7 +18629,7 @@ Returns a GeoDataFrame with each chunk in the table as a row.
 
 **Parameters:**
 
-- **url** (<code>str</code>) – URL of the table.
+- **url** (`str`) – URL of the table.
 
 ---
 
@@ -18520,10 +18651,10 @@ This can be called with file_id and chunk_id from `get_chunks_metadata`.
 
 **Parameters:**
 
-- **url** (<code>str</code>) – URL of the table.
-- **file_id** (<code>Union[str, int, None]</code>) – File ID to read.
-- **chunk_id** (<code>Optional[int]</code>) – Chunk ID to read.
-- **columns** (<code>Optional\[Iterable[str]\]</code>) – Read only the specified columns.
+- **url** (`str`) – URL of the table.
+- **file_id** (`Union[str, int, None]`) – File ID to read.
+- **chunk_id** (`Optional[int]`) – Chunk ID to read.
+- **columns** (`Optional\[Iterable[str]\]`) – Read only the specified columns.
 
 ---
 
