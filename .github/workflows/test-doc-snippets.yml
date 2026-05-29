@@ -1,0 +1,52 @@
+name: Test doc code snippets
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  syntax-check:
+    name: Tier 1 — syntax check (all Python blocks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Check Python block syntax in docs
+        run: uv run utils/test_doc_snippets.py
+
+  execution-check:
+    name: Tier 2 — execute runnable blocks (pytest-markdown-docs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Run doc snippet execution tests
+        id: tier2
+        # Non-blocking while we progressively add '# doctest: skip' markers.
+        # Headless CI has no browser, so unauthenticated fused runs surface as
+        # test failures rather than OAuth popups.
+        # Remove continue-on-error once the suite is clean.
+        continue-on-error: true
+        run: |
+          uv run \
+            --with pytest \
+            --with pytest-markdown-docs \
+            --with fused \
+            pytest \
+              --markdown-docs \
+              --ignore=docs/python-sdk/api-reference \
+              --ignore=docs/python-sdk/top-level-functions.mdx \
+              --ignore=docs/workbench/integrations \
+              --tb=short \
+              -q \
+              docs/
+
+      - name: Annotate Tier 2 failures (non-blocking)
+        if: steps.tier2.outcome == 'failure'
+        run: echo "::warning::Tier 2 doc execution tests failed — see log above. Non-blocking until suite is clean."

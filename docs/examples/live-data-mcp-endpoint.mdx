@@ -1,0 +1,194 @@
+---
+id: live-data-mcp-endpoint
+title: Serving Live Team Data as an MCP Tool
+sidebar_label: Live Data MCP Endpoint
+sidebar_position: 19
+---
+
+Your team's automation writes fresh data somewhere every day. This example shows how to wrap that data in a Fused UDF so any agent — on any machine — can query it with a single command, without sharing credentials. The entire project — writing UDFs, testing, deploying, connecting — runs from Claude Code.
+
+This is the pattern behind daily-digest, an internal Fused tool where a Claude routine scrapes AI market signals daily, writes them to a Notion page, and a Fused canvas exposes them as queryable MCP tools for the whole team.
+
+## How it works
+
+```
+Automation (Claude routine, cron job, script…)
+  → writes structured JSON to a Notion page
+          ↓
+Fused Canvas (always-on HTTP endpoint)
+  → get_latest_signals  — returns the N most recent entries
+  → get_by_date         — filters by a specific date
+          ↓
+Team agents (any machine, no Notion access needed)
+  fused claude add-mcp signals-canvas
+  → "What are this week's top AI signals?"
+```
+
+The canvas sits between the data store and the agents. The Notion token and page ID stay inside Fused; consumers only need the canvas token. The endpoint URL is stable — if the Notion page structure changes, only the UDF needs updating, not every agent consuming it.
+
+## Set up the Fused skill in Claude Code
+
+Before writing any UDFs, install the Fused plugin. It teaches Claude Code how to use the `fused` CLI so you can push, test, and manage the canvas without leaving your editor:
+
+```bash
+fused claude plugin add
+```
+
+Once installed, you can ask Claude to run UDFs locally, push changes, manage secrets, and register MCP endpoints — all via `fused` commands.
+
+## Building the canvas
+
+### `get_latest_signals`
+
+The primary tool — returns the N most recent entries from the shared Notion store.
+
+:::note
+This UDF reads from Notion. Set `NOTION_TOKEN` and `SIGNALS_PAGE_ID` in [Fused Secrets](/workbench/integrations-secrets) before deploying. The UDF uses the [`notion-client`](https://pypi.org/project/notion-client/) package.
+:::
+
+```python
+# get_latest_signals
+
+@fused.udf
+def udf(n: int = 5):
+    """
+    Returns the N most recent signals from the team signals store.
+    Use when the user asks about recent highlights, what's new this week,
+    or the latest updates — not for questions about a specific past date.
+
+    n: number of signals to return (default 5, max 20)
+    """
+    import json
+    import pandas as pd
+    from notion_client import Client
+
+    notion = Client(auth=fused.secrets["NOTION_TOKEN"])
+    blocks = notion.blocks.children.list(
+        block_id=fused.secrets["SIGNALS_PAGE_ID"]
+    )["results"]
+
+    code_blocks = [b for b in blocks if b["type"] == "code"]
+    if not code_blocks:
+        return pd.DataFrame()
+    signals = json.loads(code_blocks[0]["code"]["rich_text"][0]["text"]["content"])
+
+    df = pd.DataFrame(signals)
+    df["date"] = pd.to_datetime(df["date"])
+    return df.sort_values("date", ascending=False).head(min(n, 20))
+```
+
+### `get_by_date`
+
+A companion tool for historical lookups — lets agents answer questions about a specific day:
+
+```python
+# get_by_date
+
+@fused.udf
+def udf(date: str = "2026-05-28"):
+    """
+    Returns signals for a specific date (YYYY-MM-DD).
+    Use when the user references a particular past date.
+    For recent or latest signals, use get_latest_signals instead.
+
+    date: ISO date string (e.g. "2026-05-20")
+    """
+    import json
+    import pandas as pd
+    from notion_client import Client
+
+    notion = Client(auth=fused.secrets["NOTION_TOKEN"])
+    blocks = notion.blocks.children.list(
+        block_id=fused.secrets["SIGNALS_PAGE_ID"]
+    )["results"]
+
+    code_blocks = [b for b in blocks if b["type"] == "code"]
+    if not code_blocks:
+        return pd.DataFrame()
+    signals = json.loads(code_blocks[0]["code"]["rich_text"][0]["text"]["content"])
+
+    df = pd.DataFrame(signals)
+    df["date"] = pd.to_datetime(df["date"]).dt.date.astype(str)
+    return df[df["date"] == date]
+```
+
+Both UDFs read the same Notion page. The canvas wires them together, and the MCP endpoint exposes both as distinct tools. The docstrings tell agents which one to pick.
+
+## Test and deploy from Claude Code
+
+With the Fused skill installed, the full workflow runs from Claude Code.
+
+### Test locally
+
+Ask Claude to run the UDF before pushing it:
+
+```bash
+fused run "" get_latest_signals.py --engine local
+```
+
+The `--engine local` flag runs in your environment — no network call, no Fused compute. Use it to catch import errors and logic bugs before deploying.
+
+### Push to Fused
+
+Put both UDFs in a directory and push the canvas:
+
+```bash
+fused canvas push ./signals-canvas/
+```
+
+This creates (or updates) a canvas named `signals-canvas` with both UDFs. Any UDFs missing from the local directory are removed from the remote canvas, so the canvas always reflects what's in the directory.
+
+### Set secrets
+
+Add the Notion credentials to Fused Secrets so the UDFs can authenticate:
+
+```bash
+fused secrets set NOTION_TOKEN your_token_here
+fused secrets set SIGNALS_PAGE_ID your_page_id_here
+```
+
+### Register the MCP with Claude Code
+
+Once the canvas is live, register it as an MCP server:
+
+```bash
+fused claude add-mcp signals-canvas
+```
+
+Claude Code can now discover and call both tools. Share the canvas name with teammates — they run the same command to connect.
+
+## Update the endpoint
+
+When the UDF needs changing, edit the file locally and push again:
+
+```bash
+fused canvas push ./signals-canvas/
+```
+
+The endpoint updates immediately. Agents connected to it get the new behavior on the next call — no reconnection needed.
+
+## Using it from Claude Code
+
+Once connected, Claude picks the right tool based on the query:
+
+- *"What are the top 3 AI signals from this week?"* → calls `get_latest_signals(n=3)`
+- *"Were there any notable open-source releases yesterday?"* → calls `get_latest_signals(n=10)`, filters in reasoning
+- *"What was in the digest on May 20th?"* → calls `get_by_date(date="2026-05-20")`
+
+## Why not connect agents directly to Notion?
+
+The [Notion MCP server](https://github.com/makenotion/notion-mcp-server) exists and works. The Fused layer earns its place in three specific situations:
+
+- **You don't want to share Notion credentials.** The `NOTION_TOKEN` lives in Fused Secrets. Each teammate connects via a canvas token — revokable independently of the Notion setup.
+- **The endpoint needs to stay stable.** If you restructure the Notion page, only the UDF changes. Any agent connected to the canvas continues working without reconfiguration.
+- **The raw Notion structure is noisy.** A UDF normalizes field names, drops internal columns, and enforces a clean schema — so agents get predictable output rather than "whatever Notion returns."
+
+If you own the workspace end-to-end and only one agent reads from it, direct Notion MCP is simpler. The Fused layer is worth adding when multiple people or agents consume the same endpoint.
+
+## See also
+
+- [Building UDFs for Agents](/guide/working-with-udfs/udf-best-practices/agents)
+- [Connecting AI to Data](/guide/data-input-outputs/import-connection/ai-data-connection)
+- [Fused Secrets](/workbench/integrations-secrets)
+- [Tokens & endpoints](/guide/data-input-outputs/export-api/tokens-endpoints)
+- [Querying Overture Maps with an AI Agent](/examples/overture-maps-mcp-agent) — a more complex MCP example with multiple tools
