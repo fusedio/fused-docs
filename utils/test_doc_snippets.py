@@ -32,10 +32,13 @@ SKIP_FILES = frozenset([
     ROOT / "docs" / "python-sdk" / "top-level-functions.mdx",
 ])
 
-# Match ```python ... ``` fences; the fence info line may have extras
-# (showLineNumbers, title="...", {1-3}, etc.)
+# Match ```python ... ``` fences at any indentation level (column 0, inside
+# <Tabs>, blockquotes, etc.). The `indent` group captures leading whitespace
+# on the opening fence and is backreferenced on the closing fence so indented
+# fences are paired correctly. The fence info line may carry extras like
+# showLineNumbers, title="...", or {1-3}.
 _FENCE_RE = re.compile(
-    r"^```python[^\n]*\n(.*?)^```",
+    r"^(?P<indent>[ \t]*)```python[^\n]*\n(.*?)^(?P=indent)```",
     re.MULTILINE | re.DOTALL,
 )
 
@@ -50,6 +53,9 @@ def _is_excluded(path: Path) -> bool:
 def _collect(paths: list[Path]) -> list[Path]:
     out: list[Path] = []
     for p in paths:
+        if not p.exists():
+            print(f"WARNING: path does not exist, skipping: {p}", file=sys.stderr)
+            continue
         if p.is_dir():
             for ext in ("*.mdx", "*.md"):
                 out.extend(p.rglob(ext))
@@ -59,51 +65,71 @@ def _collect(paths: list[Path]) -> list[Path]:
 
 
 def _extract_blocks(source: str) -> list[tuple[int, str]]:
-    """Return (fence_start_line, code) for each Python block."""
+    """Return (opening_fence_line, code) for each Python block.
+
+    opening_fence_line is the 1-based line number of the ```python line itself
+    (not the first line of the code body). _check_file computes the error line
+    as opening_fence_line + e.lineno, which is only correct because of this.
+    """
     return [
-        (source[: m.start()].count("\n") + 1, m.group(1))
+        (source[: m.start()].count("\n") + 1, m.group(2))
         for m in _FENCE_RE.finditer(source)
     ]
 
 
-def _check_file(path: Path) -> list[str]:
+def _check_file(path: Path, source: str) -> list[str]:
     errors: list[str] = []
-    source = path.read_text(encoding="utf-8")
     for fence_line, code in _extract_blocks(source):
-        first = code.lstrip().splitlines()[0] if code.strip() else ""
-        if "doctest: skip" in first:
+        lines = [ln for ln in code.splitlines() if ln.strip()]
+        first = lines[0] if lines else ""
+        if first.lstrip().startswith("#") and "doctest: skip" in first:
             continue
         try:
             ast.parse(textwrap.dedent(code))
-        except SyntaxError as e:
+        except (SyntaxError, ValueError) as e:
             rel = path.relative_to(ROOT)
-            err_line = fence_line + (e.lineno or 1)
+            err_line = fence_line + (getattr(e, "lineno", None) or 1)
             errors.append(
-                f"{rel}:{err_line}: SyntaxError: {e.msg}\n"
-                f"    {(e.text or '').rstrip()}"
+                f"{rel}:{err_line}: {type(e).__name__}: {getattr(e, 'msg', str(e))}\n"
+                f"    {(getattr(e, 'text', None) or '').rstrip()}"
             )
     return errors
 
 
 def main(argv: list[str]) -> int:
+    is_precommit = bool(argv)
     targets = [Path(a) for a in argv] if argv else [DOCS_DIR]
     files = _collect(targets)
 
     if not files:
-        print("No .mdx/.md files to check.")
-        return 0
+        if is_precommit:
+            # Empty staged set is normal — nothing to check.
+            print("No .mdx/.md files to check.")
+            return 0
+        # Standalone (CI) run: docs/ must always contain files.
+        print(
+            f"ERROR: No .mdx/.md files found under {DOCS_DIR}. "
+            "Check that the directory exists and is not entirely excluded.",
+            file=sys.stderr,
+        )
+        return 1
 
     all_errors: list[str] = []
     files_with_blocks = 0
     total_blocks = 0
 
     for f in sorted(files):
-        source = f.read_text(encoding="utf-8")
+        try:
+            source = f.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:
+            print(f"ERROR: could not read {f.relative_to(ROOT)}: {e}", file=sys.stderr)
+            all_errors.append(str(e))
+            continue
         blocks = _extract_blocks(source)
         if blocks:
             files_with_blocks += 1
             total_blocks += len(blocks)
-        all_errors.extend(_check_file(f))
+        all_errors.extend(_check_file(f, source))
 
     if all_errors:
         print(f"Syntax errors found ({len(all_errors)} issue(s)):\n")

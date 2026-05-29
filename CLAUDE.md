@@ -79,7 +79,7 @@ Before pushing any branch touching `docs/python-sdk/` or `utils/generate_referen
 Every `python` fence in the docs is syntax-checked automatically (pre-commit hook + CI). Keep code blocks valid Python:
 
 - **Shell commands** (`pip install`, `fused run`, etc.) must use a `bash` fence, not `python`.
-- **Pseudocode blocks** (REPL output, type stubs, emoji annotations, partial signatures) must start with `# doctest: skip` as their first line. This suppresses the syntax check without hiding the block from readers.
+- **Pseudocode blocks** (REPL output, type stubs, emoji annotations, partial signatures, HTML embedded in a python block, bare URLs or other non-Python illustrative content) must start with `# doctest: skip` as their first line. This suppresses both the syntax check and Tier 2 execution without hiding the block from readers.
 - **Generated files** (`docs/python-sdk/api-reference/` and `docs/python-sdk/top-level-functions.mdx`) are excluded from the check automatically — never add skip markers there.
 
 ### Installing the pre-commit hook
@@ -99,7 +99,9 @@ Tier 2 (pytest-markdown-docs) requires a pre-authenticated fused session locally
 uv run --with pytest --with pytest-markdown-docs --with fused \
   pytest --markdown-docs \
     --ignore=docs/python-sdk/api-reference \
+    --ignore=docs/python-sdk/top-level-functions.mdx \
     --ignore=docs/workbench/integrations \
+    --tb=short \
     -q docs/
 ```
 
