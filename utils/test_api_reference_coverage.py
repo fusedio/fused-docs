@@ -23,7 +23,14 @@ import fused
 
 ROOT = Path(__file__).parent / ".."
 
-# ── Allowlists (keep in sync with generate_reference_docs.py) ─────────────────
+# ── Package load ───────────────────────────────────────────────────────────────
+
+print(f"Testing API reference coverage for fused v{fused.__version__}\n")
+mod = griffe.load("fused", docstring_parser="google")
+
+# ── Allowlists ─────────────────────────────────────────────────────────────────
+# Curated lists (intentional subsets of larger modules — stay hardcoded)
+# Class-level lists are dynamic (all public documented members auto-discovered)
 
 TOP_LEVEL_FUNCTIONS = [
     "udf",
@@ -86,20 +93,6 @@ FUSED_API_CLASS_METHODS = [
     "auth_token",
 ]
 
-JOBPOOL_METHODS = sorted(
-    k for k in fused._submit.JobPool.__dict__ if not k.startswith("_")
-)
-
-UDF_METHODS = sorted([
-    "eval_schema",
-    "map",
-    "map_async",
-    "run_local",
-    "set_parameters",
-    "to_directory",
-    "to_file",
-])
-
 H3_FUNCTIONS = sorted([
     "persist_hex_table_metadata",
     "read_hex_table",
@@ -122,10 +115,26 @@ FUSED_SNOWFLAKE_METHODS = [
     "write",
 ]
 
-# ── Griffe module load ─────────────────────────────────────────────────────────
+# Dynamic: all public documented members — picks up new additions automatically
+JOBPOOL_METHODS = sorted(
+    name for name, member in mod["_submit"]["JobPool"].members.items()
+    if not name.startswith("_")
+    and member.docstring and member.docstring.value.strip()
+)
 
-print(f"Testing API reference coverage for fused v{fused.__version__}\n")
-mod = griffe.load("fused", docstring_parser="google")
+UDF_MEMBERS = sorted(
+    name for name, member in mod["models"]["Udf"].members.items()
+    if not name.startswith("_")
+    and name != "original_headers"
+    and member.docstring and member.docstring.value.strip()
+)
+
+ASYNC_JOBPOOL_ASYNC_METHODS = sorted(
+    name for name, member in mod["_submit"]["AsyncJobPool"].members.items()
+    if name.endswith("_async")
+    and not name.startswith("_")
+    and member.docstring and member.docstring.value.strip()
+)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -138,7 +147,7 @@ checks_run = 0
 #   api.mdx module functions : ## {name}                     (level 2, bare name)
 #   api.mdx FusedAPI methods : ### {name}                    (level 3, bare name)
 #   h3.mdx                  : ## {name}                      (level 2, bare name)
-#   udf.mdx methods         : ### {name}                     (level 3, bare name)
+#   udf.mdx members         : ### {name}                     (level 3, bare name)
 #   jobpool.mdx methods     : ### {name}                     (level 3, bare name)
 
 
@@ -219,17 +228,21 @@ if "FusedAPI" in mod_api.members:
 jobpool_mdx = ROOT / "docs" / "python-sdk" / "api-reference" / "jobpool.mdx"
 
 for name in JOBPOOL_METHODS:
-    if check_in_package(mod["_submit"]["JobPool"], name, "JobPool"):
-        check_in_mdx(jobpool_mdx, name, f"JobPool.{name}", level=3)
+    check_in_mdx(jobpool_mdx, name, f"JobPool.{name}", level=3)
 
-# ── Udf methods ────────────────────────────────────────────────────────────────
+# ── AsyncJobPool async methods ─────────────────────────────────────────────────
+# Headings: ### {name}  (under ## AsyncJobPool)
+
+for name in ASYNC_JOBPOOL_ASYNC_METHODS:
+    check_in_mdx(jobpool_mdx, name, f"AsyncJobPool.{name}", level=3)
+
+# ── Udf members ────────────────────────────────────────────────────────────────
 # Headings: ### {name}  (under ## Udf)
 
 udf_mdx = ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx"
 
-for name in UDF_METHODS:
-    if check_in_package(mod["models"]["Udf"], name, "Udf"):
-        check_in_mdx(udf_mdx, name, f"Udf.{name}", level=3)
+for name in UDF_MEMBERS:
+    check_in_mdx(udf_mdx, name, f"Udf.{name}", level=3)
 
 # ── fused.h3 functions ─────────────────────────────────────────────────────────
 # Headings: ## {name}  (bare name, not fused.h3.{name})

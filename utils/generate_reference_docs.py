@@ -15,8 +15,11 @@ import re
 from pathlib import Path
 
 import griffe
+import griffe2md as _griffe2md
 from griffe2md.rendering import default_config
-from griffe2md.main import render_object_docs
+from griffe2md.main import prepare_env as _prepare_env, prepare_context as _prepare_context
+from jinja2 import Environment, FileSystemLoader
+import mdformat as _mdformat
 
 
 def fix_code_tags(text: str) -> str:
@@ -55,6 +58,49 @@ def escape_mdx_braces(text: str) -> str:
                     escaped.append(re.sub(r'\{', r'\\{', re.sub(r'\}', r'\\}', part)))
             result.append(''.join(escaped))
     return '\n'.join(result)
+
+
+# Custom Jinja env: searches our template overrides first, then griffe2md's defaults.
+# This lets us override individual templates (e.g. admonition) without forking the library.
+_custom_templates = Path(__file__).parent / "griffe2md_templates"
+_builtin_templates = Path(_griffe2md.__file__).parent / "templates"
+
+
+def _strip_doctest(code: str) -> str:
+    """Strip doctest >>> / ... prefixes and mark output lines as comments.
+
+    If the content has no >>> lines it's plain Python — return as-is.
+    """
+    if '>>> ' not in code and not code.strip().startswith('>>>'):
+        return code
+    lines = []
+    for line in code.split('\n'):
+        if line.startswith('>>> '):
+            lines.append(line[4:])
+        elif line.startswith('... '):
+            lines.append(line[4:])
+        elif line in ('>>>', '...'):
+            lines.append('')
+        else:
+            lines.append(f'# {line}' if line.strip() else '')
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return '\n'.join(lines)
+
+
+_env = _prepare_env(Environment(
+    autoescape=False,
+    loader=FileSystemLoader([str(_custom_templates), str(_builtin_templates)]),
+    auto_reload=False,
+))
+_env.filters['strip_doctest'] = _strip_doctest
+
+
+def render_object_docs(obj, config=None):
+    """render_object_docs using the custom env (template overrides + strip_doctest filter)."""
+    context = _prepare_context(obj, config)
+    rendered = _env.get_template(f"{obj.kind.value}.md.jinja").render(**context)
+    return _mdformat.text(rendered)
 
 
 import fused
@@ -436,20 +482,44 @@ submitted jobs from [`fused.submit()`](/python-sdk/top-level-functions/#fusedsub
 
 """
 
-# listing and rendering the methods separately to avoid including the JobPool 
-# class signature and docstring (which is not public -> use submit() to get this object)
-import fused
-methods = sorted(key for key in fused._submit.JobPool.__dict__.keys() if not key.startswith("_"))
+# Dynamic: all public JobPool members with docstrings — picks up new additions automatically
+methods = sorted(
+    name for name, member in mod["_submit"]["JobPool"].members.items()
+    if not name.startswith("_")
+    and member.docstring and member.docstring.value.strip()
+)
 
 config = dict(default_config)
 config["heading_level"] = default_config["heading_level"] + 1
 config["show_root_full_path"] = False
 
 for meth in methods:
-    if meth not in mod["_submit"]["JobPool"].members:
-        print(f"Warning: {meth} not found in JobPool class, skipping")
-        continue
     docstring = render_object_docs(mod["_submit"]["JobPool"][meth], config)
+    result += docstring + "\n---\n\n"
+
+# AsyncJobPool section (returned by udf.map_async())
+
+result += """\
+## AsyncJobPool
+
+`AsyncJobPool` is returned by [`udf.map_async()`](/python-sdk/api-reference/udf/#map_async).
+It inherits all [`JobPool`](#jobpool) methods and adds async counterparts for each one.
+
+"""
+
+async_methods = sorted(
+    name for name, member in mod["_submit"]["AsyncJobPool"].members.items()
+    if name.endswith("_async")
+    and not name.startswith("_")
+    and member.docstring and member.docstring.value.strip()
+)
+
+config_async = dict(default_config)
+config_async["heading_level"] = default_config["heading_level"] + 1
+config_async["show_root_full_path"] = False
+
+for meth in async_methods:
+    docstring = render_object_docs(mod["_submit"]["AsyncJobPool"][meth], config_async)
     result += docstring + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "jobpool.mdx", "w") as f:
@@ -477,26 +547,21 @@ a saved UDF with [`fused.load()`](/python-sdk/top-level-functions/#fusedload).
 
 """
 
-# listing and rendering the methods separately to avoid including the Udf 
-# class signature and docstring (which is not public)
-methods = sorted([
-    "eval_schema",
-    "map",
-    "map_async",
-    "run_local",
-    "set_parameters",
-    "to_directory",
-    "to_file",
-])
+# Dynamic: all public Udf members with docstrings (methods + pydantic fields)
+# Picks up new additions automatically — no hardcoded list to maintain.
+# Exclude `original_headers`: its only docstring is "Deprecated." and it's an internal field.
+methods = sorted(
+    name for name, member in mod["models"]["Udf"].members.items()
+    if not name.startswith("_")
+    and name != "original_headers"
+    and member.docstring and member.docstring.value.strip()
+)
 
 config = dict(default_config)
 config["heading_level"] = default_config["heading_level"] + 1
 config["show_root_full_path"] = False
 
 for meth in methods:
-    if meth not in mod["models"]["Udf"].members:
-        print(f"Warning: {meth} not found in Udf class, skipping")
-        continue
     docstring = render_object_docs(mod["models"]["Udf"][meth], config)
     result += docstring + "\n---\n\n"
 

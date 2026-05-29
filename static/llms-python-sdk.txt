@@ -1214,6 +1214,101 @@ Params:
 
 Returns: `str`
 
+`read_hex_table() -> "pa.Table" | tuple["pa.Table", Dict[str, Any]]` - Read data from an H3-indexed dataset by querying hex ranges.
+
+This is an optimized version that assumes the server always provides full metadata
+(start_offset, end_offset, metadata, and row_group_bytes) for all row groups.
+If any row group is missing required metadata, this function will raise an error
+indicating that the dataset needs to be re-indexed.
+
+This function eliminates all metadata API calls by using prefetched metadata from
+the /datasets/items-with-metadata endpoint.
+
+This function imports the implementation from job2 at runtime,
+similar to how read_parquet_row_group works.
+Params:
+- dataset_path (`str`)
+
+- hex_ranges_list (`List\[List[int]\]`)
+
+- columns (`Optional\[List[str]\]`)
+
+- base_url (`Optional[str]`)
+
+- verbose (`bool`)
+
+- return_timing_info (`bool`)
+
+- batch_size (`Optional[int]`)
+
+- max_concurrent_downloads (`Optional[int]`)
+
+Returns: `'pa.Table' | tuple\'pa.Table', [Dict\[str, Any\]\]`
+- `'pa.Table' | tuple\'pa.Table', [Dict\[str, Any\]\]` – If return_timing_info is True, returns a tuple of (table, timing_info dict).
+
+`read_hex_table_slow() -> "pa.Table" | tuple["pa.Table", Dict[str, Any]]` - Read data from an H3-indexed dataset by querying hex ranges.
+
+This function queries the dataset index for row groups that match the given
+H3 hex ranges, downloads them in parallel with optimized batching, and returns
+a concatenated table.
+
+Adjacent row groups from the same file are combined into single downloads
+for better S3 performance. The batch size is controlled by
+`fused.options.row_group_batch_size` (default: 32KB).
+Params:
+- dataset_path (`str`)
+
+- hex_ranges_list (`List\[List[int]\]`)
+
+- columns (`Optional\[List[str]\]`)
+
+- base_url (`Optional[str]`)
+
+- verbose (`bool`)
+
+- return_timing_info (`bool`)
+
+- metadata_batch_size (`int`)
+
+Returns: `'pa.Table' | tuple\'pa.Table', [Dict\[str, Any\]\]`
+- `'pa.Table' | tuple\'pa.Table', [Dict\[str, Any\]\]` – If return_timing_info is True, returns a tuple of (table, timing_info dict).
+
+Example:
+
+`read_hex_table_with_persisted_metadata() -> "pa.Table" | tuple["pa.Table", Dict[str, Any]]` - Read data from an H3-indexed dataset using persisted metadata parquet.
+
+This function reads from per-file metadata parquet files instead of
+querying a server. Each source parquet file has a corresponding
+.metadata.parquet file stored at:
+\/.fused/\.metadata.parquet
+
+Or at the specified metadata_path if provided:
+\/\.metadata.parquet
+
+Supports subdirectory queries - if dataset_path points to a subdirectory,
+the function will look for metadata files for files in that subdirectory.
+Params:
+- dataset_path (`str`)
+
+- hex_ranges_list (`List\[List[int]\]`)
+
+- columns (`Optional\[List[str]\]`)
+
+- metadata_path (`Optional[str]`)
+
+- verbose (`bool`)
+
+- return_timing_info (`bool`)
+
+- batch_size (`Optional[int]`)
+
+- max_concurrent_downloads (`Optional[int]`)
+
+- max_concurrent_metadata_reads (`Optional[int]`)
+
+Returns: `'pa.Table' | tuple\'pa.Table', [Dict\[str, Any\]\]`
+- `'pa.Table' | tuple\'pa.Table', [Dict\[str, Any\]\]` – If return_timing_info is True, returns a tuple of (table, timing_info dict).
+
 `run_ingest_raster_to_h3()` - Run the raster to H3 ingestion process.
 
 This process involves multiple steps:
@@ -1590,6 +1685,45 @@ If only partial results are available, returns based on the last task to have be
 Use fused.options.show.enable_tqdm to enable/disable tqdm.
 Use pool.\_wait_sleep to set if sleep should occur while waiting.
 
+`AsyncJobPool` is returned by `udf.map_async()`.
+It inherits all `JobPool` methods and adds async counterparts for each one.
+
+### errors_async
+
+`errors_async() -> dict[int, Exception]` - Async version of errors that doesn't block the event loop
+
+### first_error_async
+
+`first_error_async() -> Exception | None` - Async version of first_error that doesn't block the event loop
+
+### first_log_async
+
+`first_log_async() -> str | None` - Async version of first_log that doesn't block the event loop
+
+### logs_async
+
+`logs_async() -> list[str | None]` - Async version of logs that doesn't block the event loop
+
+### logs_df_async
+
+`logs_df_async() -> pd.DataFrame` - Async version of logs_df() that doesn't block the event loop
+
+### results_async
+
+`results_async() -> list[Any]` - Async version of results that assumes waiting has already been done
+
+### results_now_async
+
+`results_now_async() -> dict[int, Any]` - Async version of results_now that doesn't block the event loop
+
+### success_async
+
+`success_async() -> dict[int, Any]` - Async version of success that doesn't block the event loop
+
+### tail_async
+
+`tail_async()` - Async version of tail that doesn't block the event loop
+
 ---
 
 ---
@@ -1794,6 +1928,24 @@ The `Udf` class is the object you get when defining a UDF with the
 `@fused.udf` decorator, or when loading
 a saved UDF with `fused.load()`.
 
+### cache_max_age
+
+The maximum age when returning a result from the cache.
+
+### disk_size_gb
+
+The size of the disk in GB to use for remote execution.
+Used in batch jobs.
+
+### engine
+
+The engine to run this UDF on by default, if not specified in
+`fused.run()`, e.g., "small"/"medium"/"large".
+
+### entrypoint
+
+Name of the function within the code to invoke.
+
 ### eval_schema
 
 `eval_schema() -> Udf` - Reload the schema saved in the code of the UDF.
@@ -1834,25 +1986,44 @@ Returns: `'JobPool'`
 For remote runs (default or ``engine="remote"``) without ``worker_concurrency``,
 an asyncio-based pool is used. Local runs and batch instance types still use a
 thread (or process) pool where appropriate.
-
->>> @fused.udf()
-... def my_udf(x: int):
-...     return x + 1
-...
->>> pool = my_udf.map([1, 2, 3])
->>> results = pool.df()
->>> print(results)
-[2, 3, 4]
-
->>> @fused.udf()
-... def my_udf(x: int):
-...     return x + 1
-...
->>> pool = my_udf.map([1, 2, 3])
->>> results = pool.df()
->>> print(results)
-[2, 3, 4]
 </details>
+
+Example:
+
+### map_async
+
+`map_async() -> "JobPool"` - Submit a job for each element in arg_list.
+
+.. deprecated::
+`map_async` is deprecated. Use :meth:`map` instead; for remote runs
+without `worker_concurrency`, :meth:`map` already uses the same
+asyncio-based execution path.
+Params:
+- arg_list – A list of arguments to pass to the UDF. Each element
+  in arg_list will become a job and run.
+- engine (`Engine | None`)
+
+- max_workers (`int | None`)
+
+- cache_max_age (`str | None`)
+
+- cache (`bool`)
+
+- max_retry (`int`)
+
+Note worker_concurrency is not supported for async map.
+
+Returns: `'JobPool'`
+
+Example:
+
+### parameters
+
+Parameters to pass into the entrypoint.
+
+### region
+
+The region to use for remote execution. Used in batch jobs.
 
 ### run_local
 
@@ -2306,5 +2477,5 @@ Params:
 
 ---
 
-Generated automatically from Fused Python SDK documentation. Last updated: 2026-05-28
+Generated automatically from Fused Python SDK documentation. Last updated: 2026-05-29
 Total pages: 29

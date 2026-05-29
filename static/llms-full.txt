@@ -15309,57 +15309,231 @@ Raises ValueError if no hex column is found.
 - `ValueError` – If no hex column is found in any file
 - `FileNotFoundError` – If no parquet files are found in the dataset
 
->>> fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/")
-'s3://my-bucket/my-dataset/.fused/file1.metadata.parquet'
->>> fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/", metadata_path="s3://my-bucket/metadata/")
-'s3://my-bucket/metadata/'
->>> fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/", pool_size=4)
-'s3://my-bucket/my-dataset/.fused/file1.metadata.parquet'
+**Example:**
+
+```python
+fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/")
+# 's3://my-bucket/my-dataset/.fused/file1.metadata.parquet'
+fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/", metadata_path="s3://my-bucket/metadata/")
+# 's3://my-bucket/metadata/'
+fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/", pool_size=4)
+# 's3://my-bucket/my-dataset/.fused/file1.metadata.parquet'
+```
+
+---
+
+## read_hex_table
+
+```python
+read_hex_table(
+    dataset_path: str,
+    hex_ranges_list: List[List[int]],
+    columns: Optional[List[str]] = None,
+    base_url: Optional[str] = None,
+    verbose: bool = False,
+    return_timing_info: bool = False,
+    batch_size: Optional[int] = None,
+    max_concurrent_downloads: Optional[int] = None,
+) -> "pa.Table" | tuple["pa.Table", Dict[str, Any]]
+```
+
+Read data from an H3-indexed dataset by querying hex ranges.
+
+This is an optimized version that assumes the server always provides full metadata
+(start_offset, end_offset, metadata, and row_group_bytes) for all row groups.
+If any row group is missing required metadata, this function will raise an error
+indicating that the dataset needs to be re-indexed.
+
+This function eliminates all metadata API calls by using prefetched metadata from
+the /datasets/items-with-metadata endpoint.
+
+This function imports the implementation from job2 at runtime,
+similar to how read_parquet_row_group works.
+
+**Parameters:**
+
+- **dataset_path** (`str`) – Path to the H3-indexed dataset (e.g., "s3://bucket/dataset/")
+- **hex_ranges_list** (`List\[List[int]\]`) – List of [min_hex, max_hex] pairs as integers.
+  Example: \[[622236719905341439, 622246719905341439]\]
+- **columns** (`Optional\[List[str]\]`) – Optional list of column names to read. If None, reads all columns.
+- **base_url** (`Optional[str]`) – Base URL for API. If None, uses current environment.
+- **verbose** (`bool`) – If True, print progress information. Default is False.
+- **return_timing_info** (`bool`) – If True, return a tuple of (table, timing_info) instead of just the table.
+  Default is False for backward compatibility.
+- **batch_size** (`Optional[int]`) – Target size in bytes for combining row groups. If None, uses
+  `fused.options.row_group_batch_size` (default: 32KB).
+- **max_concurrent_downloads** (`Optional[int]`) – Maximum number of simultaneous download operations. If None,
+  uses a default based on the number of files. Default is None.
+
+**Returns:**
+
+- `'pa.Table' | tuple\'pa.Table', [Dict\[str, Any\]\]` – PyArrow Table containing the concatenated data from all matching row groups.
+- `'pa.Table' | tuple\'pa.Table', [Dict\[str, Any\]\]` – If return_timing_info is True, returns a tuple of (table, timing_info dict).
+
+**Raises:**
+
+- `ValueError` – If any row group is missing required metadata (start_offset, end_offset,
+  metadata, or row_group_bytes). This indicates the dataset needs to be re-indexed.
+
+**Example:**
+
+```python
 
 # Read data for a specific H3 hex range
-
 table = fused.h3.read_hex_table(
-dataset_path="s3://my-bucket/my-h3-dataset/",
-hex_ranges_list=\[[622236719905341439, 622246719905341439]\]
+    dataset_path="s3://my-bucket/my-h3-dataset/",
+    hex_ranges_list=[[622236719905341439, 622246719905341439]]
 )
 df = table.to_pandas()
+```
+
+---
+
+## read_hex_table_slow
+
+```python
+read_hex_table_slow(
+    dataset_path: str,
+    hex_ranges_list: List[List[int]],
+    columns: Optional[List[str]] = None,
+    base_url: Optional[str] = None,
+    verbose: bool = False,
+    return_timing_info: bool = False,
+    metadata_batch_size: int = 50,
+) -> "pa.Table" | tuple["pa.Table", Dict[str, Any]]
+```
+
+Read data from an H3-indexed dataset by querying hex ranges.
+
+This function queries the dataset index for row groups that match the given
+H3 hex ranges, downloads them in parallel with optimized batching, and returns
+a concatenated table.
+
+Adjacent row groups from the same file are combined into single downloads
+for better S3 performance. The batch size is controlled by
+`fused.options.row_group_batch_size` (default: 32KB).
+
+**Parameters:**
+
+- **dataset_path** (`str`) – Path to the H3-indexed dataset (e.g., "s3://bucket/dataset/")
+- **hex_ranges_list** (`List\[List[int]\]`) – List of [min_hex, max_hex] pairs as integers.
+  Example: \[[622236719905341439, 622246719905341439]\]
+- **columns** (`Optional\[List[str]\]`) – Optional list of column names to read. If None, reads all columns.
+- **base_url** (`Optional[str]`) – Base URL for API. If None, uses current environment.
+- **verbose** (`bool`) – If True, print progress information. Default is False.
+- **return_timing_info** (`bool`) – If True, return a tuple of (table, timing_info) instead of just the table.
+  Default is False for backward compatibility.
+- **metadata_batch_size** (`int`) – Maximum number of row group metadata requests to batch together
+  in a single API call. Larger batches reduce API overhead. Default is 50.
+  Consider MongoDB's 16KB document limit when adjusting this value.
+
+**Returns:**
+
+- `'pa.Table' | tuple\'pa.Table', [Dict\[str, Any\]\]` – PyArrow Table containing the concatenated data from all matching row groups.
+- `'pa.Table' | tuple\'pa.Table', [Dict\[str, Any\]\]` – If return_timing_info is True, returns a tuple of (table, timing_info dict).
+
+**Example:**
+
+```python
 
 # Read data for a specific H3 hex range
-
 table = fused.h3.read_hex_table_slow(
-dataset_path="s3://my-bucket/my-h3-dataset/",
-hex_ranges_list=\[[622236719905341439, 622246719905341439]\]
+    dataset_path="s3://my-bucket/my-h3-dataset/",
+    hex_ranges_list=[[622236719905341439, 622246719905341439]]
 )
 df = table.to_pandas()
+```
+
+---
+
+## read_hex_table_with_persisted_metadata
+
+```python
+read_hex_table_with_persisted_metadata(
+    dataset_path: str,
+    hex_ranges_list: List[List[int]],
+    columns: Optional[List[str]] = None,
+    metadata_path: Optional[str] = None,
+    verbose: bool = False,
+    return_timing_info: bool = False,
+    batch_size: Optional[int] = None,
+    max_concurrent_downloads: Optional[int] = None,
+    max_concurrent_metadata_reads: Optional[int] = None,
+) -> "pa.Table" | tuple["pa.Table", Dict[str, Any]]
+```
+
+Read data from an H3-indexed dataset using persisted metadata parquet.
+
+This function reads from per-file metadata parquet files instead of
+querying a server. Each source parquet file has a corresponding
+.metadata.parquet file stored at:
+\/.fused/\.metadata.parquet
+
+Or at the specified metadata_path if provided:
+\/\.metadata.parquet
+
+Supports subdirectory queries - if dataset_path points to a subdirectory,
+the function will look for metadata files for files in that subdirectory.
+
+**Parameters:**
+
+- **dataset_path** (`str`) – Path to the H3-indexed dataset (e.g., "s3://bucket/dataset/")
+  Can also be a subdirectory path for filtering (e.g., "s3://bucket/dataset/year=2024/")
+- **hex_ranges_list** (`List\[List[int]\]`) – List of [min_hex, max_hex] pairs as integers.
+  Example: \[[622236719905341439, 622246719905341439]\]
+- **columns** (`Optional\[List[str]\]`) – Optional list of column names to read. If None, reads all columns.
+- **metadata_path** (`Optional[str]`) – Directory path where metadata files are stored.
+  If None, looks for metadata at \/.fused/ for each source file.
+  If provided, reads metadata files from this location using full source paths.
+  This allows reading metadata from a different location when
+  you don't have access to the original dataset directory.
+- **verbose** (`bool`) – If True, print progress information. Default is False.
+- **return_timing_info** (`bool`) – If True, return a tuple of (table, timing_info) instead of just the table.
+  Default is False for backward compatibility.
+- **batch_size** (`Optional[int]`) – Target size in bytes for combining row groups. If None, uses
+  `fused.options.row_group_batch_size` (default: 32KB).
+- **max_concurrent_downloads** (`Optional[int]`) – Maximum number of simultaneous download operations. If None,
+  uses a default based on the number of files. Default is None.
+- **max_concurrent_metadata_reads** (`Optional[int]`) – Maximum number of simultaneous metadata file reads. If None,
+  defaults to min(10, len(source_files)).
+
+**Returns:**
+
+- `'pa.Table' | tuple\'pa.Table', [Dict\[str, Any\]\]` – PyArrow Table containing the concatenated data from all matching row groups.
+- `'pa.Table' | tuple\'pa.Table', [Dict\[str, Any\]\]` – If return_timing_info is True, returns a tuple of (table, timing_info dict).
+
+**Raises:**
+
+- `FileNotFoundError` – If the metadata parquet file is not found.
+- `ValueError` – If any row group is missing required metadata.
+
+**Example:**
+
+```python
 
 # First, persist metadata (one-time operation)
-
 fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/")
 
 # Then read using persisted metadata (no server required)
-
 table = fused.h3.read_hex_table_with_persisted_metadata(
-dataset_path="s3://my-bucket/my-dataset/",
-hex_ranges_list=\[[622236719905341439, 622246719905341439]\]
+    dataset_path="s3://my-bucket/my-dataset/",
+    hex_ranges_list=[[622236719905341439, 622246719905341439]]
 )
 df = table.to_pandas()
 
 # Read from subdirectory (filters by path prefix)
-
 table = fused.h3.read_hex_table_with_persisted_metadata(
-dataset_path="s3://my-bucket/my-dataset/year=2024/",
-hex_ranges_list=\[[622236719905341439, 622246719905341439]\]
+    dataset_path="s3://my-bucket/my-dataset/year=2024/",
+    hex_ranges_list=[[622236719905341439, 622246719905341439]]
 )
 
 # Read with metadata in alternate location
-
 table = fused.h3.read_hex_table_with_persisted_metadata(
-dataset_path="s3://my-bucket/my-dataset/",
-metadata_path="s3://my-bucket/metadata/",
-hex_ranges_list=\[[622236719905341439, 622246719905341439]\]
+    dataset_path="s3://my-bucket/my-dataset/",
+    metadata_path="s3://my-bucket/metadata/",
+    hex_ranges_list=[[622236719905341439, 622246719905341439]]
 )
-
-</details>
+```
 
 ---
 
@@ -16166,6 +16340,108 @@ Use pool.\_wait_sleep to set if sleep should occur while waiting.
 
 ---
 
+## AsyncJobPool
+
+`AsyncJobPool` is returned by `udf.map_async()`.
+It inherits all `JobPool` methods and adds async counterparts for each one.
+
+### errors_async
+
+```python
+errors_async() -> dict[int, Exception]
+```
+
+Async version of errors that doesn't block the event loop
+
+---
+
+### first_error_async
+
+```python
+first_error_async() -> Exception | None
+```
+
+Async version of first_error that doesn't block the event loop
+
+---
+
+### first_log_async
+
+```python
+first_log_async() -> str | None
+```
+
+Async version of first_log that doesn't block the event loop
+
+---
+
+### logs_async
+
+```python
+logs_async() -> list[str | None]
+```
+
+Async version of logs that doesn't block the event loop
+
+---
+
+### logs_df_async
+
+```python
+logs_df_async(
+    status_column: str | None = "status",
+    result_column: str | None = "result",
+    time_column: str | None = "time",
+    logs_column: str | None = "logs",
+    exception_column: str | None = None,
+    include_exceptions: bool = True,
+) -> pd.DataFrame
+```
+
+Async version of logs_df() that doesn't block the event loop
+
+---
+
+### results_async
+
+```python
+results_async(return_exceptions = False) -> list[Any]
+```
+
+Async version of results that assumes waiting has already been done
+
+---
+
+### results_now_async
+
+```python
+results_now_async(return_exceptions = False) -> dict[int, Any]
+```
+
+Async version of results_now that doesn't block the event loop
+
+---
+
+### success_async
+
+```python
+success_async() -> dict[int, Any]
+```
+
+Async version of success that doesn't block the event loop
+
+---
+
+### tail_async
+
+```python
+tail_async(stop_on_exception = False, timeout: float | None = None)
+```
+
+Async version of tail that doesn't block the event loop
+
+---
+
 ================================================================================
 
 ## fused.options
@@ -16563,6 +16839,48 @@ The `Udf` class is the object you get when defining a UDF with the
 `@fused.udf` decorator, or when loading
 a saved UDF with `fused.load()`.
 
+### cache_max_age
+
+```python
+cache_max_age: int | None = None
+```
+
+The maximum age when returning a result from the cache.
+
+---
+
+### disk_size_gb
+
+```python
+disk_size_gb: int | None = None
+```
+
+The size of the disk in GB to use for remote execution.
+Used in batch jobs.
+
+---
+
+### engine
+
+```python
+engine: str | None = None
+```
+
+The engine to run this UDF on by default, if not specified in
+`fused.run()`, e.g., "small"/"medium"/"large".
+
+---
+
+### entrypoint
+
+```python
+entrypoint: str
+```
+
+Name of the function within the code to invoke.
+
+---
+
 ### eval_schema
 
 ```python
@@ -16648,25 +16966,103 @@ Submit a job for each element in arg_list.
 For remote runs (default or ``engine="remote"``) without ``worker_concurrency``,
 an asyncio-based pool is used. Local runs and batch instance types still use a
 thread (or process) pool where appropriate.
-
->>> @fused.udf()
-... def my_udf(x: int):
-...     return x + 1
-...
->>> pool = my_udf.map([1, 2, 3])
->>> results = pool.df()
->>> print(results)
-[2, 3, 4]
-
->>> @fused.udf()
-... def my_udf(x: int):
-...     return x + 1
-...
->>> pool = my_udf.map([1, 2, 3])
->>> results = pool.df()
->>> print(results)
-[2, 3, 4]
 </details>
+
+**Example:**
+
+```python
+@fused.udf()
+def my_udf(x: int):
+    return x + 1
+
+pool = my_udf.map([1, 2, 3])
+results = pool.df()
+print(results)
+# [2, 3, 4]
+```
+
+---
+
+### map_async
+
+```python
+map_async(
+    arg_list,
+    *,
+    engine: Engine | None = None,
+    max_workers: int | None = None,
+    cache_max_age: str | None = None,
+    cache: bool = True,
+    max_retry: int = 2
+) -> "JobPool"
+```
+
+Submit a job for each element in arg_list.
+
+.. deprecated::
+`map_async` is deprecated. Use :meth:`map` instead; for remote runs
+without `worker_concurrency`, :meth:`map` already uses the same
+asyncio-based execution path.
+
+**Parameters:**
+
+- **arg_list** – A list of arguments to pass to the UDF. Each element
+  in arg_list will become a job and run.
+- **engine** (`Engine | None`) – The engine to use for execution.
+  "remote": Run on a realtime instance. (Default)
+  "local": Run locally.
+  Note: batch instance types are not supported for async map.
+- **max_workers** (`int | None`) – The maximum number of workers to use.
+  For running on realtime instances, this is the number of
+  instances to use. (Default 32)
+  For running locally, this is the number of threads to use.
+  (Default 1)
+- **cache_max_age** (`str | None`) – The maximum age when returning a result from the cache.
+  Supported units are seconds (s), minutes (m), hours (h), and days (d) (e.g. “48h”, “10s”, etc.).
+  Default is `None` so a UDF will follow `cache_max_age` defined in `@fused.udf()` unless this value is changed.
+- **cache** (`bool`) – Set to False as a shortcut for `cache_max_age='0s'` to disable caching. (Default True)
+- **max_retry** (`int`) – The maximum number of retries for failed jobs. (Default 2)
+  Note that retries will only be attempted if the object is waited on,
+  e.g. with `pool.wait()`, `pool.tail()`, or `pool.df()`.
+
+Note worker_concurrency is not supported for async map.
+
+**Returns:**
+
+- `'JobPool'` – An AsyncJobPool object. Call `.df()` to get the results.
+
+**Example:**
+
+```python
+@fused.udf()
+def my_udf(x: int):
+    return x + 1
+
+pool = my_udf.map([1, 2, 3])
+results = pool.df()
+print(results)
+# [2, 3, 4]
+```
+
+---
+
+### parameters
+
+```python
+parameters: dict[str, Any] = Field(default_factory=dict)
+```
+
+Parameters to pass into the entrypoint.
+
+---
+
+### region
+
+```python
+region: str | None = None
+```
+
+The region to use for remote execution. Used in batch jobs.
 
 ---
 
@@ -24803,5 +25199,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-05-28
+Generated automatically from Fused documentation. Last updated: 2026-05-29
 Total sections: 5
