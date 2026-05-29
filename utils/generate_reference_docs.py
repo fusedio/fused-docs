@@ -67,7 +67,12 @@ _builtin_templates = Path(_griffe2md.__file__).parent / "templates"
 
 
 def _strip_doctest(code: str) -> str:
-    """Strip doctest >>> / ... prefixes and mark output lines as comments."""
+    """Strip doctest >>> / ... prefixes and mark output lines as comments.
+
+    If the content has no >>> lines it's plain Python — return as-is.
+    """
+    if '>>> ' not in code and not code.strip().startswith('>>>'):
+        return code
     lines = []
     for line in code.split('\n'):
         if line.startswith('>>> '):
@@ -492,7 +497,7 @@ for meth in methods:
     docstring = render_object_docs(mod["_submit"]["JobPool"][meth], config)
     result += docstring + "\n---\n\n"
 
-## AsyncJobPool section (returned by udf.map_async())
+# AsyncJobPool section (returned by udf.map_async())
 
 result += """\
 ## AsyncJobPool
@@ -543,10 +548,12 @@ a saved UDF with [`fused.load()`](/python-sdk/top-level-functions/#fusedload).
 """
 
 # Dynamic: all public Udf members with docstrings (methods + pydantic fields)
-# Picks up new additions automatically — no hardcoded list to maintain
+# Picks up new additions automatically — no hardcoded list to maintain.
+# Exclude `original_headers`: its only docstring is "Deprecated." and it's an internal field.
 methods = sorted(
     name for name, member in mod["models"]["Udf"].members.items()
     if not name.startswith("_")
+    and name != "original_headers"
     and member.docstring and member.docstring.value.strip()
 )
 
