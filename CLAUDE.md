@@ -93,7 +93,7 @@ After this, every `git commit` that touches a `.mdx` or `.md` file will run the 
 
 ### Running Tier 2 locally
 
-Tier 2 (pytest-markdown-docs) requires a pre-authenticated fused session. Running it without auth causes fused to open browser OAuth windows for every collected file. Only run it if you're already authenticated:
+Tier 2 (pytest-markdown-docs) requires a pre-authenticated fused session locally — running unauthenticated causes fused to open browser OAuth windows. In CI (headless), auth errors surface as test failures instead. Only run locally if you're already authenticated:
 
 ```bash
 uv run --with pytest --with pytest-markdown-docs --with fused \

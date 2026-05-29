@@ -4,9 +4,8 @@ pytest-markdown-docs configuration (Tier 2 doc-snippet execution tests).
 Blocks are collected from docs/ and run as pytest tests.
 Add '# doctest: skip' as the first line of a block to exclude it from execution.
 
-Tier 2 requires a pre-authenticated fused session in the environment (FUSED_TOKEN
-or equivalent). Do not run locally without being authenticated — fused will try to
-open a browser OAuth window on import.
+Run locally only when authenticated with fused — unauthenticated local runs
+cause fused to open browser OAuth windows. In headless CI this is not an issue.
 """
 
 
