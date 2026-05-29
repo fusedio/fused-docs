@@ -68,11 +68,43 @@ Detailed references for common tasks are in `.claude/commands/` — readable dir
 ## Build & CI
 
 ```bash
-npm run build        # full SSG build — required before any PR
+npm run build                              # full SSG build — required before any PR
 uv run utils/test_api_reference_coverage.py   # API reference coverage gate
+uv run utils/test_doc_snippets.py          # syntax-check all Python blocks in docs
 ```
 
-Before pushing any branch touching `docs/python-sdk/` or `utils/generate_reference_docs.py`, run both. Check that CI passes on the PR before calling it done.
+Before pushing any branch touching `docs/python-sdk/` or `utils/generate_reference_docs.py`, run both the build and the coverage gate. Run `test_doc_snippets.py` after adding or editing any Python code block.
+
+## Python code block conventions
+
+Every `python` fence in the docs is syntax-checked automatically (pre-commit hook + CI). Keep code blocks valid Python:
+
+- **Shell commands** (`pip install`, `fused run`, etc.) must use a `bash` fence, not `python`.
+- **Pseudocode blocks** (REPL output, type stubs, emoji annotations, partial signatures, HTML embedded in a python block, bare URLs or other non-Python illustrative content) must start with `# doctest: skip` as their first line. This suppresses both the syntax check and Tier 2 execution without hiding the block from readers.
+- **Generated files** (`docs/python-sdk/api-reference/` and `docs/python-sdk/top-level-functions.mdx`) are excluded from the check automatically — never add skip markers there.
+
+### Installing the pre-commit hook
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+After this, every `git commit` that touches a `.mdx` or `.md` file will run the syntax check on the changed files only.
+
+### Running Tier 2 locally
+
+Tier 2 (pytest-markdown-docs) requires a pre-authenticated fused session locally — running unauthenticated causes fused to open browser OAuth windows. In CI (headless), auth errors surface as test failures instead. Only run locally if you're already authenticated:
+
+```bash
+uv run --with pytest --with pytest-markdown-docs --with fused \
+  pytest --markdown-docs \
+    --ignore=docs/python-sdk/api-reference \
+    --ignore=docs/python-sdk/top-level-functions.mdx \
+    --ignore=docs/workbench/integrations \
+    --tb=short \
+    -q docs/
+```
 
 ## For AI agents — when compacting
 
