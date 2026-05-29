@@ -47,7 +47,7 @@ def _is_excluded(path: Path) -> bool:
     resolved = path.resolve()
     if resolved in SKIP_FILES:
         return True
-    return any(str(resolved).startswith(str(d)) for d in SKIP_DIRS)
+    return any(resolved.is_relative_to(d) for d in SKIP_DIRS)
 
 
 def _collect(paths: list[Path]) -> list[Path]:
@@ -77,13 +77,17 @@ def _extract_blocks(source: str) -> list[tuple[int, str]]:
     ]
 
 
-def _check_file(path: Path, source: str) -> list[str]:
+def _check_file(path: Path, source: str) -> tuple[list[str], int, int]:
+    """Return (errors, blocks_checked, blocks_skipped) for one file."""
     errors: list[str] = []
+    checked = skipped = 0
     for fence_line, code in _extract_blocks(source):
         lines = [ln for ln in code.splitlines() if ln.strip()]
         first = lines[0] if lines else ""
         if first.lstrip().startswith("#") and "doctest: skip" in first:
+            skipped += 1
             continue
+        checked += 1
         try:
             ast.parse(textwrap.dedent(code))
         except (SyntaxError, ValueError) as e:
@@ -93,7 +97,7 @@ def _check_file(path: Path, source: str) -> list[str]:
                 f"{rel}:{err_line}: {type(e).__name__}: {getattr(e, 'msg', str(e))}\n"
                 f"    {(getattr(e, 'text', None) or '').rstrip()}"
             )
-    return errors
+    return errors, checked, skipped
 
 
 def main(argv: list[str]) -> int:
@@ -116,7 +120,8 @@ def main(argv: list[str]) -> int:
 
     all_errors: list[str] = []
     files_with_blocks = 0
-    total_blocks = 0
+    total_checked = 0
+    total_skipped = 0
 
     for f in sorted(files):
         try:
@@ -125,11 +130,12 @@ def main(argv: list[str]) -> int:
             print(f"ERROR: could not read {f.relative_to(ROOT)}: {e}", file=sys.stderr)
             all_errors.append(str(e))
             continue
-        blocks = _extract_blocks(source)
-        if blocks:
+        errors, checked, skipped = _check_file(f, source)
+        if checked + skipped > 0:
             files_with_blocks += 1
-            total_blocks += len(blocks)
-        all_errors.extend(_check_file(f, source))
+        total_checked += checked
+        total_skipped += skipped
+        all_errors.extend(errors)
 
     if all_errors:
         print(f"Syntax errors found ({len(all_errors)} issue(s)):\n")
@@ -141,9 +147,10 @@ def main(argv: list[str]) -> int:
         )
         return 1
 
+    skip_note = f", {total_skipped} skipped" if total_skipped else ""
     print(
-        f"PASSED — {total_blocks} Python block(s) across "
-        f"{files_with_blocks} file(s) are syntax-valid"
+        f"PASSED — {total_checked} Python block(s) syntax-valid"
+        f"{skip_note} across {files_with_blocks} file(s)"
     )
     return 0
 
