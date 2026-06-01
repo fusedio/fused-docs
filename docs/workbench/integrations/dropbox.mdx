@@ -1,0 +1,164 @@
+---
+id: dropbox
+title: Dropbox
+sidebar_label: Dropbox
+sidebar_position: 14
+---
+
+# Dropbox
+
+Read and write files in Dropbox directly from Fused UDFs using OAuth-managed tokens. No API keys are hardcoded — Fused refreshes the token on your behalf. Work with the official [`dropbox`](https://pypi.org/project/dropbox/) SDK client, or read files directly with `dropbox://` paths via `fsspec` (pandas, pyarrow, etc.).
+
+:::note App Folder scope
+The Fused Dropbox app uses Dropbox's **App Folder** permission, so every path is sandboxed to a single dedicated folder in your Dropbox (it appears as `Apps/<AppName>/`). All paths below — both SDK paths like `/report.csv` and `dropbox://report.csv` URLs — are relative to that app folder root; the rest of your Dropbox is not accessible.
+:::
+
+## Setup
+
+### 1. Connect Dropbox
+
+Open **Integrations & Secrets** in Workbench, find the Dropbox section, and click **Connect Dropbox**. You will be redirected to Dropbox to authorize access, then back to Workbench. You can also connect from the CLI with `fused integrations dropbox connect`.
+
+### 2. OAuth scopes
+
+When you connect, the following scopes are requested:
+
+| Scope                 | Description                                         |
+| --------------------- | --------------------------------------------------- |
+| `files.metadata.read` | List folders and read file/folder metadata          |
+| `files.content.read`  | Download file contents                              |
+| `files.content.write` | Upload, move, and delete files                      |
+| `account_info.read`   | Read the account email shown in the integrations UI |
+
+---
+
+### `dropbox://` path format
+
+```
+dropbox://file.csv                    # a file in the app folder root
+dropbox://folder/file.parquet         # a file inside a subfolder
+```
+
+All `dropbox://` paths are relative to your Dropbox **App Folder** root — do not prefix them with `Apps/<AppName>`. The same paths work in the Workbench file explorer once connected.
+
+---
+
+## Examples
+
+### Quick start
+
+`fused.api.dropbox_connect()` returns a `FusedDropboxConnection`; call `.client()` to get an official [`dropbox.Dropbox`](https://dropbox-sdk-python.readthedocs.io/) client. The client is built with your refresh token and the app key, so the SDK refreshes access tokens itself — no app secret is exposed, and it keeps working for long-running jobs.
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+    from dropbox.files import WriteMode
+
+    dbx = fused.api.dropbox_connect().client()
+
+    # Upload a file
+    dbx.files_upload(b"hello,world\n", "/example.csv", mode=WriteMode("overwrite"))
+
+    # Download a file
+    metadata, response = dbx.files_download("/example.csv")
+    print(response.content)
+
+    # List the app folder (root is the empty string)
+    result = dbx.files_list_folder("")
+    return pd.DataFrame([{"name": e.name} for e in result.entries])
+```
+
+The `.client()` method requires the `dropbox` package (`pip install dropbox`), which is already available in the Fused execution environment. See the [Dropbox Python SDK reference](https://dropbox-sdk-python.readthedocs.io/) for the full API (`files_*`, `sharing_*`, `users_*`, etc.).
+
+### Read a file with `dropbox://` paths
+
+Fused registers a `dropbox://` `fsspec` filesystem, so any library that accepts an `fsspec` URL can read from your Dropbox app folder directly:
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+    return pd.read_csv("dropbox://data/measurements.csv")
+```
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+    return pd.read_parquet("dropbox://exports/cities.parquet")
+```
+
+This filesystem is read-only — use the SDK client to write.
+
+### Common operations
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+    from dropbox.files import WriteMode
+
+    dbx = fused.api.dropbox_connect().client()
+
+    # List a subfolder (auto-paginate)
+    entries = []
+    res = dbx.files_list_folder("/reports")
+    entries.extend(res.entries)
+    while res.has_more:
+        res = dbx.files_list_folder_continue(res.cursor)
+        entries.extend(res.entries)
+
+    # Create a folder
+    dbx.files_create_folder_v2("/reports/2026")
+
+    # Upload (overwrite if it exists)
+    dbx.files_upload(b"...bytes...", "/reports/2026/q1.csv", mode=WriteMode("overwrite"))
+
+    # Download
+    metadata, response = dbx.files_download("/reports/2026/q1.csv")
+    data = response.content
+
+    # Get a temporary, directly-downloadable link (valid ~4h)
+    link = dbx.files_get_temporary_link("/reports/2026/q1.csv").link
+
+    # Delete
+    dbx.files_delete_v2("/reports/2026/q1.csv")
+
+    return pd.DataFrame([{"name": e.name} for e in entries])
+```
+
+### Read input and write output
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+    from dropbox.files import WriteMode
+
+    # Read an input straight from Dropbox via fsspec
+    df = pd.read_csv("dropbox://input/raw.csv")
+
+    out = df.describe().reset_index()
+
+    # Write a result back with the SDK client
+    dbx = fused.api.dropbox_connect().client()
+    dbx.files_upload(
+        out.to_csv(index=False).encode(),
+        "/output/summary.csv",
+        mode=WriteMode("overwrite"),
+    )
+    return out
+```
+
+## CLI
+
+```bash
+fused integrations dropbox connect   # print the OAuth URL (opens a browser in a tty)
+fused integrations dropbox revoke    # disconnect and remove stored tokens
+fused integrations list              # show connection status for all integrations
+```
+
+## Disconnecting
+
+To revoke the integration, go to **Integrations & Secrets**, find the Dropbox section, and click **Disconnect** (or run `fused integrations dropbox revoke`). This removes stored tokens from both the Fused server and Secrets Manager. Files already written to your Dropbox app folder are not affected.
