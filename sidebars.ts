@@ -344,7 +344,7 @@ const sidebars: SidebarsConfig = {
         // UDF Builder
     {
       type: "category",
-      label: "Map Builder",
+      label: "Map Builder (Legacy)",
       collapsible: false,
       items: [
         { type: "doc", id: "workbench/udf-builder/udf-builder", label: "Overview" },
@@ -357,7 +357,7 @@ const sidebars: SidebarsConfig = {
     // App Builder
     {
       type: "category",
-      label: "Fused Apps",
+      label: "Fused Apps (Legacy)",
       collapsible: false,
       items: [
         { type: "doc", id: "workbench/app-builder/app-builder", label: "App Builder" },
