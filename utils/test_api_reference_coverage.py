@@ -122,11 +122,14 @@ JOBPOOL_METHODS = sorted(
     and member.docstring and member.docstring.value.strip()
 )
 
+# Mirror the generator: `all_members` includes methods inherited from `BaseUdf`
+# (schedule, get_schedule, to_fused, etc.); skip deprecation stubs whose only
+# docstring is "Deprecated." (original_headers, headers, utils).
 UDF_MEMBERS = sorted(
-    name for name, member in mod["models"]["Udf"].members.items()
+    name for name, member in mod["models"]["Udf"].all_members.items()
     if not name.startswith("_")
-    and name != "original_headers"
     and member.docstring and member.docstring.value.strip()
+    and member.docstring.value.strip() != "Deprecated."
 )
 
 ASYNC_JOBPOOL_ASYNC_METHODS = sorted(
