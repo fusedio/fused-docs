@@ -357,7 +357,7 @@ const sidebars: SidebarsConfig = {
     // App Builder
     {
       type: "category",
-      label: "Fused Apps",
+      label: "Fused Apps (Legacy)",
       collapsible: false,
       items: [
         { type: "doc", id: "workbench/app-builder/app-builder", label: "App Builder" },
