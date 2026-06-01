@@ -179,7 +179,7 @@ def check_in_mdx(mdx_path: Path, heading: str, context: str, level: int = 2) -> 
             )
             _missing_mdx_reported.add(mdx_path)
         return False
-    content = mdx_path.read_text()
+    content = mdx_path.read_text(encoding="utf-8")
     marker = f"{'#' * level} {heading}"
     if marker not in content:
         failures.append(

@@ -248,7 +248,7 @@ result = result.replace("## fused.cache", "## @fused.cache")
 # griffe cannot handl the x, y, z multiple parameters on one line
 result = result.replace("**x,** (<code>y, z</code>)", "**x, y, z** (`int`)")
 
-with open(ROOT / "docs" / "python-sdk" / "top-level-functions.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "top-level-functions.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
@@ -421,7 +421,7 @@ if "FusedSnowflakeConnection" in mod_api.members:
             continue
         result += render_object_docs(mod_api["FusedSnowflakeConnection"][meth], config_sf) + "\n---\n\n"
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
@@ -458,7 +458,7 @@ config["filters"] = ["!model_config"]
 docstring = render_object_docs(mod["_options"]["Options"], config)
 result += docstring
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "options.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "options.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
@@ -522,7 +522,7 @@ for meth in async_methods:
     docstring = render_object_docs(mod["_submit"]["AsyncJobPool"][meth], config_async)
     result += docstring + "\n---\n\n"
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "jobpool.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "jobpool.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
@@ -547,14 +547,17 @@ a saved UDF with [`fused.load()`](/python-sdk/top-level-functions/#fusedload).
 
 """
 
-# Dynamic: all public Udf members with docstrings (methods + pydantic fields)
-# Picks up new additions automatically — no hardcoded list to maintain.
-# Exclude `original_headers`: its only docstring is "Deprecated." and it's an internal field.
+# Dynamic: all public Udf members with docstrings (methods + pydantic fields).
+# Use `all_members` so methods inherited from `BaseUdf` (schedule, get_schedule,
+# to_fused, etc.) are included — `members` only holds members defined directly on
+# `Udf`. Picks up new additions automatically — no hardcoded list to maintain.
+# Skip deprecation stubs (e.g. `original_headers`, `headers`, `utils`) whose only
+# docstring is "Deprecated.".
 methods = sorted(
-    name for name, member in mod["models"]["Udf"].members.items()
+    name for name, member in mod["models"]["Udf"].all_members.items()
     if not name.startswith("_")
-    and name != "original_headers"
     and member.docstring and member.docstring.value.strip()
+    and member.docstring.value.strip() != "Deprecated."
 )
 
 config = dict(default_config)
@@ -565,7 +568,7 @@ for meth in methods:
     docstring = render_object_docs(mod["models"]["Udf"][meth], config)
     result += docstring + "\n---\n\n"
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
@@ -605,5 +608,5 @@ for obj in api_listing:
 
 result = result.replace("`fused.submit()`", "[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)")
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "h3.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "h3.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
