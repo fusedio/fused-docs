@@ -317,6 +317,9 @@ const config: Config = {
           { to: "/guide/advanced-setup/local-installation", from: ["/python-sdk/index", "/python-sdk/authentication"] },
           { to: "/python-sdk/overview", from: ["/python-sdk"] },
 
+          // Map Builder section removal redirects (Jun 2026)
+          { to: "/workbench/udf-builder/canvas", from: ["/workbench/udf-builder/udf-builder", "/workbench/udf-builder/map", "/workbench/udf-builder/navigation", "/workbench/udf-builder/styling"] },
+
           // Integrations section migration redirects
           { to: "/workbench/integrations/snowflake", from: ["/guide/data-input-outputs/import-connection/snowflake"] },
           { to: "/workbench/integrations/airtable", from: ["/guide/data-input-outputs/import-connection/airtable"] },

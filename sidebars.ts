@@ -341,19 +341,6 @@ const sidebars: SidebarsConfig = {
       ],
     },
 
-        // UDF Builder
-    {
-      type: "category",
-      label: "Map Builder",
-      collapsible: false,
-      items: [
-        { type: "doc", id: "workbench/udf-builder/udf-builder", label: "Overview" },
-        { type: "doc", id: "workbench/udf-builder/navigation", label: "Map Navigation" },
-        { type: "doc", id: "workbench/udf-builder/map", label: "Map View" },
-        { type: "doc", id: "workbench/udf-builder/styling", label: "Map Layer Styling" },
-      ],
-    },
-
     // App Builder
     {
       type: "category",
