@@ -49,6 +49,19 @@ def escape_mdx_braces(text: str) -> str:
     )
 
 
+def fix_kwargs_annotations(text: str) -> str:
+    """Strip griffe's incorrectly-inferred type annotations from **kwargs parameters.
+
+    griffe has a bug where it copies the annotation from the preceding parameter
+    onto an unannotated **kwargs/**kw_parameters, e.g. producing ``**kwargs: bool``
+    when the source has a bare ``**kwargs``.  Strip these inside code blocks.
+    """
+    def process_block(m: re.Match) -> str:
+        return re.sub(r"(\*\*\w+): *[^\n]+", r"\1", m.group(0))
+
+    return re.sub(r"```[\s\S]*?```", process_block, text)
+
+
 def wrap_example_code_blocks(text: str) -> str:
     """Wrap content of <details class="example"> blocks in Python code fences.
 
@@ -67,6 +80,14 @@ def wrap_example_code_blocks(text: str) -> str:
         text,
         flags=re.DOTALL,
     )
+
+
+def process_content(text: str) -> str:
+    """Apply all post-processing steps to rendered docstring content."""
+    text = fix_kwargs_annotations(text)
+    text = wrap_example_code_blocks(text)
+    text = escape_mdx_braces(text)
+    return text
 
 
 ## Individual top-level function pages
@@ -260,9 +281,7 @@ for func_name in TOP_LEVEL_FUNCTIONS:
     slug = func_name.replace("_", "-")
     doc_id = f"fused-{slug}"
 
-    content = render_object_docs(mod[func_name], page_config)
-    content = wrap_example_code_blocks(content)
-    content = escape_mdx_braces(content)
+    content = process_content(render_object_docs(mod[func_name], page_config))
 
     if func_name == "udf":
         content = content.replace("# udf", "# @fused.udf", 1)
@@ -403,7 +422,7 @@ for obj in api_listing:
         print(f"Warning: {obj} not found in fused.api module, skipping")
         continue
     docstring = render_object_docs(mod_api[obj], api_func_config)
-    result += escape_mdx_braces(wrap_example_code_blocks(docstring)) + "\n---\n\n"
+    result += process_content(docstring) + "\n---\n\n"
 
 # fused.api.FusedAPI class
 
@@ -437,7 +456,7 @@ api.method_name()
 ```
 
 """
-result += fusedapi_note + escape_mdx_braces(wrap_example_code_blocks(docstring)) + "\n---\n\n"
+result += fusedapi_note + process_content(docstring) + "\n---\n\n"
 
 config["heading_level"] = default_config["heading_level"] + 1
 config["show_root_full_path"] = False
@@ -450,7 +469,7 @@ for meth in methods:
     usage_note = f"""
 **Usage:** `from fused.api import FusedAPI; api = FusedAPI(); api.{meth}()`
 """
-    result += escape_mdx_braces(wrap_example_code_blocks(docstring)) + "\n" + usage_note + "\n---\n\n"
+    result += process_content(docstring) + "\n" + usage_note + "\n---\n\n"
 
 # Auto-detected Fused*Connection classes
 
@@ -467,7 +486,7 @@ for class_name in connection_classes:
     config_cls["summary"] = False
     config_cls["show_root_full_path"] = False
     result += f"## {class_name}\n\n"
-    result += escape_mdx_braces(wrap_example_code_blocks(render_object_docs(mod_api[class_name], config_cls))) + "\n---\n\n"
+    result += process_content(render_object_docs(mod_api[class_name], config_cls)) + "\n---\n\n"
 
     config_cls["heading_level"] = default_config["heading_level"] + 1
     config_cls["show_root_full_path"] = False
@@ -475,7 +494,7 @@ for class_name in connection_classes:
         if meth not in mod_api[class_name].members:
             print(f"Warning: {meth} not found in {class_name} class, skipping")
             continue
-        result += escape_mdx_braces(wrap_example_code_blocks(render_object_docs(mod_api[class_name][meth], config_cls))) + "\n---\n\n"
+        result += process_content(render_object_docs(mod_api[class_name][meth], config_cls)) + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w", encoding="utf-8") as f:
     f.write(result)
@@ -563,7 +582,7 @@ for meth in methods:
         print(f"Warning: {meth} not found in JobPool or AsyncJobPool, skipping")
         continue
     docstring = render_object_docs(griffe_class[meth], config)
-    result += escape_mdx_braces(wrap_example_code_blocks(docstring)) + "\n---\n\n"
+    result += process_content(docstring) + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "jobpool.mdx", "w", encoding="utf-8") as f:
     f.write(result)
@@ -636,7 +655,7 @@ for meth in methods:
         print(f"Warning: {meth} not found in Udf or BaseUdf class, skipping")
         continue
     docstring = render_object_docs(griffe_cls[meth], config)
-    result += escape_mdx_braces(wrap_example_code_blocks(docstring)) + "\n---\n\n"
+    result += process_content(docstring) + "\n---\n\n"
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w", encoding="utf-8") as f:
     f.write(result)
@@ -670,7 +689,7 @@ for obj in h3_listing:
         print(f"Warning: {obj} not found in fused.h3 module, skipping")
         continue
     docstring = render_object_docs(mod_h3[obj], default_config)
-    result += escape_mdx_braces(wrap_example_code_blocks(docstring)) + "\n---\n\n"
+    result += process_content(docstring) + "\n---\n\n"
 
 result = result.replace("`fused.submit()`", "[`fused.submit()`](/python-sdk/api-reference/fused-submit)")
 
