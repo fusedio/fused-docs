@@ -333,6 +333,8 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "workbench/integrations/slack", label: "Slack [Experimental]" },
         { type: "doc", id: "workbench/integrations/notion", label: "Notion" },
         { type: "doc", id: "workbench/integrations/gdrive", label: "Google Drive" },
+        { type: "doc", id: "workbench/integrations/onedrive", label: "OneDrive" },
+        { type: "doc", id: "workbench/integrations/dropbox", label: "Dropbox" },
         { type: "doc", id: "workbench/integrations/modal", label: "Modal" },
         { type: "doc", id: "workbench/integrations/huggingface", label: "Hugging Face" },
         { type: "doc", id: "workbench/integrations/daytona", label: "Daytona" },
