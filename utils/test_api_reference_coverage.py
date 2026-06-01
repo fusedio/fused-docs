@@ -20,6 +20,7 @@ from pathlib import Path
 
 import griffe
 import fused
+import fused.api as _fused_api
 
 ROOT = Path(__file__).parent / ".."
 
@@ -27,11 +28,14 @@ ROOT = Path(__file__).parent / ".."
 
 print(f"Testing API reference coverage for fused v{fused.__version__}\n")
 mod = griffe.load("fused", docstring_parser="google")
+mod_api = mod["api"]
 
 # ── Allowlists ─────────────────────────────────────────────────────────────────
 # Curated lists (intentional subsets of larger modules — stay hardcoded)
 # Class-level lists are dynamic (all public documented members auto-discovered)
 
+# Mirror generate_reference_docs.py: curated order + auto-detected functions
+# from fused.__all__ (find_dataset, load_async, register_dataset, run_async, …).
 TOP_LEVEL_FUNCTIONS = [
     "udf",
     "cache",
@@ -45,40 +49,52 @@ TOP_LEVEL_FUNCTIONS = [
     "get_chunks_metadata",
     "get_chunk_from_table",
 ]
+_known_top = set(TOP_LEVEL_FUNCTIONS)
+for _name in sorted(fused.__all__):
+    if _name.startswith("_") or _name in _known_top:
+        continue
+    _member = mod.members.get(_name)
+    if _member is None:
+        continue
+    try:
+        if (
+            _member.kind.value == "function"
+            and _member.docstring
+            and _member.docstring.value.strip()
+        ):
+            TOP_LEVEL_FUNCTIONS.append(_name)
+    except Exception:
+        continue
 
-FUSED_API_FUNCTIONS = [
-    "whoami",
-    "access_token",
-    "auth_scheme",
-    "logout",
-    "delete",
-    "list",
-    "get",
-    "download",
-    "upload",
-    "sign_url",
-    "sign_url_prefix",
-    "resolve",
-    "get_udfs",
-    "get_apps",
-    "job_get_logs",
-    "job_print_logs",
-    "job_tail_logs",
-    "job_get_status",
-    "job_cancel",
-    "job_get_exec_time",
-    "job_wait_for_job",
-    "job_get_results",
-    "job_wait_for_results",
-    "schedule_udf",
-    "schedule_list",
-    "session_token",
-    "team_info",
-    "enable_gcs",
-    "log",
-    "snowflake_connect",
-    "snowflake_query",
-]
+# Mirror generate_reference_docs.py: auto-detect fused.api functions from
+# `__all__` minus a blocklist (keeps integrations like airtable/notion in sync).
+API_BLOCKLIST = {
+    "_session_token",
+    "FusedAPI",
+    "FusedDockerAPI",
+    "DriveFileSystem",
+    "FdFileSystem",
+    "NotebookCredentials",
+}
+_AUTH_SUPPLEMENT = {"access_token", "auth_scheme", "logout"}
+FUSED_API_FUNCTIONS = sorted(
+    _AUTH_SUPPLEMENT
+    | {
+        name for name in _fused_api.__all__
+        if not name.startswith("_")
+        and name not in API_BLOCKLIST
+        and not (name.startswith("Fused") and name.endswith("Connection"))
+        and name in mod_api.members
+        and mod_api[name].kind.value == "function"
+    }
+)
+
+# Auto-detected Fused*Connection classes, each with its public documented methods.
+CONNECTION_CLASSES = sorted(
+    name for name in _fused_api.__all__
+    if name.startswith("Fused") and name.endswith("Connection")
+    and name not in API_BLOCKLIST
+)
 
 FUSED_API_CLASS_METHODS = [
     "create_udf_access_token",
@@ -102,18 +118,17 @@ H3_FUNCTIONS = sorted([
     "run_partition_to_h3",
 ])
 
-FUSED_SNOWFLAKE_METHODS = [
-    "connect",
-    "query",
-    "execute",
-    "list_databases",
-    "list_schemas",
-    "list_tables",
-    "list_stages",
-    "list_stage_files",
-    "read_stage",
-    "write",
-]
+# Per connection class: all public documented methods, discovered dynamically.
+CONNECTION_METHODS = {
+    class_name: sorted(
+        name for name, member in mod_api[class_name].members.items()
+        if not name.startswith("_")
+        and member.kind.value == "function"
+        and member.docstring and member.docstring.value.strip()
+    )
+    for class_name in CONNECTION_CLASSES
+    if class_name in mod_api.members
+}
 
 # Dynamic: all public documented members — picks up new additions automatically
 JOBPOOL_METHODS = sorted(
@@ -122,11 +137,14 @@ JOBPOOL_METHODS = sorted(
     and member.docstring and member.docstring.value.strip()
 )
 
+# Mirror the generator: `all_members` includes methods inherited from `BaseUdf`
+# (schedule, get_schedule, to_fused, etc.); skip deprecation stubs whose only
+# docstring is "Deprecated." (original_headers, headers, utils).
 UDF_MEMBERS = sorted(
-    name for name, member in mod["models"]["Udf"].members.items()
+    name for name, member in mod["models"]["Udf"].all_members.items()
     if not name.startswith("_")
-    and name != "original_headers"
     and member.docstring and member.docstring.value.strip()
+    and member.docstring.value.strip() != "Deprecated."
 )
 
 ASYNC_JOBPOOL_ASYNC_METHODS = sorted(
@@ -179,7 +197,7 @@ def check_in_mdx(mdx_path: Path, heading: str, context: str, level: int = 2) -> 
             )
             _missing_mdx_reported.add(mdx_path)
         return False
-    content = mdx_path.read_text()
+    content = mdx_path.read_text(encoding="utf-8")
     marker = f"{'#' * level} {heading}"
     if marker not in content:
         failures.append(
@@ -208,7 +226,6 @@ for name in TOP_LEVEL_FUNCTIONS:
 # Headings: ## {name}  (bare name, not fused.api.{name})
 
 api_mdx = ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx"
-mod_api = mod["api"]
 
 for name in FUSED_API_FUNCTIONS:
     if check_in_package(mod_api, name, "fused.api"):
@@ -254,13 +271,12 @@ for name in H3_FUNCTIONS:
     if check_in_package(mod_h3, name, "fused.h3"):
         check_in_mdx(h3_mdx, name, f"fused.h3.{name}", level=2)
 
-# ── FusedSnowflakeConnection methods ──────────────────────────────────────────
-# Headings: ### {name}  (under ## FusedSnowflakeConnection)
+# ── Fused*Connection class methods ────────────────────────────────────────────
+# Headings: ### {name}  (under ## Fused{Name}Connection)
 
-if "FusedSnowflakeConnection" in mod_api.members:
-    for name in FUSED_SNOWFLAKE_METHODS:
-        if check_in_package(mod_api["FusedSnowflakeConnection"], name, "fused.api.FusedSnowflakeConnection"):
-            check_in_mdx(api_mdx, name, f"FusedSnowflakeConnection.{name}", level=3)
+for class_name, methods in CONNECTION_METHODS.items():
+    for name in methods:
+        check_in_mdx(api_mdx, name, f"{class_name}.{name}", level=3)
 
 # ── Report ────────────────────────────────────────────────────────────────────
 

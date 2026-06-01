@@ -843,3 +843,234 @@ This can be called with file_id and chunk_id from `get_chunks_metadata`.
 
 ---
 
+## fused.find_dataset
+
+```python
+find_dataset(location: str, base_url: Optional[str] = None) -> Dict[str, Any]
+```
+
+Find the dataset that contains a specific location URL.
+
+Uses hierarchical prefix matching: if the exact path isn't registered,
+searches progressively shorter prefixes to find the containing dataset.
+
+**Parameters:**
+
+- **location** (`str`) – Full URL to search for (s3://, gs://, http://, etc.).
+  Can be a file, partition, or directory path.
+- **base_url** (`Optional[str]`) – Base URL for API. If None, uses current environment.
+
+**Returns:**
+
+- `[Dict](#typing.Dict)\[[str](#str), [Any](#typing.Any)\]` – Dataset dict with keys: id, location, description, storage_type,
+- `[Dict](#typing.Dict)\[[str](#str), [Any](#typing.Any)\]` – owner, public, created_at, updated_at, etc.
+
+**Raises:**
+
+- `[HTTPError](#requests.HTTPError)` – If dataset not found (404) or request fails
+
+**Example:**
+
+```python
+# Find dataset containing a file
+dataset = fused.find_dataset("s3://bucket/data/year=2024/file.parquet")
+print(f"Found dataset: {dataset['location']}")
+```
+
+---
+
+## fused.load_async
+
+```python
+load_async(
+    url_or_udf: Union[str, Path],
+    /,
+    *,
+    cache_key: Any = None,
+    import_globals: bool = True,
+    collection_name: str | None = None,
+) -> AnyBaseUdf
+```
+
+Asynchronously loads a UDF from various sources including GitHub URLs,
+and a Fused platform-specific identifier.
+
+This is the async-optimized version of fused.load() that uses async HTTP requests
+to avoid blocking the event loop during UDF metadata fetching.
+
+**Parameters:**
+
+- **url_or_udf** (`Union[str, Path]`) – A string representing the location of the UDF, or the raw code of the UDF.
+- **cache_key** (`Any`) – An optional key used for caching the loaded UDF.
+- **import_globals** (`bool`) – Expose the globals defined in the UDF's context as attributes on the UDF object.
+- **collection_name** (`str | None`) – Collection name to load the UDF from. If not provided, will attempt to
+  use the collection of the currently executing UDF, or default to "default".
+
+**Returns:**
+
+- **AnyBaseUdf** (`[AnyBaseUdf](#fused.models.udf.AnyBaseUdf)`) – An instance of the loaded UDF.
+
+**Examples:**
+
+Load a UDF asynchronously:
+
+```py
+udf = await fused.load_async("username@fused.io/my_udf_name")
+```
+
+Use in parameter validation:
+
+```py
+if not isinstance(udf, Udf):
+    udf = await fused.load_async(udf)
+```
+
+---
+
+## fused.register_dataset
+
+```python
+register_dataset(
+    dataset_path: str, base_url: Optional[str] = None
+) -> Dict[str, Any]
+```
+
+Register a dataset for indexed queries.
+
+This function registers a directory in your file storage as a dataset,
+enabling fast geospatial queries using H3 indexing.
+
+**Parameters:**
+
+- **dataset_path** (`str`) – Path to the dataset directory. The path should point to
+  a directory containing parquet files.
+- **base_url** (`Optional[str]`) – Base URL for API. If None, uses current environment.
+
+**Returns:**
+
+- `[Dict](#typing.Dict)\[[str](#str), [Any](#typing.Any)\]` – Dictionary with registration results:
+- dataset_id: ID of the created/updated dataset
+- location: Normalized URL of the dataset
+- visit_status: Status of the dataset visit (success/timeout/error)
+- items_discovered: Total number of items found
+- new_items: Number of new items added
+
+**Raises:**
+
+- `[HTTPError](#requests.HTTPError)` – If the API request fails
+
+**Example:**
+
+```python
+# Register a dataset from your storage
+result = fused.register_dataset("s3://my-bucket/my-data/buildings/")
+print(f"Registered dataset with ID: {result['dataset_id']}")
+print(f"Found {result['items_discovered']} files")
+```
+
+<details class="note" open>
+<summary>Note</summary>
+- Regular users can use any storage paths they have access to
+- Datasets are registered as private (only accessible to your team)
+- Files are automatically queued for metadata extraction
+</details>
+
+---
+
+## fused.run_async
+
+```python
+run_async(
+    udf: Union[str, None, UdfJobStepConfig, Udf, UdfAccessToken] = None,
+    *,
+    x: Optional[int] = None,
+    y: Optional[int] = None,
+    z: Optional[int] = None,
+    engine: Optional[Literal["remote", "local"]] = None,
+    instance_type: Optional[InstanceType] = None,
+    type: Optional[Literal["tile", "file"]] = None,
+    max_retry: int = 0,
+    cache_max_age: Optional[str] = None,
+    cache: bool = True,
+    parameters: Optional[Dict[str, Any]] = None,
+    disk_size_gb: Optional[int] = None,
+    _return_response: Optional[bool] = False,
+    _ignore_unknown_arguments: bool = False,
+    _cancel_callback: Callable[[], bool] | None = None,
+    **kw_parameters: Callable[[], bool] | None
+) -> Union[ResultType, UdfEvaluationResult]
+```
+
+Async version of run() that executes a user-defined function (UDF) asynchronously.
+
+This function provides the same functionality as run() but with async execution.
+It supports executing UDFs in different environments (local or remote),
+with different types of inputs (tile coordinates, geographical bounding boxes, etc.).
+
+**Parameters:**
+
+- **udf** (`str, Udf or UdfJobStepConfig`) – the UDF to execute.
+  The UDF can be specified in several ways:
+  - A string representing a UDF name or UDF shared token.
+  - A UDF object.
+  - A UdfJobStepConfig object for detailed execution configuration.
+- **x, y, z** – Tile coordinates for tile-based UDF execution.
+- **engine** (`Optional\[Literal['remote', 'local']\]`) – The execution engine to use ('remote' or 'local').
+- **instance_type** (`Optional[InstanceType]`) – The type of instance to use for remote execution ('realtime',
+  or 'small', 'medium', 'large' or one of the whitelisted instance types).
+  If not specified, gets the default from the UDF (if specified in the
+  `@fused.udf()` decorator, and the UDF is not run as a shared token),
+  or otherwise defaults to 'realtime'.
+- **disk_size_gb** (`Optional[int]`) – The size of the disk in GB to use for remote execution
+  (only supported for a batch (non-realtime) instance type).
+- **type** (`Optional\[Literal['tile', 'file']\]`) – The type of UDF execution ('tile' or 'file').
+- **max_retry** (`int`) – The maximum number of retries to attempt if the UDF fails.
+  By default does not retry.
+- **cache_max_age** (`Optional[str]`) – The maximum age when returning a result from the cache.
+  Supported units are seconds (s), minutes (m), hours (h), and days (d) (e.g. "48h", "10s", etc.).
+  Default is `None` so a UDF run with `fused.run_async()` will follow `cache_max_age` defined in `@fused.udf()` unless this value is changed.
+- **cache** (`bool`) – Set to False as a shortcut for `cache_max_age='0s'` to disable caching.
+- **verbose** – Set to False to suppress any print statements from the UDF.
+- **parameters** (`Optional\[Dict[str, Any]\]`) – Additional parameters to pass to the UDF.
+- \*\***kw_parameters** – Additional parameters to pass to the UDF.
+
+**Raises:**
+
+- `[ValueError](#ValueError)` – If the UDF is not specified or is specified in more than one way.
+- `[TypeError](#TypeError)` – If the first parameter is not of an expected type.
+- `[Warning](#Warning)` – Various warnings are issued for ignored parameters based on the execution path chosen.
+
+**Returns:**
+
+- `[Union](#typing.Union)\[[ResultType](#fused._run.ResultType), [UdfEvaluationResult](#fused.models.udf._eval_result.UdfEvaluationResult)\]` – The result of the UDF execution, which varies based on the UDF and execution path.
+
+**Examples:**
+
+Run a UDF saved in the Fused system asynchronously:
+
+```py
+result = await fused.run_async("username@fused.io/my_udf_name")
+```
+
+Run a UDF saved in GitHub asynchronously:
+
+```py
+loaded_udf = fused.load("https://github.com/fusedio/udfs/tree/main/public/Building_Tile_Example")
+result = await fused.run_async(loaded_udf, bbox=bbox)
+```
+
+Run a UDF saved in a local directory asynchronously:
+
+```py
+loaded_udf = fused.load("/Users/local/dir/Building_Tile_Example")
+result = await fused.run_async(loaded_udf, bbox=bbox)
+```
+
+<details class="note" open>
+<summary>Note</summary>
+This function always executes asynchronously. For synchronous execution, use run().
+It uses the same parameter validation and UDF resolution logic as run().
+</details>
+
+---
+

@@ -135,6 +135,29 @@ api_listing = [
     "get_chunk_from_table",
 ]
 
+# Append any public top-level functions from `fused.__all__` not already listed
+# (e.g. find_dataset, load_async, register_dataset, run_async) so new functions
+# appear automatically. The curated entries above keep their preferred order;
+# auto-detected ones are appended alphabetically. Modules, attributes, and
+# unresolvable re-export aliases are skipped.
+_known_top = set(api_listing)
+for name in sorted(fused.__all__):
+    if name.startswith("_") or name in _known_top:
+        continue
+    member = mod.members.get(name)
+    if member is None:
+        continue
+    try:
+        if (
+            member.kind.value == "function"
+            and member.docstring
+            and member.docstring.value.strip()
+        ):
+            api_listing.append(name)
+    except Exception:
+        # Unresolvable alias (e.g. load_ipython_extension) — skip
+        continue
+
 result = """\
 ---
 sidebar_label: Top-Level Functions
@@ -248,54 +271,52 @@ result = result.replace("## fused.cache", "## @fused.cache")
 # griffe cannot handl the x, y, z multiple parameters on one line
 result = result.replace("**x,** (<code>y, z</code>)", "**x, y, z** (`int`)")
 
-with open(ROOT / "docs" / "python-sdk" / "top-level-functions.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "top-level-functions.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
 
 ## `fused.api` page
 
-api_listing = [
-    # Auth
-    "whoami",
-    "access_token",
-    "auth_scheme",
-    "logout",
-    # File operations
-    "delete",
-    "list",
-    "get",
-    "download",
-    "upload",
-    "sign_url",
-    "sign_url_prefix",
-    "resolve",
-    # UDFs / apps
-    "get_udfs",
-    "get_apps",
-    # Jobs
-    "job_get_logs",
-    "job_print_logs",
-    "job_tail_logs",
-    "job_get_status",
-    "job_cancel",
-    "job_get_exec_time",
-    "job_wait_for_job",
-    "job_get_results",
-    "job_wait_for_results",
-    # Scheduling
-    "schedule_udf",
-    "schedule_list",
-    # Utilities
-    "session_token",
-    "team_info",
-    "enable_gcs",
-    "log",
-    # Snowflake
-    "snowflake_connect",
-    "snowflake_query",
-    # Note: Functions that no longer exist will be automatically skipped with a warning
-]
+import fused.api as _fused_api
+
+mod_api = mod["api"]
+
+# Auto-detect public fused.api symbols from the module's `__all__`, minus a
+# blocklist of internal/infra items. New integrations (airtable, notion,
+# huggingface, etc.) then appear automatically — no allowlist to maintain.
+API_BLOCKLIST = {
+    "_session_token",       # internal
+    "FusedAPI",             # rendered in its own section below
+    "FusedDockerAPI",       # internal infra
+    "DriveFileSystem",      # internal infra
+    "FdFileSystem",         # internal infra
+    "NotebookCredentials",  # internal infra
+}
+
+# Public but absent from `__all__` — always include.
+_AUTH_SUPPLEMENT = {"access_token", "auth_scheme", "logout"}
+
+# Module-level functions: everything public in `__all__` except the blocklist and
+# the Fused*Connection classes (documented in their own sections below).
+api_listing = sorted(
+    _AUTH_SUPPLEMENT
+    | {
+        name for name in _fused_api.__all__
+        if not name.startswith("_")
+        and name not in API_BLOCKLIST
+        and not (name.startswith("Fused") and name.endswith("Connection"))
+        and name in mod_api.members
+        and mod_api[name].kind.value == "function"
+    }
+)
+
+# Fused*Connection classes each get their own section (Snowflake, Airtable, Notion, …).
+connection_classes = sorted(
+    name for name in _fused_api.__all__
+    if name.startswith("Fused") and name.endswith("Connection")
+    and name not in API_BLOCKLIST
+)
 
 result = """\
 ---
@@ -319,13 +340,11 @@ fused.api.function_name()
 
 """
 
-mod_api = mod["api"]
-
 # fused.api functions — bare name headings (## access_token, not ## fused.api.access_token)
 config_api_mod = dict(default_config)
 config_api_mod["show_root_full_path"] = False
 
-for obj in sorted(api_listing):
+for obj in api_listing:
     if obj not in mod_api.members:
         print(f"Warning: {obj} not found in fused.api module, skipping")
         continue
@@ -386,42 +405,37 @@ for meth in methods:
 """
     result += docstring + "\n" + usage_note + "\n---\n\n"
 
-# fused.api.FusedSnowflakeConnection class
+# fused.api Fused*Connection classes (Snowflake, Airtable, Notion, …).
+# One section per class; methods discovered dynamically so new connections and
+# new methods appear automatically.
+config_conn = dict(default_config)
+config_conn["filters"] = ["__init__"]
+config_conn["summary"] = False
 
-snowflake_methods = [
-    "connect",
-    "query",
-    "execute",
-    "list_databases",
-    "list_schemas",
-    "list_tables",
-    "list_stages",
-    "list_stage_files",
-    "read_stage",
-    "write",
-]
+config_conn_meth = dict(config_conn)
+config_conn_meth["heading_level"] = default_config["heading_level"] + 1
+config_conn_meth["show_root_full_path"] = False
 
-if "FusedSnowflakeConnection" in mod_api.members:
-    snowflake_note = """\
-## Snowflake
+for class_name in connection_classes:
+    if class_name not in mod_api.members:
+        print(f"Warning: {class_name} not found in fused.api module, skipping")
+        continue
+    cls = mod_api[class_name]
+    # Friendly label: FusedSnowflakeConnection -> Snowflake
+    label = class_name.removeprefix("Fused").removesuffix("Connection")
+    result += f"## {label}\n\n## {class_name}\n\n"
+    result += render_object_docs(cls, config_conn) + "\n---\n\n"
 
-## FusedSnowflakeConnection
+    methods = sorted(
+        name for name, member in cls.members.items()
+        if not name.startswith("_")
+        and member.kind.value == "function"
+        and member.docstring and member.docstring.value.strip()
+    )
+    for meth in methods:
+        result += render_object_docs(cls[meth], config_conn_meth) + "\n---\n\n"
 
-"""
-    config_sf = dict(default_config)
-    config_sf["filters"] = ["__init__"]
-    config_sf["summary"] = False
-    result += snowflake_note + render_object_docs(mod_api["FusedSnowflakeConnection"], config_sf) + "\n---\n\n"
-
-    config_sf["heading_level"] = default_config["heading_level"] + 1
-    config_sf["show_root_full_path"] = False
-    for meth in snowflake_methods:
-        if meth not in mod_api["FusedSnowflakeConnection"].members:
-            print(f"Warning: {meth} not found in FusedSnowflakeConnection class, skipping")
-            continue
-        result += render_object_docs(mod_api["FusedSnowflakeConnection"][meth], config_sf) + "\n---\n\n"
-
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
@@ -458,7 +472,7 @@ config["filters"] = ["!model_config"]
 docstring = render_object_docs(mod["_options"]["Options"], config)
 result += docstring
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "options.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "options.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
@@ -522,7 +536,7 @@ for meth in async_methods:
     docstring = render_object_docs(mod["_submit"]["AsyncJobPool"][meth], config_async)
     result += docstring + "\n---\n\n"
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "jobpool.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "jobpool.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
@@ -547,14 +561,17 @@ a saved UDF with [`fused.load()`](/python-sdk/top-level-functions/#fusedload).
 
 """
 
-# Dynamic: all public Udf members with docstrings (methods + pydantic fields)
-# Picks up new additions automatically — no hardcoded list to maintain.
-# Exclude `original_headers`: its only docstring is "Deprecated." and it's an internal field.
+# Dynamic: all public Udf members with docstrings (methods + pydantic fields).
+# Use `all_members` so methods inherited from `BaseUdf` (schedule, get_schedule,
+# to_fused, etc.) are included — `members` only holds members defined directly on
+# `Udf`. Picks up new additions automatically — no hardcoded list to maintain.
+# Skip deprecation stubs (e.g. `original_headers`, `headers`, `utils`) whose only
+# docstring is "Deprecated.".
 methods = sorted(
-    name for name, member in mod["models"]["Udf"].members.items()
+    name for name, member in mod["models"]["Udf"].all_members.items()
     if not name.startswith("_")
-    and name != "original_headers"
     and member.docstring and member.docstring.value.strip()
+    and member.docstring.value.strip() != "Deprecated."
 )
 
 config = dict(default_config)
@@ -565,7 +582,7 @@ for meth in methods:
     docstring = render_object_docs(mod["models"]["Udf"][meth], config)
     result += docstring + "\n---\n\n"
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
@@ -605,5 +622,5 @@ for obj in api_listing:
 
 result = result.replace("`fused.submit()`", "[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)")
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "h3.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "h3.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
