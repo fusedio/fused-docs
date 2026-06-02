@@ -1,0 +1,186 @@
+---
+id: onedrive
+title: OneDrive
+sidebar_label: OneDrive
+sidebar_position: 15
+---
+
+# OneDrive
+
+Read and write files in OneDrive directly from Fused UDFs using OAuth-managed tokens. No API keys are hardcoded — Fused refreshes the token on your behalf. There is no official OneDrive Python SDK, so the connection exposes a short-lived [Microsoft Graph](https://learn.microsoft.com/en-us/graph/overview) access token plus thin REST helpers, and you can read files directly with `onedrive://` paths via `fsspec` (pandas, pyarrow, etc.).
+
+:::note Drive scope
+The Fused OneDrive app requests the `Files.ReadWrite` delegated permission, so paths address your OneDrive starting at the drive root. Both helper paths like `reports/q1.csv` and `onedrive://reports/q1.csv` URLs are relative to that root. Personal Microsoft accounts and work/school (Microsoft Entra ID) accounts are both supported.
+:::
+
+## Setup
+
+### 1. Connect OneDrive
+
+Open **Integrations & Secrets** in Workbench, find the OneDrive section, and click **Connect OneDrive**. You will be redirected to Microsoft to authorize access, then back to Workbench. You can also connect from the CLI with `fused integrations onedrive connect`.
+
+### 2. OAuth scopes
+
+When you connect, the following scopes are requested:
+
+| Scope             | Description                                                       |
+| ----------------- | ----------------------------------------------------------------- |
+| `Files.ReadWrite` | List, read, upload, and delete files and folders in your OneDrive |
+| `offline_access`  | Issue a refresh token so long-running jobs keep working           |
+| `User.Read`       | Read the account email shown in the integrations UI               |
+
+---
+
+### `onedrive://` path format
+
+```
+onedrive://file.csv                   # a file in the drive root
+onedrive://folder/file.parquet        # a file inside a subfolder
+```
+
+All `onedrive://` paths are relative to your OneDrive drive root. The same paths work in the Workbench file explorer once connected.
+
+---
+
+## Examples
+
+### Quick start
+
+`fused.api.onedrive_connect()` returns a `FusedOnedriveConnection`. Use the built-in `.list()`, `.get()`, and `.download()` helpers for common tasks, or call `.token()` for a short-lived Microsoft Graph access token to use with any Graph client. The token is minted from your Fused-managed refresh token, so it is refreshed automatically — no secrets are exposed and it keeps working for long-running jobs.
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+
+    conn = fused.api.onedrive_connect()
+
+    # List a subfolder
+    for item in conn.list("reports"):
+        print(item["name"], item.get("size"))
+
+    # Download a file's bytes
+    data = conn.download("reports/q1.csv")
+    print(data[:100])
+
+    # List the drive root (folder defaults to "")
+    return pd.DataFrame(conn.list())
+```
+
+### Read a file with `onedrive://` paths
+
+Fused registers an `onedrive://` `fsspec` filesystem, so any library that accepts an `fsspec` URL can read from your OneDrive directly:
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+    return pd.read_csv("onedrive://data/measurements.csv")
+```
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+    return pd.read_parquet("onedrive://exports/cities.parquet")
+```
+
+This filesystem is read-only — use the Graph helpers below to write.
+
+### Connection API reference
+
+| Method | Description |
+| --- | --- |
+| `fused.api.onedrive_connect()` | Create a OneDrive connection backed by Fused-managed OAuth (Microsoft Graph). |
+| `.token() -> str` | Return a short-lived Microsoft Graph access token for the current user. |
+| `.list(folder="") -> list[dict]` | List the children of a folder (the drive root by default). Returns raw Graph `driveItem` dicts (`name`, `size`, `folder`/`file`, `lastModifiedDateTime`, …); pagination is handled for you. |
+| `.download(path) -> bytes` | Download a file's bytes by its OneDrive path. |
+| `.get(path, **kwargs) -> dict` | `GET` a Graph resource and return the parsed JSON. `path` may be an absolute URL or relative to the Graph v1.0 base. |
+| `.request(method, path, **kwargs)` | Make an arbitrary Microsoft Graph request and return the `requests.Response`. Pass a body with `data=` (bytes) or `json=` (dict). |
+
+```python
+@fused.udf
+def udf():
+    import requests
+
+    token = fused.api.onedrive_connect().token()
+    # use the token with any Microsoft Graph client
+    resp = requests.get(
+        "https://graph.microsoft.com/v1.0/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    return resp.json()
+```
+
+:::note Graph path addressing
+Children of a folder: `me/drive/root:/<path>:/children` (or `me/drive/root/children` at the root). Item metadata: `me/drive/root:/<path>`. File content: `me/drive/root:/<path>:/content`. See the [Microsoft Graph reference](https://learn.microsoft.com/en-us/graph/api/resources/onedrive) for the full API.
+:::
+
+### Common operations
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+
+    conn = fused.api.onedrive_connect()
+
+    # List a subfolder (pagination is handled for you)
+    entries = conn.list("reports")
+
+    # Item metadata (size, timestamps, download URL, ...)
+    meta = conn.get("me/drive/root:/reports/q1.csv")
+
+    # Download
+    data = conn.download("reports/q1.csv")
+
+    # Upload / overwrite (simple upload; for very large files use an upload session)
+    conn.request("PUT", "me/drive/root:/reports/q1.csv:/content", data=b"...bytes...")
+
+    # Create a folder
+    conn.request(
+        "POST",
+        "me/drive/root:/reports:/children",
+        json={"name": "2026", "folder": {}, "@microsoft.graph.conflictBehavior": "fail"},
+    )
+
+    # Delete
+    conn.request("DELETE", "me/drive/root:/reports/q1.csv")
+
+    return pd.DataFrame(entries)
+```
+
+### Read input and write output
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+
+    # Read an input straight from OneDrive via fsspec
+    df = pd.read_csv("onedrive://input/raw.csv")
+
+    out = df.describe().reset_index()
+
+    # Write a result back with the Graph helper
+    conn = fused.api.onedrive_connect()
+    conn.request(
+        "PUT",
+        "me/drive/root:/output/summary.csv:/content",
+        data=out.to_csv(index=False).encode(),
+    )
+    return out
+```
+
+## CLI
+
+```bash
+fused integrations onedrive connect   # print the OAuth URL (opens a browser in a tty)
+fused integrations onedrive token     # print a short-lived Graph access token (sensitive)
+fused integrations onedrive revoke    # disconnect and remove stored tokens
+fused integrations list               # show connection status for all integrations
+```
+
+## Disconnecting
+
+To revoke the integration, go to **Integrations & Secrets**, find the OneDrive section, and click **Disconnect** (or run `fused integrations onedrive revoke`). This removes stored tokens from both the Fused server and Secrets Manager. Files already in your OneDrive are not affected. (Microsoft has no per-app programmatic token-revoke endpoint; you can also review or remove app access from your Microsoft account security settings.)

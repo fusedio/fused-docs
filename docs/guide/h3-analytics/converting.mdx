@@ -17,11 +17,11 @@ This page covers different methods to convert your data into H3 hexagons.
 
 Turning a single small dataset into a grid of H3 hexagons.
 
-### Point Count to Hex 
+### Point Count to Hex
 
 The following example uses a simple CSV of [311 calls](https://gist.githubusercontent.com/kashuk/670a350ea1f9fc543c3f6916ab392f62/raw/4c5ced45cc94d5b00e3699dd211ad7125ee6c4d3/NYC311_noise.csv) in the New York City area, showing a heatmap of calls per hex 9 cell
 
-<iframe 
+<iframe
   src="https://unstable.fused.io/server/v1/realtime-shared/fc_4RviGoMsnragXi4YvzqFQ4-ny411_noise_sample_visualisation/run/file"
   width="100%"
   height="600px"
@@ -109,7 +109,7 @@ The examples in this section all use Tile UDF Mode to dynamically compute H3 bas
 
 The following example uses a [simplified Census Block Group dataset of the state of California](https://www.fused.io/workbench/files?path=s3%3A%2F%2Ffused-asset%2Fdemos%2Fcatchment_analysis%2Fsimplified_acs_bg_ca_2022.parquet), showing a heatmap of the population density per hex 9 cell:
 
-<iframe 
+<iframe
   src="https://www.fused.io/server/v1/realtime-shared/UDF_Hex_Tile_Map_Template/run/file"
   width="100%"
   height="600px"
@@ -130,37 +130,37 @@ def udf(
 ):
     import pandas as pd
     import geopandas as gpd
-    
+
     common = fused.load("https://github.com/fusedio/udfs/tree/f430c25/public/common/")
     path = "s3://fused-asset/demos/catchment_analysis/simplified_acs_bg_ca_2022.parquet"
-    
+
     # Dynamic H3 resolution
     def dynamic_h3_res(b):
         z = common.estimate_zoom(b)
         return max(min(int(2 + z / 1.5),min_hex_cell_res), max_hex_cell_res)
-    
+
     parent_res = max(dynamic_h3_res(bounds) - 1, 0)
-    
+
     # Load and clip data
     gdf = gpd.read_parquet(path)
     tile = common.get_tiles(bounds, clip=True)
     gdf = gdf.to_crs(4326).clip(tile)
-    
+
     # Early exit if empty
     if len(gdf) == 0:
         return pd.DataFrame(columns=["hex", "POP", "pct"])
-    
+
     # Hexify
     con = common.duckdb_connect()
     df_hex = common.gdf_to_hex(gdf, res=parent_res, add_latlng_cols=None)
     con.register("df_hex", df_hex)
-    
+
     # Aggregate to parent hexagons and calculate percentages
     # In this case we're aggregating by sum
     query = """
     WITH agg AS (
-        SELECT 
-            h3_cell_to_parent(hex, ?) AS hex, 
+        SELECT
+            h3_cell_to_parent(hex, ?) AS hex,
             SUM(POP) AS POP
         FROM df_hex
         GROUP BY hex
@@ -181,7 +181,7 @@ def udf(
 
 This example uses [AWS's Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) tiled GeoTiff data. Hexagons show elevation data:
 
-<iframe 
+<iframe
   src="https://www.fused.io/server/v1/realtime-shared/fsh_5o5UNLYxDNTN5ldzVFkeuR/run/file"
   width="100%"
   height="600px"
@@ -374,6 +374,7 @@ For data resolution 10: default `file_res=0` (max 122 files globally) and `chunk
 Overviews are pre-aggregated files for fast zoomed-out views. Default: resolutions 3-7.
 
 ```python showLineNumbers {5}
+# doctest: skip
 result_extract, result_partition = fused.h3.run_ingest_raster_to_h3(
     input_path,
     output_path,
@@ -461,7 +462,7 @@ def udf():
     return plan
 ```
 
-The UDF prints a breakdown of inferred or explicit resolutions, expected numbers of output files, row groups, and rows per file, plus per-step job counts and conservative memory estimates with suggested instance sizes when the workload is too heavy for a small realtime run. 
+The UDF prints a breakdown of inferred or explicit resolutions, expected numbers of output files, row groups, and rows per file, plus per-step job counts and conservative memory estimates with suggested instance sizes when the workload is too heavy for a small realtime run.
 
 If the output suggests to use a specific instance (e.g. "Consider using an 'r5.2xlarge' instance") for a certain step, you can either still use the default settings (which will first run on realtime, and then retry on a 'large' instance), or either specify the recommended instance specifically with e.g. `partition_engine='r5.2xlarge'`.
 
@@ -489,7 +490,7 @@ def udf(
 
 #### Visualizing Ingested Data
 
-<iframe 
+<iframe
   src="https://udf.ai/fsh_4VEXYYkuD1wnNXLH1XapK7.html"
   width="100%"
   height="600px"
@@ -541,7 +542,7 @@ For more on standalone maps, see [Standalone Maps](/examples/standalone-html-map
 
 For vector data, use `.map()` to parallelize hexagonification:
 
-<img 
+<img
   alt="Ingesting Vector Data to H3 Example"
   src={require('/static/img/tutorials/geospatial/h3/vector_to_hex_ingestion.png').default}
   style={{width: "100%", maxWidth: 700, margin: "2em auto", display: "block"}}
@@ -559,7 +560,7 @@ def udf(
     common = fused.load("https://github.com/fusedio/udfs/tree/208c30d/public/common/")
     res = common.bounds_to_res(bounds, offset=0)
     res = max(9, res)
-     
+
     gdf = get_data()
 
     if gdf.shape[0] > 100_000:
@@ -572,7 +573,7 @@ def udf(
     df = df.groupby('hex').sum(['cnt','area']).sort_values('hex').reset_index()[['hex', 'cnt', 'area']]
     df['area'] = df['area'].astype(int)
 
-    return df 
+    return df
 
 
 @fused.udf
@@ -583,8 +584,8 @@ def hexagonify_udf(geometry, res: int = 12):
     con = common.duckdb_connect()
     df = con.execute(
         """
-        SELECT h3_cell_to_parent(hex, ?) AS hex, 
-               COUNT(1) AS cnt, 
+        SELECT h3_cell_to_parent(hex, ?) AS hex,
+               COUNT(1) AS cnt,
                SUM(h3_cell_area(hex, 'm^2')) AS area
         FROM gdf
         GROUP BY 1

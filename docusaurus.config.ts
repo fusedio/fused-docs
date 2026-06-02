@@ -30,7 +30,7 @@ const config: Config = {
   markdown: {
     mermaid: true,
   },
-  themes: ["@docusaurus/theme-mermaid"],
+  themes: ["@docusaurus/theme-mermaid", "docusaurus-json-schema-plugin"],
 
   // Even if you don't use internationalization, you can use this field to set
   // useful metadata like html lang. For example, if your site is Chinese, you
@@ -231,6 +231,7 @@ const config: Config = {
   } satisfies Preset.ThemeConfig,
 
   plugins: [
+    require.resolve("./docusaurus-plugin-widget-api"),
     require.resolve("./docusaurus-plugin-custom-webpack"),
     [
       "@docusaurus/plugin-client-redirects",
