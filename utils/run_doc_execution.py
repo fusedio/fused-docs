@@ -1,20 +1,22 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pytest", "pytest-markdown-docs", "fused"]
+# dependencies = ["pytest", "pytest-markdown-docs", "fused[all]"]
 # ///
 #
-# Tier 2: execute the runnable Python blocks in changed docs via
-# pytest-markdown-docs, using the developer's local fused session.
+# Tier 2: execute the runnable Python blocks in the docs via
+# pytest-markdown-docs.
 #
-# Runs as a pre-commit hook (changed file paths passed as args). With no
-# args it runs the full docs/ tree (minus generated / credential-gated paths).
+# Runs as a pre-commit hook (changed file paths passed as args). With no args
+# it runs the full docs/ tree (minus generated / credential-gated paths).
 #
-# Requires an active fused login (~/.fused/credentials). If not logged in it
-# fails fast and asks you to run `fused login` — so a block never triggers a
-# browser OAuth popup mid-run.
+# Execution is local: conftest.py defaults fused.run (and direct UDF calls) to
+# engine="local", and auto-skips any block that needs external context — data
+# files/URLs, cloud storage, a database, the network, or a live Fused
+# catalog/account call. So only self-contained, pure-compute blocks run, which
+# keeps the suite fast and needs no authentication.
 #
-# Skip a block by putting "# doctest: skip" on its first line (handled by
-# conftest.py, same convention as Tier 1).
+# Skip a single block explicitly by putting "# doctest: skip" on its first line
+# (same convention as Tier 1).
 
 import sys
 from pathlib import Path
@@ -29,18 +31,6 @@ IGNORE_PREFIXES = (
     "docs/workbench/integrations/",
 )
 IGNORE_FILES = ("docs/python-sdk/top-level-functions.mdx",)
-
-
-def _login_error() -> int:
-    print(
-        "\nFused is not logged in — no credentials found at:\n"
-        f"  {CREDENTIALS}\n\n"
-        "Tier 2 executes the docs' code blocks against Fused servers, which needs\n"
-        "an active session. Log in once, then retry your commit:\n\n"
-        "  fused login\n",
-        file=sys.stderr,
-    )
-    return 1
 
 
 def _select(argv: list[str]) -> list[Path]:
@@ -64,13 +54,19 @@ def _select(argv: list[str]) -> list[Path]:
 
 
 def main(argv: list[str]) -> int:
-    if not CREDENTIALS.is_file():
-        return _login_error()
-
     targets = _select(argv)
     if not targets:
         print("Tier 2: no changed runnable docs to execute.")
         return 0
+
+    # Self-contained blocks run offline, so login is optional. A logged-in
+    # session only matters for blocks that opt into remote execution; without
+    # one they fail fast rather than hanging (conftest sets no_login).
+    if not CREDENTIALS.is_file():
+        print(
+            "Tier 2: no fused session found — run `fused login` if a block "
+            "needs remote execution. Running self-contained blocks locally."
+        )
 
     import pytest
 

@@ -94,18 +94,18 @@ After this, every `git commit` that touches a `.mdx` or `.md` file runs two hook
 
 ### Tier 2 — execution (local pre-commit hook)
 
-Tier 2 (`doc-snippet-execution`) executes the runnable Python blocks in the docs you changed via pytest-markdown-docs. It does **not** run in CI — executing the blocks calls Fused servers, which needs an authenticated session that isn't available headlessly. It runs as a pre-commit hook instead, scoped to your changed files, using your local `fused login`.
+Tier 2 (`doc-snippet-execution`) executes the runnable Python blocks in the docs you changed via pytest-markdown-docs. It does **not** run in CI; it runs as a pre-commit hook, scoped to your changed files.
 
-It requires an active fused session: if `~/.fused/credentials` is missing, the hook fails fast and tells you to run `fused login` (it never opens a browser popup mid-commit). Log in once:
+Execution is **local and fast** — `conftest.py` defaults `fused.run` (and direct UDF calls) to `engine="local"`, so UDFs run in-process with no authentication. Blocks that need external context (data files/URLs, cloud storage, a database, the network, or a live Fused catalog/account call) are **auto-skipped** by a pattern in `conftest.py`, so the full suite finishes in a few seconds. No `fused login` is required for the suite to pass; logging in only matters for a block that explicitly opts into remote execution.
+
+Two ways to control a single block:
+- `# doctest: skip` on its first line — exclude it (also skips Tier 1's syntax check).
+- `{/* pmd-metadata: continuation */}` directly above its fence — run it with the previous block's code prepended (for narrative snippets that reuse earlier names).
+
+Run it manually against the whole tree, or just specific files:
 
 ```bash
-fused login
-```
-
-Run it manually against the whole tree, or just the changed files:
-
-```bash
-uv run utils/run_doc_execution.py                 # full docs/ tree
+uv run utils/run_doc_execution.py                      # full docs/ tree
 uv run utils/run_doc_execution.py docs/guide/foo.mdx   # specific files
 ```
 
