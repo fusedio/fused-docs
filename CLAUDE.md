@@ -90,21 +90,26 @@ pip install pre-commit
 pre-commit install
 ```
 
-After this, every `git commit` that touches a `.mdx` or `.md` file will run the syntax check on the changed files only.
+After this, every `git commit` that touches a `.mdx` or `.md` file runs two hooks on the changed files only: the **Tier 1** syntax check and the **Tier 2** execution check.
 
-### Running Tier 2 locally
+### Tier 2 — execution (local pre-commit hook)
 
-Tier 2 (pytest-markdown-docs) requires a pre-authenticated fused session locally — running unauthenticated causes fused to open browser OAuth windows. In CI (headless), auth errors surface as test failures instead. Only run locally if you're already authenticated:
+Tier 2 (`doc-snippet-execution`) executes the runnable Python blocks in the docs you changed via pytest-markdown-docs. It does **not** run in CI — executing the blocks calls Fused servers, which needs an authenticated session that isn't available headlessly. It runs as a pre-commit hook instead, scoped to your changed files, using your local `fused login`.
+
+It requires an active fused session: if `~/.fused/credentials` is missing, the hook fails fast and tells you to run `fused login` (it never opens a browser popup mid-commit). Log in once:
 
 ```bash
-uv run --with pytest --with pytest-markdown-docs --with fused \
-  pytest --markdown-docs \
-    --ignore=docs/python-sdk/api-reference \
-    --ignore=docs/python-sdk/top-level-functions.mdx \
-    --ignore=docs/workbench/integrations \
-    --tb=short \
-    -q docs/
+fused login
 ```
+
+Run it manually against the whole tree, or just the changed files:
+
+```bash
+uv run utils/run_doc_execution.py                 # full docs/ tree
+uv run utils/run_doc_execution.py docs/guide/foo.mdx   # specific files
+```
+
+To bypass it for a single commit (e.g. WIP): `SKIP=doc-snippet-execution git commit ...`.
 
 ## For AI agents — when compacting
 

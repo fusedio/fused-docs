@@ -5,10 +5,10 @@ Blocks are collected from docs/ and run as pytest tests.
 Add '# doctest: skip' as the first line of a block to exclude it from
 both Tier 1 (syntax check) and Tier 2 (execution).
 
-Run locally only when authenticated with fused — unauthenticated local runs
-cause fused to open browser OAuth windows. In headless CI, auth errors surface
-as test failures rather than OAuth popups — this is why the CI step uses
-continue-on-error while the suite is being stabilized.
+Tier 2 runs as a local pre-commit hook (`doc-snippet-execution`), not in CI —
+executing the blocks calls Fused servers, which needs an authenticated session.
+The hook (utils/run_doc_execution.py) checks for `fused login` up front and
+fails fast if you're not authenticated, so a block never opens a browser popup.
 """
 
 import pytest
@@ -60,10 +60,7 @@ def pytest_collection_modifyitems(items: list) -> None:
     """
     skip = pytest.mark.skip(reason="doctest: skip")
     for item in items:
-        td = getattr(item, "test_definition", None)
-        if td is None:
-            continue
-        code = getattr(td, "code", "") or ""
+        code = getattr(item, "code", "") or ""
         lines = [ln for ln in code.splitlines() if ln.strip()]
         first = lines[0] if lines else ""
         if first.lstrip().startswith("#") and "doctest: skip" in first:
