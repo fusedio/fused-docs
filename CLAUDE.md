@@ -83,28 +83,24 @@ Every `python` fence in the docs is syntax-checked automatically (pre-commit hoo
 - **Pseudocode blocks** (REPL output, type stubs, emoji annotations, partial signatures, HTML embedded in a python block, bare URLs or other non-Python illustrative content) must start with `# doctest: skip` as their first line. This suppresses both the syntax check and Tier 2 execution without hiding the block from readers.
 - **Generated files** (`docs/python-sdk/api-reference/` and `docs/python-sdk/top-level-functions.mdx`) are excluded from the check automatically — never add skip markers there.
 
-### Installing the pre-commit hook
+### Tier 2 — execution (CI)
+
+Tier 2 (the `execution-check` job in `.github/workflows/test-doc-snippets.yml`) executes the runnable Python blocks in the docs via pytest-markdown-docs. It runs **in CI** on every PR — no local pre-commit setup needed.
+
+Execution is **local-engine and fast** — `conftest.py` defaults `fused.run` (and direct UDF calls) to `engine="local"`, so UDFs run in-process with no authentication. Blocks that need external context (data files/URLs, cloud storage, a database, the network, or a live Fused catalog/account call) are **auto-skipped** by a pattern in `conftest.py`, so the full suite finishes in a few seconds and works headlessly.
+
+Two ways to control a single block:
+- `# doctest: skip` on its first line — exclude it (also skips Tier 1's syntax check).
+- `{/* pmd-metadata: continuation */}` directly above its fence — run it with the previous block's code prepended (for narrative snippets that reuse earlier names).
+
+Run it locally (e.g. before pushing) against the whole tree or specific files:
 
 ```bash
-pip install pre-commit
-pre-commit install
+uv run utils/run_doc_execution.py                      # full docs/ tree
+uv run utils/run_doc_execution.py docs/guide/foo.mdx   # specific files
 ```
 
-After this, every `git commit` that touches a `.mdx` or `.md` file will run the syntax check on the changed files only.
-
-### Running Tier 2 locally
-
-Tier 2 (pytest-markdown-docs) requires a pre-authenticated fused session locally — running unauthenticated causes fused to open browser OAuth windows. In CI (headless), auth errors surface as test failures instead. Only run locally if you're already authenticated:
-
-```bash
-uv run --with pytest --with pytest-markdown-docs --with fused \
-  pytest --markdown-docs \
-    --ignore=docs/python-sdk/api-reference \
-    --ignore=docs/python-sdk/top-level-functions.mdx \
-    --ignore=docs/workbench/integrations \
-    --tb=short \
-    -q docs/
-```
+(The Tier 1 syntax check still runs both in CI and as an optional pre-commit hook — `pip install pre-commit && pre-commit install`.)
 
 ## For AI agents — when compacting
 
