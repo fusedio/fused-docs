@@ -1,0 +1,104 @@
+name: Review docs PR
+
+# Triggered automatically when a PR is opened or updated against main.
+# Posts two PR comments:
+#  1. A link to the mechanical SDK review (Fused UDF, public share URL)
+#  2. A Claude-generated qualitative review (4-bucket report)
+# Both comments use hidden markers so re-pushes update in place instead of stacking.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: review-docs-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------- #
+  # Job A — Mechanical UDF review
+  # Posts a single comment with a link to the live HTML report.
+  # The link runs the UDF against Fused cloud on each click, so it
+  # always reflects the latest cloud SDK.
+  # ---------------------------------------------------------------- #
+  mechanical-review:
+    name: Mechanical SDK review (UDF)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build report URLs
+        id: urls
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # URL-encode the repo (e.g. fusedio/fused-docs -> fusedio%2Ffused-docs)
+          REPO_ENC=$(echo -n "$REPO" | sed 's|/|%2F|g')
+          echo "widget=https://www.fused.io/share/fc_z8RQeHReLxcEWyB2nmGJz/widget_dashboard?pr_number=${PR}&repo=${REPO_ENC}" >> $GITHUB_OUTPUT
+          echo "raw=https://udf.ai/fc_z8RQeHReLxcEWyB2nmGJz/review_pr.html?pr_number=${PR}&output=html" >> $GITHUB_OUTPUT
+
+      - name: Upsert PR comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            <!-- review-docs-pr:mechanical -->
+            ## 📄 Mechanical SDK review
+
+            Runs against the **live Fused cloud SDK** — signature comparison, stub detection, missing-export checks. Refreshes on every click.
+
+            🔗 **[Open full report ↗](${{ steps.urls.outputs.widget }})**
+
+            <details><summary>Raw HTML (no widget chrome)</summary>
+
+            ${{ steps.urls.outputs.raw }}
+            </details>
+
+            _Mechanical only — prose, examples, and Workbench UI claims are reviewed in the Claude comment below._
+          edit-mode: replace
+          # find-and-replace by matching the marker in the first line
+          body-includes: "<!-- review-docs-pr:mechanical -->"
+
+  # ---------------------------------------------------------------- #
+  # Job B — Claude qualitative review
+  # Runs the /review-docs-pr skill (committed at .claude/skills/) and
+  # posts the resulting 4-bucket markdown report as a PR comment.
+  # ---------------------------------------------------------------- #
+  claude-review:
+    name: Claude review (L2/L3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run /review-docs-pr skill
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Skill content is committed at .claude/skills/review-docs-pr/SKILL.md
+          # The action picks it up automatically from the project skills directory.
+          prompt: |
+            Run the `review-docs-pr` skill on PR #${{ github.event.pull_request.number }}
+            in repo `${{ github.repository }}`.
+
+            After producing the markdown report, post it as a single PR comment
+            using `gh pr comment ${{ github.event.pull_request.number }} --body-file <file>`.
+
+            Start the comment body with this exact hidden marker on its own line
+            so re-pushes can update the same comment:
+
+                <!-- review-docs-pr:claude -->
+
+            If a comment with that marker already exists, edit it instead of
+            posting a new one. Use:
+
+                gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments
+                # find the comment id whose body starts with the marker
+                gh api -X PATCH repos/${{ github.repository }}/issues/comments/<id> -f body=@<file>
+
+            Do not post any other comments. Do not modify any repo files.
