@@ -1,8 +1,9 @@
 """
 pytest-markdown-docs configuration (Tier 2 doc-snippet execution tests).
 
-Blocks are collected from docs/ and run as pytest tests. Tier 2 runs as a local
-pre-commit hook (`doc-snippet-execution`), not in CI.
+Blocks are collected from docs/ and run as pytest tests. Tier 2 runs in CI
+(the `execution-check` job in .github/workflows/test-doc-snippets.yml); you can
+also run it locally with utils/run_doc_execution.py.
 
 Execution is local and fast: this file defaults fused.run (and direct UDF calls)
 to engine="local" so UDFs run in-process with no auth, and auto-skips any block

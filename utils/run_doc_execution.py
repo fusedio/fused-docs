@@ -6,8 +6,9 @@
 # Tier 2: execute the runnable Python blocks in the docs via
 # pytest-markdown-docs.
 #
-# Runs as a pre-commit hook (changed file paths passed as args). With no args
-# it runs the full docs/ tree (minus generated / credential-gated paths).
+# Runs in CI (the `execution-check` job) over the full docs/ tree. Pass file
+# paths to scope a local run; with no args it runs all of docs/ (minus
+# generated / credential-gated paths).
 #
 # Execution is local: conftest.py defaults fused.run (and direct UDF calls) to
 # engine="local", and auto-skips any block that needs external context — data

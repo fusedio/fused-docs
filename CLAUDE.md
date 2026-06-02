@@ -83,33 +83,24 @@ Every `python` fence in the docs is syntax-checked automatically (pre-commit hoo
 - **Pseudocode blocks** (REPL output, type stubs, emoji annotations, partial signatures, HTML embedded in a python block, bare URLs or other non-Python illustrative content) must start with `# doctest: skip` as their first line. This suppresses both the syntax check and Tier 2 execution without hiding the block from readers.
 - **Generated files** (`docs/python-sdk/api-reference/` and `docs/python-sdk/top-level-functions.mdx`) are excluded from the check automatically — never add skip markers there.
 
-### Installing the pre-commit hook
+### Tier 2 — execution (CI)
 
-```bash
-pip install pre-commit
-pre-commit install
-```
+Tier 2 (the `execution-check` job in `.github/workflows/test-doc-snippets.yml`) executes the runnable Python blocks in the docs via pytest-markdown-docs. It runs **in CI** on every PR — no local pre-commit setup needed.
 
-After this, every `git commit` that touches a `.mdx` or `.md` file runs two hooks on the changed files only: the **Tier 1** syntax check and the **Tier 2** execution check.
-
-### Tier 2 — execution (local pre-commit hook)
-
-Tier 2 (`doc-snippet-execution`) executes the runnable Python blocks in the docs you changed via pytest-markdown-docs. It does **not** run in CI; it runs as a pre-commit hook, scoped to your changed files.
-
-Execution is **local and fast** — `conftest.py` defaults `fused.run` (and direct UDF calls) to `engine="local"`, so UDFs run in-process with no authentication. Blocks that need external context (data files/URLs, cloud storage, a database, the network, or a live Fused catalog/account call) are **auto-skipped** by a pattern in `conftest.py`, so the full suite finishes in a few seconds. No `fused login` is required for the suite to pass; logging in only matters for a block that explicitly opts into remote execution.
+Execution is **local-engine and fast** — `conftest.py` defaults `fused.run` (and direct UDF calls) to `engine="local"`, so UDFs run in-process with no authentication. Blocks that need external context (data files/URLs, cloud storage, a database, the network, or a live Fused catalog/account call) are **auto-skipped** by a pattern in `conftest.py`, so the full suite finishes in a few seconds and works headlessly.
 
 Two ways to control a single block:
 - `# doctest: skip` on its first line — exclude it (also skips Tier 1's syntax check).
 - `{/* pmd-metadata: continuation */}` directly above its fence — run it with the previous block's code prepended (for narrative snippets that reuse earlier names).
 
-Run it manually against the whole tree, or just specific files:
+Run it locally (e.g. before pushing) against the whole tree or specific files:
 
 ```bash
 uv run utils/run_doc_execution.py                      # full docs/ tree
 uv run utils/run_doc_execution.py docs/guide/foo.mdx   # specific files
 ```
 
-To bypass it for a single commit (e.g. WIP): `SKIP=doc-snippet-execution git commit ...`.
+(The Tier 1 syntax check still runs both in CI and as an optional pre-commit hook — `pip install pre-commit && pre-commit install`.)
 
 ## For AI agents — when compacting
 
