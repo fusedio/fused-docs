@@ -624,3 +624,238 @@ result = result.replace("`fused.submit()`", "[`fused.submit()`](/python-sdk/top-
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "h3.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
+
+
+## ---------------------------------------------------------------------------
+## CLI reference (docs/cli/) — generated from the live Click command tree
+## ---------------------------------------------------------------------------
+#
+# Mechanical generation: imports the installed `fused` CLI (a Click group) and
+# renders one page per top-level command — help, usage synopsis, and an options
+# table — plus the overview command table. No hand-written prose; edit the CLI
+# command definitions in fused-py (or this generator) instead of the .mdx files.
+
+import click
+from fused.cli import cli as cli_group
+
+CLI_DIR = ROOT / "docs" / "cli"
+
+# Top-level commands that get their own page, in sidebar order. Everything else
+# (login, logout, whoami, completion) is listed in the overview command table.
+CLI_PAGES = [
+    "canvas",
+    "claude",
+    "cronjob",
+    "files",
+    "integrations",
+    "json-ui",
+    "run",
+    "secrets",
+    "udf",
+    "udf-schema",
+]
+
+_CLI_TYPE_METAVARS = {
+    "text": "TEXT",
+    "integer": "INTEGER",
+    "float": "FLOAT",
+    "path": "PATH",
+    "filename": "PATH",
+    "file": "FILENAME",
+    "boolean": "",
+}
+
+
+def _cli_clean(text: str) -> str:
+    """Collapse a Click help string to a single clean markdown line."""
+    if not text:
+        return ""
+    text = text.replace("\b", "")
+    text = re.sub(r"``([^`]+)``", r"`\1`", text)
+    return " ".join(text.split())
+
+
+def _cli_short(cmd) -> str:
+    return _cli_clean(cmd.get_short_help_str(limit=300))
+
+
+def _cli_metavar(param) -> str:
+    t = param.type
+    if isinstance(t, click.Choice):
+        return "[" + "|".join(str(c) for c in t.choices) + "]"
+    name = (getattr(t, "name", "") or "").lower()
+    return _CLI_TYPE_METAVARS.get(name, name.upper())
+
+
+def _cli_flag_cell(param) -> str:
+    """Single backtick-wrapped flag cell, e.g. `--engine [remote\\|local]`."""
+    if param.secondary_opts:  # boolean --flag/--no-flag pair
+        inside = " / ".join(param.opts + param.secondary_opts)
+    else:
+        metavar = "" if param.is_flag else _cli_metavar(param)
+        inside = ", ".join(param.opts) + (f" {metavar}" if metavar else "")
+    return "`" + inside.replace("|", "\\|") + "`"
+
+
+def _cli_desc_cell(param, with_default: bool = True) -> str:
+    parts = []
+    if param.help:
+        parts.append(_cli_clean(param.help))
+    default = param.default
+    if (
+        with_default
+        and default is not None
+        and not callable(default)
+        and not (param.is_flag and default is False)
+    ):
+        parts.append(f"(default: `{default}`)")
+    return (" ".join(parts) or "—").replace("|", "\\|")
+
+
+def _cli_options_table(cmd) -> str:
+    opts = [
+        p
+        for p in cmd.params
+        if isinstance(p, click.Option) and not getattr(p, "hidden", False)
+    ]
+    if not opts:
+        return ""
+    rows = ["| Flag | Description |", "|---|---|"]
+    rows += [f"| {_cli_flag_cell(p)} | {_cli_desc_cell(p)} |" for p in opts]
+    return "\n".join(rows)
+
+
+def _cli_synopsis(cmd, path: str) -> str:
+    parts = [path]
+    for p in cmd.params:
+        if isinstance(p, click.Argument):
+            name = p.name.upper()
+            if p.nargs == -1:
+                name = f"[{name}...]"
+            elif not p.required:
+                name = f"[{name}]"
+            parts.append(name)
+    if any(
+        isinstance(p, click.Option) and not getattr(p, "hidden", False)
+        for p in cmd.params
+    ):
+        parts.append("[OPTIONS]")
+    return " ".join(parts)
+
+
+def _cli_render_command(cmd, path: str, level: int) -> str:
+    """Render a sub(command) at the given heading level, recursing into groups."""
+    h = "#" * min(level, 4)
+    out = [f"{h} `{path}`", ""]
+    short = _cli_short(cmd)
+    if short:
+        out += [short, ""]
+    if isinstance(cmd, click.Group):
+        subs = [
+            (n, s)
+            for n, s in sorted(cmd.commands.items())
+            if not getattr(s, "hidden", False)
+        ]
+        out += ["| Subcommand | Description |", "|---|---|"]
+        out += [f"| `{n}` | {_cli_short(s)} |" for n, s in subs]
+        out.append("")
+        for n, s in subs:
+            out.append(_cli_render_command(s, f"{path} {n}", level + 1))
+    else:
+        out += ["```", _cli_synopsis(cmd, path), "```", ""]
+        table = _cli_options_table(cmd)
+        if table:
+            out += ["**Options**", "", table, ""]
+    return "\n".join(out)
+
+
+def _cli_render_page(name: str) -> str:
+    cmd = cli_group.commands[name]
+    out = [
+        "---",
+        f"id: {name}",
+        f"title: fused {name}",
+        f"sidebar_label: fused {name}",
+        "---",
+        "",
+        f"# `fused {name}`",
+        "",
+    ]
+    short = _cli_short(cmd)
+    if short:
+        out += [short, ""]
+    if isinstance(cmd, click.Group):
+        out += ["```", f"fused {name} [SUBCOMMAND] [OPTIONS]", "```", ""]
+        subs = [
+            (n, s)
+            for n, s in sorted(cmd.commands.items())
+            if not getattr(s, "hidden", False)
+        ]
+        out += ["## Subcommands", "", "| Subcommand | Description |", "|---|---|"]
+        out += [f"| `{n}` | {_cli_short(s)} |" for n, s in subs]
+        out.append("")
+        for n, s in subs:
+            out.append(_cli_render_command(s, f"fused {name} {n}", 2))
+            out.append("")
+    else:
+        out += ["```", _cli_synopsis(cmd, f"fused {name}"), "```", ""]
+        table = _cli_options_table(cmd)
+        if table:
+            out += ["## Options", "", table, ""]
+    return "\n".join(out) + "\n"
+
+
+# Per-page command files
+for _name in CLI_PAGES:
+    if _name not in cli_group.commands:
+        print(f"Warning: CLI command '{_name}' not found, skipping page")
+        continue
+    with open(CLI_DIR / f"{_name}.mdx", "w", encoding="utf-8") as f:
+        f.write(escape_mdx_braces(_cli_render_page(_name)))
+
+# Overview page: global flags + a generated command table
+_global_rows = ["| Flag | Env var | Description |", "|---|---|---|"]
+for p in cli_group.params:
+    if isinstance(p, click.Option) and not getattr(p, "hidden", False):
+        envvar = f"`{p.envvar}`" if p.envvar else ""
+        _global_rows.append(
+            f"| {_cli_flag_cell(p)} | {envvar} | {_cli_desc_cell(p, with_default=False)} |"
+        )
+
+_command_rows = ["| Command | Description |", "|---|---|"]
+for _name in sorted(cli_group.commands):
+    _cmd = cli_group.commands[_name]
+    if getattr(_cmd, "hidden", False):
+        continue
+    _label = f"[`fused {_name}`](/cli/{_name})" if _name in CLI_PAGES else f"`fused {_name}`"
+    _command_rows.append(f"| {_label} | {_cli_short(_cmd)} |")
+
+_overview = f"""---
+id: overview
+title: CLI Reference
+sidebar_label: Overview
+---
+
+# CLI Reference
+
+The `fused` CLI lets you manage Fused from your terminal — run UDFs, manage canvases and files, handle secrets, and connect integrations. Install it with the `fused` package:
+
+```bash
+pip install --upgrade fused
+```
+
+## Global flags
+
+These flags apply to every command:
+
+{chr(10).join(_global_rows)}
+
+## Commands
+
+{chr(10).join(_command_rows)}
+"""
+
+with open(CLI_DIR / "overview.mdx", "w", encoding="utf-8") as f:
+    f.write(escape_mdx_braces(_overview))
+
+print(f"Generated CLI reference for {len(CLI_PAGES)} commands + overview")
