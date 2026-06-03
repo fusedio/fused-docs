@@ -11,8 +11,7 @@ This command runs in two modes:
 
 When in **Automated mode**:
 1. **Skip Step 1's prompts.** Take the version and date from the arguments, and read the merged-PR list from `release-notes.md` in the repo root (GitHub's auto-generated notes between the previous and current release tag).
-2. Apply Steps 2–4 exactly as written to produce the entry and insert it at the top of `docs/python-sdk/changelog.mdx`.
-3. **Skip Step 5 entirely.** Do not create a branch, commit, open a PR, or write any extra files — the workflow handles git and opens the PR via `peter-evans/create-pull-request`. Edit `changelog.mdx` and stop.
+2. Apply Steps 2–4 to produce the entry and insert it at the top of `docs/python-sdk/changelog.mdx`, then stop. Don't run Step 5 — the workflow commits the change and opens the PR.
 
 ## Step 1 — Gather the inputs
 
