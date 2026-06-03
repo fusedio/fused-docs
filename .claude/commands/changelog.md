@@ -11,9 +11,8 @@ This command runs in two modes:
 
 When in **Automated mode**:
 1. **Skip Step 1's prompts.** Take the version and date from the arguments, and read the merged-PR list from `release-notes.md` in the repo root (GitHub's auto-generated notes between the previous and current release tag).
-2. Apply Steps 2–4 exactly as written to produce the entry and insert it at the top of `docs/python-sdk/changelog.mdx`.
-3. For each named feature, insert a placeholder comment `{/* TODO: add screenshot/GIF */}` where the media embed goes — screenshots cannot be captured in CI and are added by a human before merge.
-4. **Skip Step 5 entirely.** Do not create a branch, commit, or open a PR — the workflow handles git and opens the PR via `peter-evans/create-pull-request`. Edit `changelog.mdx` and stop.
+2. Apply Steps 2–4 to produce the entry and insert it at the top of `docs/python-sdk/changelog.mdx`, then stop. Don't run Step 5 — the workflow commits the change and opens the PR.
+3. If the entry has any named feature sections, also write `changelog-media-todo.md` in the repo root — one bullet per named feature. The workflow posts it as a PR comment and then discards it, so it's never committed to the repo. Skip the file if there are no named features.
 
 ## Step 1 — Gather the inputs
 
@@ -35,8 +34,8 @@ Read through all the provided changes and sort them into three buckets:
 | Bucket | What goes here |
 |--------|----------------|
 | **Named features** (0–3 items) | The most impactful, user-visible new capabilities. Each gets its own bold heading + 1–2 sentence description + optional screenshot/video embed. |
-| **Improvements** | Smaller enhancements, UI polish, new options, performance wins that users notice. |
-| **Bug fixes** | Fixed regressions or broken behaviors. Start each bullet with "Fixed:". |
+| **Improvements** (5–6 max) | Smaller enhancements, UI polish, new options, performance wins that users notice. Pick only the **5–6 most important, user-facing** ones — this is a highlight reel, not an exhaustive list. |
+| **Bug fixes** (4–5 max) | Fixed regressions or broken behaviors users would actually notice. Pick only the **4–5 most important**. Start each bullet with "Fixed:". |
 
 **Exclude entirely** (do not mention):
 - Infrastructure upgrades (Amazon Linux, Kubernetes, DB versions)
@@ -57,9 +56,9 @@ Read through all the provided changes and sort them into three buckets:
 Use Docusaurus-style relative paths for all internal links. Link to relevant docs pages wherever it makes sense.
 
 ### Section structure
-- **0–3 named feature sections** — bold heading (`**Feature name**`), followed by 1–2 sentences of plain English description. Add a screenshot or video embed if one exists.
-- **Improvements** — flat unordered list, grouped by topic (all canvas items together, all AI items together, all home page items together, etc.). Do not list in PR order.
-- **Bug fixes** — flat unordered list, each starting with `Fixed:`.
+- **0–3 named feature sections** — bold heading (`**Feature name**`), followed by 1–2 sentences of plain English description. Embed a screenshot/video only if you have a real asset URL; never insert a placeholder or TODO.
+- **Improvements** — flat unordered list of the **5–6 most important** user-facing items, grouped by topic (all canvas items together, all AI items together, etc.). Do not list in PR order, and do not dump every change.
+- **Bug fixes** — flat unordered list of the **4–5 most important** user-facing fixes, each starting with `Fixed:`.
 
 ### Tone
 - Write for end users, not engineers. Avoid jargon.
@@ -76,8 +75,6 @@ Insert the new entry at the top of `docs/python-sdk/changelog.mdx`, immediately 
 **{Feature 1 heading}**
 
 {1–2 sentence description.}
-
-{Optional: screenshot or video embed — copy the JSX pattern from a nearby entry}
 
 See the [{relevant docs page}]({path}) to get started.
 
