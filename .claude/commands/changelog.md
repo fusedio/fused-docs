@@ -2,6 +2,19 @@
 
 Generate a new changelog entry for `docs/python-sdk/changelog.mdx`.
 
+## Automated mode (CI)
+
+This command runs in two modes:
+
+- **Interactive mode** — a human runs `/changelog` with no arguments. Follow Step 1 to gather inputs, and Step 5 to open the PR.
+- **Automated mode (CI)** — invoked as `/changelog <version> <date>` (e.g. `/changelog 2.9.0 2026-06-15`) with a `release-notes.md` file present in the repo root. This is how the `changelog.yaml` workflow in `fusedlabs/application` calls it after a release.
+
+When in **Automated mode**:
+1. **Skip Step 1's prompts.** Take the version and date from the arguments, and read the merged-PR list from `release-notes.md` in the repo root (GitHub's auto-generated notes between the previous and current release tag).
+2. Apply Steps 2–4 exactly as written to produce the entry and insert it at the top of `docs/python-sdk/changelog.mdx`.
+3. For each named feature, insert a placeholder comment `{/* TODO: add screenshot/GIF */}` where the media embed goes — screenshots cannot be captured in CI and are added by a human before merge.
+4. **Skip Step 5 entirely.** Do not create a branch, commit, or open a PR — the workflow handles git and opens the PR via `peter-evans/create-pull-request`. Edit `changelog.mdx` and stop.
+
 ## Step 1 — Gather the inputs
 
 Ask the user for:
@@ -84,6 +97,8 @@ See the [{relevant docs page}]({path}) to get started.
 ```
 
 ## Step 5 — Open a PR
+
+> **Automated mode (CI):** skip this step. The `changelog.yaml` workflow opens the PR for you — just leave the edited `changelog.mdx` in the working tree.
 
 1. Create a branch named `changelog_{version_underscored}` (e.g. `changelog_2_6_0`)
 2. Commit with message: `docs: add v{VERSION} changelog entry`
