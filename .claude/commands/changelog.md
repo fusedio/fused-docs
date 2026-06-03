@@ -12,6 +12,7 @@ This command runs in two modes:
 When in **Automated mode**:
 1. **Skip Step 1's prompts.** Take the version and date from the arguments, and read the merged-PR list from `release-notes.md` in the repo root (GitHub's auto-generated notes between the previous and current release tag).
 2. Apply Steps 2–4 to produce the entry and insert it at the top of `docs/python-sdk/changelog.mdx`, then stop. Don't run Step 5 — the workflow commits the change and opens the PR.
+3. If the entry has any named feature sections, also write `changelog-media-todo.md` in the repo root — one bullet per named feature. The workflow posts it as a PR comment and then discards it, so it's never committed to the repo. Skip the file if there are no named features.
 
 ## Step 1 — Gather the inputs
 
