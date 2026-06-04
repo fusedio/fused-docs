@@ -51,7 +51,7 @@ function LLMShareButtonInner(): JSX.Element {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const url = window.location.href;
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -60,23 +60,32 @@ function LLMShareButtonInner(): JSX.Element {
       }
     }
     document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
   }, []);
 
   function handleCopy() {
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setOpen(false);
-    setTimeout(() => setCopied(false), 2000);
+    // Read URL at click time to avoid stale value on SPA navigation
+    const url = window.location.href;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setOpen(false);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setCopied(false), 2000);
+    });
   }
 
   function handleClaude() {
-    window.open(`https://claude.ai/new?q=${encodeURIComponent(PROMPT(url))}`, "_blank");
+    const url = window.location.href;
+    window.open(`https://claude.ai/new?q=${encodeURIComponent(PROMPT(url))}`, "_blank", "noopener,noreferrer");
     setOpen(false);
   }
 
   function handleChatGPT() {
-    window.open(`https://chatgpt.com/?q=${encodeURIComponent(PROMPT(url))}`, "_blank");
+    const url = window.location.href;
+    window.open(`https://chatgpt.com/?q=${encodeURIComponent(PROMPT(url))}`, "_blank", "noopener,noreferrer");
     setOpen(false);
   }
 

@@ -1,7 +1,5 @@
 import React from "react";
-import clsx from "clsx";
 import Layout from "@theme/Layout";
-import BlogSidebar from "@theme/BlogSidebar";
 import Link from "@docusaurus/Link";
 import { useLocation } from "@docusaurus/router";
 import LLMShareButton from "@site/src/components/LLMShareButton";
