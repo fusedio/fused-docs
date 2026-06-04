@@ -146,6 +146,7 @@ const config: Config = {
           label: "Workbench Manual",
         },
         { to: "/blog", label: "Blog", position: "left" },
+        { to: "/notes", label: "Notes", position: "left" },
         {
           href: "https://github.com/fusedio/udfs",
           label: "GitHub",
@@ -334,6 +335,27 @@ const config: Config = {
         //   }
         //   return undefined;
         // },
+      },
+    ],
+    [
+      "@docusaurus/plugin-content-blog",
+      {
+        id: "notes",
+        routeBasePath: "notes",
+        path: "./notes",
+        blogTitle: "Road to Zero Coding — Notes",
+        blogDescription: "Short dispatches from Fused as we build toward zero-code data workflows.",
+        blogSidebarTitle: "Recent notes",
+        blogSidebarCount: 10,
+        showReadingTime: false,
+        postsPerPage: 20,
+        feedOptions: {
+          type: ["rss", "atom"],
+          title: "Fused Notes — Road to Zero Coding",
+          description: "Short dispatches from Fused as we build toward zero-code data workflows.",
+          copyright: `Copyright © ${new Date().getFullYear()} Fused, Inc.`,
+          language: "en",
+        },
       },
     ],
     // Only load Google Analytics in production

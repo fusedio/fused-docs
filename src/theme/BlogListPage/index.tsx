@@ -95,11 +95,55 @@ function BlogPostCard({
   );
 }
 
+function formatDateShort(dateString: string): string {
+  const [year, month, day] = dateString.split('T')[0].split('-');
+  const date = new Date(`${year}-${month}-${day}T12:00:00Z`);
+  return new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(date);
+}
+
+function NotesListPage(props: Props): JSX.Element {
+  const { metadata, items } = props;
+  return (
+    <BlogLayout
+      title="Road to Zero Coding — Notes"
+      description={metadata.blogDescription}
+      sidebar={undefined}
+    >
+      <div className={styles.notesContainer}>
+        <h1 className={styles.notesHeading}>Road to Zero Coding</h1>
+        <p className={styles.notesDescription}>{metadata.blogDescription}</p>
+        <ul className={styles.notesList}>
+          {items.map(({ content: BlogPostContent }) => {
+            const { title, permalink, date } = BlogPostContent.metadata;
+            return (
+              <li key={permalink} className={styles.notesItem}>
+                <span className={styles.notesDate}>{formatDateShort(date)}</span>
+                <Link to={permalink} className={styles.notesLink}>
+                  {title}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </BlogLayout>
+  );
+}
+
 export default function BlogListPage(props: Props): JSX.Element {
   const { metadata, items } = props;
   const {
     siteConfig: { title: siteTitle },
   } = useDocusaurusContext();
+
+  if (metadata.permalink.startsWith('/notes')) {
+    return <NotesListPage {...props} />;
+  }
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<CategoryKey>('all');
