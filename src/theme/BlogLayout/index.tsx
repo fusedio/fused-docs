@@ -1,22 +1,28 @@
 import React from "react";
-import clsx from "clsx";
 import Layout from "@theme/Layout";
-import BlogSidebar from "@theme/BlogSidebar";
 import Link from "@docusaurus/Link";
+import { useLocation } from "@docusaurus/router";
+import LLMShareButton from "@site/src/components/LLMShareButton";
 
 import type { Props } from "@theme/BlogLayout";
 
 export default function BlogLayout(props: Props): JSX.Element {
   const { sidebar, toc, children, ...layoutProps } = props;
-  const hasSidebar = sidebar && sidebar.items.length > 0;
+  const { pathname } = useLocation();
+
+  // Don't show on list pages (/blog, /shorts, /blog/page/N, /shorts/page/N)
+  const isListPage = /^\/(blog|shorts)(\/page\/\d+)?\/?$/.test(pathname);
 
   return (
     <Layout {...layoutProps}>
       <div className="container margin-vert--lg">
         <div className="row ">
-          <main
-            className="col"
-          >
+          <main className="col">
+            {!isListPage && (
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.5rem" }}>
+                <LLMShareButton />
+              </div>
+            )}
             {children}
           </main>
 
