@@ -6,6 +6,7 @@ export default function NotesFooter(): JSX.Element {
     <div className={styles.footer}>
       <hr className={styles.divider} />
 
+      {/* Newsletter embed — coming soon
       <div className={styles.subscribeSection}>
         <h3 className={styles.subscribeHeading}>Get new notes in your inbox</h3>
         <p className={styles.subscribeSubtext}>
@@ -16,6 +17,7 @@ export default function NotesFooter(): JSX.Element {
           Newsletter embed — paste Beehiiv code here
         </div>
       </div>
+      */}
 
       {/* Connect your agent section — coming soon
       <div className={styles.connectSection}>
