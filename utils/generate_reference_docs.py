@@ -690,6 +690,25 @@ def _cli_flag_cell(param) -> str:
     return "`" + inside.replace("|", "\\|") + "`"
 
 
+def _cli_meaningful_default(default) -> bool:
+    """True if `default` is a real, user-facing default worth showing.
+
+    Excludes None, callables, fused's internal UNSET sentinel, and empty
+    collections (the implicit default for multiple=True / repeatable options) —
+    none of which are meaningful as a documented "default" to a reader.
+    """
+    if default is None or callable(default):
+        return False
+    if isinstance(default, (tuple, list, set, frozenset, dict)) and len(default) == 0:
+        return False
+    if "Sentinel" in type(default).__name__:
+        return False
+    text = str(default)
+    if "Sentinel" in text or "UNSET" in text:
+        return False
+    return True
+
+
 def _cli_desc_cell(param, with_default: bool = True) -> str:
     parts = []
     if param.help:
@@ -697,8 +716,7 @@ def _cli_desc_cell(param, with_default: bool = True) -> str:
     default = param.default
     if (
         with_default
-        and default is not None
-        and not callable(default)
+        and _cli_meaningful_default(default)
         and not (param.is_flag and default is False)
     ):
         parts.append(f"(default: `{default}`)")
