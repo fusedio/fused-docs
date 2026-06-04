@@ -640,20 +640,13 @@ from fused.cli import cli as cli_group
 
 CLI_DIR = ROOT / "docs" / "cli"
 
-# Top-level commands that get their own page, in sidebar order. Everything else
-# (login, logout, whoami, completion) is listed in the overview command table.
-CLI_PAGES = [
-    "canvas",
-    "claude",
-    "cronjob",
-    "files",
-    "integrations",
-    "json-ui",
-    "run",
-    "secrets",
-    "udf",
-    "udf-schema",
-]
+# Every non-hidden top-level command gets its own page (sorted for stable
+# sidebar order). New commands appear automatically — nothing to maintain here.
+CLI_PAGES = sorted(
+    name
+    for name, cmd in cli_group.commands.items()
+    if not getattr(cmd, "hidden", False)
+)
 
 _CLI_TYPE_METAVARS = {
     "text": "TEXT",
