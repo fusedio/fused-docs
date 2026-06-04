@@ -135,6 +135,29 @@ api_listing = [
     "get_chunk_from_table",
 ]
 
+# Append any public top-level functions from `fused.__all__` not already listed
+# (e.g. find_dataset, load_async, register_dataset, run_async) so new functions
+# appear automatically. The curated entries above keep their preferred order;
+# auto-detected ones are appended alphabetically. Modules, attributes, and
+# unresolvable re-export aliases are skipped.
+_known_top = set(api_listing)
+for name in sorted(fused.__all__):
+    if name.startswith("_") or name in _known_top:
+        continue
+    member = mod.members.get(name)
+    if member is None:
+        continue
+    try:
+        if (
+            member.kind.value == "function"
+            and member.docstring
+            and member.docstring.value.strip()
+        ):
+            api_listing.append(name)
+    except Exception:
+        # Unresolvable alias (e.g. load_ipython_extension) — skip
+        continue
+
 result = """\
 ---
 sidebar_label: Top-Level Functions
@@ -248,54 +271,52 @@ result = result.replace("## fused.cache", "## @fused.cache")
 # griffe cannot handl the x, y, z multiple parameters on one line
 result = result.replace("**x,** (<code>y, z</code>)", "**x, y, z** (`int`)")
 
-with open(ROOT / "docs" / "python-sdk" / "top-level-functions.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "top-level-functions.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
 
 ## `fused.api` page
 
-api_listing = [
-    # Auth
-    "whoami",
-    "access_token",
-    "auth_scheme",
-    "logout",
-    # File operations
-    "delete",
-    "list",
-    "get",
-    "download",
-    "upload",
-    "sign_url",
-    "sign_url_prefix",
-    "resolve",
-    # UDFs / apps
-    "get_udfs",
-    "get_apps",
-    # Jobs
-    "job_get_logs",
-    "job_print_logs",
-    "job_tail_logs",
-    "job_get_status",
-    "job_cancel",
-    "job_get_exec_time",
-    "job_wait_for_job",
-    "job_get_results",
-    "job_wait_for_results",
-    # Scheduling
-    "schedule_udf",
-    "schedule_list",
-    # Utilities
-    "session_token",
-    "team_info",
-    "enable_gcs",
-    "log",
-    # Snowflake
-    "snowflake_connect",
-    "snowflake_query",
-    # Note: Functions that no longer exist will be automatically skipped with a warning
-]
+import fused.api as _fused_api
+
+mod_api = mod["api"]
+
+# Auto-detect public fused.api symbols from the module's `__all__`, minus a
+# blocklist of internal/infra items. New integrations (airtable, notion,
+# huggingface, etc.) then appear automatically — no allowlist to maintain.
+API_BLOCKLIST = {
+    "_session_token",       # internal
+    "FusedAPI",             # rendered in its own section below
+    "FusedDockerAPI",       # internal infra
+    "DriveFileSystem",      # internal infra
+    "FdFileSystem",         # internal infra
+    "NotebookCredentials",  # internal infra
+}
+
+# Public but absent from `__all__` — always include.
+_AUTH_SUPPLEMENT = {"access_token", "auth_scheme", "logout"}
+
+# Module-level functions: everything public in `__all__` except the blocklist and
+# the Fused*Connection classes (documented in their own sections below).
+api_listing = sorted(
+    _AUTH_SUPPLEMENT
+    | {
+        name for name in _fused_api.__all__
+        if not name.startswith("_")
+        and name not in API_BLOCKLIST
+        and not (name.startswith("Fused") and name.endswith("Connection"))
+        and name in mod_api.members
+        and mod_api[name].kind.value == "function"
+    }
+)
+
+# Fused*Connection classes each get their own section (Snowflake, Airtable, Notion, …).
+connection_classes = sorted(
+    name for name in _fused_api.__all__
+    if name.startswith("Fused") and name.endswith("Connection")
+    and name not in API_BLOCKLIST
+)
 
 result = """\
 ---
@@ -319,13 +340,11 @@ fused.api.function_name()
 
 """
 
-mod_api = mod["api"]
-
 # fused.api functions — bare name headings (## access_token, not ## fused.api.access_token)
 config_api_mod = dict(default_config)
 config_api_mod["show_root_full_path"] = False
 
-for obj in sorted(api_listing):
+for obj in api_listing:
     if obj not in mod_api.members:
         print(f"Warning: {obj} not found in fused.api module, skipping")
         continue
@@ -386,42 +405,37 @@ for meth in methods:
 """
     result += docstring + "\n" + usage_note + "\n---\n\n"
 
-# fused.api.FusedSnowflakeConnection class
+# fused.api Fused*Connection classes (Snowflake, Airtable, Notion, …).
+# One section per class; methods discovered dynamically so new connections and
+# new methods appear automatically.
+config_conn = dict(default_config)
+config_conn["filters"] = ["__init__"]
+config_conn["summary"] = False
 
-snowflake_methods = [
-    "connect",
-    "query",
-    "execute",
-    "list_databases",
-    "list_schemas",
-    "list_tables",
-    "list_stages",
-    "list_stage_files",
-    "read_stage",
-    "write",
-]
+config_conn_meth = dict(config_conn)
+config_conn_meth["heading_level"] = default_config["heading_level"] + 1
+config_conn_meth["show_root_full_path"] = False
 
-if "FusedSnowflakeConnection" in mod_api.members:
-    snowflake_note = """\
-## Snowflake
+for class_name in connection_classes:
+    if class_name not in mod_api.members:
+        print(f"Warning: {class_name} not found in fused.api module, skipping")
+        continue
+    cls = mod_api[class_name]
+    # Friendly label: FusedSnowflakeConnection -> Snowflake
+    label = class_name.removeprefix("Fused").removesuffix("Connection")
+    result += f"## {label}\n\n## {class_name}\n\n"
+    result += render_object_docs(cls, config_conn) + "\n---\n\n"
 
-## FusedSnowflakeConnection
+    methods = sorted(
+        name for name, member in cls.members.items()
+        if not name.startswith("_")
+        and member.kind.value == "function"
+        and member.docstring and member.docstring.value.strip()
+    )
+    for meth in methods:
+        result += render_object_docs(cls[meth], config_conn_meth) + "\n---\n\n"
 
-"""
-    config_sf = dict(default_config)
-    config_sf["filters"] = ["__init__"]
-    config_sf["summary"] = False
-    result += snowflake_note + render_object_docs(mod_api["FusedSnowflakeConnection"], config_sf) + "\n---\n\n"
-
-    config_sf["heading_level"] = default_config["heading_level"] + 1
-    config_sf["show_root_full_path"] = False
-    for meth in snowflake_methods:
-        if meth not in mod_api["FusedSnowflakeConnection"].members:
-            print(f"Warning: {meth} not found in FusedSnowflakeConnection class, skipping")
-            continue
-        result += render_object_docs(mod_api["FusedSnowflakeConnection"][meth], config_sf) + "\n---\n\n"
-
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "api.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
@@ -458,7 +472,7 @@ config["filters"] = ["!model_config"]
 docstring = render_object_docs(mod["_options"]["Options"], config)
 result += docstring
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "options.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "options.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
@@ -522,7 +536,7 @@ for meth in async_methods:
     docstring = render_object_docs(mod["_submit"]["AsyncJobPool"][meth], config_async)
     result += docstring + "\n---\n\n"
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "jobpool.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "jobpool.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
@@ -547,14 +561,17 @@ a saved UDF with [`fused.load()`](/python-sdk/top-level-functions/#fusedload).
 
 """
 
-# Dynamic: all public Udf members with docstrings (methods + pydantic fields)
-# Picks up new additions automatically — no hardcoded list to maintain.
-# Exclude `original_headers`: its only docstring is "Deprecated." and it's an internal field.
+# Dynamic: all public Udf members with docstrings (methods + pydantic fields).
+# Use `all_members` so methods inherited from `BaseUdf` (schedule, get_schedule,
+# to_fused, etc.) are included — `members` only holds members defined directly on
+# `Udf`. Picks up new additions automatically — no hardcoded list to maintain.
+# Skip deprecation stubs (e.g. `original_headers`, `headers`, `utils`) whose only
+# docstring is "Deprecated.".
 methods = sorted(
-    name for name, member in mod["models"]["Udf"].members.items()
+    name for name, member in mod["models"]["Udf"].all_members.items()
     if not name.startswith("_")
-    and name != "original_headers"
     and member.docstring and member.docstring.value.strip()
+    and member.docstring.value.strip() != "Deprecated."
 )
 
 config = dict(default_config)
@@ -565,7 +582,7 @@ for meth in methods:
     docstring = render_object_docs(mod["models"]["Udf"][meth], config)
     result += docstring + "\n---\n\n"
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
 
 
@@ -605,5 +622,251 @@ for obj in api_listing:
 
 result = result.replace("`fused.submit()`", "[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)")
 
-with open(ROOT / "docs" / "python-sdk" / "api-reference" / "h3.mdx", "w") as f:
+with open(ROOT / "docs" / "python-sdk" / "api-reference" / "h3.mdx", "w", encoding="utf-8") as f:
     f.write(escape_mdx_braces(fix_code_tags(result)))
+
+
+## ---------------------------------------------------------------------------
+## CLI reference (docs/cli/) — generated from the live Click command tree
+## ---------------------------------------------------------------------------
+#
+# Mechanical generation: imports the installed `fused` CLI (a Click group) and
+# renders one page per top-level command — help, usage synopsis, and an options
+# table — plus the overview command table. No hand-written prose; edit the CLI
+# command definitions in fused-py (or this generator) instead of the .mdx files.
+
+import click
+from fused.cli import cli as cli_group
+
+CLI_DIR = ROOT / "docs" / "cli"
+
+# Every non-hidden top-level command gets its own page (sorted for stable
+# sidebar order). New commands appear automatically — nothing to maintain here.
+CLI_PAGES = sorted(
+    name
+    for name, cmd in cli_group.commands.items()
+    if not getattr(cmd, "hidden", False)
+)
+
+_CLI_TYPE_METAVARS = {
+    "text": "TEXT",
+    "integer": "INTEGER",
+    "float": "FLOAT",
+    "path": "PATH",
+    "filename": "PATH",
+    "file": "FILENAME",
+    "boolean": "",
+}
+
+
+def _cli_clean(text: str) -> str:
+    """Collapse a Click help string to a single clean markdown line."""
+    if not text:
+        return ""
+    text = text.replace("\b", "")
+    text = re.sub(r"``([^`]+)``", r"`\1`", text)
+    return " ".join(text.split())
+
+
+def _cli_short(cmd) -> str:
+    return _cli_clean(cmd.get_short_help_str(limit=300))
+
+
+def _cli_metavar(param) -> str:
+    t = param.type
+    if isinstance(t, click.Choice):
+        return "[" + "|".join(str(c) for c in t.choices) + "]"
+    name = (getattr(t, "name", "") or "").lower()
+    return _CLI_TYPE_METAVARS.get(name, name.upper())
+
+
+def _cli_flag_cell(param) -> str:
+    """Single backtick-wrapped flag cell, e.g. `--engine [remote\\|local]`."""
+    if param.secondary_opts:  # boolean --flag/--no-flag pair
+        inside = " / ".join(param.opts + param.secondary_opts)
+    else:
+        metavar = "" if param.is_flag else _cli_metavar(param)
+        inside = ", ".join(param.opts) + (f" {metavar}" if metavar else "")
+    return "`" + inside.replace("|", "\\|") + "`"
+
+
+def _cli_meaningful_default(default) -> bool:
+    """True if `default` is a real, user-facing default worth showing.
+
+    Excludes None, callables, fused's internal UNSET sentinel, and empty
+    collections (the implicit default for multiple=True / repeatable options) —
+    none of which are meaningful as a documented "default" to a reader.
+    """
+    if default is None or callable(default):
+        return False
+    if isinstance(default, (tuple, list, set, frozenset, dict)) and len(default) == 0:
+        return False
+    if "Sentinel" in type(default).__name__:
+        return False
+    text = str(default)
+    if "Sentinel" in text or "UNSET" in text:
+        return False
+    return True
+
+
+def _cli_desc_cell(param, with_default: bool = True) -> str:
+    parts = []
+    if param.help:
+        parts.append(_cli_clean(param.help))
+    default = param.default
+    if (
+        with_default
+        and _cli_meaningful_default(default)
+        and not (param.is_flag and default is False)
+    ):
+        parts.append(f"(default: `{default}`)")
+    return (" ".join(parts) or "—").replace("|", "\\|")
+
+
+def _cli_options_table(cmd) -> str:
+    opts = [
+        p
+        for p in cmd.params
+        if isinstance(p, click.Option) and not getattr(p, "hidden", False)
+    ]
+    if not opts:
+        return ""
+    rows = ["| Flag | Description |", "|---|---|"]
+    rows += [f"| {_cli_flag_cell(p)} | {_cli_desc_cell(p)} |" for p in opts]
+    return "\n".join(rows)
+
+
+def _cli_synopsis(cmd, path: str) -> str:
+    parts = [path]
+    for p in cmd.params:
+        if isinstance(p, click.Argument):
+            name = p.name.upper()
+            if p.nargs == -1:
+                name = f"[{name}...]"
+            elif not p.required:
+                name = f"[{name}]"
+            parts.append(name)
+    if any(
+        isinstance(p, click.Option) and not getattr(p, "hidden", False)
+        for p in cmd.params
+    ):
+        parts.append("[OPTIONS]")
+    return " ".join(parts)
+
+
+def _cli_render_command(cmd, path: str, level: int) -> str:
+    """Render a sub(command) at the given heading level, recursing into groups."""
+    h = "#" * min(level, 4)
+    out = [f"{h} `{path}`", ""]
+    short = _cli_short(cmd)
+    if short:
+        out += [short, ""]
+    if isinstance(cmd, click.Group):
+        subs = [
+            (n, s)
+            for n, s in sorted(cmd.commands.items())
+            if not getattr(s, "hidden", False)
+        ]
+        out += ["| Subcommand | Description |", "|---|---|"]
+        out += [f"| `{n}` | {_cli_short(s)} |" for n, s in subs]
+        out.append("")
+        for n, s in subs:
+            out.append(_cli_render_command(s, f"{path} {n}", level + 1))
+    else:
+        out += ["```", _cli_synopsis(cmd, path), "```", ""]
+        table = _cli_options_table(cmd)
+        if table:
+            out += ["**Options**", "", table, ""]
+    return "\n".join(out)
+
+
+def _cli_render_page(name: str) -> str:
+    cmd = cli_group.commands[name]
+    out = [
+        "---",
+        f"id: {name}",
+        f"title: fused {name}",
+        f"sidebar_label: fused {name}",
+        "---",
+        "",
+        f"# `fused {name}`",
+        "",
+    ]
+    short = _cli_short(cmd)
+    if short:
+        out += [short, ""]
+    if isinstance(cmd, click.Group):
+        out += ["```", f"fused {name} [SUBCOMMAND] [OPTIONS]", "```", ""]
+        subs = [
+            (n, s)
+            for n, s in sorted(cmd.commands.items())
+            if not getattr(s, "hidden", False)
+        ]
+        out += ["## Subcommands", "", "| Subcommand | Description |", "|---|---|"]
+        out += [f"| `{n}` | {_cli_short(s)} |" for n, s in subs]
+        out.append("")
+        for n, s in subs:
+            out.append(_cli_render_command(s, f"fused {name} {n}", 2))
+            out.append("")
+    else:
+        out += ["```", _cli_synopsis(cmd, f"fused {name}"), "```", ""]
+        table = _cli_options_table(cmd)
+        if table:
+            out += ["## Options", "", table, ""]
+    return "\n".join(out) + "\n"
+
+
+# Per-page command files
+for _name in CLI_PAGES:
+    if _name not in cli_group.commands:
+        print(f"Warning: CLI command '{_name}' not found, skipping page")
+        continue
+    with open(CLI_DIR / f"{_name}.mdx", "w", encoding="utf-8") as f:
+        f.write(escape_mdx_braces(_cli_render_page(_name)))
+
+# Overview page: global flags + a generated command table
+_global_rows = ["| Flag | Env var | Description |", "|---|---|---|"]
+for p in cli_group.params:
+    if isinstance(p, click.Option) and not getattr(p, "hidden", False):
+        envvar = f"`{p.envvar}`" if p.envvar else ""
+        _global_rows.append(
+            f"| {_cli_flag_cell(p)} | {envvar} | {_cli_desc_cell(p, with_default=False)} |"
+        )
+
+_command_rows = ["| Command | Description |", "|---|---|"]
+for _name in sorted(cli_group.commands):
+    _cmd = cli_group.commands[_name]
+    if getattr(_cmd, "hidden", False):
+        continue
+    _label = f"[`fused {_name}`](/cli/{_name})" if _name in CLI_PAGES else f"`fused {_name}`"
+    _command_rows.append(f"| {_label} | {_cli_short(_cmd)} |")
+
+_overview = f"""---
+id: overview
+title: CLI Reference
+sidebar_label: Overview
+---
+
+# CLI Reference
+
+The `fused` CLI lets you manage Fused from your terminal — run UDFs, manage canvases and files, handle secrets, and connect integrations. Install it with the `fused` package:
+
+```bash
+pip install --upgrade fused
+```
+
+## Global flags
+
+These flags apply to every command:
+
+{chr(10).join(_global_rows)}
+
+## Commands
+
+{chr(10).join(_command_rows)}
+"""
+
+with open(CLI_DIR / "overview.mdx", "w", encoding="utf-8") as f:
+    f.write(escape_mdx_braces(_overview))
+
+print(f"Generated CLI reference for {len(CLI_PAGES)} commands + overview")

@@ -26,6 +26,29 @@ const HIDDEN_PARAMS = {
   // 'load': ['internal_param', 'debug'],
 };
 
+// Inline raw-loader static assets (e.g. requirements_fused.txt) into the
+// full-text output. These files are embedded in pages via webpack raw-loader
+// and would otherwise be stripped from the LLM text along with their import
+// line, leaving the surrounding prose pointing at content that isn't there.
+function inlineRawLoaderAssets(content) {
+  const importRe = /import\s+\w+\s+from\s+['"]raw-loader!\/([^'"]+)['"];?/g;
+  let match;
+  let appended = "";
+  while ((match = importRe.exec(content)) !== null) {
+    const assetPath = path.join(__dirname, "..", "static", match[1]);
+    try {
+      const fileText = fs.readFileSync(assetPath, "utf8").trim();
+      appended += `\n\n\`\`\`\n${fileText}\n\`\`\`\n`;
+    } catch (error) {
+      console.warn(
+        `Warning: could not inline raw-loader asset ${assetPath}:`,
+        error.message,
+      );
+    }
+  }
+  return appended;
+}
+
 function extractFrontmatter(filePath, isFullVersion = false) {
   try {
     const content = fs.readFileSync(filePath, "utf8");
@@ -95,8 +118,12 @@ function extractLongDescription(content) {
 }
 
 function cleanMarkdownForFullText(content) {
+  // Inline any raw-loader static assets before the import-stripping below
+  // removes the references to them.
+  const inlinedAssets = inlineRawLoaderAssets(content);
+
   // Clean markdown but preserve structure and code blocks for full text version
-  return content
+  const cleaned = content
     .replace(/import\s+.*?from\s+['"].*?['"];?\s*\n/g, "") // Remove import statements
     .replace(/export\s+.*?;?\s*\n/g, "") // Remove export statements
     .replace(/<!--[\s\S]*?-->/g, "") // Remove comments
@@ -108,6 +135,8 @@ function cleanMarkdownForFullText(content) {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // Replace links with text only
     .replace(/\n\s*\n\s*\n/g, "\n\n") // Remove excessive newlines
     .trim();
+
+  return cleaned + inlinedAssets;
 }
 
 function simplifyPythonSignatures(content) {

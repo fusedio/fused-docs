@@ -262,12 +262,18 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "cli/overview", label: "Overview" },
         { type: "doc", id: "cli/canvas", label: "fused canvas" },
         { type: "doc", id: "cli/claude", label: "fused claude" },
+        { type: "doc", id: "cli/completion", label: "fused completion" },
+        { type: "doc", id: "cli/cronjob", label: "fused cronjob" },
         { type: "doc", id: "cli/files", label: "fused files" },
         { type: "doc", id: "cli/integrations", label: "fused integrations" },
         { type: "doc", id: "cli/json-ui", label: "fused json-ui" },
+        { type: "doc", id: "cli/login", label: "fused login" },
+        { type: "doc", id: "cli/logout", label: "fused logout" },
         { type: "doc", id: "cli/run", label: "fused run" },
         { type: "doc", id: "cli/secrets", label: "fused secrets" },
+        { type: "doc", id: "cli/udf", label: "fused udf" },
         { type: "doc", id: "cli/udf-schema", label: "fused udf-schema" },
+        { type: "doc", id: "cli/whoami", label: "fused whoami" },
       ],
     },
 
@@ -333,6 +339,8 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "workbench/integrations/slack", label: "Slack [Experimental]" },
         { type: "doc", id: "workbench/integrations/notion", label: "Notion" },
         { type: "doc", id: "workbench/integrations/gdrive", label: "Google Drive" },
+        { type: "doc", id: "workbench/integrations/onedrive", label: "OneDrive" },
+        { type: "doc", id: "workbench/integrations/dropbox", label: "Dropbox" },
         { type: "doc", id: "workbench/integrations/modal", label: "Modal" },
         { type: "doc", id: "workbench/integrations/huggingface", label: "Hugging Face" },
         { type: "doc", id: "workbench/integrations/daytona", label: "Daytona" },
@@ -344,7 +352,7 @@ const sidebars: SidebarsConfig = {
         // UDF Builder
     {
       type: "category",
-      label: "Map Builder",
+      label: "Map Builder (Legacy)",
       collapsible: false,
       items: [
         { type: "doc", id: "workbench/udf-builder/udf-builder", label: "Overview" },
@@ -357,7 +365,7 @@ const sidebars: SidebarsConfig = {
     // App Builder
     {
       type: "category",
-      label: "Fused Apps",
+      label: "Fused Apps (Legacy)",
       collapsible: false,
       items: [
         { type: "doc", id: "workbench/app-builder/app-builder", label: "App Builder" },
