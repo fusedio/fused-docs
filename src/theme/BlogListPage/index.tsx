@@ -130,20 +130,17 @@ function ShortsListPage(props: Props): JSX.Element {
             );
           })}
         </ul>
+        <BlogListPaginator metadata={metadata} />
       </div>
     </BlogLayout>
   );
 }
 
-export default function BlogListPage(props: Props): JSX.Element {
+function MainBlogListPage(props: Props): JSX.Element {
   const { metadata, items } = props;
   const {
     siteConfig: { title: siteTitle },
   } = useDocusaurusContext();
-
-  if (metadata.permalink.startsWith('/shorts')) {
-    return <ShortsListPage {...props} />;
-  }
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<CategoryKey>('all');
@@ -231,4 +228,11 @@ export default function BlogListPage(props: Props): JSX.Element {
       </BlogLayout>
     </>
   );
+}
+
+export default function BlogListPage(props: Props): JSX.Element {
+  if (props.metadata.permalink.startsWith('/shorts')) {
+    return <ShortsListPage {...props} />;
+  }
+  return <MainBlogListPage {...props} />;
 }
