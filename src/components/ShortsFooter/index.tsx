@@ -5,14 +5,14 @@ import styles from "./styles.module.css";
 const SHOW_NEWSLETTER = false;
 const SHOW_CONNECT_AGENT = false;
 
-export default function NotesFooter(): JSX.Element {
+export default function ShortsFooter(): JSX.Element {
   return (
     <div className={styles.footer}>
       <hr className={styles.divider} />
 
       {SHOW_NEWSLETTER && (
         <div className={styles.subscribeSection}>
-          <h3 className={styles.subscribeHeading}>Get new notes in your inbox</h3>
+          <h3 className={styles.subscribeHeading}>Get new shorts in your inbox</h3>
           <p className={styles.subscribeSubtext}>
             Short dispatches from Fused as we build toward zero-code data workflows.
           </p>
@@ -33,7 +33,7 @@ export default function NotesFooter(): JSX.Element {
                 <span className={styles.comingSoon}>coming soon</span>
               </div>
               <div className={styles.cardDesc}>
-                Install in Claude to get latest notes in agent context
+                Install in Claude to get latest shorts in agent context
               </div>
             </div>
           </div>

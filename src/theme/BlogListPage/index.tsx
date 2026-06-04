@@ -106,11 +106,11 @@ function formatDateShort(dateString: string): string {
   }).format(date);
 }
 
-function NotesListPage(props: Props): JSX.Element {
+function ShortsListPage(props: Props): JSX.Element {
   const { metadata, items } = props;
   return (
     <BlogLayout
-      title="Road to Zero Coding — Notes"
+      title="Road to Zero Coding — Shorts"
       description={metadata.blogDescription}
       sidebar={undefined}
     >
@@ -141,8 +141,8 @@ export default function BlogListPage(props: Props): JSX.Element {
     siteConfig: { title: siteTitle },
   } = useDocusaurusContext();
 
-  if (metadata.permalink.startsWith('/notes')) {
-    return <NotesListPage {...props} />;
+  if (metadata.permalink.startsWith('/shorts')) {
+    return <ShortsListPage {...props} />;
   }
 
   const [searchQuery, setSearchQuery] = useState('');
