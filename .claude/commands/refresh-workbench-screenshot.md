@@ -14,8 +14,10 @@ images live under `<repo>/static`.
 
 ## Steps
 1. **Resolve & read all media.** Resolve `$ARGUMENTS` to a **single** `.mdx` under
-   `docs/workbench/` (plus any linked guide with the real steps). If it is ambiguous or
-   names a section with several pages (e.g. `integrations`), **ask the user which exact
+   `docs/workbench/` — match the filename **or** the page's `id:`/URL slug (they often
+   differ, e.g. `udf-explorer` → `udf-catalog.mdx`); grep frontmatter `id:` when the
+   filename doesn't match. If it is ambiguous, names a section with several pages (e.g.
+   `integrations`), or you can't confidently pin the file, **ask the user which exact
    page** instead of guessing. List the page's media (`![]` images, `<LazyReactPlayer>`
    `.mp4`). Read the prose and every image. For a video: `curl -s -o v.mp4 <url>` then
    `ffmpeg -i v.mp4 -vf fps=2 f_%04d.png` and read the frames. A doc's own media can
@@ -25,17 +27,19 @@ images live under `<repo>/static`.
    record where it actually is, or that it's absent.
 3. **Compare.** Table: aspect → docs say → live shows → verdict.
 4. **Decide.** Mismatch/missing → do **not** refresh; file the ticket (below). Full match
-   → refresh the screenshot (below). Never silently edit docs or capture a stale state.
+   → refresh **every** referenced screenshot that's now stale (below). Never silently
+   edit docs or capture a stale state.
 
-## Refresh a screenshot
+## Refresh screenshots
 The extension's `screenshot save_to_disk` doesn't produce a usable file, but its GIF
-export does. So: reach the UI state, then `gif_creator` start_recording → screenshot →
-export `download:true` (GIF lands in the browser's Downloads). Extract frames
+export does. **Repeat for each stale image the page references** (pages often have
+several): reach its UI state, then `gif_creator` start_recording → screenshot → export
+`download:true` (GIF lands in the browser's Downloads). Extract frames
 `ffmpeg -y -i <downloads>/<file>.gif f_%04d.png` and take the last. Write it to the
-destination **derived from the page's own image reference**: take the `/img/...` path
-in the MDX `![](...)` tag and write to `<repo>/static` + that exact path. Do **not**
-assume `/img/workbench/` — pages use other prefixes too. If the target path or prefix is
-unclear, ask the user for the appropriate destination. Then `git status` the path; don't
+destination **derived from that image's own reference**: take the `/img/...` path in its
+MDX `![](...)` tag and write to `<repo>/static` + that exact path. Do **not** assume
+`/img/workbench/` — pages use other prefixes too. If a target path or prefix is unclear,
+ask the user for the appropriate destination. Then `git status` the path; don't
 commit unless asked. (Backup, optional: a local Playwright tool attached to a debug
 Chrome over CDP gives pixel-precise stills — only if set up.)
 
