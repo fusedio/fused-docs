@@ -1,200 +1,137 @@
 #!/usr/bin/env node
-// Fast, network-free check for broken internal page links and missing image/
-// asset references across docs/ — meant as a pre-commit gate and a quick local
-// command (`npm run check-links`).
+// Flags broken internal page/asset links in docs/ against Docusaurus's URL space
+// (slug/id rules, folder-index collapse, redirects, blog, widget-api pages,
+// static assets). Fast and network-free.
 //
-// Why only page + asset links (not anchors or external URLs)?
-//   - Broken #anchors and broken page links are already caught authoritatively
-//     by `npm run build` (onBrokenLinks / onBrokenAnchors: "throw"), which
-//     resolves against the fully-rendered site. Anchors in particular can't be
-//     checked from source — many headings are emitted by MDX components.
-//   - This script trades that completeness for speed: it resolves every internal
-//     link against the real Docusaurus URL space (slug/id rules, folder-index
-//     collapse, redirects, blog, the generated widget-api pages, static assets)
-//     in well under a second, so it can run on every commit. The build remains
-//     the comprehensive gate.
+// Run as `npm run check-links` (exits non-zero on findings) or as a non-blocking
+// pre-commit hook with `--warn` (prints findings, always exits 0). Anchors and
+// external links are left to the build (onBrokenLinks / onBrokenAnchors).
 
 const fs = require('fs');
 const path = require('path');
 const matter = require('gray-matter');
 
 const ROOT = path.resolve(__dirname, '..');
-const DOCS_DIR = path.join(ROOT, 'docs');
-const BLOG_DIR = path.join(ROOT, 'blog');
-const STATIC_DIR = path.join(ROOT, 'static');
-const WIDGET_SCHEMA_DIR = path.join(STATIC_DIR, 'widget-schema');
-const CONFIG_FILE = path.join(ROOT, 'docusaurus.config.ts');
+const DOCS = path.join(ROOT, 'docs');
+const STATIC = path.join(ROOT, 'static');
+const WARN = process.argv.includes('--warn');
 
-// Routes that exist but aren't backed by a doc/blog/static file.
-const EXTRA_VALID_PATHS = ['/', '/search', '/blog'];
+const decode = (s) => { try { return decodeURIComponent(s); } catch { return s; } };
+const norm = (p) => { const s = decode(p); return s.length > 1 ? s.replace(/\/+$/, '') : s; };
+const data = (file) => matter(fs.readFileSync(file, 'utf8')).data;
 
-function walk(dir, exts) {
-  const out = [];
-  if (!fs.existsSync(dir)) return out;
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...walk(full, exts));
-    else if (exts.some((e) => entry.name.endsWith(e))) out.push(full);
-  }
-  return out;
+// Recursively collect files under `dir` whose basename satisfies `match`.
+function find(dir, match) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const full = path.join(dir, e.name);
+    return e.isDirectory() ? find(full, match) : match(e.name) ? [full] : [];
+  });
 }
 
-function normalize(p) {
-  let s = decodeURIComponent(p);
-  if (s.length > 1) s = s.replace(/\/+$/, '');
-  return s;
-}
+const isPage = (n) => /\.mdx?$/.test(n) && !n.startsWith('_');
 
-// Derive a doc's Docusaurus URL from its path + frontmatter:
-//   - an absolute frontmatter `slug` wins outright
-//   - a frontmatter `id` replaces the filename as the last segment
-//   - index files, and a file named after its folder, map to the folder URL
-function fileToUrl(relPath, data) {
-  if (typeof data.slug === 'string' && data.slug.startsWith('/')) return data.slug;
-  const parts = relPath.replace(/\\/g, '/').split('/');
-  const file = parts.pop().replace(/\.mdx?$/, '');
-  const last = typeof data.id === 'string' ? data.id : file;
+// A doc's URL: absolute `slug` wins; else folder path + (`id` or filename), with
+// index files and a file named after its folder collapsing to the folder URL.
+function docUrl(rel, fm) {
+  if (typeof fm.slug === 'string' && fm.slug.startsWith('/')) return fm.slug;
+  const parts = rel.replace(/\\/g, '/').split('/');
+  const filename = parts.pop().replace(/\.mdx?$/, '');
+  const last = typeof fm.id === 'string' ? fm.id : filename;
   if (last.toLowerCase() !== 'index' && last !== parts[parts.length - 1]) parts.push(last);
   return '/' + parts.join('/');
 }
 
-const validPaths = new Set(EXTRA_VALID_PATHS.map(normalize));
+// Build the set of valid routes.
+function buildRoutes() {
+  const routes = new Set(['/', '/search', '/blog'].map(norm));
 
-function registerDocs() {
-  for (const file of walk(DOCS_DIR, ['.md', '.mdx'])) {
-    if (path.basename(file).startsWith('_')) continue; // partials
-    const { data } = matter(fs.readFileSync(file, 'utf8'));
-    if (data.draft === true) continue; // not built in production
-    validPaths.add(normalize(fileToUrl(path.relative(DOCS_DIR, file), data)));
+  for (const file of find(DOCS, isPage)) {
+    const fm = data(file);
+    if (fm.draft !== true) routes.add(norm(docUrl(path.relative(DOCS, file), fm)));
   }
-}
 
-function registerBlog() {
-  for (const file of walk(BLOG_DIR, ['.md', '.mdx'])) {
-    if (path.basename(file).startsWith('_')) continue;
-    const { data } = matter(fs.readFileSync(file, 'utf8'));
-    if (data.draft === true) continue;
-    let slug = typeof data.slug === 'string'
-      ? data.slug
+  for (const file of find(path.join(ROOT, 'blog'), isPage)) {
+    const fm = data(file);
+    if (fm.draft === true) continue;
+    let slug = typeof fm.slug === 'string'
+      ? fm.slug
       : path.basename(file).replace(/\.mdx?$/, '').replace(/^\d{4}-\d{2}-\d{2}-/, '');
-    if (!slug.startsWith('/')) slug = '/blog/' + slug.replace(/^\//, '');
-    validPaths.add(normalize(slug));
+    routes.add(norm(slug.startsWith('/') ? slug : '/blog/' + slug));
   }
-}
 
-// docusaurus-plugin-widget-api generates docs/widget-api/<slug>.mdx from these
-// schema files at build time — valid routes, but not committed source files.
-function registerWidgetApi() {
-  if (!fs.existsSync(WIDGET_SCHEMA_DIR)) return;
-  for (const f of fs.readdirSync(WIDGET_SCHEMA_DIR)) {
-    if (f.endsWith('.json')) validPaths.add('/widget-api/' + f.replace(/\.json$/, ''));
-  }
-}
+  // widget-api pages are generated from these schemas at build time.
+  for (const file of find(path.join(STATIC, 'widget-schema'), (n) => n.endsWith('.json')))
+    routes.add('/widget-api/' + path.basename(file, '.json'));
 
-// _category_.json files with `link.type: "generated-index"` create a route at
-// the category's folder URL (or link.slug) that isn't backed by a doc file.
-function registerCategoryIndexes() {
-  for (const file of walk(DOCS_DIR, ['_category_.json'])) {
+  // generated-index categories serve a route at their folder URL (or link.slug).
+  for (const file of find(DOCS, (n) => n === '_category_.json')) {
     let cfg;
-    try {
-      cfg = JSON.parse(fs.readFileSync(file, 'utf8'));
-    } catch {
-      continue;
+    try { cfg = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { continue; }
+    if (cfg.link && cfg.link.type === 'generated-index') {
+      const dir = path.relative(DOCS, path.dirname(file)).replace(/\\/g, '/');
+      routes.add(norm(typeof cfg.link.slug === 'string' ? cfg.link.slug : '/' + dir));
     }
-    if (cfg.link?.type !== 'generated-index') continue;
-    const dir = path.relative(DOCS_DIR, path.dirname(file)).replace(/\\/g, '/');
-    const url = typeof cfg.link.slug === 'string' ? cfg.link.slug : '/' + dir;
-    validPaths.add(normalize(url));
   }
+
+  // redirect `from` paths are valid routes too.
+  const config = fs.readFileSync(path.join(ROOT, 'docusaurus.config.ts'), 'utf8');
+  for (const m of config.matchAll(/from:\s*(\[[^\]]*\]|["'][^"']*["'])/g))
+    for (const q of m[1].match(/["']([^"']+)["']/g) || []) routes.add(norm(q.slice(1, -1)));
+
+  return routes;
 }
 
-function registerRedirects() {
-  const config = fs.readFileSync(CONFIG_FILE, 'utf8');
-  for (const m of config.matchAll(/from:\s*(\[[^\]]*\]|["'][^"']*["'])/g)) {
-    const froms = m[1].startsWith('[')
-      ? [...m[1].matchAll(/["']([^"']+)["']/g)].map((x) => x[1])
-      : [m[1].slice(1, -1)];
-    for (const f of froms) validPaths.add(normalize(f));
-  }
+const assetExists = (p) => fs.existsSync(path.join(STATIC, decode(p).replace(/^\//, '')));
+
+// Internal markdown and JSX (href/to/src) links, ignoring code, comments, and
+// templated targets.
+function linksIn(file) {
+  const body = matter(fs.readFileSync(file, 'utf8')).content
+    .replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, '') // fenced code
+    .replace(/`[^`\n]*`/g, '') // inline code
+    .replace(/\{\/\*[\s\S]*?\*\/\}|<!--[\s\S]*?-->/g, ''); // comments
+  const out = [];
+  for (const m of body.matchAll(/\]\((\/[^)\s]*)\)/g)) out.push(m[1]);
+  for (const m of body.matchAll(/\b(?:to|href|src)=["'](\/[^"']*)["']/g)) out.push(m[1]);
+  return out.filter((l) => !l.includes('{'));
 }
 
-function staticAssetExists(urlPath) {
-  return fs.existsSync(path.join(STATIC_DIR, decodeURIComponent(urlPath.replace(/^\//, ''))));
-}
-
-function isAsset(p) {
-  return /\.[a-z0-9]{2,5}$/i.test(p);
-}
-
-// Internal markdown and JSX links, with code fences stripped and templated
-// (${...} / {...}) targets ignored.
-function extractLinks(file) {
-  const { content } = matter(fs.readFileSync(file, 'utf8'));
-  const body = content
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/~~~[\s\S]*?~~~/g, '')
-    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '') // JSX comments
-    .replace(/<!--[\s\S]*?-->/g, ''); // HTML comments
-  const links = [];
-  for (const m of body.matchAll(/\]\((\/[^)\s]*)\)/g)) links.push(m[1]);
-  for (const m of body.matchAll(/\b(?:to|href|src)=["'](\/[^"']*)["']/g)) links.push(m[1]);
-  return links.filter((l) => !l.includes('${') && !l.includes('{'));
-}
-
-function main() {
-  registerDocs();
-  registerBlog();
-  registerWidgetApi();
-  registerCategoryIndexes();
-  registerRedirects();
-
+function run() {
+  const routes = buildRoutes();
   const broken = [];
-  let checked = 0;
 
-  for (const file of walk(DOCS_DIR, ['.md', '.mdx'])) {
-    if (path.basename(file).startsWith('_')) continue;
+  for (const file of find(DOCS, isPage)) {
     const rel = path.relative(ROOT, file).replace(/\\/g, '/');
-    for (const link of extractLinks(file)) {
-      checked++;
-      const targetPath = link.split('#')[0]; // anchors are checked by the build
-      if (targetPath === '') continue; // pure same-page anchor
-      if (validPaths.has(normalize(targetPath))) continue;
-      if (staticAssetExists(targetPath)) continue;
-      broken.push({
-        file: rel,
-        link,
-        reason: isAsset(targetPath) ? 'missing static asset' : 'no such page',
-      });
+    for (const link of linksIn(file)) {
+      const target = link.split('#')[0]; // anchors are validated by the build
+      if (!target || routes.has(norm(target)) || assetExists(target)) continue;
+      const reason = /\.[a-z0-9]{2,5}$/i.test(target) ? 'missing static asset' : 'no such page';
+      broken.push({ rel, link, reason });
     }
   }
 
-  console.log(`Checked ${checked} internal links across ${validPaths.size} routes.\n`);
-
+  console.log(`Checked internal links across ${routes.size} routes.\n`);
   if (broken.length === 0) {
     console.log('All internal page and asset links resolve.');
     return;
   }
 
-  const byFile = new Map();
-  for (const b of broken) {
-    if (!byFile.has(b.file)) byFile.set(b.file, []);
-    byFile.get(b.file).push(b);
+  const log = WARN ? console.warn : console.error;
+  log(`Found ${broken.length} broken link(s):`);
+  let current = '';
+  for (const b of broken.sort((a, b) => a.rel.localeCompare(b.rel))) {
+    if (b.rel !== current) log(`\n${(current = b.rel)}`);
+    log(`  ${b.link}  (${b.reason})`);
   }
-  // --warn surfaces findings without failing (for the non-blocking pre-commit
-  // hook); without it the command exits non-zero so it can gate when wanted.
-  const warnOnly = process.argv.includes('--warn');
-  const log = warnOnly ? console.warn : console.error;
-  log(`Found ${broken.length} broken link(s):\n`);
-  for (const [f, items] of [...byFile].sort()) {
-    log(f);
-    for (const it of items) log(`  ${it.link}  (${it.reason})`);
-    log('');
-  }
-  if (warnOnly) {
-    console.warn('Not blocking the commit — please fix these when you can.');
-  } else {
-    process.exitCode = 1;
-  }
+  if (WARN) console.warn('\nNot blocking the commit — please fix these when you can.');
+  else process.exitCode = 1;
 }
 
-main();
+// Never let an unexpected error block a commit when running as the --warn hook.
+try {
+  run();
+} catch (err) {
+  console.warn(`check-doc-links skipped (error: ${err.message})`);
+  if (!WARN) process.exitCode = 1;
+}
