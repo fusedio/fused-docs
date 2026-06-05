@@ -21,7 +21,8 @@ Fused CLI (`fused whoami`). Repo root: `git rev-parse --show-toplevel`; assets l
 2. **Explore live.** Follow the documented steps on the live workbench; if an option isn't
    where the doc says, look elsewhere (sidebar, avatar menu, tabs) — record where it
    actually is, or that it's absent.
-3. **Compare.** Table: aspect → docs say → live shows → verdict.
+3. **Compare.** Table: aspect → docs say → live shows → verdict. Also mark each
+   referenced image **current or stale** by comparing it against its live state.
 4. **Decide.** Mismatch/missing → don't refresh; file the ticket. Full match → refresh
    **every** stale asset. Never silently edit docs or capture a stale state.
 
