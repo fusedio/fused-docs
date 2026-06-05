@@ -91,6 +91,23 @@ function registerWidgetApi() {
   }
 }
 
+// _category_.json files with `link.type: "generated-index"` create a route at
+// the category's folder URL (or link.slug) that isn't backed by a doc file.
+function registerCategoryIndexes() {
+  for (const file of walk(DOCS_DIR, ['_category_.json'])) {
+    let cfg;
+    try {
+      cfg = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
+      continue;
+    }
+    if (cfg.link?.type !== 'generated-index') continue;
+    const dir = path.relative(DOCS_DIR, path.dirname(file)).replace(/\\/g, '/');
+    const url = typeof cfg.link.slug === 'string' ? cfg.link.slug : '/' + dir;
+    validPaths.add(normalize(url));
+  }
+}
+
 function registerRedirects() {
   const config = fs.readFileSync(CONFIG_FILE, 'utf8');
   for (const m of config.matchAll(/from:\s*(\[[^\]]*\]|["'][^"']*["'])/g)) {
@@ -128,6 +145,7 @@ function main() {
   registerDocs();
   registerBlog();
   registerWidgetApi();
+  registerCategoryIndexes();
   registerRedirects();
 
   const broken = [];
