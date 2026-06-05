@@ -1,3 +1,4 @@
+import CodeBlock from "@theme/CodeBlock";
 import JSONSchemaViewer from "@theme/JSONSchemaViewer";
 import React from "react";
 
@@ -19,10 +20,54 @@ function titleCase(slug: string): string {
     .join(" ");
 }
 
+// Fenced code block pattern — captured so split() keeps it in the array.
+const CODE_FENCE_RE = /(```[\w]*\n[\s\S]*?```)/g;
+const CODE_FENCE_MATCH_RE = /^```([\w]*)\n([\s\S]*?)```$/;
+
+function MarkdownDescription({ text }: { text: string }): React.ReactElement {
+  const segments = text.split(CODE_FENCE_RE);
+  const elements: React.ReactElement[] = [];
+  let key = 0;
+
+  for (const segment of segments) {
+    const codeMatch = segment.match(CODE_FENCE_MATCH_RE);
+    if (codeMatch) {
+      const lang = codeMatch[1] || "text";
+      const code = codeMatch[2].trimEnd();
+      elements.push(
+        <CodeBlock key={key++} language={lang}>
+          {code}
+        </CodeBlock>,
+      );
+      continue;
+    }
+    for (const para of segment.split(/\n\n+/)) {
+      const trimmed = para.trim();
+      if (!trimmed) continue;
+      if (trimmed.startsWith("## ")) {
+        elements.push(<h3 key={key++}>{trimmed.slice(3)}</h3>);
+      } else if (trimmed.startsWith("# ")) {
+        elements.push(<h2 key={key++}>{trimmed.slice(2)}</h2>);
+      } else {
+        elements.push(<p key={key++}>{trimmed}</p>);
+      }
+    }
+  }
+
+  return <>{elements}</>;
+}
+
 export default function WidgetSchemaDocs({
   schema,
 }: Props): React.ReactElement {
   const widgetType = schema.type;
+  const schemaDescription = (schema.propsSchema as { description?: string })
+    .description;
+  // Strip description before passing to JSONSchemaViewer — we render it
+  // ourselves above the props table to support markdown formatting.
+  const propsSchemaForViewer = Object.fromEntries(
+    Object.entries(schema.propsSchema).filter(([k]) => k !== "description"),
+  );
 
   return (
     <div className="widget-schema-docs">
@@ -33,6 +78,9 @@ export default function WidgetSchemaDocs({
       <p>
         <strong>Supports children:</strong> {schema.hasChildren ? "Yes" : "No"}
       </p>
+      {schemaDescription ? (
+        <MarkdownDescription text={schemaDescription} />
+      ) : null}
       <p>
         Every widget is defined as{" "}
         <code>{`{ "type": "${widgetType}", "props": { ... } }`}</code>. The
@@ -40,7 +88,7 @@ export default function WidgetSchemaDocs({
       </p>
       <h2>Props</h2>
       <JSONSchemaViewer
-        schema={schema.propsSchema}
+        schema={propsSchemaForViewer}
         viewerOptions={{
           defaultExpandDepth: 1,
           showExamples: true,
