@@ -120,7 +120,7 @@ function extractLinks(file) {
     .replace(/<!--[\s\S]*?-->/g, ''); // HTML comments
   const links = [];
   for (const m of body.matchAll(/\]\((\/[^)\s]*)\)/g)) links.push(m[1]);
-  for (const m of body.matchAll(/\b(?:to|href)=["'](\/[^"']*)["']/g)) links.push(m[1]);
+  for (const m of body.matchAll(/\b(?:to|href|src)=["'](\/[^"']*)["']/g)) links.push(m[1]);
   return links.filter((l) => !l.includes('${') && !l.includes('{'));
 }
 
