@@ -16,10 +16,12 @@ jobs:
   publish-docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-        # Auth with OIDC:
-        # https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services
+      # Auth with OIDC:
+      # https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services
       - name: configure aws credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -28,32 +30,31 @@ jobs:
           aws-region: us-west-2
 
       - name: Use Node.js
-        id: setup-node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 23.1.0
 
-      - name: Cache node modules
-        id: cache-npm
-        uses: actions/cache@v3
-        env:
-          cache-name: cache-node-modules
+      # Cache node_modules — keyed on package-lock.json so deps only reinstall when lockfile changes
+      - name: Cache node_modules
+        id: cache-node-modules
+        uses: actions/cache@v4
         with:
-          # npm cache files are stored in `~/.npm` on Linux/macOS
-          path: ~/.npm
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-build-${{ env.cache-name }}-
-            ${{ runner.os }}-build-
-            ${{ runner.os }}-
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('package-lock.json') }}
 
-      - if: ${{ steps.cache-npm.outputs.cache-hit != 'true' }}
-        name: List the state of node modules
-        continue-on-error: true
-        run: npm list
+      # Cache webpack/Docusaurus build artifacts separately so incremental builds reuse
+      # prior compilation work even across commits (restore-keys find the most recent match)
+      - name: Cache webpack build artifacts
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache
+          key: ${{ runner.os }}-webpack-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-webpack-${{ hashFiles('package-lock.json') }}-
 
       - name: Install dependencies
-        run: npm install
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
 
       - name: Build docs
         env:
