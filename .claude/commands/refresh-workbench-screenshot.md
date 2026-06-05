@@ -1,6 +1,6 @@
 ---
 description: Check a Workbench doc page's workflow against the live UI, file a 3-section drift ticket with a GIF, and refresh its screenshot only if docs and live match.
-argument-hint: <page> (e.g. "profile", "integrations")
+argument-hint: <page> — a single doc page slug (e.g. "profile", "integrations/s3"), not a section
 ---
 
 # Refresh workbench screenshot
@@ -13,10 +13,12 @@ Setup (check once; install if missing): `git`, `ffmpeg`, `curl`, and the Fused C
 images live under `<repo>/static`.
 
 ## Steps
-1. **Resolve & read all media.** Map `$ARGUMENTS` to a page in `docs/workbench/` (plus any
-   linked guide holding the real steps). List its media (`![]` images, `<LazyReactPlayer>`
+1. **Resolve & read all media.** Resolve `$ARGUMENTS` to a **single** `.mdx` under
+   `docs/workbench/` (plus any linked guide with the real steps). If it is ambiguous or
+   names a section with several pages (e.g. `integrations`), **ask the user which exact
+   page** instead of guessing. List the page's media (`![]` images, `<LazyReactPlayer>`
    `.mp4`). Read the prose and every image. For a video: `curl -s -o v.mp4 <url>` then
-   `ffmpeg -i v.mp4 -vf fps=2 f_%02d.png` and read the frames. A doc's own media can
+   `ffmpeg -i v.mp4 -vf fps=2 f_%04d.png` and read the frames. A doc's own media can
    contradict its prose — note that.
 2. **Explore live.** Follow the documented steps on the live workbench. If an option
    isn't where the doc says, look elsewhere (sidebar, in-canvas avatar menu, tabs);
@@ -28,11 +30,14 @@ images live under `<repo>/static`.
 ## Refresh a screenshot
 The extension's `screenshot save_to_disk` doesn't produce a usable file, but its GIF
 export does. So: reach the UI state, then `gif_creator` start_recording → screenshot →
-export `download:true` (GIF lands in the browser's Downloads). Extract the final frame:
-`ffmpeg -y -i <downloads>/<file>.gif f_%03d.png` and copy the last frame to the repo path
-`<repo>/static/img/workbench/.../<name>.png`. Then `git status` the path; don't commit
-unless asked. (Backup, optional: a local Playwright tool attached to a debug Chrome over
-CDP gives pixel-precise stills — only if set up.)
+export `download:true` (GIF lands in the browser's Downloads). Extract frames
+`ffmpeg -y -i <downloads>/<file>.gif f_%04d.png` and take the last. Write it to the
+destination **derived from the page's own image reference**: take the `/img/...` path
+in the MDX `![](...)` tag and write to `<repo>/static` + that exact path. Do **not**
+assume `/img/workbench/` — pages use other prefixes too. If the target path or prefix is
+unclear, ask the user for the appropriate destination. Then `git status` the path; don't
+commit unless asked. (Backup, optional: a local Playwright tool attached to a debug
+Chrome over CDP gives pixel-precise stills — only if set up.)
 
 ## File the drift ticket — Notion, exactly 3 sections
 1. **Page targeted** — doc page + its media.
