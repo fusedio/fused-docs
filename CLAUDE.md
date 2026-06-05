@@ -69,11 +69,19 @@ Detailed references for common tasks are in `.claude/commands/` — readable dir
 
 ```bash
 npm run build                              # full SSG build — required before any PR
+npm run check-links                        # fast check for broken internal page/asset links
 uv run utils/test_api_reference_coverage.py   # API reference coverage gate
 uv run utils/test_doc_snippets.py          # syntax-check all Python blocks in docs
 ```
 
 Before pushing any branch touching `docs/python-sdk/` or `utils/generate_reference_docs.py`, run both the build and the coverage gate. Run `test_doc_snippets.py` after adding or editing any Python code block.
+
+## Broken links
+
+Two complementary, **non-blocking** checks surface broken links — neither fails a PR:
+
+- **Internal page & asset links** — `npm run check-links` (script: `scripts/check-doc-links.js`) resolves every internal link in `docs/` against the real Docusaurus URL space (slug/`id` rules, folder-index collapse, redirects, blog, generated `widget-api` pages, and `static/` assets) in ~1s with no network. A non-blocking pre-commit hook runs it automatically (`--warn` mode: prints the report, never blocks the commit). To use the hook, enable pre-commit once: `pip install pre-commit && pre-commit install`. Run `npm run check-links` directly for a one-off check (exits non-zero on findings).
+- **Anchors (`#fragment`) & cross-page links** — the build (`onBrokenLinks: "throw"`, `onBrokenMarkdownLinks: "throw"` in `docusaurus.config.ts`) hard-fails on broken page links, while `onBrokenAnchors: "warn"` prints broken anchors as warnings without failing. Anchors can't be checked from source (many headings are emitted by MDX components), so the build is the only accurate anchor check — scan its output for `broken anchors` warnings.
 
 ## Python code block conventions
 
