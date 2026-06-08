@@ -41,17 +41,26 @@ function MarkdownDescription({ text }: { text: string }): React.ReactElement {
       );
       continue;
     }
-    for (const para of segment.split(/\n\n+/)) {
-      const trimmed = para.trim();
-      if (!trimmed) continue;
-      if (trimmed.startsWith("## ")) {
-        elements.push(<h3 key={key++}>{trimmed.slice(3)}</h3>);
-      } else if (trimmed.startsWith("# ")) {
-        elements.push(<h2 key={key++}>{trimmed.slice(2)}</h2>);
+    let paraBuf: string[] = [];
+    const flushPara = () => {
+      const t = paraBuf.join(" ").trim();
+      if (t) elements.push(<p key={key++}>{t}</p>);
+      paraBuf = [];
+    };
+    for (const line of segment.split("\n")) {
+      if (line.startsWith("## ")) {
+        flushPara();
+        elements.push(<h3 key={key++}>{line.slice(3)}</h3>);
+      } else if (line.startsWith("# ")) {
+        flushPara();
+        elements.push(<h2 key={key++}>{line.slice(2)}</h2>);
+      } else if (line.trim() === "") {
+        flushPara();
       } else {
-        elements.push(<p key={key++}>{trimmed}</p>);
+        paraBuf.push(line.trim());
       }
     }
+    flushPara();
   }
 
   return <>{elements}</>;
