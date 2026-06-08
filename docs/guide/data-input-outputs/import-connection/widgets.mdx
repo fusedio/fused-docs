@@ -367,7 +367,7 @@ def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
         df, geometry=gpd.points_from_xy(df["longitude"], df["latitude"]), crs="EPSG:4326"
     )
     grouped = gdf.groupby("neighbourhood_cleansed")
-    out = gpd.GeoDataFrame(
+    return gpd.GeoDataFrame(
         {
             "neighbourhood": grouped.size().index,
             "avg_price": grouped["price_in_dollar"].mean().round(2).values,
@@ -375,7 +375,6 @@ def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
         },
         crs="EPSG:4326",
     )
-    return out[out.geometry.geom_type == "Polygon"]
 ```
 
 </details>
@@ -411,6 +410,80 @@ The simplest layer is just the UDF name (`"layers": ["{{sf_neighborhoods}}"]`). 
               "nullColor": [184, 184, 184]
             },
             "pickable": true
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+#### Tile mode (`tile: true`)
+
+By default a `map` layer connects in **viewport mode** — one request fetches data for the whole current view. Set `tile: true` to connect in **tile mode** instead: the UDF runs once per map tile, so only the visible tiles load. This is how you serve large or pre-partitioned datasets — like the `table_to_tile` example below, which streams Microsoft building footprints and renders fast partition previews when zoomed out, swapping to individual footprints as you zoom in.
+
+In tile mode, `vizConfig` takes **two** layers:
+
+- `tileLayer` configures the `TileLayer` wrapper that fetches tiles (`minZoom`, `maxZoom`, `tileSize`).
+- `vectorLayer` styles the data rendered inside each tile.
+
+:::warning `tile: true` is what activates `tileLayer`
+The `tileLayer` key only takes effect when the layer runs in tile mode. Without `"tile": true` on the layer object, the UDF runs in viewport mode and the `tileLayer` config is ignored.
+:::
+
+Paste this into a UDF node named `sf_buildings_tile`:
+
+<details>
+<summary><code>sf_buildings_tile</code></summary>
+
+```python
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-122.446, 37.756, -122.430, 37.770],
+    table_path: str = "s3://fused-asset/infra/building_msft_us",
+):
+    common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
+    return common.table_to_tile(bounds, table=table_path)
+```
+
+</details>
+
+```json
+{
+  "type": "map",
+  "props": {
+    "label": "SF buildings (tiled)",
+    "centerLng": -122.44,
+    "centerLat": 37.76,
+    "zoom": 10.5,
+    "mapStyle": "dark",
+    "layers": [
+      {
+        "udf": "{{sf_buildings_tile}}",
+        "tile": true,
+        "vizConfig": {
+          "tileLayer": {
+            "@@type": "TileLayer",
+            "minZoom": 0,
+            "maxZoom": 19,
+            "tileSize": 256
+          },
+          "vectorLayer": {
+            "@@type": "GeoJsonLayer",
+            "stroked": true,
+            "filled": false,
+            "pickable": true,
+            "lineWidthMinPixels": 1,
+            "pointRadiusMinPixels": 3,
+            "getLineColor": {
+              "@@function": "colorContinuous",
+              "attr": "num_rows",
+              "domain": [0, 80000],
+              "steps": 20,
+              "colors": "BrwnYl",
+              "nullColor": [184, 184, 184]
+            },
+            "getFillColor": [208, 208, 208, 40]
           }
         }
       }
