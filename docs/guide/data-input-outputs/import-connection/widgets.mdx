@@ -335,9 +335,218 @@ When the base URL includes a specific widget path (for example, `/orders_widget`
 *When you share a widget URL, Fused automatically appends all canvas parameters as query parameters so the shared view can be reproduced exactly.* [Try it out →](https://unstable.fused.io/share/fc_1bHh5W6D1Yk6smpCeUuWPy/orders_widget?selected_option=orders)
 
 
+## Map widgets
+
+<ClickZoomImage src="/img/widgets/map-widget-canvas.png" alt="Map widget canvas showing point, polygon, fused-map, and tile-mode examples side by side" />
+
+Two widget types render geospatial data on an interactive map:
+
+- **`map`** — a deck.gl map driven by live UDF layers. List UDF names in `layers` and the map renders their output directly. The UDF **must return a GeoDataFrame**.
+- **`fused-map`** — a Mapbox GL + deck.gl map with typed layers (`mvt`, `raster`, `geojson`, `h3`, `heatmap`, …). A `geojson` layer runs SQL over any UDF and accepts either a plain DataFrame (lat/lng columns) **or** a GeoDataFrame of any geometry; `mvt`/`raster` layers stream **Fused-partitioned tilesets** that scale far beyond a single query.
+
+The examples below are live on the [Map widget canvas →](https://www.fused.io/canvas/fc_fused/map_widget_canvas)
+
+:::tip Two rules for the `map` widget
+1. UDF names must use `{{double-brace}}` syntax — a bare string like `"my_udf"` won't resolve.
+2. The UDF must return a **GeoDataFrame**. A plain DataFrame with `latitude`/`longitude` columns renders nothing.
+:::
+
+### `map` widget
+
+A `map` layer renders whatever geometry the UDF returns — points, lines, or polygons — as long as it's a **GeoDataFrame**. The example below uses polygons: one convex hull per SF neighbourhood, colored by average price. Paste this into a UDF node named `sf_neighborhoods`:
+
+<details>
+<summary><code>sf_neighborhoods</code></summary>
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
+    import geopandas as gpd
+    import pandas as pd
+
+    df = pd.read_parquet(path).dropna(subset=["latitude", "longitude", "price_in_dollar"])
+    gdf = gpd.GeoDataFrame(
+        df, geometry=gpd.points_from_xy(df["longitude"], df["latitude"]), crs="EPSG:4326"
+    )
+    grouped = gdf.groupby("neighbourhood_cleansed")
+    return gpd.GeoDataFrame(
+        {
+            "neighbourhood": grouped.size().index,
+            "avg_price": grouped["price_in_dollar"].mean().round(2).values,
+            "geometry": grouped.geometry.apply(lambda g: g.union_all().convex_hull).values,
+        },
+        crs="EPSG:4326",
+    )
+```
+
+</details>
+
+The simplest layer is just the UDF name (`"layers": ["{{sf_neighborhoods}}"]`). Pass a layer object with a `vizConfig` to style it — `vizConfig.vectorLayer` is a [deck.gl layer](https://deck.gl/docs/api-reference/layers) spec. Here the default `GeoJsonLayer` fills each polygon with a continuous color ramp on `avg_price`, and `autoFit` zooms to the data:
+
+```json
+{
+  "type": "map",
+  "props": {
+    "centerLng": -122.43,
+    "centerLat": 37.76,
+    "zoom": 11,
+    "mapStyle": "dark",
+    "autoFit": true,
+    "layers": [
+      {
+        "udf": "{{sf_neighborhoods}}",
+        "vizConfig": {
+          "vectorLayer": {
+            "@@type": "GeoJsonLayer",
+            "stroked": true,
+            "filled": true,
+            "opacity": 0.7,
+            "lineWidthMinPixels": 1,
+            "getLineColor": [255, 255, 255, 80],
+            "getFillColor": {
+              "@@function": "colorContinuous",
+              "attr": "avg_price",
+              "domain": [100, 400],
+              "steps": 10,
+              "colors": "Teal",
+              "nullColor": [184, 184, 184]
+            },
+            "pickable": true
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+#### Loading large datasets as tiles
+
+For datasets too big to load in one request, set `"tile": true` on the layer. The UDF then runs once per map tile, so only the visible area loads. The example below streams Microsoft building footprints with the `table_to_tile` helper.
+
+Tile mode reads two layers from `vizConfig`: `tileLayer` configures how tiles are fetched (`minZoom`, `maxZoom`, `tileSize`), and `vectorLayer` styles the data inside each tile.
+
+:::warning
+`tileLayer` only applies when `"tile": true` is set on the layer. Without it the layer runs in viewport mode and `tileLayer` is ignored.
+:::
+
+Paste this into a UDF node named `sf_buildings_tile`:
+
+<details>
+<summary><code>sf_buildings_tile</code></summary>
+
+```python
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-122.446, 37.756, -122.430, 37.770],
+    table_path: str = "s3://fused-asset/infra/building_msft_us",
+):
+    common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
+    return common.table_to_tile(bounds, table=table_path)
+```
+
+</details>
+
+```json
+{
+  "type": "map",
+  "props": {
+    "label": "SF buildings (tiled)",
+    "centerLng": -122.44,
+    "centerLat": 37.76,
+    "zoom": 10.5,
+    "mapStyle": "dark",
+    "layers": [
+      {
+        "udf": "{{sf_buildings_tile}}",
+        "tile": true,
+        "vizConfig": {
+          "tileLayer": {
+            "@@type": "TileLayer",
+            "minZoom": 0,
+            "maxZoom": 19,
+            "tileSize": 256
+          },
+          "vectorLayer": {
+            "@@type": "GeoJsonLayer",
+            "stroked": true,
+            "filled": false,
+            "pickable": true,
+            "lineWidthMinPixels": 1,
+            "pointRadiusMinPixels": 3,
+            "getLineColor": {
+              "@@function": "colorContinuous",
+              "attr": "num_rows",
+              "domain": [0, 80000],
+              "steps": 20,
+              "colors": "BrwnYl",
+              "nullColor": [184, 184, 184]
+            },
+            "getFillColor": [208, 208, 208, 40]
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+### `fused-map` — SQL layers and tilesets
+
+`fused-map` adds Mapbox layer types and accepts more data shapes than `map`. The example below runs SQL over a **plain DataFrame** and plots its lat/lng columns. Paste this into a UDF node named `sf_listings`:
+
+<details>
+<summary><code>sf_listings</code></summary>
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
+    import pandas as pd
+
+    df = pd.read_parquet(path).dropna(subset=["latitude", "longitude", "price_in_dollar"])
+    return df[["name", "latitude", "longitude", "price_in_dollar", "room_type"]]
+```
+
+</details>
+
+```json
+{
+  "type": "fused-map",
+  "props": {
+    "basemap": "mapbox://styles/mapbox/dark-v11",
+    "centerLng": -122.43,
+    "centerLat": 37.76,
+    "zoom": 11,
+    "showControls": true,
+    "showScale": true,
+    "showBasemapSwitcher": true,
+    "showLegend": true,
+    "showLayerPanel": true,
+    "layers": [
+      {
+        "id": "listings",
+        "type": "geojson",
+        "sql": "SELECT name, latitude, longitude, price_in_dollar FROM {{sf_listings}}",
+        "latColumn": "latitude",
+        "lngColumn": "longitude",
+        "style": { "fillColor": [232, 255, 89], "pointRadius": 2 }
+      }
+    ]
+  }
+}
+```
+
+:::tip A `fused-map` `geojson` layer accepts more than lat/lng points
+- **Points from columns** — return a plain DataFrame and set `latColumn`/`lngColumn` (shown above).
+- **Polygons or any geometry** — return a GeoDataFrame; the layer renders its geometry directly, no lat/lng columns needed.
+- **Large or partitioned data** — point an `mvt` layer at a Fused tileset URL (`https://tiles.fused.io/.../{z}/{x}/{y}`) to stream vector tiles instead of querying every row.
+:::
+
+For every prop, see the [`map`](/widget-api/map) and [`fused-map`](/widget-api/fused-map) API reference.
+
 ## Available Widgets
 
-For the full list of widget types and their props, see the [Widget API reference](/widget-api/overview).
+For the full list of widget types and their props, see the [Widget API reference](/widget-api/overview). To explore every widget live, open the [Widget Showcase canvas →](https://www.fused.io/canvas/fc_fused/Widget_Showcase)
 
 <iframe
   src="https://unstable.fused.io/canvas/fc_fused/Widget_Showcase"
