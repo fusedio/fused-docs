@@ -342,93 +342,16 @@ Two widget types render geospatial data on an interactive map:
 - **`map`** — a deck.gl map driven by live UDF layers. List UDF names in `layers` and the map renders their output directly. The UDF **must return a GeoDataFrame**.
 - **`fused-map`** — a Mapbox GL + deck.gl map with typed layers (`mvt`, `raster`, `geojson`, `h3`, `heatmap`, …). A `geojson` layer runs SQL over any UDF and accepts either a plain DataFrame (lat/lng columns) **or** a GeoDataFrame of any geometry; `mvt`/`raster` layers stream **Fused-partitioned tilesets** that scale far beyond a single query.
 
-All three examples below are live on the [Map widget canvas →](https://www.fused.io/canvas/fc_fused/map_widget_canvas)
+The examples below are live on the [Map widget canvas →](https://www.fused.io/canvas/fc_fused/map_widget_canvas)
 
 :::tip Two rules for the `map` widget
 1. UDF names must use `{{double-brace}}` syntax — a bare string like `"my_udf"` won't resolve.
 2. The UDF must return a **GeoDataFrame**. A plain DataFrame with `latitude`/`longitude` columns renders nothing.
 :::
 
-### Point data
+### `map` widget
 
-Convert your lat/lon columns into a GeoDataFrame with `geopandas.points_from_xy` and return it. Paste this into a UDF node named `sf_listings_points`:
-
-<details>
-<summary><code>sf_listings_points</code></summary>
-
-```python
-@fused.udf
-def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
-    import geopandas as gpd
-    import pandas as pd
-
-    df = pd.read_parquet(path).dropna(subset=["latitude", "longitude", "price_in_dollar"])
-    return gpd.GeoDataFrame(
-        df[["name", "neighbourhood_cleansed", "room_type", "price_in_dollar"]],
-        geometry=gpd.points_from_xy(df["longitude"], df["latitude"]),
-        crs="EPSG:4326",
-    )
-```
-
-</details>
-
-The simplest widget is just the UDF name — the map applies a default style and `autoFit` zooms to the data:
-
-```json
-{
-  "type": "map",
-  "props": {
-    "centerLng": -122.43,
-    "centerLat": 37.76,
-    "zoom": 11,
-    "mapStyle": "dark",
-    "autoFit": true,
-    "layers": ["{{sf_listings_points}}"]
-  }
-}
-```
-
-To control the rendering, pass a layer object with a `vizConfig`. `vizConfig.vectorLayer` is a [deck.gl layer](https://deck.gl/docs/api-reference/layers) spec — here points are colored by `price_in_dollar` with a continuous color ramp:
-
-```json
-{
-  "type": "map",
-  "props": {
-    "centerLng": -122.43,
-    "centerLat": 37.76,
-    "zoom": 11,
-    "mapStyle": "dark",
-    "autoFit": true,
-    "layers": [
-      {
-        "udf": "{{sf_listings_points}}",
-        "vizConfig": {
-          "vectorLayer": {
-            "@@type": "GeoJsonLayer",
-            "stroked": false,
-            "filled": true,
-            "pointRadiusMinPixels": 3,
-            "getPointRadius": 40,
-            "getFillColor": {
-              "@@function": "colorContinuous",
-              "attr": "price_in_dollar",
-              "domain": [50, 400],
-              "steps": 10,
-              "colors": "Sunset",
-              "nullColor": [184, 184, 184]
-            },
-            "pickable": true
-          }
-        }
-      }
-    ]
-  }
-}
-```
-
-### Polygon data
-
-Return a GeoDataFrame with polygon geometry — the default `GeoJsonLayer` fills and outlines it automatically. Here `vizConfig` colors each neighbourhood by its average price. Paste this into a UDF node named `sf_neighborhoods`:
+A `map` layer renders whatever geometry the UDF returns. For point data you'd build geometry with `gpd.points_from_xy(df["longitude"], df["latitude"])` and return a GeoDataFrame; for polygons you return the polygon geometries directly. The example demoed below uses **polygons** — one convex hull per SF neighbourhood, colored by average price. Paste this into a UDF node named `sf_neighborhoods`:
 
 <details>
 <summary><code>sf_neighborhoods</code></summary>
@@ -456,6 +379,8 @@ def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
 ```
 
 </details>
+
+The simplest layer is just the UDF name (`"layers": ["{{sf_neighborhoods}}"]`). Pass a layer object with a `vizConfig` to style it — `vizConfig.vectorLayer` is a [deck.gl layer](https://deck.gl/docs/api-reference/layers) spec. Here the default `GeoJsonLayer` fills each polygon with a continuous color ramp on `avg_price`, and `autoFit` zooms to the data:
 
 ```json
 {
@@ -496,9 +421,7 @@ def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
 
 ### `fused-map` — SQL layers and tilesets
 
-`fused-map` is the most flexible map widget. Its `geojson` layer runs SQL over a UDF and builds geometry from the result, so the same layer works whether the UDF returns a **plain DataFrame** (point coordinates in `latColumn`/`lngColumn`) **or** a **GeoDataFrame** of any geometry type — points, lines, or polygons. For data too large to query in one shot, an `mvt` or `raster` layer streams a **Fused-partitioned tileset** instead, which is the key difference from the `map` widget. Each layer carries its own `style`, and the map can show controls, a scale bar, a basemap switcher, a legend, and a layer panel.
-
-The example below reads a **plain DataFrame** and plots its lat/lng columns. Paste this into a UDF node named `sf_listings`:
+`fused-map` adds Mapbox layer types and accepts more data shapes than `map`. The example below runs SQL over a **plain DataFrame** and plots its lat/lng columns. Paste this into a UDF node named `sf_listings`:
 
 <details>
 <summary><code>sf_listings</code></summary>
