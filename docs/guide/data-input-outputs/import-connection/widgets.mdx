@@ -340,7 +340,7 @@ When the base URL includes a specific widget path (for example, `/orders_widget`
 Two widget types render geospatial data on an interactive map:
 
 - **`map`** — a deck.gl map driven by live UDF layers. List UDF names in `layers` and the map renders their output directly. The UDF **must return a GeoDataFrame**.
-- **`fused-map`** — a Mapbox GL + deck.gl map with typed layers (`mvt`, `raster`, `geojson`, `h3`, `heatmap`, …). A `geojson` layer can read plain lat/lng columns from any UDF via SQL — no GeoDataFrame required.
+- **`fused-map`** — a Mapbox GL + deck.gl map with typed layers (`mvt`, `raster`, `geojson`, `h3`, `heatmap`, …). A `geojson` layer runs SQL over any UDF and accepts either a plain DataFrame (lat/lng columns) **or** a GeoDataFrame of any geometry; `mvt`/`raster` layers stream **Fused-partitioned tilesets** that scale far beyond a single query.
 
 All three examples below are live on the [Map widget canvas →](https://www.fused.io/canvas/fc_fused/map_widget_canvas)
 
@@ -351,7 +351,10 @@ All three examples below are live on the [Map widget canvas →](https://www.fus
 
 ### Point data
 
-Convert your lat/lon columns into a GeoDataFrame with `geopandas.points_from_xy` and return it:
+Convert your lat/lon columns into a GeoDataFrame with `geopandas.points_from_xy` and return it. Paste this into a UDF node named `sf_listings_points`:
+
+<details>
+<summary><code>sf_listings_points</code></summary>
 
 ```python
 @fused.udf
@@ -366,6 +369,8 @@ def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
         crs="EPSG:4326",
     )
 ```
+
+</details>
 
 The simplest widget is just the UDF name — the map applies a default style and `autoFit` zooms to the data:
 
@@ -423,7 +428,10 @@ To control the rendering, pass a layer object with a `vizConfig`. `vizConfig.vec
 
 ### Polygon data
 
-Return a GeoDataFrame with polygon geometry — the default `GeoJsonLayer` fills and outlines it automatically. Here `vizConfig` colors each neighbourhood by its average price:
+Return a GeoDataFrame with polygon geometry — the default `GeoJsonLayer` fills and outlines it automatically. Here `vizConfig` colors each neighbourhood by its average price. Paste this into a UDF node named `sf_neighborhoods`:
+
+<details>
+<summary><code>sf_neighborhoods</code></summary>
 
 ```python
 @fused.udf
@@ -446,6 +454,8 @@ def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
     )
     return out[out.geometry.geom_type == "Polygon"]
 ```
+
+</details>
 
 ```json
 {
@@ -484,9 +494,14 @@ def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
 }
 ```
 
-### `fused-map` with lat/lng columns
+### `fused-map` — SQL layers and tilesets
 
-`fused-map` is more forgiving: a `geojson` layer builds points from `latColumn`/`lngColumn` returned by a SQL query, so the UDF can return a **plain DataFrame** — no GeoDataFrame needed. Each layer carries its own `style`, and the map can show controls, a scale bar, a basemap switcher, a legend, and a layer panel:
+`fused-map` is the most flexible map widget. Its `geojson` layer runs SQL over a UDF and builds geometry from the result, so the same layer works whether the UDF returns a **plain DataFrame** (point coordinates in `latColumn`/`lngColumn`) **or** a **GeoDataFrame** of any geometry type — points, lines, or polygons. For data too large to query in one shot, an `mvt` or `raster` layer streams a **Fused-partitioned tileset** instead, which is the key difference from the `map` widget. Each layer carries its own `style`, and the map can show controls, a scale bar, a basemap switcher, a legend, and a layer panel.
+
+The example below reads a **plain DataFrame** and plots its lat/lng columns. Paste this into a UDF node named `sf_listings`:
+
+<details>
+<summary><code>sf_listings</code></summary>
 
 ```python
 @fused.udf
@@ -496,6 +511,8 @@ def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
     df = pd.read_parquet(path).dropna(subset=["latitude", "longitude", "price_in_dollar"])
     return df[["name", "latitude", "longitude", "price_in_dollar", "room_type"]]
 ```
+
+</details>
 
 ```json
 {
@@ -523,6 +540,12 @@ def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
   }
 }
 ```
+
+:::tip A `fused-map` `geojson` layer accepts more than lat/lng points
+- **Points from columns** — return a plain DataFrame and set `latColumn`/`lngColumn` (shown above).
+- **Polygons or any geometry** — return a GeoDataFrame; the layer renders its geometry directly, no lat/lng columns needed.
+- **Large or partitioned data** — point an `mvt` layer at a Fused tileset URL (`https://tiles.fused.io/.../{z}/{x}/{y}`) to stream vector tiles instead of querying every row.
+:::
 
 For every prop, see the [`map`](/widget-api/map) and [`fused-map`](/widget-api/fused-map) API reference.
 
