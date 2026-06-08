@@ -335,9 +335,200 @@ When the base URL includes a specific widget path (for example, `/orders_widget`
 *When you share a widget URL, Fused automatically appends all canvas parameters as query parameters so the shared view can be reproduced exactly.* [Try it out →](https://unstable.fused.io/share/fc_1bHh5W6D1Yk6smpCeUuWPy/orders_widget?selected_option=orders)
 
 
+## Map widgets
+
+Two widget types render geospatial data on an interactive map:
+
+- **`map`** — a deck.gl map driven by live UDF layers. List UDF names in `layers` and the map renders their output directly. The UDF **must return a GeoDataFrame**.
+- **`fused-map`** — a Mapbox GL + deck.gl map with typed layers (`mvt`, `raster`, `geojson`, `h3`, `heatmap`, …). A `geojson` layer can read plain lat/lng columns from any UDF via SQL — no GeoDataFrame required.
+
+All three examples below are live on the [Map widget canvas →](https://www.fused.io/canvas/fc_fused/map_widget_canvas)
+
+:::tip Two rules for the `map` widget
+1. UDF names must use `{{double-brace}}` syntax — a bare string like `"my_udf"` won't resolve.
+2. The UDF must return a **GeoDataFrame**. A plain DataFrame with `latitude`/`longitude` columns renders nothing.
+:::
+
+### Point data
+
+Convert your lat/lon columns into a GeoDataFrame with `geopandas.points_from_xy` and return it:
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
+    import geopandas as gpd
+    import pandas as pd
+
+    df = pd.read_parquet(path).dropna(subset=["latitude", "longitude", "price_in_dollar"])
+    return gpd.GeoDataFrame(
+        df[["name", "neighbourhood_cleansed", "room_type", "price_in_dollar"]],
+        geometry=gpd.points_from_xy(df["longitude"], df["latitude"]),
+        crs="EPSG:4326",
+    )
+```
+
+The simplest widget is just the UDF name — the map applies a default style and `autoFit` zooms to the data:
+
+```json
+{
+  "type": "map",
+  "props": {
+    "centerLng": -122.43,
+    "centerLat": 37.76,
+    "zoom": 11,
+    "mapStyle": "dark",
+    "autoFit": true,
+    "layers": ["{{sf_listings_points}}"]
+  }
+}
+```
+
+To control the rendering, pass a layer object with a `vizConfig`. `vizConfig.vectorLayer` is a [deck.gl layer](https://deck.gl/docs/api-reference/layers) spec — here points are colored by `price_in_dollar` with a continuous color ramp:
+
+```json
+{
+  "type": "map",
+  "props": {
+    "centerLng": -122.43,
+    "centerLat": 37.76,
+    "zoom": 11,
+    "mapStyle": "dark",
+    "autoFit": true,
+    "layers": [
+      {
+        "udf": "{{sf_listings_points}}",
+        "vizConfig": {
+          "vectorLayer": {
+            "@@type": "GeoJsonLayer",
+            "stroked": false,
+            "filled": true,
+            "pointRadiusMinPixels": 3,
+            "getPointRadius": 40,
+            "getFillColor": {
+              "@@function": "colorContinuous",
+              "attr": "price_in_dollar",
+              "domain": [50, 400],
+              "steps": 10,
+              "colors": "Sunset",
+              "nullColor": [184, 184, 184]
+            },
+            "pickable": true
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+### Polygon data
+
+Return a GeoDataFrame with polygon geometry — the default `GeoJsonLayer` fills and outlines it automatically. Here `vizConfig` colors each neighbourhood by its average price:
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
+    import geopandas as gpd
+    import pandas as pd
+
+    df = pd.read_parquet(path).dropna(subset=["latitude", "longitude", "price_in_dollar"])
+    gdf = gpd.GeoDataFrame(
+        df, geometry=gpd.points_from_xy(df["longitude"], df["latitude"]), crs="EPSG:4326"
+    )
+    grouped = gdf.groupby("neighbourhood_cleansed")
+    out = gpd.GeoDataFrame(
+        {
+            "neighbourhood": grouped.size().index,
+            "avg_price": grouped["price_in_dollar"].mean().round(2).values,
+            "geometry": grouped.geometry.apply(lambda g: g.union_all().convex_hull).values,
+        },
+        crs="EPSG:4326",
+    )
+    return out[out.geometry.geom_type == "Polygon"]
+```
+
+```json
+{
+  "type": "map",
+  "props": {
+    "centerLng": -122.43,
+    "centerLat": 37.76,
+    "zoom": 11,
+    "mapStyle": "dark",
+    "autoFit": true,
+    "layers": [
+      {
+        "udf": "{{sf_neighborhoods}}",
+        "vizConfig": {
+          "vectorLayer": {
+            "@@type": "GeoJsonLayer",
+            "stroked": true,
+            "filled": true,
+            "opacity": 0.7,
+            "lineWidthMinPixels": 1,
+            "getLineColor": [255, 255, 255, 80],
+            "getFillColor": {
+              "@@function": "colorContinuous",
+              "attr": "avg_price",
+              "domain": [100, 400],
+              "steps": 10,
+              "colors": "Teal",
+              "nullColor": [184, 184, 184]
+            },
+            "pickable": true
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+### `fused-map` with lat/lng columns
+
+`fused-map` is more forgiving: a `geojson` layer builds points from `latColumn`/`lngColumn` returned by a SQL query, so the UDF can return a **plain DataFrame** — no GeoDataFrame needed. Each layer carries its own `style`, and the map can show controls, a scale bar, a basemap switcher, a legend, and a layer panel:
+
+```python
+@fused.udf
+def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
+    import pandas as pd
+
+    df = pd.read_parquet(path).dropna(subset=["latitude", "longitude", "price_in_dollar"])
+    return df[["name", "latitude", "longitude", "price_in_dollar", "room_type"]]
+```
+
+```json
+{
+  "type": "fused-map",
+  "props": {
+    "basemap": "mapbox://styles/mapbox/dark-v11",
+    "centerLng": -122.43,
+    "centerLat": 37.76,
+    "zoom": 11,
+    "showControls": true,
+    "showScale": true,
+    "showBasemapSwitcher": true,
+    "showLegend": true,
+    "showLayerPanel": true,
+    "layers": [
+      {
+        "id": "listings",
+        "type": "geojson",
+        "sql": "SELECT name, latitude, longitude, price_in_dollar FROM {{sf_listings}}",
+        "latColumn": "latitude",
+        "lngColumn": "longitude",
+        "style": { "fillColor": [232, 255, 89], "pointRadius": 2 }
+      }
+    ]
+  }
+}
+```
+
+For every prop, see the [`map`](/widget-api/map) and [`fused-map`](/widget-api/fused-map) API reference.
+
 ## Available Widgets
 
-For the full list of widget types and their props, see the [Widget API reference](/widget-api/overview).
+For the full list of widget types and their props, see the [Widget API reference](/widget-api/overview). To explore every widget live, open the [Widget Showcase canvas →](https://www.fused.io/canvas/fc_fused/Widget_Showcase)
 
 <iframe
   src="https://unstable.fused.io/canvas/fc_fused/Widget_Showcase"
