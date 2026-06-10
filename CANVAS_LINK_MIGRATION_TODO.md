@@ -17,13 +17,15 @@ Tracking for ITEM-11720 — move all canvas demos from unstable to prod.
 | Overture MCP agent | `unstable.fused.io/canvas/fc_7OKlCRLA5FeqcwXkB5wvsq` | `www.fused.io/canvas/fc_fused/overture_fused_mcp` | `docs/examples/overture-maps-mcp-agent.mdx` |
 | Overture building release comparison | `unstable.fused.io/canvas/fc_1OKBYKbEo1nab5A4aE2ezb` | `www.fused.io/canvas/fc_fused/Overture_building_release_comparison` | `docs/examples/overture-buildings-agents.mdx` |
 
-## Pending — need a prod canvas equivalent before migrating
+## Pending — migrate from unstable to `fc_fused` on `fused.io`
 
-These point to random-id unstable canvases with no prod mapping provided yet.
+These are `unstable.fused.io/canvas/fc_<random-id>` links with no named prod canvas yet.
+**Action:** recreate each on prod (make a copy → checkpoint → save to team as `fc_fused`/`fc_public`),
+then repoint the doc link to `https://www.fused.io/canvas/fc_fused/<canvas_name>`.
 
-- [ ] **Messy data agents** — `unstable.fused.io/canvas/fc_3NzqyeXDOMTNZ5pm1Sm1v8` — `docs/examples/messy-data-agents.mdx` (lines 19, 243)
-- [ ] **Read subset / ingestion** — `unstable.fused.io/canvas/fc_17TeJLzhH83TLBJ9ZpvKoR` — `docs/guide/data-input-outputs/read-write/geospatial/ingestion.mdx` (line 137)
-- [ ] **Sharing canvas dashboards (embed)** — `unstable.fused.io/canvas/fc_4Dr6z6OuYHboSbs3VbpdEc?embed=true` — `docs/examples/sharing-canvas-dashboards.mdx` (line 25)
+- [ ] **Messy data agents** — `unstable.fused.io/canvas/fc_3NzqyeXDOMTNZ5pm1Sm1v8` → `www.fused.io/canvas/fc_fused/<canvas_name>` — `docs/examples/messy-data-agents.mdx` (lines 19, 243)
+- [ ] **Read subset / ingestion** — `unstable.fused.io/canvas/fc_17TeJLzhH83TLBJ9ZpvKoR` → `www.fused.io/canvas/fc_fused/<canvas_name>` — `docs/guide/data-input-outputs/read-write/geospatial/ingestion.mdx` (line 137)
+- [ ] **Sharing canvas dashboards (embed)** — `unstable.fused.io/canvas/fc_4Dr6z6OuYHboSbs3VbpdEc?embed=true` → `www.fused.io/canvas/fc_fused/<canvas_name>?embed=true` — `docs/examples/sharing-canvas-dashboards.mdx` (line 25)
 
 ## Provided prod link with no current doc usage
 
