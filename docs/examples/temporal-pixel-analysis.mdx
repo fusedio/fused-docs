@@ -7,54 +7,48 @@ sidebar_position: 21
 
 This canvas answers a practical question for anyone working with agricultural data: *how is the vegetation in these fields changing over time, and do different fields behave differently?* Draw a box over California cropland, set a date range, press **Run pipeline** — and you get a map of analyzed fields linked to NDVI time-series charts, grouped by how each field behaves across the season.
 
-{/* TODO: Add screenshot of the NDVI dashboard showing the split map + cluster charts */}
+{/* Screenshot: open https://www.fused.io/canvas/fc_fused/temporal_pixel_analysis, run the pipeline over the Central Valley with the default 2020 date range, wait for the NDVI dashboard to load, then save the full output node to static/img/examples/temporal-pixel-analysis.png and replace this comment with: <ClickZoomImage src="/img/examples/temporal-pixel-analysis.png" alt="Temporal pixel analysis — NDVI dashboard showing clustered farm fields on a map and per-cluster time-series charts" /> */}
 
 ## Try it out
 
 [**Open the Canvas →**](https://www.fused.io/canvas/fc_fused/temporal_pixel_analysis)
 
 :::tip Start small
-Begin with a box that's roughly 10–20 km across in the Central Valley (the default map view) and a single year's date range. The pipeline runs faster and the chart dashboard is easier to read with 20–60 fields than with several hundred.
-:::
-
-:::info What you need
-This canvas uses publicly available Sentinel-2 imagery and California crop field boundaries — no credentials required. Just draw a box and press Run.
+Begin with a box that's roughly 10–20 km across in the Central Valley and a single year's date range. The pipeline runs faster and the chart dashboard is easier to read with 20–60 fields than with several hundred.
 :::
 
 ## Who this is for
 
 - **Agronomists and crop consultants** who want to see, at a glance, which fields in a region are performing differently from their neighbors — without downloading and processing satellite imagery themselves.
-- **Agri-tech developers** who want a working end-to-end pipeline they can fork and adapt: swap the California field boundaries for their own geometries, add different bands, or push the results to a database.
+- **Agri-tech developers** who want a working end-to-end pipeline to fork and adapt: swap the California field boundaries for your own geometries, add different spectral bands, or push results to a database.
 - **Remote sensing researchers** who want to prototype a field-level monitoring workflow before scaling it up.
 
 ## How the canvas is organized
 
-The canvas runs in three stages, each in its own folder. A single **Run pipeline** button in the input widget kicks off the whole chain.
+The canvas runs in three stages. A single **Run pipeline** button in the input widget kicks off the whole chain.
 
 ### 1 · Draw your area and set the date range
 
-The input widget shows a satellite map centered on California's Central Valley. You can:
-- **Pan and zoom** and let the pipeline use the current map view as the area, or
-- **Draw a box** for a more precise selection.
+The input widget shows a satellite map centered on California's Central Valley. You can pan and zoom and let the pipeline use the current map view, or click **Draw box** for a precise selection. Set `Start date` and `End date`, then press **Run pipeline** — the bounds and dates flow downstream automatically.
 
-Then set `start_date`, `end_date`, and optionally `max_farms` (how many fields to sample) and `workers` (how many parallel satellite reads to run). Press **Run pipeline** and the parameters flow to the next stage automatically.
+### 2 · Build the field × scene URL table
 
-### 2 · Processing — from bounds to pixels
+Two UDFs run in sequence here:
 
-Three UDFs run in sequence:
+**Sentinel-2 URL helpers** is a shared library that knows how to build Cloud-Optimized GeoTIFF (COG) URLs from Sentinel-2 STAC metadata. It's a dependency, not something you interact with directly.
 
-1. **Find fields in the area** — queries California agricultural field boundaries that fall inside the box, up to `max_farms`.
-2. **Build the scene URL table** — for each field, finds cloud-free Sentinel-2 scenes within the date range and builds a `(field, band, date, URL)` table.
-3. **Sample pixels at field centroids** — reads the single Sentinel-2 pixel at the center of each field for every matching scene date, running requests in parallel. Returns a flat table of `(field, band, datetime, pixel_value)` rows.
+**Build field × scene URL table** does the actual work: it queries the [California Statewide Crop Mapping (CA SCM)](https://source.coop/fiboa/us-ca-scm/) field boundary dataset — 438,000 polygons, CC-0 — and finds every field whose bounding box intersects your AOI. It then looks up cloud-free Sentinel-2 L2A scenes for your date range and builds a `(field, band, date, URL)` table ready for pixel sampling.
 
-The pixel-sampling step uses `@fused.cache`, so if you re-run with the same parameters it returns instantly.
+### 3 · Sample pixels at field centroids
 
-### 3 · NDVI dashboard
+This UDF reads the single Sentinel-2 pixel at the centroid of each field for every matching scene. It uses [`fused.submit`](/python-sdk/api-reference/fused-submit) to fan out the reads in parallel across row groups, so hundreds of fields and dates complete in roughly the same wall-clock time as a handful.
 
-The output node computes NDVI (`(NIR - Red) / (NIR + Red)`) for each field and date, then:
+### 4 · NDVI dashboard
 
-- **Clusters the fields** — K-Means on three statistics (mean NDVI, variability, seasonal range) groups fields into up to four behavioral clusters, labeled descriptively: *High & Stable*, *Low & Variable*, etc.
-- **Renders a linked dashboard** — a satellite map on the left shows every analyzed field colored by cluster. The right panel shows one NDVI chart per cluster, with the 10–90th percentile band, the median line, and individual field lines as faint traces.
+The output node computes NDVI — `(NIR − Red) / (NIR + Red)` — for each field and date, then:
+
+- **Clusters the fields** using K-Means on three statistics (mean NDVI, variability, seasonal range) into up to four behavioral groups, labeled descriptively: *High & Stable*, *Low & Variable*, etc.
+- **Renders a linked dashboard** — a satellite map on the left shows every analyzed field colored by cluster. The right panel shows one NDVI time-series chart per cluster, with a shaded 10–90th percentile band, a median line, and faint individual field traces.
 
 Hover over a field on the map to highlight its NDVI curve in the chart. Hover over a line in a chart to highlight the corresponding field on the map.
 
@@ -63,11 +57,22 @@ Hover over a field on the map to highlight its NDVI curve in the chart. Hover ov
 | Parameter | Default | When to change it |
 |---|---|---|
 | `max_farms` | 40 | Raise to 200+ for a broader regional view; lower if the run is slow |
-| `max_workers` | 10 | Raise for faster parallel reads; lower if you hit memory limits |
+| `max_workers` | 10 | Controls parallel pixel reads; raise for speed, lower if you hit memory limits |
 | `cloud_cover` | 10% | Raise to 20–30% for winter months or coastal areas with frequent cloud cover |
+
+## About the data
+
+| Property | Value |
+|---|---|
+| Field boundaries | California Statewide Crop Mapping (CA SCM), Source Cooperative / fiboa, CC-0, 438k polygons |
+| Satellite imagery | Sentinel-2 L2A COGs, AWS Open Data (anonymous) |
+| Scene catalog | Fused STAC index, partitioned 2015–2025 |
+| Spectral bands used | Red (B04) + NIR (B08) for NDVI |
+| Default date range | 2020-01 to 2020-12 |
+| Default AOI | Central Valley, California |
 
 ## See also
 
-- [**AI Change Detection**](/examples/ai-change-detection) — if you want a spatial view of *where* things changed rather than a time series of *how* individual fields changed.
+- [**AI Change Detection**](/examples/ai-change-detection) — a spatial view of *where* things changed using AI embeddings, rather than a time series of *how* individual fields changed.
 - [**STAC catalogs guide**](/guide/data-input-outputs/import-connection/geospatial/stac) — how Fused reads Sentinel-2 scenes via STAC.
-- [**Geospatial processing guide**](/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile) — tile vs. single-geometry UDFs and when to use each.
+- [**Parallel execution with fused.submit**](/python-sdk/api-reference/fused-submit) — how the pixel sampling step fans out across row groups.
