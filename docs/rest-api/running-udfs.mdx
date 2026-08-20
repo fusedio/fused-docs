@@ -1,0 +1,115 @@
+---
+id: running-udfs
+title: Running UDFs
+sidebar_label: Running UDFs
+sidebar_position: 4
+description: REST endpoints for executing UDFs ad hoc, as tiles, and for invalidating cached results.
+---
+
+# Running UDFs
+
+To run a UDF that lives on a shared canvas, call it on `udf.ai` — the canvas token in the URL identifies both the UDF and the caller's right to run it, so no `Authorization` header is involved. See [UDFs as API](/guide/working-with-udfs/run-udfs-as-api) for the URL structure, output formats, and tile URLs.
+
+This page covers what the platform API adds on top: running UDF code ad hoc, and invalidating cached results.
+
+## Run a UDF ad hoc
+
+```
+POST /realtime/{client_id}/api/v1/run/udf
+POST /realtime/{client_id}/api/v1/run/udf/tiles/{z}/{x}/{y}
+```
+
+**Scope:** user or environment — the instance named by `client_id` must belong to your environment.
+
+Runs UDF code you send with the request, rather than a saved, shared UDF. The tiles variant folds the XYZ coordinate into the run and the cache key.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `cache_max_age` | integer | Maximum age in seconds of a cached result to reuse |
+
+**Body**
+
+| Field | Type | Description |
+|---|---|---|
+| `step_config` | string | JSON-serialized UDF configuration |
+| `format` | string | Output format |
+
+:::info
+`step_config` is a serialized SDK object rather than a hand-written one. Generate it with the Python SDK — or call the UDF on [`udf.ai`](/guide/working-with-udfs/run-udfs-as-api), which needs no request body at all.
+:::
+
+The response body is the serialized UDF output. Useful response headers:
+
+| Header | Description |
+|---|---|
+| `X-Fused-Metadata` | JSON with the run's `stdout`, `stderr`, and log directory |
+| `X-Fused-Request-Id` | Id for this run |
+
+### Find your `client_id`
+
+```
+GET /realtime-instance/available
+```
+
+**Scope:** user or environment
+
+Lists the real-time instances your environment owns. Each entry includes `client_id`, `name`, `endpoint`, and `preference_rank` — use the highest-ranked entry's `client_id`.
+
+In Python the same value is available as `fused.options.realtime_client_id`, and Workbench shows it as the kernel name.
+
+## Invalidate cached results
+
+```
+DELETE /realtime-shared/{client_id}/udf-cache/by-id/{udf_id}/delete
+```
+
+**Scope:** user or environment — requires write access to the UDF.
+
+Clears the real-time cache for a UDF. Despite the `realtime-shared` prefix, this endpoint requires an `Authorization` header.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `z`, `x`, `y` | integer | Invalidate a single tile. Supply all three or none — a partial set returns `422`. |
+
+Returns `204 No Content`. See [Cache invalidation](/guide/working-with-udfs/udf-best-practices/cache-invalidation) for a worked example including how to find `client_id` and `udf_id`.
+
+### Invalidate many tiles
+
+```
+POST /realtime-shared/{client_id}/udf-cache/by-id/{udf_id}/batch-delete
+```
+
+**Scope:** user or environment — requires write access to the UDF.
+
+**Body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `tiles` | array | Yes | Tile coordinates, each `{"z": …, "x": …, "y": …}`. Between 1 and 50,000 entries. |
+
+```bash
+curl -X POST \
+  -H "Authorization: Fused-Service-Token $FUSED_SERVICE_ACCOUNT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"tiles": [{"z": 15, "x": 9647, "y": 12320}, {"z": 15, "x": 9648, "y": 12320}]}' \
+  "https://www.fused.io/server/v1/realtime-shared/<client_id>/udf-cache/by-id/<udf_id>/batch-delete"
+```
+
+**Response**
+
+| Field | Type | Description |
+|---|---|---|
+| `udf_id` | string | The UDF |
+| `tiles_requested` | integer | Tiles in the request after de-duplication |
+| `objects_deleted` | integer | Cache objects actually removed |
+
+## See also
+
+- [UDFs as API](/guide/working-with-udfs/run-udfs-as-api) — URL structure and every output format
+- [Securing Shared Tokens](/guide/data-input-outputs/export-api/securing-shared-tokens) — public vs team tokens and session tokens
+- [Cache invalidation](/guide/working-with-udfs/udf-best-practices/cache-invalidation) — when and how to purge
+- [Batch jobs](/rest-api/batch-jobs) — for workloads too large for the real-time engine

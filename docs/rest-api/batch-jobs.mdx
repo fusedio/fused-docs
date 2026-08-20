@@ -1,0 +1,196 @@
+---
+id: batch-jobs
+title: Batch jobs
+sidebar_label: Batch jobs
+sidebar_position: 5
+description: REST endpoints for submitting long-running batch jobs and reading their status, results, and logs.
+---
+
+# Batch jobs
+
+Batch jobs run long or large workloads on dedicated instances, rather than on the real-time engine. Each job gets an id you use to poll status, list results, and read logs.
+
+In Python, this endpoint is [`FusedAPI.start_job()`](/python-sdk/api-reference/api#start_job); ingestion jobs reach it through [`job.run_batch()`](/python-sdk/api-reference/fused-ingest#jobrun_batch), which calls `start_job` internally.
+
+:::note
+[`udf.map()`](/python-sdk/api-reference/udf#map) is a different mechanism. It fans a UDF out across the real-time engine rather than submitting a batch job, so the jobs it creates do not appear in these endpoints.
+:::
+
+## The job object
+
+Job endpoints return one of two shapes — the submit and status endpoints return a run summary, the listing endpoints return a job record. These fields are common to both:
+
+| Field | Type | Description |
+|---|---|---|
+| `instance_id` | string \| null | Instance running the job |
+| `instance_type` | string \| null | Instance type |
+| `disk_size_gb` | integer \| null | Attached disk size |
+| `job_status` | string \| null | Current status |
+| `job_status_date` | string \| null | Timestamp of the last status change |
+| `first_heartbeat` | string \| null | First heartbeat timestamp |
+| `last_heartbeat` | string \| null | Most recent heartbeat timestamp |
+
+## Submit a job
+
+```
+POST /run
+```
+
+**Scope:** user or environment
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `instance_type` | string | Instance type to run on |
+| `disk_size_gb` | integer | Disk size to attach |
+| `region` | string | Region to run in |
+
+**Body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `config` | object | Yes | The job configuration |
+| `send_status_email` | boolean | No | Email on completion. Defaults to `true`. |
+| `cache_max_age` | integer | No | Reuse a cached job result younger than this, in seconds |
+
+:::note
+`config` is a large nested structure describing the steps to run. Build it with the Python SDK ([`FusedAPI.start_job()`](/python-sdk/api-reference/api#start_job)) rather than by hand.
+:::
+
+Returns the job object. When `cache_max_age` matches a recent identical job, the cached job's response is returned instead of starting new work.
+
+## Get job status
+
+```
+GET /run/by-id/{job_id}
+```
+
+**Scope:** environment
+
+Returns the current job object. Poll this until the job reaches a terminal status.
+
+## Cancel a job
+
+```
+POST /run/by-id/{job_id}/cancel
+```
+
+**Scope:** environment
+
+Terminates the job and its instance, and records a `CANCELED` status. Returns the updated job object, or `400 Bad Request` if the job already finished or was canceled.
+
+## List job results
+
+```
+GET /run/by-id/{job_id}/results
+```
+
+**Scope:** environment
+
+Lists the output objects the job wrote to cloud storage. Returns an object listing.
+
+## List your jobs
+
+```
+GET /job/self
+```
+
+**Scope:** user
+
+Jobs created by the signed-in user, newest first.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `skip` | integer | Offset. Default `0`. |
+| `limit` | integer | Page size. Default `300`. |
+
+:::note
+This endpoint is user-scoped — a service account token has no user identity and is rejected. For automation, use the team-wide listing below.
+:::
+
+## List your team's jobs
+
+```
+GET /job/my-execution-env
+```
+
+**Scope:** environment
+
+Every job in your execution environment, across all team members, newest first. Accepts the same `skip` and `limit` parameters.
+
+## Get a job
+
+```
+GET /job/by-id/{job_id}
+```
+
+**Scope:** environment
+
+Returns the job record for one job. Returns `404 Not Found` if the job is not in your environment.
+
+## Get a job's configuration
+
+```
+GET /job/by-id/{job_id}/config
+```
+
+**Scope:** environment
+
+Returns the configuration the job was submitted with — useful for reproducing a run. Returns `400 Bad Request` if the job has no stored config.
+
+:::note
+The response may be either the config JSON inline or a redirect to cloud storage, depending on how the job was recorded. Follow redirects.
+:::
+
+## Get a job's status history
+
+```
+GET /job/events/by-job-id/{job_id}
+```
+
+**Scope:** environment
+
+Returns the job's status transitions, each with `id`, `job_id`, `job_status`, `job_status_description`, and `date_updated`. Useful for seeing where a failed job stalled.
+
+## Read job logs
+
+```
+GET /logs/{job_id}
+```
+
+**Scope:** environment
+
+All log lines for the job, in chronological order.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `since_ms` | integer | Only return lines newer than this epoch-milliseconds timestamp |
+| `region` | string | Region the job ran in |
+
+### Tail job logs
+
+```
+GET /logs/{job_id}/tail
+```
+
+**Scope:** environment
+
+The most recent lines, in reverse-chronological order — better for polling a running job.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `limit` | integer | Number of lines to return. Default `1000`. |
+| `region` | string | Region the job ran in |
+
+## See also
+
+- [`fused.api`](/python-sdk/api-reference/api#start_job) — submitting and tracking the same jobs from Python
+- [`fused.ingest`](/python-sdk/api-reference/fused-ingest#jobrun_batch) — running an ingestion job as a batch job
+- [File system paths](/guide/data-input-outputs/export-api/log-file-paths) — where batch jobs write logs and results
