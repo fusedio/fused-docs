@@ -14,6 +14,8 @@ const SECTIONS = {
   "Quickstart": "quickstart",
   "Examples": "examples",
   "Python SDK": "python-sdk",
+  "CLI Reference": "cli",
+  "REST API": "rest-api",
   "Workbench": "workbench",
 };
 

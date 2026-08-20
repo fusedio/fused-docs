@@ -1133,6 +1133,7 @@ Deleting a service account invalidates its token immediately. Any system still u
 
 ## See also
 
+- REST API — the HTTP surface behind the Python SDK, and how to authenticate against it
 - Securing Shared Tokens — session tokens for team-only canvases and the embed authentication flow
 - Cache invalidation — HTTP cache invalidation authenticated with a service account
 - Integrations & Secrets — the Workbench page where service accounts are created
@@ -2046,6 +2047,59 @@ fused.api.list("s3://fused-users/<org>/fused-system/logs/")
 
 ================================================================================
 
+## REST API
+Path: guide/data-input-outputs/export-api/rest-api.mdx
+URL: https://docs.fused.io/guide/data-input-outputs/export-api/rest-api
+
+# REST API
+
+Everything the Fused Python SDK does happens over a REST API. That means you don't need Python to work with Fused — any language or tool that can make an HTTP request can call your UDFs and automate the platform.
+
+There are two distinct API surfaces, with different base URLs and different authentication:
+
+| Surface | Base URL | What it's for | Authentication |
+|---|---|---|---|
+| **UDF endpoints** | `https://udf.ai` | Calling shared UDFs and getting data back | Canvas token in the path; session token for team-only canvases |
+| **Platform API** | `https://www.fused.io/server/v1` | Everything else: session tokens, cache, the operations behind the SDK | `Authorization` header (bearer or service account) |
+
+## UDF endpoints
+
+Every UDF on a shared canvas is an HTTP endpoint. The canvas token (`fc_…`) goes in the path, the UDF name and output format follow, and UDF parameters are query parameters:
+
+```
+https://udf.ai/fc_<CANVAS_TOKEN>/<udf_name>.json?param=value
+```
+
+- UDFs as API — URL structure, output formats (`.json`, `.csv`, `.parquet`, `.png`, tiles, …), and parameters
+- Tokens & endpoints — sharing a canvas and getting its token
+
+Access depends on how the canvas is shared. A **public** canvas needs no authentication (optionally gated by a canvas passcode). A **team-only** canvas requires a short-lived session token passed as the `fused_session_token` query parameter — see Securing Shared Tokens.
+
+## Platform API
+
+The platform API at `https://www.fused.io/server/v1` is what the Python SDK and Workbench call under the hood. Use it directly when your caller isn't Python — a backend in another language, a CI/CD job, or a plain `curl`.
+
+Requests authenticate with an `Authorization` header, in one of two forms:
+
+```
+Authorization: Bearer <access_token>
+Authorization: Fused-Service-Token <service_account_token>
+```
+
+- **Bearer token** — a personal access token that acts as *you*. Get one from an authenticated SDK session with `fused.api.access_token()`. Personal tokens expire with your session, so they suit interactive use and short-lived scripts.
+- **Service account token** — a long-lived machine credential that acts as your *team's environment*, made for automation. See Service Accounts for creating one and using it.
+
+Some operations are user-scoped and accept only a personal bearer token — creating or updating canvases, for example. A service account covers environment-scoped operations such as running UDFs, minting session tokens, and invalidating caches.
+
+## See also
+
+- UDFs as API — calling UDFs over HTTPS in every output format
+- Securing Shared Tokens — public vs team-only access, session tokens
+- Service Accounts — machine credentials for the platform API
+- Audit Logs — tracking UDF executions
+
+================================================================================
+
 ## Securing Shared Tokens
 Path: guide/data-input-outputs/export-api/securing-shared-tokens.mdx
 URL: https://docs.fused.io/guide/data-input-outputs/export-api/securing-shared-tokens
@@ -2343,18 +2397,14 @@ Returns something like: `'eyJ4K9pL2Mx...'`
 
 ```bash
 curl -X 'POST' \
-  'https://udf.ai/run/udf' \
+  'https://www.fused.io/server/v1/realtime/<your-client-id>/api/v1/run/udf' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer <BEARER_TOKEN_GOES_HERE>' \
   -H 'Content-Type: application/json' \
   -d ',\"metadata\":,\"code\":\"@fused.udf\\ndef udf(name: str = \\\"world\\\"):\\n    import pandas as pd\\n    return pd.DataFrame()\\n\",\"headers\":[]}}","dtype_in":"json","format":"geojson,png","cache":true}'
 ```
 
-For subscribed accounts, replace `basic-tier` with your environment name:
-
-```
-https://www.fused.io/server/v1/realtime/<your-client-id>/api/v1/run/udf
-```
+Substitute the client ID from step 2 for `<your-client-id>` — `basic-tier` on the basic tier, or your kernel name if you have an environment.
 
 ---
 
@@ -20574,6 +20624,2840 @@ It uses the same parameter validation and UDF resolution logic as run().
 
 ================================================================================
 
+# CLI REFERENCE
+
+## fused canvas
+Path: cli/canvas.mdx
+URL: https://docs.fused.io/cli/canvas
+
+# `fused canvas`
+
+Manage canvases.
+
+```
+fused canvas [SUBCOMMAND] [OPTIONS]
+```
+
+## Subcommands
+
+| Subcommand | Description |
+|---|---|
+| `create` | Create a new canvas. |
+| `delete` | Delete a canvas by name or ID. |
+| `export` | Download a canvas as a zip bundle. |
+| `list` | List canvas names or show a single canvas by name/ID. |
+| `pull` | Download a canvas TOML zip (same as `export`) and extract it locally. |
+| `push` | Import a local canvas directory into a canvas. |
+| `rename` | Rename a canvas. |
+| `serve-mcp` | Serve a shared canvas OpenAPI as a local MCP server. |
+| `share` | Share a canvas and return its shareable URL. |
+| `unshare` | Unshare a canvas and return updated metadata. |
+| `validate` | Validate a canvas directory without running any UDFs. |
+
+## `fused canvas create`
+
+Create a new canvas.
+
+```
+fused canvas create NAME
+```
+
+## `fused canvas delete`
+
+Delete a canvas by name or ID.
+
+```
+fused canvas delete CANVAS_REF [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--id` | Treat the provided reference as a canvas ID. |
+
+## `fused canvas export`
+
+Download a canvas as a zip bundle.
+
+```
+fused canvas ```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--output FILENAME` | Path to write the downloaded zip bundle. |
+| `--team` | Treat the provided reference as a team canvas name. |
+| `--id` | Treat the provided reference as a canvas ID. |
+
+## `fused canvas list`
+
+List canvas names or show a single canvas by name/ID.
+
+```
+fused canvas list [CANVAS_REF] [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--team` | Treat the provided name as a team canvas name. |
+| `--id` | Treat the provided reference as a canvas ID. |
+
+## `fused canvas pull`
+
+Download a canvas TOML zip (same as `export`) and extract it locally.
+
+```
+fused canvas pull CANVAS_REF [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--output, -o DIRECTORY` | Directory to extract into (default: sanitized canvas name). |
+| `--team` | Treat the provided reference as a team canvas name. |
+| `--id` | Treat the provided reference as a canvas ID. |
+| `--force, -f` | Overwrite existing files and remove local-only files without prompting. |
+| `--dry-run, -n` | Show actions and diffs without writing files. |
+| `--show-diff` | Print a unified diff for each file write or removal as it is applied. |
+
+## `fused canvas push`
+
+Import a local canvas directory into a canvas.
+
+```
+fused canvas push SOURCE_DIR [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--canvas TEXT` | Canvas name to push. |
+| `--id` | Treat the provided reference as a canvas ID. |
+| `--no-ignore` | Include gitignored and .fusedignore files in the push. |
+| `--no-validate` | Skip pre-push canvas validation. |
+
+## `fused canvas rename`
+
+Rename a canvas.
+
+```
+fused canvas rename CANVAS_REF NEW_NAME [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--id` | Treat the provided reference as a canvas ID. |
+
+## `fused canvas serve-mcp`
+
+Serve a shared canvas OpenAPI as a local MCP server.
+
+```
+fused canvas serve-mcp CANVAS_REF [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--token` | Treat the provided reference as a shared canvas token (fc_...). |
+| `--team` | Treat the provided reference as a team canvas name. |
+| `--id` | Treat the provided reference as a canvas ID. |
+| `--host TEXT` | Host interface to bind the local MCP server to. (default: `127.0.0.1`) |
+| `--port INTEGER` | Port to bind the local MCP server to. (default: `8765`) |
+| `--path TEXT` | URL path to serve the MCP endpoint on. (default: `/mcp`) |
+| `--claude` | Register this MCP server with Claude Code via the `claude` CLI. |
+
+## `fused canvas share`
+
+Share a canvas and return its shareable URL.
+
+```
+fused canvas share CANVAS_REF [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--client-id TEXT` | Override realtime client ID for share token generation. |
+| `--new-token` | Generate a new share token instead of reusing the existing one. This immediately invalidates the previous token, so any already-distributed link or embed stops working. |
+| `--id` | Treat the provided reference as a canvas ID. |
+
+## `fused canvas unshare`
+
+Unshare a canvas and return updated metadata.
+
+```
+fused canvas unshare CANVAS_REF [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--id` | Treat the provided reference as a canvas ID. |
+
+## `fused canvas validate`
+
+Validate a canvas directory without running any UDFs.
+
+```
+fused canvas validate CANVAS_DIR [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--skip TEXT` | Skip a named check. Repeatable. Checks: node_files, edge_refs, orphaned_files, widget_json_parse, widget_refs, widget_params. |
+
+================================================================================
+
+## fused checkpoint
+Path: cli/checkpoint.mdx
+URL: https://docs.fused.io/cli/checkpoint
+
+# `fused checkpoint`
+
+Manage canvas checkpoints.
+
+```
+fused checkpoint [SUBCOMMAND] [OPTIONS]
+```
+
+## Subcommands
+
+| Subcommand | Description |
+|---|---|
+| `create` | Create a checkpoint of a canvas's current state. |
+| `list` | List all checkpoints for a canvas. |
+| `pr` | Open a GitHub PR from an existing checkpoint. |
+| `restore` | Restore a canvas from a checkpoint. |
+
+## `fused checkpoint create`
+
+Create a checkpoint of a canvas's current state.
+
+```
+fused checkpoint create CANVAS_REF [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--name TEXT` | Custom checkpoint name. If not provided, auto-generates a timestamp-based name. |
+| `--id` | Treat the provided reference as a canvas ID. |
+
+## `fused checkpoint list`
+
+List all checkpoints for a canvas.
+
+```
+fused checkpoint list CANVAS_REF [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--id` | Treat the provided reference as a canvas ID. |
+
+## `fused checkpoint pr`
+
+Open a GitHub PR from an existing checkpoint.
+
+```
+fused checkpoint pr CANVAS_REF CHECKPOINT_NAME [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--message, -m TEXT` | Commit message / PR title. |
+| `--id` | Treat the provided reference as a canvas ID. |
+| `--repo TEXT` | Target GitHub repository (owner/repo). Defaults to the canvas's gitRepo. |
+| `--path TEXT` | Target folder within the repo. Defaults to the canvas's folderName. |
+| `--share [public\|team]` | Share access scope for the canvas. |
+| `--share-token TEXT` | Vanity share token name (requires --share). |
+
+## `fused checkpoint restore`
+
+Restore a canvas from a checkpoint.
+
+```
+fused checkpoint restore CANVAS_REF CHECKPOINT_NAME [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--id` | Treat the provided reference as a canvas ID. |
+| `--no-backup` | Skip creating a safety backup before restore. |
+
+================================================================================
+
+## fused claude
+Path: cli/claude.mdx
+URL: https://docs.fused.io/cli/claude
+
+# `fused claude`
+
+Manage Fused for Claude Code (via the `claude` CLI).
+
+```
+fused claude [SUBCOMMAND] [OPTIONS]
+```
+
+## Subcommands
+
+| Subcommand | Description |
+|---|---|
+| `add-mcp` | Add a canvas MCP server to Claude Code. |
+| `plugin` | Add, update, or remove the Fused Claude plugin. |
+
+## `fused claude add-mcp`
+
+Add a canvas MCP server to Claude Code.
+
+```
+fused claude add-mcp CANVAS_REF [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--token` | Treat the provided reference as a shared canvas token (fc_...). |
+| `--team` | Treat the provided reference as a team canvas name. |
+| `--id` | Treat the provided reference as a canvas ID. |
+| `--create-session-token / --no-create-session-token` | Create a session token for team-scoped canvases when none is passed. (default: `True`) |
+| `--session-max-age TEXT` | Lifetime for --create-session-token (e.g. 30m, 1h, 1d). (default: `1h`) |
+
+## `fused claude plugin`
+
+Add, update, or remove the Fused Claude plugin.
+
+| Subcommand | Description |
+|---|---|
+| `add` | Register the marketplace and install fused@fused-marketplace. |
+| `remove` | Remove the fused plugin. |
+| `update` | Update fused@fused-marketplace. |
+
+### `fused claude plugin add`
+
+Register the marketplace and install fused@fused-marketplace.
+
+```
+fused claude plugin add
+```
+
+### `fused claude plugin remove`
+
+Remove the fused plugin.
+
+```
+fused claude plugin remove
+```
+
+### `fused claude plugin update`
+
+Update fused@fused-marketplace.
+
+```
+fused claude plugin update
+```
+
+================================================================================
+
+## fused completion
+Path: cli/completion.mdx
+URL: https://docs.fused.io/cli/completion
+
+# `fused completion`
+
+Print or install shell tab completion for the fused CLI.
+
+```
+fused completion [SUBCOMMAND] [OPTIONS]
+```
+
+## Subcommands
+
+| Subcommand | Description |
+|---|---|
+| `install` | Append a one-liner to ~/.bashrc or ~/.zshrc, or write fish's completion file. |
+| `print` | Print a completion script suitable for eval or for fish's completions directory. |
+
+## `fused completion install`
+
+Append a one-liner to ~/.bashrc or ~/.zshrc, or write fish's completion file.
+
+```
+fused completion install [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--shell [auto\|bash\|zsh\|fish]` | Target shell (default: infer from $SHELL). (default: `auto`) |
+| `--dry-run` | Show actions without writing files. |
+| `--yes, -y` | Do not prompt before modifying shell config files. |
+
+## `fused completion print`
+
+Print a completion script suitable for eval or for fish's completions directory.
+
+```
+fused completion print SHELL
+```
+
+================================================================================
+
+## fused cronjob
+Path: cli/cronjob.mdx
+URL: https://docs.fused.io/cli/cronjob
+
+# `fused cronjob`
+
+Manage scheduled UDF runs.
+
+```
+fused cronjob [SUBCOMMAND] [OPTIONS]
+```
+
+## Subcommands
+
+| Subcommand | Description |
+|---|---|
+| `create` | Create or update a cronjob for a UDF. |
+| `delete` | Delete a cronjob (unschedule the UDF). |
+| `get` | Get a cronjob by UDF reference or cronjob UUID. |
+| `list` | List cronjobs for the team, or filter by UDF. |
+| `run` | Trigger an immediate run of a cronjob. |
+| `update` | Update a cronjob schedule or arguments (partial updates). |
+
+## `fused cronjob create`
+
+Create or update a cronjob for a UDF.
+
+```
+fused cronjob create CANVAS UDF [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--minute INT_LIST` | Minute (0-59); exactly one value. Repeat the flag and/or use comma-separated values. |
+| `--hour INT_LIST` | Hour (0-23). Repeat the flag and/or use comma-separated values. |
+| `--day-of-month INT_LIST` | Day of month (1-31); omit for every day. Repeat the flag and/or use comma-separated values. |
+| `--month INT_LIST` | Month (1-12); omit for every month. Repeat the flag and/or use comma-separated values. |
+| `--day-of-week INT_LIST` | Day of week (0=Sunday); omit for every day. Repeat the flag and/or use comma-separated values. |
+| `--udf-args TEXT` | JSON object of arguments passed to the UDF when the schedule runs. |
+| `--disabled` | Disable the schedule. |
+| `--enabled` | Enable the schedule. |
+| `--no-create-udf` | Do not call to_fused(); UDF must already be saved on the server. |
+
+## `fused cronjob delete`
+
+Delete a cronjob (unschedule the UDF).
+
+```
+fused cronjob delete [CANVAS] [UDF] [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--id` | Treat the first argument as a cronjob UUID instead of CANVAS. |
+
+## `fused cronjob get`
+
+Get a cronjob by UDF reference or cronjob UUID.
+
+```
+fused cronjob get [CANVAS] [UDF] [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--id` | Treat the first argument as a cronjob UUID instead of CANVAS. |
+
+## `fused cronjob list`
+
+List cronjobs for the team, or filter by UDF.
+
+```
+fused cronjob list [CANVAS] [UDF] [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--udf-id TEXT` | Filter by backend UDF ID (cannot combine with CANVAS UDF). |
+
+## `fused cronjob run`
+
+Trigger an immediate run of a cronjob.
+
+```
+fused cronjob run [CANVAS] [UDF] [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--id` | Treat the first argument as a cronjob UUID instead of CANVAS. |
+
+## `fused cronjob update`
+
+Update a cronjob schedule or arguments (partial updates).
+
+```
+fused cronjob update [CANVAS] [UDF] [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--id` | Treat the first argument as a cronjob UUID instead of CANVAS. |
+| `--day-of-week INT_LIST` | Day of week (0=Sunday, 6=Saturday). Repeat the flag and/or use comma-separated values. |
+| `--month INT_LIST` | Month (1-12). Repeat the flag and/or use comma-separated values. |
+| `--day-of-month INT_LIST` | Day of month (1-31). Repeat the flag and/or use comma-separated values. |
+| `--hour INT_LIST` | Hour (0-23). Repeat the flag and/or use comma-separated values. |
+| `--minute INT_LIST` | Minute (0-59); exactly one value. Repeat the flag and/or use comma-separated values. |
+| `--udf-args TEXT` | JSON object of arguments passed to the UDF when the schedule runs. |
+| `--disabled` | Disable the schedule. |
+| `--enabled` | Enable the schedule. |
+
+================================================================================
+
+## fused files
+Path: cli/files.mdx
+URL: https://docs.fused.io/cli/files
+
+# `fused files`
+
+Manage files stored in Fused.
+
+```
+fused files [SUBCOMMAND] [OPTIONS]
+```
+
+## Subcommands
+
+| Subcommand | Description |
+|---|---|
+| `delete` | Delete a remote file or prefix. |
+| `download` | Download a remote file or directory to a local path. |
+| `get` | Fetch a remote file into memory and print it. |
+| `list` | List files at a remote path. |
+| `search` | Search the bucket object index for files in cloud storage. |
+| `sign_url` | Create a signed URL for a remote path. |
+| `upload` | Upload a local file or directory to a remote path. |
+
+## `fused files delete`
+
+Delete a remote file or prefix.
+
+```
+fused files delete PATH [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--max-deletion-depth TEXT` | Maximum recursive deletion depth, or "unlimited". (default: `3`) |
+
+## `fused files download`
+
+Download a remote file or directory to a local path.
+
+```
+fused files download PATH LOCAL_PATH [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--recursive, -r` | Download a remote directory prefix and all nested files. |
+| `--dry-run` | With --recursive, list remote→local paths without writing files. |
+
+## `fused files get`
+
+Fetch a remote file into memory and print it.
+
+```
+fused files get PATH
+```
+
+## `fused files list`
+
+List files at a remote path.
+
+```
+fused files list PATH [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--details` | Include metadata details in the listing output. |
+| `--recursive, -r` | List all nested files under the path (directories are traversed only). |
+
+## `fused files search`
+
+Search the bucket object index for files in cloud storage.
+
+```
+fused files search [PATH_AND_QUERY...] [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--count` | Return only the number of matching objects (JSON: \). |
+| `--prefix TEXT` | Registered index prefix (which index table to use). Default: first segment of PATH, e.g. team_name/ from s3://fused-users/team_name/... |
+| `--key-prefix TEXT` | Only return object keys starting with this prefix. Default: directory portion of PATH. |
+| `--limit INTEGER` | Max rows to return (ignored with --count). (default: `100`) |
+| `--offset INTEGER` | Pagination offset (ignored with --count). (default: `0`) |
+
+## `fused files sign_url`
+
+Create a signed URL for a remote path.
+
+```
+fused files sign_url PATH
+```
+
+## `fused files upload`
+
+Upload a local file or directory to a remote path.
+
+```
+fused files upload LOCAL_PATH REMOTE_PATH [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--timeout FLOAT` | Optional request timeout in seconds. |
+| `--recursive, -r` | Upload a local directory tree to a remote prefix (relative paths preserved). |
+| `--dry-run` | With --recursive, list local→remote paths without uploading. |
+
+================================================================================
+
+## fused integrations
+Path: cli/integrations.mdx
+URL: https://docs.fused.io/cli/integrations
+
+# `fused integrations`
+
+Manage third-party integrations in Fused.
+
+```
+fused integrations [SUBCOMMAND] [OPTIONS]
+```
+
+## Subcommands
+
+| Subcommand | Description |
+|---|---|
+| `airtable` | Manage Airtable integration OAuth and tokens. |
+| `dropbox` | Manage Dropbox integration OAuth, tokens, and revoke for dropbox:// paths. |
+| `google-drive` | (Alias: gdrive) Manage Google Drive integration OAuth, tokens, revoke, and terminal pick for gdrive:// paths. |
+| `hubspot` | Manage HubSpot integration OAuth and tokens. |
+| `list` | List integrations and their connection status. |
+| `notion` | Manage Notion integration OAuth and tokens. |
+| `onedrive` | Manage OneDrive integration OAuth, tokens, and revoke for onedrive:// paths. |
+| `snowflake` | Manage Snowflake integration OAuth and tokens. |
+
+## `fused integrations airtable`
+
+Manage Airtable integration OAuth and tokens.
+
+| Subcommand | Description |
+|---|---|
+| `connect` | Start OAuth and print the authorization URL. |
+| `revoke` | Disconnect this provider and remove stored tokens. |
+| `token` | Print a short-lived access token for this provider (sensitive output). |
+
+### `fused integrations airtable connect`
+
+Start OAuth and print the authorization URL.
+
+```
+fused integrations airtable connect [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--open / --no-open` | Open the OAuth URL in your default browser. When omitted, opens automatically in text mode if stdout is a tty. |
+
+### `fused integrations airtable revoke`
+
+Disconnect this provider and remove stored tokens.
+
+```
+fused integrations airtable revoke
+```
+
+### `fused integrations airtable token`
+
+Print a short-lived access token for this provider (sensitive output).
+
+```
+fused integrations airtable token
+```
+
+## `fused integrations dropbox`
+
+Manage Dropbox integration OAuth, tokens, and revoke for dropbox:// paths.
+
+| Subcommand | Description |
+|---|---|
+| `connect` | Start OAuth and print the authorization URL. |
+| `revoke` | Disconnect this provider and remove stored tokens. |
+| `token` | Print a short-lived access token for this provider (sensitive output). |
+
+### `fused integrations dropbox connect`
+
+Start OAuth and print the authorization URL.
+
+```
+fused integrations dropbox connect [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--open / --no-open` | Open the OAuth URL in your default browser. When omitted, opens automatically in text mode if stdout is a tty. |
+
+### `fused integrations dropbox revoke`
+
+Disconnect this provider and remove stored tokens.
+
+```
+fused integrations dropbox revoke
+```
+
+### `fused integrations dropbox token`
+
+Print a short-lived access token for this provider (sensitive output).
+
+```
+fused integrations dropbox token
+```
+
+## `fused integrations google-drive`
+
+(Alias: gdrive) Manage Google Drive integration OAuth, tokens, revoke, and terminal pick for gdrive:// paths.
+
+| Subcommand | Description |
+|---|---|
+| `connect` | Start OAuth and print the authorization URL. |
+| `revoke` | Disconnect this provider and remove stored tokens. |
+| `token` | Print a short-lived access token for this provider (sensitive output). |
+
+### `fused integrations google-drive connect`
+
+Start OAuth and print the authorization URL.
+
+```
+fused integrations google-drive connect [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--open / --no-open` | Open the OAuth URL in your default browser. When omitted, opens automatically in text mode if stdout is a tty. |
+
+### `fused integrations google-drive revoke`
+
+Disconnect this provider and remove stored tokens.
+
+```
+fused integrations google-drive revoke
+```
+
+### `fused integrations google-drive token`
+
+Print a short-lived access token for this provider (sensitive output).
+
+```
+fused integrations google-drive token
+```
+
+## `fused integrations hubspot`
+
+Manage HubSpot integration OAuth and tokens.
+
+| Subcommand | Description |
+|---|---|
+| `connect` | Start OAuth and print the authorization URL. |
+| `revoke` | Disconnect this provider and remove stored tokens. |
+| `token` | Print a short-lived access token for this provider (sensitive output). |
+
+### `fused integrations hubspot connect`
+
+Start OAuth and print the authorization URL.
+
+```
+fused integrations hubspot connect [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--open / --no-open` | Open the OAuth URL in your default browser. When omitted, opens automatically in text mode if stdout is a tty. |
+
+### `fused integrations hubspot revoke`
+
+Disconnect this provider and remove stored tokens.
+
+```
+fused integrations hubspot revoke
+```
+
+### `fused integrations hubspot token`
+
+Print a short-lived access token for this provider (sensitive output).
+
+```
+fused integrations hubspot token
+```
+
+## `fused integrations list`
+
+List integrations and their connection status.
+
+```
+fused integrations list
+```
+
+## `fused integrations notion`
+
+Manage Notion integration OAuth and tokens.
+
+| Subcommand | Description |
+|---|---|
+| `connect` | Start OAuth and print the authorization URL. |
+| `revoke` | Disconnect this provider and remove stored tokens. |
+| `token` | Print a short-lived access token for this provider (sensitive output). |
+
+### `fused integrations notion connect`
+
+Start OAuth and print the authorization URL.
+
+```
+fused integrations notion connect [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--open / --no-open` | Open the OAuth URL in your default browser. When omitted, opens automatically in text mode if stdout is a tty. |
+
+### `fused integrations notion revoke`
+
+Disconnect this provider and remove stored tokens.
+
+```
+fused integrations notion revoke
+```
+
+### `fused integrations notion token`
+
+Print a short-lived access token for this provider (sensitive output).
+
+```
+fused integrations notion token
+```
+
+## `fused integrations onedrive`
+
+Manage OneDrive integration OAuth, tokens, and revoke for onedrive:// paths.
+
+| Subcommand | Description |
+|---|---|
+| `connect` | Start OAuth and print the authorization URL. |
+| `revoke` | Disconnect this provider and remove stored tokens. |
+| `token` | Print a short-lived access token for this provider (sensitive output). |
+
+### `fused integrations onedrive connect`
+
+Start OAuth and print the authorization URL.
+
+```
+fused integrations onedrive connect [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--open / --no-open` | Open the OAuth URL in your default browser. When omitted, opens automatically in text mode if stdout is a tty. |
+
+### `fused integrations onedrive revoke`
+
+Disconnect this provider and remove stored tokens.
+
+```
+fused integrations onedrive revoke
+```
+
+### `fused integrations onedrive token`
+
+Print a short-lived access token for this provider (sensitive output).
+
+```
+fused integrations onedrive token
+```
+
+## `fused integrations snowflake`
+
+Manage Snowflake integration OAuth and tokens.
+
+| Subcommand | Description |
+|---|---|
+| `connect` | Start Snowflake OAuth and print the authorization URL. |
+| `revoke` | Disconnect this provider and remove stored tokens. |
+| `token` | Print a short-lived access token for this provider (sensitive output). |
+
+### `fused integrations snowflake connect`
+
+Start Snowflake OAuth and print the authorization URL.
+
+```
+fused integrations snowflake connect [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--account-identifier TEXT` | Snowflake account identifier. |
+| `--client-id TEXT` | Snowflake OAuth client ID. |
+| `--client-secret TEXT` | Snowflake OAuth client secret. |
+| `--client-secret-2 TEXT` | Optional Snowflake OAuth client secret 2 for key rotation. |
+| `--open / --no-open` | Open the OAuth URL in your default browser. When omitted, opens automatically in text mode if stdout is a tty. |
+
+### `fused integrations snowflake revoke`
+
+Disconnect this provider and remove stored tokens.
+
+```
+fused integrations snowflake revoke
+```
+
+### `fused integrations snowflake token`
+
+Print a short-lived access token for this provider (sensitive output).
+
+```
+fused integrations snowflake token
+```
+
+================================================================================
+
+## fused json-ui
+Path: cli/json-ui.mdx
+URL: https://docs.fused.io/cli/json-ui
+
+# `fused json-ui`
+
+Inspect and run JSON-UI widgets.
+
+```
+fused json-ui [SUBCOMMAND] [OPTIONS]
+```
+
+## Subcommands
+
+| Subcommand | Description |
+|---|---|
+| `catalog-prompt` | Fetch the JSON-UI catalog prompt. |
+| `run-inline-widget` | Open a share URL with an inline widget query and capture a screenshot. |
+| `run-shared-widget` | Open a shared widget page and capture a screenshot. |
+| `schemas` | Fetch JSON-UI schemas for components or for all components. |
+| `validate` | Validate inline JSON5 config text or a JSON/JSON5 file path. |
+
+## `fused json-ui catalog-prompt`
+
+Fetch the JSON-UI catalog prompt.
+
+```
+fused json-ui catalog-prompt
+```
+
+## `fused json-ui run-inline-widget`
+
+Open a share URL with an inline widget query and capture a screenshot.
+
+```
+fused json-ui run-inline-widget CANVAS_SHARE_TOKEN WIDGET_CONFIG [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--print-url-only` | Print the widget URL and exit without launching a browser or screenshotting. |
+| `--browser [chrome\|firefox]` | Headless browser to use for screenshotting. (default: `chrome`) |
+| `--wait INTEGER` | Seconds to sleep after canvas loading settles before capture. (default: `2`) |
+| `--screenshot-filename FILENAME` | Save the screenshot to the given file. It should be a PNG file path. |
+
+## `fused json-ui run-shared-widget`
+
+Open a shared widget page and capture a screenshot.
+
+```
+fused json-ui run-shared-widget CANVAS_SHARE_TOKEN WIDGET_NAME [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--print-url-only` | Print the widget URL and exit without launching a browser or screenshotting. |
+| `--browser [chrome\|firefox]` | Headless browser to use for screenshotting. (default: `chrome`) |
+| `--wait INTEGER` | Seconds to sleep after canvas loading settles before capture. (default: `2`) |
+| `--screenshot-filename FILENAME` | Save the screenshot to the given file. It should be a PNG file path. |
+
+## `fused json-ui schemas`
+
+Fetch JSON-UI schemas for components or for all components.
+
+```
+fused json-ui schemas [COMPONENTS...]
+```
+
+## `fused json-ui validate`
+
+Validate inline JSON5 config text or a JSON/JSON5 file path.
+
+```
+fused json-ui validate CONFIG_OR_PATH
+```
+
+================================================================================
+
+## fused login
+Path: cli/login.mdx
+URL: https://docs.fused.io/cli/login
+
+# `fused login`
+
+Authenticate and persist credentials.
+
+```
+fused login
+```
+
+================================================================================
+
+## fused logout
+Path: cli/logout.mdx
+URL: https://docs.fused.io/cli/logout
+
+# `fused logout`
+
+Log out and clear local credentials.
+
+```
+fused logout
+```
+
+================================================================================
+
+## CLI Reference
+Path: cli/overview.mdx
+URL: https://docs.fused.io/cli/overview
+
+# CLI Reference
+
+The `fused` CLI lets you manage Fused from your terminal — run UDFs, manage canvases and files, handle secrets, and connect integrations. Install it with the `fused` package:
+
+```bash
+pip install --upgrade fused
+```
+
+## Global flags
+
+These flags apply to every command:
+
+| Flag | Env var | Description |
+|---|---|---|
+| `--env TEXT` | `FUSED_ENV` | Override the Fused environment. |
+| `--format [json\|text]` | `FUSED_CLI_FORMAT` | Output format for command results (json or text). |
+
+## Commands
+
+| Command | Description |
+|---|---|
+| `fused canvas` | Manage canvases. |
+| `fused checkpoint` | Manage canvas checkpoints. |
+| `fused claude` | Manage Fused for Claude Code (via the `claude` CLI). |
+| `fused completion` | Print or install shell tab completion for the fused CLI. |
+| `fused cronjob` | Manage scheduled UDF runs. |
+| `fused files` | Manage files stored in Fused. |
+| `fused integrations` | Manage third-party integrations in Fused. |
+| `fused json-ui` | Inspect and run JSON-UI widgets. |
+| `fused login` | Authenticate and persist credentials. |
+| `fused logout` | Log out and clear local credentials. |
+| `fused run` | Run a UDF and print the result. |
+| `fused secrets` | Manage kernel and user secrets. |
+| `fused udf` | Search and manage UDFs. |
+| `fused udf-schema` | Print the API schema for a UDF. |
+| `fused whoami` | Show info about the authenticated user or team. |
+
+================================================================================
+
+## fused run
+Path: cli/run.mdx
+URL: https://docs.fused.io/cli/run
+
+# `fused run`
+
+Run a UDF and print the result.
+
+```
+fused run CANVAS [UDF] [OPTIONS]
+```
+
+## Options
+
+| Flag | Description |
+|---|---|
+| `--engine [remote\|local]` | Execution engine to use. |
+| `--instance_type, --instance-type TEXT` | Remote instance type override. |
+| `--max_retry, --max-retry INTEGER` | Maximum retry attempts for failed runs. (default: `0`) |
+| `--cache_max_age, --cache-max-age TEXT` | Maximum cache age duration (for example 10s, 5m, 1h). |
+| `--cache / --no-cache` | Enable or disable result cache usage. (default: `True`) |
+| `--disk_size_gb, --disk-size-gb INTEGER` | Disk size in GB for supported remote runtimes. |
+| `--stdin` | Read UDF source code from standard input (same as passing multiline code to fused.load). |
+| `--verbose / --no-verbose` | Show UDF stdout/stderr from the runtime (default: on). (default: `True`) |
+| `--profile / --no-profile` | Collect and print lineprofile timings annotated against UDF source. |
+| `--output_file, --output-file FILENAME` | Write the result to a file. |
+| `--team` | Treat the provided reference as a team canvas name. |
+| `--id` | Treat the provided reference as a canvas ID. |
+
+================================================================================
+
+## fused secrets
+Path: cli/secrets.mdx
+URL: https://docs.fused.io/cli/secrets
+
+# `fused secrets`
+
+Manage kernel and user secrets.
+
+```
+fused secrets [SUBCOMMAND] [OPTIONS]
+```
+
+## Subcommands
+
+| Subcommand | Description |
+|---|---|
+| `delete` | Delete a kernel secret by key. |
+| `get` | Get a secret value by key. |
+| `list` | List secret keys. |
+| `set` | Set a kernel secret value. |
+
+## `fused secrets delete`
+
+Delete a kernel secret by key.
+
+```
+fused secrets delete KEY [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--client-id TEXT` | Override kernel client ID when deleting kernel secrets. |
+| `--user` | Rejected: user secrets are read-only. |
+
+## `fused secrets get`
+
+Get a secret value by key.
+
+```
+fused secrets get KEY [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--user` | Read a user-owned secret instead of a kernel secret. |
+| `--client-id TEXT` | Override kernel client ID when reading kernel secrets. |
+
+## `fused secrets list`
+
+List secret keys.
+
+```
+fused secrets list [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--user` | List user-owned secrets instead of kernel secrets. |
+| `--client-id TEXT` | Override kernel client ID when listing kernel secrets. |
+
+## `fused secrets set`
+
+Set a kernel secret value.
+
+```
+fused secrets set KEY VALUE [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--client-id TEXT` | Override kernel client ID when writing kernel secrets. |
+| `--user` | Rejected: user secrets are read-only. |
+
+================================================================================
+
+## fused udf-schema
+Path: cli/udf-schema.mdx
+URL: https://docs.fused.io/cli/udf-schema
+
+# `fused udf-schema`
+
+Print the API schema for a UDF.
+
+```
+fused udf-schema CANVAS [UDF] [OPTIONS]
+```
+
+## Options
+
+| Flag | Description |
+|---|---|
+| `--stdin` | Read UDF source code from standard input (same as passing multiline code to fused.load). |
+| `--team` | Treat the provided reference as a team canvas name. |
+| `--id` | Treat the provided reference as a canvas ID. |
+
+================================================================================
+
+## fused udf
+Path: cli/udf.mdx
+URL: https://docs.fused.io/cli/udf
+
+# `fused udf`
+
+Search and manage UDFs.
+
+```
+fused udf [SUBCOMMAND] [OPTIONS]
+```
+
+## Subcommands
+
+| Subcommand | Description |
+|---|---|
+| `search` | Search UDFs by natural language query. |
+
+## `fused udf search`
+
+Search UDFs by natural language query.
+
+```
+fused udf search QUERY [OPTIONS]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--top-k INTEGER` | Number of results to return from each source. (default: `5`) |
+| `--mode [all\|user\|public]` | Which UDF sources to search: user (personal), public (community), or all. (default: `all`) |
+
+================================================================================
+
+## fused whoami
+Path: cli/whoami.mdx
+URL: https://docs.fused.io/cli/whoami
+
+# `fused whoami`
+
+Show info about the authenticated user or team.
+
+```
+fused whoami [OPTIONS]
+```
+
+## Options
+
+| Flag | Description |
+|---|---|
+| `--team` | Show info about the authenticated team. |
+
+================================================================================
+
+# REST API
+
+## Account
+Path: rest-api/account.mdx
+URL: https://docs.fused.io/rest-api/account
+
+# Account
+
+Endpoints for the user behind a `Bearer` token. For the team-level container, see Environment.
+
+## Get the signed-in user
+
+```
+GET /user/self
+```
+
+**Scope:** user
+
+Resolves the credentials to a user record — the REST equivalent of `fused.api.whoami()` and `fused whoami`.
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | User id |
+| `name` | string | Display name |
+| `email` | string \| null | Email address |
+| `handle` | string \| null | Public handle, used in canvas and UDF URLs |
+| `execution_environment_id` | string \| null | Environment the user belongs to |
+| `signup_date` | string \| null | Signup timestamp |
+| `handle_last_changed` | string \| null | When the handle was last changed |
+
+This endpoint requires a `Bearer` token. A service account token resolves to an environment rather than a user, so it returns `403 Forbidden` — use `GET /execution-env/self` instead.
+
+## Update the signed-in user
+
+```
+POST /user/self
+```
+
+**Scope:** user
+
+Updates your own profile. Only two fields may be changed:
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | string | Display name |
+| `handle` | string | Public handle |
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $FUSED_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '' \
+  "https://www.fused.io/server/v1/user/self"
+```
+
+Handle changes are validated:
+
+| Status | Cause |
+|---|---|
+| `409 Conflict` | The handle is already taken, or is reserved |
+| `422 Unprocessable Entity` | The handle is an empty string |
+| `401 Unauthorized` | The request attempted to change a field you may not set — anything other than `name` and `handle` |
+
+Your handle appears in canvas and UDF URLs. Changing it can break links that address your work by handle.
+
+## See also
+
+- Environment — the team-level container and its service accounts
+- `fused whoami` — the CLI equivalent
+
+================================================================================
+
+## Batch jobs
+Path: rest-api/batch-jobs.mdx
+URL: https://docs.fused.io/rest-api/batch-jobs
+
+# Batch jobs
+
+Batch jobs run long or large workloads on dedicated instances, rather than on the real-time engine. Each job gets an id you use to poll status, list results, and read logs.
+
+In Python, this endpoint is `FusedAPI.start_job()`; ingestion jobs reach it through `job.run_batch()`, which calls `start_job` internally.
+
+`udf.map()` is a different mechanism. It fans a UDF out across the real-time engine rather than submitting a batch job, so the jobs it creates do not appear in these endpoints.
+
+## The job object
+
+Job endpoints return one of two shapes — the submit and status endpoints return a run summary, the listing endpoints return a job record. These fields are common to both:
+
+| Field | Type | Description |
+|---|---|---|
+| `instance_id` | string \| null | Instance running the job |
+| `instance_type` | string \| null | Instance type |
+| `disk_size_gb` | integer \| null | Attached disk size |
+| `job_status` | string \| null | Current status |
+| `job_status_date` | string \| null | Timestamp of the last status change |
+| `first_heartbeat` | string \| null | First heartbeat timestamp |
+| `last_heartbeat` | string \| null | Most recent heartbeat timestamp |
+
+## Submit a job
+
+```
+POST /run
+```
+
+**Scope:** user or environment
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `instance_type` | string | Instance type to run on |
+| `disk_size_gb` | integer | Disk size to attach |
+| `region` | string | Region to run in |
+
+**Body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `config` | object | Yes | The job configuration |
+| `send_status_email` | boolean | No | Email on completion. Defaults to `true`. |
+| `cache_max_age` | integer | No | Reuse a cached job result younger than this, in seconds |
+
+`config` is a large nested structure describing the steps to run. Build it with the Python SDK (`FusedAPI.start_job()`) rather than by hand.
+
+Returns the job object. When `cache_max_age` matches a recent identical job, the cached job's response is returned instead of starting new work.
+
+## Get job status
+
+```
+GET /run/by-id/
+```
+
+**Scope:** environment
+
+Returns the current job object. Poll this until the job reaches a terminal status.
+
+## Cancel a job
+
+```
+POST /run/by-id//cancel
+```
+
+**Scope:** environment
+
+Terminates the job and its instance, and records a `CANCELED` status. Returns the updated job object, or `400 Bad Request` if the job already finished or was canceled.
+
+## List job results
+
+```
+GET /run/by-id//results
+```
+
+**Scope:** environment
+
+Lists the output objects the job wrote to cloud storage. Returns an object listing.
+
+## List your jobs
+
+```
+GET /job/self
+```
+
+**Scope:** user
+
+Jobs created by the signed-in user, newest first.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `skip` | integer | Offset. Default `0`. |
+| `limit` | integer | Page size. Default `300`. |
+
+This endpoint is user-scoped — a service account token has no user identity and is rejected. For automation, use the team-wide listing below.
+
+## List your team's jobs
+
+```
+GET /job/my-execution-env
+```
+
+**Scope:** environment
+
+Every job in your execution environment, across all team members, newest first. Accepts the same `skip` and `limit` parameters.
+
+## Get a job
+
+```
+GET /job/by-id/
+```
+
+**Scope:** environment
+
+Returns the job record for one job. Returns `404 Not Found` if the job is not in your environment.
+
+## Get a job's configuration
+
+```
+GET /job/by-id//config
+```
+
+**Scope:** environment
+
+Returns the configuration the job was submitted with — useful for reproducing a run. Returns `400 Bad Request` if the job has no stored config.
+
+The response may be either the config JSON inline or a redirect to cloud storage, depending on how the job was recorded. Follow redirects.
+
+## Get a job's status history
+
+```
+GET /job/events/by-job-id/
+```
+
+**Scope:** environment
+
+Returns the job's status transitions, each with `id`, `job_id`, `job_status`, `job_status_description`, and `date_updated`. Useful for seeing where a failed job stalled.
+
+## Read job logs
+
+```
+GET /logs/
+```
+
+**Scope:** environment
+
+All log lines for the job, in chronological order.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `since_ms` | integer | Only return lines newer than this epoch-milliseconds timestamp |
+| `region` | string | Region the job ran in |
+
+### Tail job logs
+
+```
+GET /logs//tail
+```
+
+**Scope:** environment
+
+The most recent lines, in reverse-chronological order — better for polling a running job.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `limit` | integer | Number of lines to return. Default `1000`. |
+| `region` | string | Region the job ran in |
+
+## See also
+
+- `fused.api` — submitting and tracking the same jobs from Python
+- `fused.ingest` — running an ingestion job as a batch job
+- File system paths — where batch jobs write logs and results
+
+================================================================================
+
+## Canvases
+Path: rest-api/canvases.mdx
+URL: https://docs.fused.io/rest-api/canvases
+
+# Canvases
+
+A canvas groups UDFs and controls how they are shared. In the API a canvas is a **collection** — the paths use `/collection`, but the product calls them canvases.
+
+Sharing is per canvas: every UDF on a canvas inherits its access level and is reachable through its share token. See Securing Shared Tokens.
+
+## The canvas object
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Canvas id |
+| `name` | string | Canvas name |
+| `access_scope` | string | `public` or `team` |
+| `username` | string \| null | Owner's handle |
+| `allow_public_read` | boolean | Whether anyone may read the canvas |
+| `share_token` | string \| null | Canvas token (`fc_…`), once shared |
+| `share_client_id` | string \| null | Real-time instance shared UDFs run on |
+| `passcode` | string \| null | Canvas passcode, if set |
+| `dashboard_body` | string \| null | Dashboard layout |
+| `preview_image_url` | string \| null | Thumbnail URL |
+| `udfs` | array | Full UDF records on the canvas |
+| `owning_user` | object \| null | Owner summary |
+| `owning_execution_environment` | object \| null | Owning environment summary |
+| `last_updated` | string | Last modification timestamp |
+
+### Lite responses
+
+Endpoints ending in `/lite` return the same metadata but replace `udfs` (full UDF sources) with `udf_ids`, and omit `dashboard_body`, `share_client_id`, and the owner objects. Prefer the lite variants for listings — a full listing returns every UDF's source code.
+
+## List your canvases
+
+```
+GET /collection/self
+GET /collection/self/lite
+```
+
+**Scope:** user
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `skip` | integer | Offset. Default `0`. |
+| `limit` | integer | Page size. Default `300`. |
+
+To list only canvases that have been shared:
+
+```
+GET /collection/self/shared
+GET /collection/self/shared/lite
+```
+
+## List your team's canvases
+
+```
+GET /collection/exec-env
+GET /collection/exec-env/lite
+GET /collection/exec-env/shared
+```
+
+**Scope:** environment
+
+Canvases owned by your execution environment. Use these with a service account token.
+
+## Get a canvas
+
+```
+GET /collection/by-id/
+```
+
+**Scope:** public or authorized — readable with no credentials if the canvas is public; otherwise you must be the owner, in the owning environment, or a teammate.
+
+### By name
+
+| Endpoint | Scope | Resolves |
+|---|---|---|
+| `GET /collection/by-name/` | user | One of your canvases by name |
+| `GET /collection/exec-env/by-slug/` | environment | One of your team's canvases by name |
+| `GET /collection/by-slug//` | public or authorized | Any canvas by owner handle and name |
+
+### By share token
+
+```
+GET /collection/by-token/
+```
+
+**Scope:** by token.
+
+Returns a shared canvas and its UDFs. Each UDF's metadata carries a per-UDF shared token so it can be called individually.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `fused_session_token` | string | Session token for a team-only canvas |
+
+If the canvas has a passcode, send it in its own header — it replaces, rather than accompanies, other authentication:
+
+```
+Authorization: Fused-Canvas-Passcode <passcode>
+```
+
+## Create a canvas
+
+```
+POST /collection/new
+```
+
+**Scope:** user
+
+**Body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Canvas name |
+| `access_scope` | string | No | `public` or `team`. Default `team`. |
+| `udfs` | array | No | UDFs to create on the canvas |
+| `allow_public_read` | boolean | No | Allow anyone to read |
+| `dashboard_body` | string | No | Dashboard layout |
+| `passcode` | string | No | Canvas passcode |
+| `preview_image_url` | string | No | Thumbnail URL |
+
+## Update a canvas
+
+```
+POST /collection/by-id/
+```
+
+**Scope:** user
+
+Takes the same fields as create; `name` is required.
+
+Supplying `udfs` **replaces** the canvas's UDF set — UDFs absent from the request are removed. Omit `udfs` when you only mean to change metadata.
+
+## Delete a canvas
+
+```
+DELETE /collection/by-id/
+```
+
+**Scope:** user
+
+Returns `204 No Content`.
+
+## Share a canvas
+
+```
+POST /collection/share
+```
+
+**Scope:** user or environment
+
+Mints the canvas token (`fc_…`), or rotates it.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `collection_id` | string | Yes | Canvas to share |
+| `client_id` | string | First time only | Real-time instance shared UDFs run on. Required on the first share; returns `400` if omitted. Cannot be cleared afterwards. |
+| `new_token` | boolean | No | Rotate to a fresh token. Default `false`. |
+
+Returns the canvas object with `share_token` populated.
+
+`new_token=true` invalidates the previous canvas token immediately. Every distributed link, embed, and integration using the old token stops working. See Token lifecycle.
+
+### Stop sharing
+
+```
+POST /collection/unshare
+```
+
+**Scope:** user or environment
+
+Takes `collection_id` as a query parameter and clears the canvas's share token and client id.
+
+## Export a canvas
+
+```
+GET /collection/by-id//export-toml
+```
+
+**Scope:** public or authorized — subject to the same canvas access rules as reading it.
+
+Returns a zip archive (`application/zip`) containing `canvas.toml` plus each UDF's source — the same layout `fused canvas pull` writes.
+
+## Import a canvas
+
+```
+POST /collection/by-id//import-toml
+```
+
+**Scope:** user
+
+Uploads a canvas zip as multipart form data in a `file` field. The file must be a `.zip`; other types return `400`, and oversized archives return `413`.
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $FUSED_ACCESS_TOKEN" \
+  -F "file=@my_canvas.zip" \
+  "https://www.fused.io/server/v1/collection/by-id/<collection_id>/import-toml"
+```
+
+The archive's UDFs become the canvas's **complete** UDF set — any UDF not present in the zip is deleted. This mirrors pushing a canvas folder with the CLI.
+
+## OpenAPI for a shared canvas
+
+A shared canvas describes itself. Once a canvas has a token, append an extension to it on `udf.ai`:
+
+| URL | Returns |
+|---|---|
+| `https://udf.ai/fc_<canvas_token>.api.json` | An OpenAPI document describing the canvas's shared UDFs as endpoints |
+| `https://udf.ai/fc_<canvas_token>.api` | A browsable Swagger UI page for that document |
+
+This is a convenient way to hand an API consumer — or an agent — a machine-readable description of the UDFs a canvas exposes.
+
+## Public canvases
+
+**Scope:** public
+
+Returns only publicly published canvases.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /collection/public/lite` | All public canvases, metadata only |
+| `GET /collection/public` | All public canvases with full UDF sources |
+| `GET /collection/public/by-id/` | One public canvas |
+| `GET /collection/public/by-user//by-name/` | One public canvas by handle and name |
+
+Prefer `/collection/public/lite` — the non-lite listing returns every UDF's source for every public canvas.
+
+## See also
+
+- Securing Shared Tokens — access levels, session tokens, token lifecycle
+- `fused canvas` — the same operations from the CLI
+- UDFs — the UDFs a canvas contains
+
+================================================================================
+
+## Environment
+Path: rest-api/environment.mdx
+URL: https://docs.fused.io/rest-api/environment
+
+# Environment
+
+Your **execution environment** is the container for your team's UDFs, files, and attached resources. A service account token always resolves to an environment, which makes these endpoints the natural starting point for automation.
+
+## Get your environment
+
+```
+GET /execution-env/self
+```
+
+**Scope:** environment
+
+Returns the environment the credentials resolve to. Useful fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Environment id |
+| `name` | string | Environment name |
+| `users` | array | Members of the environment |
+| `buckets` | array | Attached cloud buckets |
+| `github_repos` | array | Linked GitHub repositories |
+
+## Get real-time usage
+
+```
+GET /execution-env/self/realtime/usage
+```
+
+**Scope:** environment
+
+Call counters for the real-time engine.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `date_prefix` | string | Restrict to a date, as `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`. Omit for cumulative totals. |
+
+**Response**
+
+| Field | Type | Description |
+|---|---|---|
+| `calls_total` | integer | All calls |
+| `calls_success` | integer | Successful calls |
+| `calls_error` | integer | Failed calls |
+| `calls_cached` | integer | Calls served from cache |
+| `calls_total_time` | integer | Total execution time, in milliseconds |
+| `calls_success_time` | integer | Execution time of successful calls, in milliseconds |
+| `calls_error_time` | integer | Execution time of failed calls, in milliseconds |
+| `ai_calls` | integer | AI calls made |
+| `date_prefix` | string \| null | The date filter applied |
+
+```bash
+curl -H "Authorization: Fused-Service-Token $FUSED_SERVICE_ACCOUNT_TOKEN" \
+  "https://www.fused.io/server/v1/execution-env/self/realtime/usage?date_prefix=2026-08"
+```
+
+## Service accounts
+
+Service accounts are the long-lived machine credentials for your environment. See Service Accounts for the concepts and usage.
+
+All four endpoints are **user-scoped** — they require a `Bearer` token. A service account token cannot manage service accounts, including its own.
+
+### List service accounts
+
+```
+GET /execution-env/self/service-account
+```
+
+**Scope:** user
+
+Returns an array of service account objects — `id`, `execution_environment_id`, `name`, `created_at`. Tokens are never included.
+
+### Get a service account
+
+```
+GET /execution-env/self/service-account/by-id/
+```
+
+**Scope:** user
+
+Returns one service account object, without its token.
+
+### Create a service account
+
+```
+POST /execution-env/self/service-account/new
+```
+
+**Scope:** user
+
+**Body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Name for the service account |
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $FUSED_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '' \
+  "https://www.fused.io/server/v1/execution-env/self/service-account/new"
+```
+
+**Response**
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Service account id |
+| `execution_environment_id` | string | Owning environment |
+| `name` | string | Name |
+| `created_at` | string | Creation timestamp |
+| `token` | string | The service account token |
+
+`token` is returned **only** in this response. Store it immediately — no endpoint can retrieve it later.
+
+### Delete a service account
+
+```
+DELETE /execution-env/self/service-account/by-id/
+```
+
+**Scope:** user
+
+Revokes the service account and returns the deleted record.
+
+The token stops working immediately. Anything still authenticating with it begins failing.
+
+## See also
+
+- Service Accounts — creating and using machine credentials
+- Batch jobs — submitting and tracking long-running jobs
+- Account — the signed-in user rather than the environment
+
+================================================================================
+
+## Files
+Path: rest-api/files.mdx
+URL: https://docs.fused.io/rest-api/files
+
+# Files
+
+These endpoints operate on cloud object storage your environment can reach — S3 and Google Cloud Storage buckets.
+
+These endpoints do not touch the `/mnt/cache` disk, which is a separate filesystem UDFs read and write directly. See the `/mnt/cache` disk.
+
+## Paths
+
+Every endpoint takes a `path` query parameter, using the scheme of the underlying store:
+
+| Scheme | Storage |
+|---|---|
+| `s3://` | An Amazon S3 bucket |
+| `gs://` | A Google Cloud Storage bucket |
+
+## List files
+
+```
+GET /files/list
+```
+
+**Scope:** public or authorized
+
+Returns an array of object keys under `path`.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | Yes | Prefix to list |
+| `client_id` | string | No | Environment context — see finding your `client_id` |
+
+### With metadata
+
+```
+GET /files/list-details
+```
+
+**Scope:** public or authorized
+
+Returns an array of objects. Accepts the same query parameters as List files.
+
+| Field | Type | Description |
+|---|---|---|
+| `url` | string | Full path to the object |
+| `file_name` | string | Object name |
+| `is_directory` | boolean | Whether the entry is a prefix |
+| `size` | integer | Size in bytes |
+| `last_modified` | string | Last modification timestamp |
+
+## Read a file
+
+```
+GET /files/get
+```
+
+**Scope:** public or authorized
+
+Redirects (`307`) to a presigned URL valid for one hour. Follow redirects to download the bytes.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | Yes | Object to read |
+| `client_id` | string | No | Environment context |
+
+## Upload a file
+
+```
+PUT /files/upload
+```
+
+**Scope:** environment
+
+Streams the raw request body to `path` in **S3**. Returns the resulting `s3://` URL. To upload to Google Cloud Storage, use Upload a file to GCS instead.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | Yes | Destination path |
+| `content_type` | string | No | Content type to store |
+| `client_id` | string | No | Environment context |
+
+```bash
+curl -X PUT \
+  -H "Authorization: Fused-Service-Token $FUSED_SERVICE_ACCOUNT_TOKEN" \
+  --data-binary @local.parquet \
+  "https://www.fused.io/server/v1/files/upload?path=s3%3A%2F%2Fmy-bucket%2Ffile.parquet"
+```
+
+For large files, prefer a signed upload so the bytes go straight to cloud storage.
+
+### Upload to a scratch path
+
+```
+POST /files/upload-temp
+```
+
+**Scope:** environment
+
+Streams the body to a server-chosen temporary path and returns it. Use this to stage an ad-hoc input without picking a destination.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `extension` | string | No | File extension to give the scratch object |
+| `content_type` | string | No | Content type to store |
+| `client_id` | string | No | Environment context |
+
+### Upload a file to GCS
+
+```
+PUT /files/upload-gcs
+```
+
+**Scope:** environment
+
+Uploads to a Google Cloud Storage bucket. Unlike `PUT /files/upload`, the body is multipart form data rather than raw bytes, and `client_id` is required.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | Yes | Destination `gs://` path |
+| `client_id` | string | Yes | Environment context — see finding your `client_id` |
+
+**Body**
+
+Multipart form data with the file in a `file_name` field.
+
+```bash
+curl -X PUT \
+  -H "Authorization: Fused-Service-Token $FUSED_SERVICE_ACCOUNT_TOKEN" \
+  -F "file_name=@local.parquet" \
+  "https://www.fused.io/server/v1/files/upload-gcs?path=gs%3A%2F%2Fmy-bucket%2Ffile.parquet&client_id=<client_id>"
+```
+
+## Delete a file or prefix
+
+```
+DELETE /files/delete
+```
+
+**Scope:** environment
+
+Deletes one object, or every object under a prefix. Returns `true`.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | Yes | Object or prefix to delete |
+| `max_deletion_depth` | integer \| string | No | Maximum prefix depth to recurse. Default `3`; pass `"unlimited"` to remove the guard. |
+| `client_id` | string | No | Environment context |
+
+Deleting a prefix removes every object beneath it up to `max_deletion_depth`. The default depth is a guardrail — raising it, and especially passing `"unlimited"`, makes it easy to delete far more than intended.
+
+## Signed URLs
+
+Signed URLs let a client read or write cloud storage directly, without proxying bytes through Fused. All signatures are valid for one hour.
+
+### Sign a download
+
+```
+GET /files/sign
+```
+
+**Scope:** public or authorized
+
+Returns a URL string for `path`.
+
+The returned string is not always a presigned URL — for public objects it may be the plain public URL, and in some configurations a Fused-proxied URL. Treat it as an opaque URL to fetch.
+
+### Sign an upload
+
+```
+GET /files/sign-upload
+```
+
+**Scope:** environment
+
+Returns an S3 POST policy — `}` — that a client can post the file to directly.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | Yes | Destination path |
+| `content_length` | integer | Yes | Exact size in bytes; pinned as a condition of the policy |
+| `content_type` | string | No | Content type; pinned when supplied |
+| `client_id` | string | No | Environment context |
+
+A companion `GET /files/sign-upload-temp` returns a policy for a server-chosen scratch path, taking `content_length`, `extension`, and `content_type`. Its response is ``.
+
+## Resolve a path
+
+```
+POST /files/resolve
+```
+
+**Scope:** public or authorized
+
+Expands a Fused-managed path alias to the concrete storage URL it maps to, and validates that you may access it. Returns the resolved URL as a string.
+
+Use this when another tool needs the real object location rather than the Fused alias.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | Yes | Path to resolve |
+| `job_id` | string | No | Resolve against the storage a specific job used |
+
+## Get a bucket policy for your own bucket
+
+```
+GET /files/s3-iam-policy
+```
+
+**Scope:** environment
+
+Generates an S3 bucket policy granting your environment's job and real-time roles access to a bucket you own. Takes `bucket_name` and returns the policy document.
+
+This is the policy referenced by the Amazon S3 integration setup, which is also where you attach the bucket to your environment.
+
+The generated policy grants broad (`s3:*`) access to those roles. Narrow the actions before applying it if your bucket holds anything the UDFs should not modify.
+
+## See also
+
+- File storage — the storage options available to UDFs and when to use each
+- `fused files` — the same operations from the CLI
+- Amazon S3 integration — connecting your own bucket
+
+================================================================================
+
+## REST API Overview
+Path: rest-api/overview.mdx
+URL: https://docs.fused.io/rest-api/overview
+
+# REST API Overview
+
+The Fused platform API is an HTTP API. Everything the Python SDK and Workbench do goes through it, so any language that can make an HTTP request can create UDFs, run jobs, manage files, and automate Fused.
+
+For the conceptual introduction — including the separate `udf.ai` endpoints for calling shared UDFs — see REST API in the Guide.
+
+## Base URL
+
+```
+https://www.fused.io/server/v1
+```
+
+Every path in this reference is relative to that base URL. Requests and responses are JSON unless noted otherwise.
+
+## Authentication
+
+Pass credentials in the `Authorization` header. Two schemes are available:
+
+```
+Authorization: Bearer <access_token>
+Authorization: Fused-Service-Token <service_account_token>
+```
+
+- **`Bearer`** — a personal access token that acts as *you*. Retrieve one from an authenticated SDK session with `fused.api.access_token()`.
+- **`Fused-Service-Token`** — a long-lived machine credential that acts as your *team's environment*. See Service Accounts.
+
+## Endpoint scopes
+
+Each endpoint accepts one or both credential types. This reference labels every endpoint with its scope:
+
+| Scope | Accepts | Notes |
+|---|---|---|
+| **User** | `Bearer` only | Acts on resources owned by the signed-in user. A service account token is rejected. |
+| **Environment** | `Bearer` or `Fused-Service-Token` | Acts on your team's execution environment. Suitable for automation. |
+| **User or environment** | `Bearer` or `Fused-Service-Token` | Resolves to whichever identity you present. |
+| **By token** | No header — the token in the path | Authorization is carried by the canvas or UDF token in the URL. |
+| **Public or authorized** | Either, or none | Public resources are readable with no credentials; reaching private ones requires them. |
+| **Public** | None | No credentials required. |
+
+"Environment" is your team's execution environment — the container for your team's UDFs, files, and quota. A service account token always resolves to an environment, never to an individual user, which is why user-scoped endpoints reject it.
+
+## Errors
+
+The API uses standard HTTP status codes:
+
+| Status | Meaning |
+|---|---|
+| `401 Unauthorized` | Missing, malformed, or expired credentials |
+| `403 Forbidden` | Authenticated, but not allowed to access this resource — including presenting a service account token to a user-scoped endpoint |
+| `404 Not Found` | Resource does not exist, or you cannot see it |
+| `422 Unprocessable Entity` | Request validation failed, or UDF execution failed |
+
+Validation errors return a `detail` array identifying each offending field:
+
+```json
+
+  ]
+}
+```
+
+Other errors return a `detail` string.
+
+## Example request
+
+```bash
+curl -H "Authorization: Fused-Service-Token $FUSED_SERVICE_ACCOUNT_TOKEN" \
+  "https://www.fused.io/server/v1/execution-env/self"
+```
+
+## Reference
+
+| Section | Covers |
+|---|---|
+| UDFs | Creating, reading, updating, and deleting UDFs |
+| Canvases | Canvases, sharing, and TOML import/| Running UDFs | Executing UDFs by token, as tiles, or ad hoc |
+| Batch jobs | Submitting long-running jobs, status, results, and logs |
+| Files | Cloud file storage: list, upload, download, signed URLs |
+| Environment | Execution environment, usage, and service accounts |
+| Scheduled UDFs | Cron schedules for UDFs |
+| Secrets | User secrets |
+| Session tokens | Minting and revoking session tokens |
+| Account | The signed-in user |
+
+================================================================================
+
+## Running UDFs
+Path: rest-api/running-udfs.mdx
+URL: https://docs.fused.io/rest-api/running-udfs
+
+# Running UDFs
+
+To run a UDF that lives on a shared canvas, call it on `udf.ai` — the canvas token in the URL identifies both the UDF and the caller's right to run it, so no `Authorization` header is involved. See UDFs as API for the URL structure, output formats, and tile URLs.
+
+This page covers what the platform API adds on top: running UDF code ad hoc, and invalidating cached results.
+
+## Run a UDF ad hoc
+
+```
+POST /realtime//api/v1/run/udf
+POST /realtime//api/v1/run/udf/tiles///
+```
+
+**Scope:** user or environment — the instance named by `client_id` must belong to your environment.
+
+Runs UDF code you send with the request, rather than a saved, shared UDF. The tiles variant folds the XYZ coordinate into the run and the cache key.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `cache_max_age` | integer | Maximum age in seconds of a cached result to reuse |
+
+**Body**
+
+| Field | Type | Description |
+|---|---|---|
+| `step_config` | string | JSON-serialized UDF configuration |
+| `format` | string | Output format |
+
+`step_config` is a serialized SDK object rather than a hand-written one. Generate it with the Python SDK — or call the UDF on `udf.ai`, which needs no request body at all.
+
+The response body is the serialized UDF output. Useful response headers:
+
+| Header | Description |
+|---|---|
+| `X-Fused-Metadata` | JSON with the run's `stdout`, `stderr`, and log directory |
+| `X-Fused-Request-Id` | Id for this run |
+
+### Find your `client_id`
+
+```
+GET /realtime-instance/available
+```
+
+**Scope:** user or environment
+
+Lists the real-time instances your environment owns. Each entry includes `client_id`, `name`, `endpoint`, and `preference_rank` — use the highest-ranked entry's `client_id`.
+
+In Python the same value is available as `fused.options.realtime_client_id`, and Workbench shows it as the kernel name.
+
+## Invalidate cached results
+
+```
+DELETE /realtime-shared//udf-cache/by-id//delete
+```
+
+**Scope:** user or environment — requires write access to the UDF.
+
+Clears the real-time cache for a UDF. Despite the `realtime-shared` prefix, this endpoint requires an `Authorization` header.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `z`, `x`, `y` | integer | Invalidate a single tile. Supply all three or none — a partial set returns `422`. |
+
+Returns `204 No Content`. See Cache invalidation for a worked example including how to find `client_id` and `udf_id`.
+
+### Invalidate many tiles
+
+```
+POST /realtime-shared//udf-cache/by-id//batch-delete
+```
+
+**Scope:** user or environment — requires write access to the UDF.
+
+**Body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `tiles` | array | Yes | Tile coordinates, each ``. Between 1 and 50,000 entries. |
+
+```bash
+curl -X POST \
+  -H "Authorization: Fused-Service-Token $FUSED_SERVICE_ACCOUNT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d ', ]}' \
+  "https://www.fused.io/server/v1/realtime-shared/<client_id>/udf-cache/by-id/<udf_id>/batch-delete"
+```
+
+**Response**
+
+| Field | Type | Description |
+|---|---|---|
+| `udf_id` | string | The UDF |
+| `tiles_requested` | integer | Tiles in the request after de-duplication |
+| `objects_deleted` | integer | Cache objects actually removed |
+
+## See also
+
+- UDFs as API — URL structure and every output format
+- Securing Shared Tokens — public vs team tokens and session tokens
+- Cache invalidation — when and how to purge
+- Batch jobs — for workloads too large for the real-time engine
+
+================================================================================
+
+## Scheduled UDFs
+Path: rest-api/scheduled-udfs.mdx
+URL: https://docs.fused.io/rest-api/scheduled-udfs
+
+# Scheduled UDFs
+
+A **cronjob** runs a saved UDF on a recurring schedule. Each cronjob belongs to your team's execution environment and targets one UDF by id.
+
+The equivalent CLI is `fused cronjob`.
+
+Scheduled UDFs run on batch compute instances, so your team needs batch compute enabled. Teams without billing enabled receive `403 Forbidden` when creating a cronjob.
+
+## The cronjob object
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Cronjob id |
+| `name` | string | Cronjob name |
+| `description` | string \| null | Optional description |
+| `execution_environment_id` | string | Environment that owns the cronjob |
+| `enabled` | boolean | Whether the schedule is active |
+| `minute` | array&lt;integer&gt; | Minute (0–59). Exactly one value. |
+| `hour` | array&lt;integer&gt; | Hours (0–23) |
+| `day_of_month` | array&lt;integer&gt; | Days of month (1–31). Empty means every day. |
+| `month` | array&lt;integer&gt; | Months (1–12). Empty means every month. |
+| `day_of_week` | array&lt;integer&gt; | Days of week (0 = Sunday). Empty means every day. |
+| `udf` | string | Id of the UDF to run |
+| `udf_args` | object \| null | Arguments passed to the UDF on each run |
+| `last_run` | string \| null | Timestamp of the most recent run |
+
+## List cronjobs
+
+```
+GET /cronjob/get-self
+```
+
+**Scope:** user or environment
+
+Returns an array of cronjob objects for your environment.
+
+## Get cronjobs for a UDF
+
+```
+GET /cronjob/by-udf-id/
+```
+
+**Scope:** user or environment
+
+Returns an array of cronjob objects scheduled for the given UDF id.
+
+## Get a cronjob
+
+```
+GET /cronjob/by-id/
+```
+
+**Scope:** user or environment
+
+Returns one cronjob object.
+
+## Create a cronjob
+
+```
+POST /cronjob/create
+```
+
+**Scope:** user or environment
+
+**Body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Cronjob name |
+| `enabled` | boolean | Yes | Whether the schedule is active |
+| `minute` | array&lt;integer&gt; | Yes | Minute (0–59), exactly one value |
+| `hour` | array&lt;integer&gt; | Yes | Hours (0–23) |
+| `day_of_month` | array&lt;integer&gt; | Yes | Days of month (1–31); empty for every day |
+| `month` | array&lt;integer&gt; | Yes | Months (1–12); empty for every month |
+| `day_of_week` | array&lt;integer&gt; | Yes | Days of week (0 = Sunday); empty for every day |
+| `udf` | string | Yes | Id of the UDF to run |
+| `description` | string | No | Optional description |
+| `udf_args` | object | No | Arguments passed to the UDF on each run |
+
+Run a UDF every day at 06:30 UTC:
+
+```bash
+curl -X POST \
+  -H "Authorization: Fused-Service-Token $FUSED_SERVICE_ACCOUNT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '
+      }' \
+  "https://www.fused.io/server/v1/cronjob/create"
+```
+
+Returns the created cronjob object.
+
+## Update a cronjob
+
+```
+POST /cronjob/by-id/
+```
+
+**Scope:** user or environment
+
+All body fields are optional — send only what you want to change. Accepts the same fields as Create a cronjob.
+
+Disable a schedule without deleting it:
+
+```bash
+curl -X POST \
+  -H "Authorization: Fused-Service-Token $FUSED_SERVICE_ACCOUNT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '' \
+  "https://www.fused.io/server/v1/cronjob/by-id/<cronjob_id>"
+```
+
+Returns the updated cronjob object.
+
+## Delete a cronjob
+
+```
+DELETE /cronjob/by-id/
+```
+
+**Scope:** user or environment
+
+Unschedules the UDF. Returns the deleted cronjob object.
+
+## Trigger a run now
+
+```
+POST /cronjob/user-run/by-id/
+```
+
+**Scope:** user or environment
+
+Runs the cronjob's UDF immediately, without waiting for the schedule. The response contains the `cronjob` object and a `run` object describing the started job — track it with the batch job endpoints.
+
+## See also
+
+- `fused cronjob` — the same operations from the CLI
+- Batch jobs — following a triggered run
+- UDFs — finding the `udf` id to schedule
+
+================================================================================
+
+## Secrets
+Path: rest-api/secrets.mdx
+URL: https://docs.fused.io/rest-api/secrets
+
+# Secrets
+
+User secrets are owned by the authenticated user and follow them across execution environments. They are the REST equivalent of `fused.user_secrets`.
+
+Values are stored encrypted and are only returned to the owning user. For how secrets work and when to use user secrets versus team secrets, see Secrets management.
+
+All endpoints on this page are **user-scoped** — they require a `Bearer` token and reject service account tokens. User secrets require a paid plan; on the basic tier these endpoints return `403 Forbidden`.
+
+## List secret keys
+
+```
+GET /secrets/self/user
+```
+
+Returns the keys only — never the values.
+
+```json
+
+```
+
+## Get a secret value
+
+```
+GET /secrets/self/user/
+```
+
+```json
+
+```
+
+Returns `404 Not Found` if the key does not exist.
+
+## Create a secret
+
+```
+POST /secrets/self/user
+```
+
+**Body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | Yes | Secret name |
+| `value` | string | Yes | Secret value |
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $FUSED_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '' \
+  "https://www.fused.io/server/v1/secrets/self/user"
+```
+
+Returns `201 Created` with ``. If the key already exists, returns `409 Conflict` — use Create or update instead.
+
+## Create or update a secret
+
+```
+PUT /secrets/self/user/
+```
+
+**Body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `value` | string | Yes | Secret value |
+
+Upserts the key, whether or not it already exists.
+
+```bash
+curl -X PUT \
+  -H "Authorization: Bearer $FUSED_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '' \
+  "https://www.fused.io/server/v1/secrets/self/user/OPENAI_API_KEY"
+```
+
+Returns ``.
+
+## Delete a secret
+
+```
+DELETE /secrets/self/user/
+```
+
+Returns ``.
+
+## See also
+
+- Secrets management — user secrets vs team secrets, and how they are secured
+- `fused.user_secrets` — the Python equivalent
+- `fused secrets` — the CLI equivalent
+
+================================================================================
+
+## Session tokens
+Path: rest-api/tokens.mdx
+URL: https://docs.fused.io/rest-api/tokens
+
+# Session tokens
+
+A **session token** is a short-lived credential that lets an external caller reach a UDF on a team-only canvas. Your backend mints one and passes it to the browser as the `fused_session_token` query parameter on the UDF URL.
+
+For the full embed pattern, see Securing Shared Tokens.
+
+## Mint a session token
+
+```
+POST /session-token/by-access-token/
+```
+
+**Scope:** user or environment
+
+`` is the canvas token (`fc_…`) of the canvas you are granting access to. URL-encode it if it contains slashes — name-based tokens take the form `fc_<team>/<canvas-name>`.
+
+**Body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `ttl` | integer | No | Lifetime in seconds. Defaults to `3600`; maximum `86400` (24 hours). |
+
+```bash
+curl -X POST \
+  -H "Authorization: Fused-Service-Token $FUSED_SERVICE_ACCOUNT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '' \
+  "https://www.fused.io/server/v1/session-token/by-access-token/fc_abcdef1234567890"
+```
+
+**Response**
+
+| Field | Type | Description |
+|---|---|---|
+| `token` | string | The canvas token the session token is bound to |
+| `session_token` | string | The session token to pass as `fused_session_token` |
+| `expires_at` | string | Expiry timestamp |
+
+Returns `404 Not Found` if the canvas token does not exist — for example after the token was rotated. See Token lifecycle.
+
+## Revoke session tokens
+
+```
+DELETE /session-token/by-access-token/
+```
+
+**Scope:** user or environment
+
+Revokes **all** session tokens issued for that canvas token — not just one. Returns `204 No Content`.
+
+Any embed or client still using a revoked session token stops working immediately. Mint replacements before revoking.
+
+## See also
+
+- Securing Shared Tokens — public vs team access and the session-token embed flow
+- Tokens & endpoints — canvas tokens and UDF URLs
+- Overview — Authentication — the credentials that authenticate you to the API
+
+================================================================================
+
+## UDFs
+Path: rest-api/udfs.mdx
+URL: https://docs.fused.io/rest-api/udfs
+
+# UDFs
+
+A UDF record holds the Python source (`udf_body`), a slug, and its placement on a canvas. These endpoints manage the records; to *execute* a UDF see Running UDFs.
+
+## The UDF object
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | UDF id |
+| `slug` | string | URL-safe name, unique within a canvas |
+| `udf_body` | string | The UDF source and metadata |
+| `collection_id` | string \| null | Canvas the UDF belongs to |
+| `collection_name` | string \| null | Canvas name |
+| `is_visible` | boolean | Whether the UDF is shown on its canvas |
+| `position` | integer | Ordering on the canvas |
+| `udf_body_hash` | string | Hash of `udf_body`, for change detection |
+| `last_updated` | string | Last modification timestamp |
+| `owning_user` | object \| null | Owner summary |
+
+## List your UDFs
+
+```
+GET /udf/self
+```
+
+**Scope:** user
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `skip` | integer | Offset. Default `0`. |
+| `limit` | integer | Page size. Default `300`. |
+
+## List your team's UDFs
+
+```
+GET /udf/exec-env/self
+```
+
+**Scope:** environment
+
+Every UDF in your execution environment. Accepts the same query parameters. This is the listing to use with a service account token.
+
+## Get a UDF
+
+```
+GET /udf/by-id/
+```
+
+**Scope:** public or authorized — public UDFs are readable with no credentials; private ones require access.
+
+Returns the UDF object.
+
+### By name
+
+Several addressing schemes resolve a UDF without knowing its id:
+
+| Endpoint | Scope | Resolves |
+|---|---|---|
+| `GET /udf/exec-env/self/by-collection//by-slug/` | environment | A UDF on one of your team's canvases |
+| `GET /udf/by-user-handle//by-collection//by-slug/` | user or environment | A UDF owned by a user, addressed by handle |
+| `GET /udf/by-user-email//by-collection//by-slug/` | user or environment | The same, addressed by email |
+
+Each has a variant without `/by-collection/` that resolves the slug on the owner's default canvas.
+
+### By shared token
+
+```
+GET /udf/shared/by-token/
+```
+
+**Scope:** by token.
+
+Returns the UDF a shared token points at. This is how `fused.load("fsh_…")` resolves a token to code.
+
+## Create a UDF
+
+```
+POST /udf/new
+```
+
+**Scope:** user
+
+**Body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `slug` | string | Yes | URL-safe name |
+| `udf_body` | string | Yes | The UDF source and metadata |
+| `udf_type` | string | Yes | Use `auto` |
+| `collection_id` | string | No | Canvas to add the UDF to |
+| `create_shared_token` | boolean | No | Also mint a shared token. Default `false`. |
+| `shared_token_access_scope` | string | No | `public` or `team`. Default `team`. |
+
+Returns the created UDF object; when `create_shared_token` is `true` it also includes `shared_token`.
+
+## Update a UDF
+
+```
+POST /udf/by-id/
+```
+
+**Scope:** user
+
+Send only the fields you want to change: `slug`, `udf_body`, or `collection_id`. Returns the updated UDF object.
+
+## Delete a UDF
+
+```
+DELETE /udf/by-id/
+```
+
+**Scope:** user
+
+Deleting a UDF breaks any shared token or URL pointing at it. Cached results are not served after deletion.
+
+## See also
+
+- Running UDFs — executing what you create here
+- Canvases — the canvas a UDF belongs to
+- Write UDFs securely — access control and sharing
+
+================================================================================
+
 # WORKBENCH
 
 ## AI Chat
@@ -27059,4 +29943,4 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 ---
 
 Generated automatically from Fused documentation. Last updated: 2026-08-20
-Total sections: 5
+Total sections: 7

@@ -1,0 +1,252 @@
+---
+id: canvases
+title: Canvases
+sidebar_label: Canvases
+sidebar_position: 3
+description: REST endpoints for canvases — listing, creating, sharing, and TOML import/export.
+---
+
+# Canvases
+
+A canvas groups UDFs and controls how they are shared. In the API a canvas is a **collection** — the paths use `/collection`, but the product calls them canvases.
+
+Sharing is per canvas: every UDF on a canvas inherits its access level and is reachable through its share token. See [Securing Shared Tokens](/guide/data-input-outputs/export-api/securing-shared-tokens).
+
+## The canvas object
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Canvas id |
+| `name` | string | Canvas name |
+| `access_scope` | string | `public` or `team` |
+| `username` | string \| null | Owner's handle |
+| `allow_public_read` | boolean | Whether anyone may read the canvas |
+| `share_token` | string \| null | Canvas token (`fc_…`), once shared |
+| `share_client_id` | string \| null | Real-time instance shared UDFs run on |
+| `passcode` | string \| null | Canvas passcode, if set |
+| `dashboard_body` | string \| null | Dashboard layout |
+| `preview_image_url` | string \| null | Thumbnail URL |
+| `udfs` | array | Full UDF records on the canvas |
+| `owning_user` | object \| null | Owner summary |
+| `owning_execution_environment` | object \| null | Owning environment summary |
+| `last_updated` | string | Last modification timestamp |
+
+### Lite responses
+
+Endpoints ending in `/lite` return the same metadata but replace `udfs` (full UDF sources) with `udf_ids`, and omit `dashboard_body`, `share_client_id`, and the owner objects. Prefer the lite variants for listings — a full listing returns every UDF's source code.
+
+## List your canvases
+
+```
+GET /collection/self
+GET /collection/self/lite
+```
+
+**Scope:** user
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `skip` | integer | Offset. Default `0`. |
+| `limit` | integer | Page size. Default `300`. |
+
+To list only canvases that have been shared:
+
+```
+GET /collection/self/shared
+GET /collection/self/shared/lite
+```
+
+## List your team's canvases
+
+```
+GET /collection/exec-env
+GET /collection/exec-env/lite
+GET /collection/exec-env/shared
+```
+
+**Scope:** environment
+
+Canvases owned by your execution environment. Use these with a service account token.
+
+## Get a canvas
+
+```
+GET /collection/by-id/{collection_id}
+```
+
+**Scope:** public or authorized — readable with no credentials if the canvas is public; otherwise you must be the owner, in the owning environment, or a teammate.
+
+### By name
+
+| Endpoint | Scope | Resolves |
+|---|---|---|
+| `GET /collection/by-name/{canvas_name}` | user | One of your canvases by name |
+| `GET /collection/exec-env/by-slug/{canvas_name}` | environment | One of your team's canvases by name |
+| `GET /collection/by-slug/{username}/{canvas_name}` | public or authorized | Any canvas by owner handle and name |
+
+### By share token
+
+```
+GET /collection/by-token/{canvas_token}
+```
+
+**Scope:** by token.
+
+Returns a shared canvas and its UDFs. Each UDF's metadata carries a per-UDF shared token so it can be called individually.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `fused_session_token` | string | [Session token](/rest-api/tokens) for a team-only canvas |
+
+If the canvas has a passcode, send it in its own header — it replaces, rather than accompanies, other authentication:
+
+```
+Authorization: Fused-Canvas-Passcode <passcode>
+```
+
+## Create a canvas
+
+```
+POST /collection/new
+```
+
+**Scope:** user
+
+**Body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Canvas name |
+| `access_scope` | string | No | `public` or `team`. Default `team`. |
+| `udfs` | array | No | UDFs to create on the canvas |
+| `allow_public_read` | boolean | No | Allow anyone to read |
+| `dashboard_body` | string | No | Dashboard layout |
+| `passcode` | string | No | Canvas passcode |
+| `preview_image_url` | string | No | Thumbnail URL |
+
+## Update a canvas
+
+```
+POST /collection/by-id/{collection_id}
+```
+
+**Scope:** user
+
+Takes the same fields as create; `name` is required.
+
+:::warning
+Supplying `udfs` **replaces** the canvas's UDF set — UDFs absent from the request are removed. Omit `udfs` when you only mean to change metadata.
+:::
+
+## Delete a canvas
+
+```
+DELETE /collection/by-id/{collection_id}
+```
+
+**Scope:** user
+
+Returns `204 No Content`.
+
+## Share a canvas
+
+```
+POST /collection/share
+```
+
+**Scope:** user or environment
+
+Mints the canvas token (`fc_…`), or rotates it.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `collection_id` | string | Yes | Canvas to share |
+| `client_id` | string | First time only | Real-time instance shared UDFs run on. Required on the first share; returns `400` if omitted. Cannot be cleared afterwards. |
+| `new_token` | boolean | No | Rotate to a fresh token. Default `false`. |
+
+Returns the canvas object with `share_token` populated.
+
+:::danger
+`new_token=true` invalidates the previous canvas token immediately. Every distributed link, embed, and integration using the old token stops working. See [Token lifecycle](/guide/data-input-outputs/export-api/securing-shared-tokens#token-lifecycle).
+:::
+
+### Stop sharing
+
+```
+POST /collection/unshare
+```
+
+**Scope:** user or environment
+
+Takes `collection_id` as a query parameter and clears the canvas's share token and client id.
+
+## Export a canvas
+
+```
+GET /collection/by-id/{collection_id}/export-toml
+```
+
+**Scope:** public or authorized — subject to the same canvas access rules as reading it.
+
+Returns a zip archive (`application/zip`) containing `canvas.toml` plus each UDF's source — the same layout [`fused canvas pull`](/cli/canvas) writes.
+
+## Import a canvas
+
+```
+POST /collection/by-id/{collection_id}/import-toml
+```
+
+**Scope:** user
+
+Uploads a canvas zip as multipart form data in a `file` field. The file must be a `.zip`; other types return `400`, and oversized archives return `413`.
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $FUSED_ACCESS_TOKEN" \
+  -F "file=@my_canvas.zip" \
+  "https://www.fused.io/server/v1/collection/by-id/<collection_id>/import-toml"
+```
+
+:::warning
+The archive's UDFs become the canvas's **complete** UDF set — any UDF not present in the zip is deleted. This mirrors pushing a canvas folder with the CLI.
+:::
+
+## OpenAPI for a shared canvas
+
+A shared canvas describes itself. Once a canvas has a token, append an extension to it on `udf.ai`:
+
+| URL | Returns |
+|---|---|
+| `https://udf.ai/fc_<canvas_token>.api.json` | An OpenAPI document describing the canvas's shared UDFs as endpoints |
+| `https://udf.ai/fc_<canvas_token>.api` | A browsable Swagger UI page for that document |
+
+This is a convenient way to hand an API consumer — or an agent — a machine-readable description of the UDFs a canvas exposes.
+
+## Public canvases
+
+**Scope:** public
+
+Returns only publicly published canvases.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /collection/public/lite` | All public canvases, metadata only |
+| `GET /collection/public` | All public canvases with full UDF sources |
+| `GET /collection/public/by-id/{collection_id}` | One public canvas |
+| `GET /collection/public/by-user/{handle}/by-name/{canvas_name}` | One public canvas by handle and name |
+
+:::tip
+Prefer `/collection/public/lite` — the non-lite listing returns every UDF's source for every public canvas.
+:::
+
+## See also
+
+- [Securing Shared Tokens](/guide/data-input-outputs/export-api/securing-shared-tokens) — access levels, session tokens, token lifecycle
+- [`fused canvas`](/cli/canvas) — the same operations from the CLI
+- [UDFs](/rest-api/udfs) — the UDFs a canvas contains

@@ -1,0 +1,158 @@
+---
+id: scheduled-udfs
+title: Scheduled UDFs
+sidebar_label: Scheduled UDFs
+sidebar_position: 8
+description: REST endpoints for scheduling UDFs on a cron schedule.
+---
+
+# Scheduled UDFs
+
+A **cronjob** runs a saved UDF on a recurring schedule. Each cronjob belongs to your team's execution environment and targets one UDF by id.
+
+The equivalent CLI is [`fused cronjob`](/cli/cronjob).
+
+:::note
+Scheduled UDFs run on [batch compute instances](/guide/working-with-udfs/scheduling-udfs), so your team needs batch compute enabled. Teams without billing enabled receive `403 Forbidden` when creating a cronjob.
+:::
+
+## The cronjob object
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Cronjob id |
+| `name` | string | Cronjob name |
+| `description` | string \| null | Optional description |
+| `execution_environment_id` | string | Environment that owns the cronjob |
+| `enabled` | boolean | Whether the schedule is active |
+| `minute` | array&lt;integer&gt; | Minute (0–59). Exactly one value. |
+| `hour` | array&lt;integer&gt; | Hours (0–23) |
+| `day_of_month` | array&lt;integer&gt; | Days of month (1–31). Empty means every day. |
+| `month` | array&lt;integer&gt; | Months (1–12). Empty means every month. |
+| `day_of_week` | array&lt;integer&gt; | Days of week (0 = Sunday). Empty means every day. |
+| `udf` | string | Id of the UDF to run |
+| `udf_args` | object \| null | Arguments passed to the UDF on each run |
+| `last_run` | string \| null | Timestamp of the most recent run |
+
+## List cronjobs
+
+```
+GET /cronjob/get-self
+```
+
+**Scope:** user or environment
+
+Returns an array of cronjob objects for your environment.
+
+## Get cronjobs for a UDF
+
+```
+GET /cronjob/by-udf-id/{udf_id}
+```
+
+**Scope:** user or environment
+
+Returns an array of cronjob objects scheduled for the given UDF id.
+
+## Get a cronjob
+
+```
+GET /cronjob/by-id/{cronjob_id}
+```
+
+**Scope:** user or environment
+
+Returns one cronjob object.
+
+## Create a cronjob
+
+```
+POST /cronjob/create
+```
+
+**Scope:** user or environment
+
+**Body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Cronjob name |
+| `enabled` | boolean | Yes | Whether the schedule is active |
+| `minute` | array&lt;integer&gt; | Yes | Minute (0–59), exactly one value |
+| `hour` | array&lt;integer&gt; | Yes | Hours (0–23) |
+| `day_of_month` | array&lt;integer&gt; | Yes | Days of month (1–31); empty for every day |
+| `month` | array&lt;integer&gt; | Yes | Months (1–12); empty for every month |
+| `day_of_week` | array&lt;integer&gt; | Yes | Days of week (0 = Sunday); empty for every day |
+| `udf` | string | Yes | Id of the UDF to run |
+| `description` | string | No | Optional description |
+| `udf_args` | object | No | Arguments passed to the UDF on each run |
+
+Run a UDF every day at 06:30 UTC:
+
+```bash
+curl -X POST \
+  -H "Authorization: Fused-Service-Token $FUSED_SERVICE_ACCOUNT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "name": "daily-refresh",
+        "enabled": true,
+        "minute": [30],
+        "hour": [6],
+        "day_of_month": [],
+        "month": [],
+        "day_of_week": [],
+        "udf": "<udf_id>",
+        "udf_args": {"region": "us-west-2"}
+      }' \
+  "https://www.fused.io/server/v1/cronjob/create"
+```
+
+Returns the created cronjob object.
+
+## Update a cronjob
+
+```
+POST /cronjob/by-id/{cronjob_id}
+```
+
+**Scope:** user or environment
+
+All body fields are optional — send only what you want to change. Accepts the same fields as [Create a cronjob](#create-a-cronjob).
+
+Disable a schedule without deleting it:
+
+```bash
+curl -X POST \
+  -H "Authorization: Fused-Service-Token $FUSED_SERVICE_ACCOUNT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": false}' \
+  "https://www.fused.io/server/v1/cronjob/by-id/<cronjob_id>"
+```
+
+Returns the updated cronjob object.
+
+## Delete a cronjob
+
+```
+DELETE /cronjob/by-id/{cronjob_id}
+```
+
+**Scope:** user or environment
+
+Unschedules the UDF. Returns the deleted cronjob object.
+
+## Trigger a run now
+
+```
+POST /cronjob/user-run/by-id/{cronjob_id}
+```
+
+**Scope:** user or environment
+
+Runs the cronjob's UDF immediately, without waiting for the schedule. The response contains the `cronjob` object and a `run` object describing the started job — track it with the [batch job endpoints](/rest-api/batch-jobs).
+
+## See also
+
+- [`fused cronjob`](/cli/cronjob) — the same operations from the CLI
+- [Batch jobs](/rest-api/batch-jobs) — following a triggered run
+- [UDFs](/rest-api/udfs) — finding the `udf` id to schedule

@@ -103,6 +103,7 @@ const sidebars: SidebarsConfig = {
       items: [
         { type: "doc", id: "guide/data-input-outputs/export-api/tokens-endpoints", label: "Tokens & endpoints" },
         { type: "doc", id: "guide/data-input-outputs/export-api/securing-shared-tokens", label: "Securing Shared Tokens" },
+        { type: "doc", id: "guide/data-input-outputs/export-api/rest-api", label: "REST API" },
         { type: "doc", id: "guide/data-input-outputs/export-api/download", label: "Download" },
         { type: "doc", id: "guide/data-input-outputs/export-api/geospatial-export", label: "Geospatial Integration" },
         { type: "doc", id: "guide/data-input-outputs/export-api/audit-logs", label: "Audit Logs" },
@@ -278,6 +279,25 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "cli/udf", label: "fused udf" },
         { type: "doc", id: "cli/udf-schema", label: "fused udf-schema" },
         { type: "doc", id: "cli/whoami", label: "fused whoami" },
+      ],
+    },
+
+    {
+      type: "category",
+      label: "REST API",
+      collapsible: false,
+      items: [
+        { type: "doc", id: "rest-api/overview", label: "Overview" },
+        { type: "doc", id: "rest-api/udfs", label: "UDFs" },
+        { type: "doc", id: "rest-api/canvases", label: "Canvases" },
+        { type: "doc", id: "rest-api/running-udfs", label: "Running UDFs" },
+        { type: "doc", id: "rest-api/batch-jobs", label: "Batch jobs" },
+        { type: "doc", id: "rest-api/files", label: "Files" },
+        { type: "doc", id: "rest-api/environment", label: "Environment" },
+        { type: "doc", id: "rest-api/scheduled-udfs", label: "Scheduled UDFs" },
+        { type: "doc", id: "rest-api/secrets", label: "Secrets" },
+        { type: "doc", id: "rest-api/tokens", label: "Session tokens" },
+        { type: "doc", id: "rest-api/account", label: "Account" },
       ],
     },
 

@@ -1,0 +1,251 @@
+---
+id: files
+title: Files
+sidebar_label: Files
+sidebar_position: 6
+description: REST endpoints for listing, reading, uploading, and signing files in cloud storage.
+---
+
+# Files
+
+These endpoints operate on cloud object storage your environment can reach — S3 and Google Cloud Storage buckets.
+
+:::note
+These endpoints do not touch the `/mnt/cache` disk, which is a separate filesystem UDFs read and write directly. See [the `/mnt/cache` disk](/guide/working-with-udfs/udf-best-practices/storage#mntcache-disk).
+:::
+
+## Paths
+
+Every endpoint takes a `path` query parameter, using the scheme of the underlying store:
+
+| Scheme | Storage |
+|---|---|
+| `s3://` | An Amazon S3 bucket |
+| `gs://` | A Google Cloud Storage bucket |
+
+## List files
+
+```
+GET /files/list
+```
+
+**Scope:** public or authorized
+
+Returns an array of object keys under `path`.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | Yes | Prefix to list |
+| `client_id` | string | No | Environment context — see [finding your `client_id`](/rest-api/running-udfs#find-your-client_id) |
+
+### With metadata
+
+```
+GET /files/list-details
+```
+
+**Scope:** public or authorized
+
+Returns an array of objects. Accepts the same query parameters as [List files](#list-files).
+
+| Field | Type | Description |
+|---|---|---|
+| `url` | string | Full path to the object |
+| `file_name` | string | Object name |
+| `is_directory` | boolean | Whether the entry is a prefix |
+| `size` | integer | Size in bytes |
+| `last_modified` | string | Last modification timestamp |
+
+## Read a file
+
+```
+GET /files/get
+```
+
+**Scope:** public or authorized
+
+Redirects (`307`) to a presigned URL valid for one hour. Follow redirects to download the bytes.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | Yes | Object to read |
+| `client_id` | string | No | Environment context |
+
+## Upload a file
+
+```
+PUT /files/upload
+```
+
+**Scope:** environment
+
+Streams the raw request body to `path` in **S3**. Returns the resulting `s3://` URL. To upload to Google Cloud Storage, use [Upload a file to GCS](#upload-a-file-to-gcs) instead.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | Yes | Destination path |
+| `content_type` | string | No | Content type to store |
+| `client_id` | string | No | Environment context |
+
+```bash
+curl -X PUT \
+  -H "Authorization: Fused-Service-Token $FUSED_SERVICE_ACCOUNT_TOKEN" \
+  --data-binary @local.parquet \
+  "https://www.fused.io/server/v1/files/upload?path=s3%3A%2F%2Fmy-bucket%2Ffile.parquet"
+```
+
+For large files, prefer a [signed upload](#sign-an-upload) so the bytes go straight to cloud storage.
+
+### Upload to a scratch path
+
+```
+POST /files/upload-temp
+```
+
+**Scope:** environment
+
+Streams the body to a server-chosen temporary path and returns it. Use this to stage an ad-hoc input without picking a destination.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `extension` | string | No | File extension to give the scratch object |
+| `content_type` | string | No | Content type to store |
+| `client_id` | string | No | Environment context |
+
+### Upload a file to GCS
+
+```
+PUT /files/upload-gcs
+```
+
+**Scope:** environment
+
+Uploads to a Google Cloud Storage bucket. Unlike [`PUT /files/upload`](#upload-a-file), the body is multipart form data rather than raw bytes, and `client_id` is required.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | Yes | Destination `gs://` path |
+| `client_id` | string | Yes | Environment context — see [finding your `client_id`](/rest-api/running-udfs#find-your-client_id) |
+
+**Body**
+
+Multipart form data with the file in a `file_name` field.
+
+```bash
+curl -X PUT \
+  -H "Authorization: Fused-Service-Token $FUSED_SERVICE_ACCOUNT_TOKEN" \
+  -F "file_name=@local.parquet" \
+  "https://www.fused.io/server/v1/files/upload-gcs?path=gs%3A%2F%2Fmy-bucket%2Ffile.parquet&client_id=<client_id>"
+```
+
+## Delete a file or prefix
+
+```
+DELETE /files/delete
+```
+
+**Scope:** environment
+
+Deletes one object, or every object under a prefix. Returns `true`.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | Yes | Object or prefix to delete |
+| `max_deletion_depth` | integer \| string | No | Maximum prefix depth to recurse. Default `3`; pass `"unlimited"` to remove the guard. |
+| `client_id` | string | No | Environment context |
+
+:::danger
+Deleting a prefix removes every object beneath it up to `max_deletion_depth`. The default depth is a guardrail — raising it, and especially passing `"unlimited"`, makes it easy to delete far more than intended.
+:::
+
+## Signed URLs
+
+Signed URLs let a client read or write cloud storage directly, without proxying bytes through Fused. All signatures are valid for one hour.
+
+### Sign a download
+
+```
+GET /files/sign
+```
+
+**Scope:** public or authorized
+
+Returns a URL string for `path`.
+
+:::note
+The returned string is not always a presigned URL — for public objects it may be the plain public URL, and in some configurations a Fused-proxied URL. Treat it as an opaque URL to fetch.
+:::
+
+### Sign an upload
+
+```
+GET /files/sign-upload
+```
+
+**Scope:** environment
+
+Returns an S3 POST policy — `{"url": …, "fields": {…}}` — that a client can post the file to directly.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | Yes | Destination path |
+| `content_length` | integer | Yes | Exact size in bytes; pinned as a condition of the policy |
+| `content_type` | string | No | Content type; pinned when supplied |
+| `client_id` | string | No | Environment context |
+
+A companion `GET /files/sign-upload-temp` returns a policy for a server-chosen scratch path, taking `content_length`, `extension`, and `content_type`. Its response is `{"signed_post": …, "storage_url": …}`.
+
+## Resolve a path
+
+```
+POST /files/resolve
+```
+
+**Scope:** public or authorized
+
+Expands a Fused-managed path alias to the concrete storage URL it maps to, and validates that you may access it. Returns the resolved URL as a string.
+
+Use this when another tool needs the real object location rather than the Fused alias.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | Yes | Path to resolve |
+| `job_id` | string | No | Resolve against the storage a specific job used |
+
+## Get a bucket policy for your own bucket
+
+```
+GET /files/s3-iam-policy
+```
+
+**Scope:** environment
+
+Generates an S3 bucket policy granting your environment's job and real-time roles access to a bucket you own. Takes `bucket_name` and returns the policy document.
+
+This is the policy referenced by the [Amazon S3 integration](/workbench/integrations/s3) setup, which is also where you attach the bucket to your environment.
+
+:::info
+The generated policy grants broad (`s3:*`) access to those roles. Narrow the actions before applying it if your bucket holds anything the UDFs should not modify.
+:::
+
+## See also
+
+- [File storage](/guide/working-with-udfs/udf-best-practices/storage) — the storage options available to UDFs and when to use each
+- [`fused files`](/cli/files) — the same operations from the CLI
+- [Amazon S3 integration](/workbench/integrations/s3) — connecting your own bucket
