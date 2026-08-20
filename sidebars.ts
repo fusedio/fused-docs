@@ -103,6 +103,7 @@ const sidebars: SidebarsConfig = {
       items: [
         { type: "doc", id: "guide/data-input-outputs/export-api/tokens-endpoints", label: "Tokens & endpoints" },
         { type: "doc", id: "guide/data-input-outputs/export-api/securing-shared-tokens", label: "Securing Shared Tokens" },
+        { type: "doc", id: "guide/data-input-outputs/export-api/rest-api", label: "REST API" },
         { type: "doc", id: "guide/data-input-outputs/export-api/download", label: "Download" },
         { type: "doc", id: "guide/data-input-outputs/export-api/geospatial-export", label: "Geospatial Integration" },
         { type: "doc", id: "guide/data-input-outputs/export-api/audit-logs", label: "Audit Logs" },
