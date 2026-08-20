@@ -1,0 +1,69 @@
+---
+id: ai-change-detection
+title: Detecting Land-Cover Change from Space with AI Embeddings
+sidebar_label: AI Change Detection
+sidebar_position: 20
+---
+
+This canvas does change detection on top of an AI embedding dataset instead of raw satellite imagery — and because every pixel is already a 64-dimensional vector, the detection itself is just a cosine distance between this year's vector and last year's. No image-processing code, no imagery to download, no infrastructure to stand up: the whole thing is a handful of serverless UDFs that read only the two years you asked for. Draw a box anywhere on Earth, pick a year, and three synchronized maps show you the landscape, its structure, and where things changed.
+
+<ClickZoomImage src="/img/examples/ai-change-detection.png" alt="AI change detection canvas — AOI selector on the left feeding three synchronized map views: RGB embedding, PCA false-color, and cosine-distance change map" />
+
+## Try it out
+
+[**Open the Canvas →**](https://www.fused.io/canvas/fc_fused/AI_change_detection)
+
+:::tip Make a copy first
+The canvas uses public data so it runs out-of-the-box. If you want to tweak the UDFs — adjust the color stretch, add a threshold mask, export the change layer — fork it first: open the Canvas → **⋮** → **Make a copy**.
+:::
+
+## What you can do with it
+
+This canvas is useful whenever you need to quickly answer questions like:
+
+- **Which fields were harvested or rotated?** Bright pixels in the change map appear where the crop cycle shifted year to year.
+- **Where did new development happen?** Roads, buildings, and cleared land all register as high-change areas.
+- **How stable is this landscape?** Dark areas in the change map haven't changed meaningfully in years.
+
+The dataset covers the whole globe from 2017 to 2025, so you can explore any region — not just a pre-selected area.
+
+## How the canvas is organized
+
+The canvas has one control node that feeds three analysis nodes. Change the AOI or the year in the first node, and all three maps update automatically.
+
+### 1 · Select area + year
+
+Draw a bounding box on the satellite basemap and pick a year (2017–2025). The widget ships pre-loaded with an AOI over Adana, Turkey — a good starting point because the agricultural fields there show clear seasonal patterns. Click **Set parameters** to broadcast your selection to the three nodes below.
+
+### 2 · RGB (embedding bands 0–2)
+
+Renders the first three of the 64 embedding bands as a false-color RGB image for the chosen year. Think of this as a "what does this place look like to the model" view — a baseline to orient yourself before looking at the change map. Bands are stretched on their own 1–99th percentiles so the image is always well-exposed regardless of the area.
+
+### 3 · PCA of the full embedding
+
+All 64 embedding dimensions are compressed to three using PCA (NumPy SVD on a pixel sample), then mapped to RGB. The dominant variance in the landscape — field boundaries, crop types, bare soil — pops out in this view in ways that raw satellite bands often don't show clearly. Stretched on 2–98th percentiles.
+
+### 4 · Cosine-distance change map
+
+This is the core of the canvas. For each pixel, it computes the cosine distance between the 64-dimensional embedding vector in year Y and year Y−1. The result is rendered with the magma colormap: **bright = large change, dark = stable**.
+
+The key thing is that it compares *embedding vectors*, not raw pixel brightness. That means it picks up semantic change — a field going from fallow to irrigated crops — rather than lighting differences between two satellite passes. Only the two years being compared are read from the store, so queries stay fast.
+
+## About the data
+
+The canvas reads from the **AlphaEarth Foundations (AEF)** mosaic published by [Taylor Geospatial Labs on Source Cooperative](https://source.coop/tge-labs/aef-mosaic/). The store is a public, anonymous GeoZarr — no credentials needed.
+
+| Property | Value |
+|---|---|
+| Dataset | AlphaEarth Foundations (AEF) embedding mosaic |
+| Publisher | Taylor Geospatial Labs via Source Cooperative |
+| Format | GeoZarr v3, EPSG:4326, int8 |
+| Coverage | Global |
+| Years available | 2017–2025 |
+| Embedding size | 64 dimensions per pixel |
+
+## See also
+
+- [**Temporal Pixel Analysis**](/examples/temporal-pixel-analysis) — plot NDVI time-series curves for individual fields over Sentinel-2 imagery, rather than a spatial change map.
+- [**Geospatial processing guide**](/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile) — how tile-based UDFs work under the hood.
+- [**Caching in Fused**](/guide/working-with-udfs/udf-best-practices/caching) — why repeated queries on the same AOI return so fast.
