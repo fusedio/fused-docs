@@ -8150,7 +8150,9 @@ Quick links for geospatial workflows in Fused.
 Path: examples\ai-change-detection.mdx
 URL: https://docs.fused.io/examples/ai-change-detection
 
-If you've ever wanted to answer "did anything change here between last year and this year?" from satellite data, this canvas does exactly that — without writing image-processing code. Draw a box anywhere on Earth, pick a year, and three synchronized maps show you the landscape, its structure, and where things changed.
+This canvas does change detection on top of an AI embedding dataset instead of raw satellite imagery — and because every pixel is already a 64-dimensional vector, the detection itself is just a cosine distance between this year's vector and last year's. No image-processing code, no imagery to download, no infrastructure to stand up: the whole thing is a handful of serverless UDFs that read only the two years you asked for. Draw a box anywhere on Earth, pick a year, and three synchronized maps show you the landscape, its structure, and where things changed.
+
+<ClickZoomImage src="/img/examples/ai-change-detection.png" alt="AI change detection canvas — AOI selector on the left feeding three synchronized map views: RGB embedding, PCA false-color, and cosine-distance change map" />
 
 ## Try it out
 
@@ -8201,7 +8203,6 @@ The canvas reads from the **AlphaEarth Foundations (AEF)** mosaic published by T
 | Coverage | Global |
 | Years available | 2017–2025 |
 | Embedding size | 64 dimensions per pixel |
-| Access | Anonymous (no credentials) |
 
 ## See also
 
@@ -13053,7 +13054,9 @@ You can download this canvas and then import it by drag & dropping the `.zip` fi
 Path: examples\temporal-pixel-analysis.mdx
 URL: https://docs.fused.io/examples/temporal-pixel-analysis
 
-This canvas answers a practical question for anyone working with agricultural data: *how is the vegetation in these fields changing over time, and do different fields behave differently?* Draw a box over California cropland, set a date range, press **Run pipeline** — and you get a map of analyzed fields linked to NDVI time-series charts, grouped by how each field behaves across the season.
+This canvas answers two questions: *how is the vegetation in these fields changing over time, and do different fields behave differently?* Draw a box over California cropland, set a date range, press **Run pipeline** — and you get a map of analyzed fields linked to NDVI time-series charts, grouped by how each field behaves across the season.
+
+<ClickZoomImage src="/img/examples/temporal-pixel-analysis.png" alt="Temporal pixel analysis canvas — Input, Processing, and Output folders showing the AOI selector, Sentinel-2 URL table, pixel samples, and NDVI cluster dashboard" />
 
 ## Try it out
 
@@ -13061,33 +13064,23 @@ This canvas answers a practical question for anyone working with agricultural da
 
 Begin with a box that's roughly 10–20 km across in the Central Valley and a single year's date range. The pipeline runs faster and the chart dashboard is easier to read with 20–60 fields than with several hundred.
 
-## Who this is for
-
-- **Agronomists and crop consultants** who want to see, at a glance, which fields in a region are performing differently from their neighbors — without downloading and processing satellite imagery themselves.
-- **Agri-tech developers** who want a working end-to-end pipeline to fork and adapt: swap the California field boundaries for your own geometries, add different spectral bands, or push results to a database.
-- **Remote sensing researchers** who want to prototype a field-level monitoring workflow before scaling it up.
-
-## How the canvas is organized
-
-The canvas runs in three stages. A single **Run pipeline** button in the input widget kicks off the whole chain.
-
-### 1 · Draw your area and set the date range
+## 1 · Draw your area and set the date range
 
 The input widget shows a satellite map centered on California's Central Valley. You can pan and zoom and let the pipeline use the current map view, or click **Draw box** for a precise selection. Set `Start date` and `End date`, then press **Run pipeline** — the bounds and dates flow downstream automatically.
 
-### 2 · Build the field × scene URL table
+## 2 · Build the field × scene URL table
 
 Two UDFs run in sequence here:
 
 **Sentinel-2 URL helpers** is a shared library that knows how to build Cloud-Optimized GeoTIFF (COG) URLs from Sentinel-2 STAC metadata. It's a dependency, not something you interact with directly.
 
-**Build field × scene URL table** does the actual work: it queries the California Statewide Crop Mapping (CA SCM) field boundary dataset — 438,000 polygons, CC-0 — and finds every field whose bounding box intersects your AOI. It then looks up cloud-free Sentinel-2 L2A scenes for your date range and builds a `(field, band, date, URL)` table ready for pixel sampling.
+**Build field × scene URL table** does the actual work: it queries the California Statewide Crop Mapping (CA SCM) field boundary dataset and finds every field whose bounding box intersects your AOI. It then looks up cloud-free Sentinel-2 L2A scenes for your date range and builds a `(field, band, date, URL)` table ready for pixel sampling.
 
-### 3 · Sample pixels at field centroids
+## 3 · Sample pixels at field centroids
 
 This UDF reads the single Sentinel-2 pixel at the centroid of each field for every matching scene. It uses `fused.submit` to fan out the reads in parallel across row groups, so hundreds of fields and dates complete in roughly the same wall-clock time as a handful.
 
-### 4 · NDVI dashboard
+## 4 · NDVI dashboard
 
 The output node computes NDVI — `(NIR − Red) / (NIR + Red)` — for each field and date, then:
 
@@ -13096,13 +13089,7 @@ The output node computes NDVI — `(NIR − Red) / (NIR + Red)` — for each fie
 
 Hover over a field on the map to highlight its NDVI curve in the chart. Hover over a line in a chart to highlight the corresponding field on the map.
 
-## Tuning the run
-
-| Parameter | Default | When to change it |
-|---|---|---|
-| `max_farms` | 40 | Raise to 200+ for a broader regional view; lower if the run is slow |
-| `max_workers` | 10 | Controls parallel pixel reads; raise for speed, lower if you hit memory limits |
-| `cloud_cover` | 10% | Raise to 20–30% for winter months or coastal areas with frequent cloud cover |
+The input widget exposes `max_farms`, `max_workers`, and `cloud_cover` as tunable parameters to trade off coverage, speed, and scene availability.
 
 ## About the data
 
@@ -13112,8 +13099,6 @@ Hover over a field on the map to highlight its NDVI curve in the chart. Hover ov
 | Satellite imagery | Sentinel-2 L2A COGs, AWS Open Data (anonymous) |
 | Scene catalog | Fused STAC index, partitioned 2015–2025 |
 | Spectral bands used | Red (B04) + NIR (B08) for NDVI |
-| Default date range | 2020-01 to 2020-12 |
-| Default AOI | Central Valley, California |
 
 ## See also
 
