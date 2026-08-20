@@ -180,6 +180,8 @@ const sidebars: SidebarsConfig = {
         "examples/site-selection-analysis",
         "examples/poi-site-selection-dashboard",
         "examples/seismic-hazard-mapping",
+        "examples/ai-change-detection",
+        "examples/temporal-pixel-analysis",
       ],
     },
 

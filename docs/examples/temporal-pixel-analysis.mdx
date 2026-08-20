@@ -1,0 +1,73 @@
+---
+id: temporal-pixel-analysis
+title: NDVI Time Series for Farm Fields
+sidebar_label: Temporal Pixel Analysis
+sidebar_position: 21
+---
+
+This canvas answers a practical question for anyone working with agricultural data: *how is the vegetation in these fields changing over time, and do different fields behave differently?* Draw a box over California cropland, set a date range, press **Run pipeline** — and you get a map of analyzed fields linked to NDVI time-series charts, grouped by how each field behaves across the season.
+
+{/* TODO: Add screenshot of the NDVI dashboard showing the split map + cluster charts */}
+
+## Try it out
+
+[**Open the Canvas →**](https://www.fused.io/canvas/fc_fused/temporal_pixel_analysis)
+
+:::tip Start small
+Begin with a box that's roughly 10–20 km across in the Central Valley (the default map view) and a single year's date range. The pipeline runs faster and the chart dashboard is easier to read with 20–60 fields than with several hundred.
+:::
+
+:::info What you need
+This canvas uses publicly available Sentinel-2 imagery and California crop field boundaries — no credentials required. Just draw a box and press Run.
+:::
+
+## Who this is for
+
+- **Agronomists and crop consultants** who want to see, at a glance, which fields in a region are performing differently from their neighbors — without downloading and processing satellite imagery themselves.
+- **Agri-tech developers** who want a working end-to-end pipeline they can fork and adapt: swap the California field boundaries for their own geometries, add different bands, or push the results to a database.
+- **Remote sensing researchers** who want to prototype a field-level monitoring workflow before scaling it up.
+
+## How the canvas is organized
+
+The canvas runs in three stages, each in its own folder. A single **Run pipeline** button in the input widget kicks off the whole chain.
+
+### 1 · Draw your area and set the date range
+
+The input widget shows a satellite map centered on California's Central Valley. You can:
+- **Pan and zoom** and let the pipeline use the current map view as the area, or
+- **Draw a box** for a more precise selection.
+
+Then set `start_date`, `end_date`, and optionally `max_farms` (how many fields to sample) and `workers` (how many parallel satellite reads to run). Press **Run pipeline** and the parameters flow to the next stage automatically.
+
+### 2 · Processing — from bounds to pixels
+
+Three UDFs run in sequence:
+
+1. **Find fields in the area** — queries California agricultural field boundaries that fall inside the box, up to `max_farms`.
+2. **Build the scene URL table** — for each field, finds cloud-free Sentinel-2 scenes within the date range and builds a `(field, band, date, URL)` table.
+3. **Sample pixels at field centroids** — reads the single Sentinel-2 pixel at the center of each field for every matching scene date, running requests in parallel. Returns a flat table of `(field, band, datetime, pixel_value)` rows.
+
+The pixel-sampling step uses `@fused.cache`, so if you re-run with the same parameters it returns instantly.
+
+### 3 · NDVI dashboard
+
+The output node computes NDVI (`(NIR - Red) / (NIR + Red)`) for each field and date, then:
+
+- **Clusters the fields** — K-Means on three statistics (mean NDVI, variability, seasonal range) groups fields into up to four behavioral clusters, labeled descriptively: *High & Stable*, *Low & Variable*, etc.
+- **Renders a linked dashboard** — a satellite map on the left shows every analyzed field colored by cluster. The right panel shows one NDVI chart per cluster, with the 10–90th percentile band, the median line, and individual field lines as faint traces.
+
+Hover over a field on the map to highlight its NDVI curve in the chart. Hover over a line in a chart to highlight the corresponding field on the map.
+
+## Tuning the run
+
+| Parameter | Default | When to change it |
+|---|---|---|
+| `max_farms` | 40 | Raise to 200+ for a broader regional view; lower if the run is slow |
+| `max_workers` | 10 | Raise for faster parallel reads; lower if you hit memory limits |
+| `cloud_cover` | 10% | Raise to 20–30% for winter months or coastal areas with frequent cloud cover |
+
+## See also
+
+- [**AI Change Detection**](/examples/ai-change-detection) — if you want a spatial view of *where* things changed rather than a time series of *how* individual fields changed.
+- [**STAC catalogs guide**](/guide/data-input-outputs/import-connection/geospatial/stac) — how Fused reads Sentinel-2 scenes via STAC.
+- [**Geospatial processing guide**](/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile) — tile vs. single-geometry UDFs and when to use each.
