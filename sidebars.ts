@@ -182,6 +182,7 @@ const sidebars: SidebarsConfig = {
         "examples/seismic-hazard-mapping",
         "examples/ai-change-detection",
         "examples/temporal-pixel-analysis",
+        "examples/monthly-median-composite",
       ],
     },
 

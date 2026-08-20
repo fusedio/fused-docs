@@ -10830,6 +10830,80 @@ First, make a copy of the Canvas. Then follow the Share Modal guide to publish i
 
 ================================================================================
 
+## Monthly Median Composites, One Machine per Month
+Path: examples\monthly-median-composite.mdx
+URL: https://docs.fused.io/examples/monthly-median-composite
+
+Cloud-free monthly composites are normally a batch job you kick off and come back to tomorrow. This canvas turns them into something you watch happen: every calendar month in your date range gets its own machine, all of them run at once, and the month grid fills in as each one publishes. Draw an AOI, pick a five-year range, press **Run pipeline** — the run in the screenshot below finished 37 monthly composites in **6.2 seconds of wall time** off **61.5 seconds of actual work**, because the work was spread across 37 machines instead of queued on one.
+
+<ClickZoomImage src="/img/examples/monthly-median-composite.png" alt="Monthly median composite canvas — Request widget on the left feeding scene search and the monthly fan-out, with the month grid on the right showing a filmstrip of NDVI composites and the selected month enlarged" />
+
+## Try it out
+
+**Open the Canvas →**
+
+A 12-month range over a few square kilometres returns in a couple of seconds. Widen to five years once you've seen the shape of it — the wall-clock time barely moves, since each extra month is an extra machine rather than an extra turn in a queue.
+
+## 1 · Request
+
+The widget is a MapLibre map with a **Draw box** tool; if you don't draw anything, the pipeline uses the current map view. Alongside it: a start and end date, an **Output** toggle (`NDVI median` or `RGB median`), a max cloud-cover percentage, and `Scenes / month` — leave that at `0` to composite every scene in the month, or set a small number to sample evenly across it.
+
+**Run pipeline** packs all of that into a single JSON `pipeline_request` parameter and broadcasts it to the three nodes below, along with a `run_id` timestamp so a re-run is never mistaken for the previous one.
+
+## 2 · Scene search
+
+This UDF queries Fused's partitioned Sentinel-2 L2A STAC index (`s3://fused-asset/stac/sentinel-2-l2a/partitioned_2015_2025/`) for scenes whose footprint intersects your AOI, then filters on the date range and the cloud-cover limit and drops duplicate product URIs.
+
+Rather than resolving each STAC item's assets, it derives the COG URLs directly from the product URI — mission, date, and MGRS tile parse straight into a `sentinel-cogs.s3.us-west-2.amazonaws.com` path. The output is a flat `(scene_id, datetime, band, url, cloud_cover)` table: Red, NIR and SCL for NDVI mode, plus Green and Blue for RGB.
+
+## 3 · Monthly fan-out
+
+The interesting node. Before any pixels move, it builds a plan from the request alone: it expands the date range into `YYYY-MM` labels, computes the output raster shape (10 m/px, capped at 640 px on the long edge), and hashes the whole request spec into a 16-character key. That key is the object-storage prefix — `fd://monthly_median/<key>` — which means the same AOI, dates and settings always resolve to the same location.
+
+Scenes are grouped by month, then each month becomes one argument dict and the whole list is handed to `.map()`:
+
+```python
+# doctest: skip
+result = month_udf.map(
+    args,                        # one dict per calendar month
+    engine="remote",
+    max_workers=len(args),       # one machine per month, all at once
+    worker_concurrency=1,
+    cache_max_age="30d",
+    max_retry=1,
+).df()
+```
+
+`max_workers=len(args)` with `worker_concurrency=1` is what flattens the wall clock: 37 months means 37 machines, each doing one month's worth of work. On its own machine, each month reads its scenes with windowed rasterio reads across a 12-thread pool, masks clouds using the Sentinel-2 SCL classification band, computes NDVI as `(NIR − Red) / (NIR + Red)`, and takes a `nanmedian` across the stack — so a pixel that was clouded in half the month's passes still gets a value from the other half.
+
+Each machine then publishes three small objects for its month and exits: a colorized PNG for display, a second grayscale PNG holding the quantized NDVI values, and a JSON status blob with scene count, valid-pixel coverage, elapsed seconds, and which worker ran it. Nothing is returned through the pipeline — the results go to object storage, which is what lets the view read them independently.
+
+## 4 · Month grid
+
+The output node recomputes the same plan from the same request, so it knows every month's storage path before a single composite exists. It signs a URL for each one and hands the browser a self-contained page, which then polls object storage once a second and swaps each card from a "queued" placeholder to the real image the moment its machine finishes. That's why the grid fills in progressively rather than appearing all at once.
+
+Click any month to enlarge it; hover the enlarged image to read the median NDVI at that pixel, decoded client-side from the values PNG. The footer keeps a running tally, and when the last month lands it reports the wall time against the summed worker time — the number quoted at the top of this page.
+
+This node sets `cache_max_age="0s"` deliberately. The page embeds signed URLs that expire an hour after signing, so a cached copy would eventually hand you a grid of broken images.
+
+## About the data
+
+| Property | Value |
+|---|---|
+| Imagery | Sentinel-2 L2A COGs, AWS Open Data (anonymous) |
+| Scene catalog | Fused STAC index, partitioned 2015–2025 |
+| Bands | Red (B04), NIR (B08), SCL — plus Green (B03) and Blue (B02) in RGB mode |
+| Cloud masking | SCL classes 0, 1, 3, 7–11 |
+| NDVI display range | −0.2 (built-up / bare soil) to 0.8 (dense vegetation) |
+
+## See also
+
+- **NDVI Time Series for Farm Fields** — the same Sentinel-2 index sampled per field centroid to produce time-series curves, rather than monthly rasters.
+- **AI Change Detection** — year-over-year change from embeddings instead of a composited spectral index.
+- **Parallel execution with fused.submit** — the fan-out primitive behind `.map()`.
+
+================================================================================
+
 ## Making Overture Buildings Data Accessible to Agents
 Path: examples\overture-buildings-agents.mdx
 URL: https://docs.fused.io/examples/overture-buildings-agents
