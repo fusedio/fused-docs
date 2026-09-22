@@ -11,6 +11,8 @@ toc_max_heading_level: 4
 
 This page covers different methods to convert your data into H3 hexagons.
 
+[Try the examples on this page in Canvas →](https://www.fused.io/canvas/fc_fused/H3_Converting_Examples)
+
 ---
 
 ## File to H3
@@ -19,36 +21,25 @@ Turning a single small dataset into a grid of H3 hexagons.
 
 ### Point Count to Hex
 
-The following example uses a simple CSV of [311 calls](https://gist.githubusercontent.com/kashuk/670a350ea1f9fc543c3f6916ab392f62/raw/4c5ced45cc94d5b00e3699dd211ad7125ee6c4d3/NYC311_noise.csv) in the New York City area, showing a heatmap of calls per hex 9 cell
-
-<iframe
-  src="https://unstable.fused.io/server/v1/realtime-shared/fc_4RviGoMsnragXi4YvzqFQ4-ny411_noise_sample_visualisation/run/file"
-  width="100%"
-  height="600px"
-  frameBorder="0"
-  style={{borderRadius: '8px'}}
-></iframe>
+The following example uses a simple CSV of [311 calls](https://gist.githubusercontent.com/kashuk/670a350ea1f9fc543c3f6916ab392f62/raw/4c5ced45cc94d5b00e3699dd211ad7125ee6c4d3/NYC311_noise.csv) in the New York City area, showing a heatmap of calls per hex 9 cell. [See it live in Canvas →](https://www.fused.io/canvas/fc_fused/H3_Converting_Examples)
 
 <details>
 <summary>Code</summary>
-```python showLineNumbers {11}
+```python showLineNumbers {7,23-46}
 @fused.udf
 def udf(
     res: int = 9
 ):
     noise_311_link = "https://gist.githubusercontent.com/kashuk/670a350ea1f9fc543c3f6916ab392f62/raw/4c5ced45cc94d5b00e3699dd211ad7125ee6c4d3/NYC311_noise.csv"
     # Load common utilities (includes duckdb helper)
-    common = fused.load("https://github.com/fusedio/udfs/tree/b7637ee/public/common/")
+    common = fused.load("https://github.com/fusedio/udfs/tree/b6786d6/public/common/")
     con = common.duckdb_connect()
 
-    # Keep latitude and longitude (averaged per hex) alongside the hex count
     df = con.execute(
         """
         SELECT
           h3_latlng_to_cell(lat, lng, ?) AS hex,
-          COUNT(*) AS cnt,
-          AVG(lat) AS lat,
-          AVG(lng) AS lng
+          COUNT(*) AS cnt
         FROM read_csv_auto(?)
         WHERE lat IS NOT NULL AND lng IS NOT NULL
         GROUP BY 1
@@ -56,10 +47,31 @@ def udf(
         [res, noise_311_link],
     ).df()
 
-    # Debugging: print the resulting DataFrame schema
-    print(df.T)
-
-    return df
+    # Visualize as a heatmap of call counts per hex
+    map_utils = fused.load("https://github.com/fusedio/udfs/tree/3ada22d/community/milind/map_utils")
+    layers = [
+        {
+            "type": "hex",
+            "data": df,
+            "name": "311 Noise Complaints",
+            "config": {
+                "style": {
+                    "fillColor": {
+                        "type": "continuous",
+                        "attr": "cnt",
+                        "domain": [0, 200],
+                        "steps": 20,
+                        "palette": "OrYel",
+                    },
+                    "filled": True,
+                    "extruded": False,
+                    "stroked": False,
+                    "opacity": 0.7,
+                }
+            },
+        },
+    ]
+    return map_utils.deckgl_layers(layers=layers, basemap="dark")
 ```
 </details>
 
@@ -79,14 +91,11 @@ res: int = 9
 
 - Field to hexagonify  & Aggregation function (max 'population', avg 'income', mean 'elevation', etc.). In this example simply counting the number of calls per hex:
 ```python showLineNumbers
-# Keep latitude and longitude (averaged per hex) alongside the hex count
 df = con.execute(
     """
     SELECT
         h3_latlng_to_cell(lat, lng, ?) AS hex,
-        COUNT(*) AS cnt,
-        AVG(lat) AS lat,
-        AVG(lng) AS lng
+        COUNT(*) AS cnt
     FROM read_csv_auto(?)
     WHERE lat IS NOT NULL AND lng IS NOT NULL
     GROUP BY 1
@@ -131,7 +140,7 @@ def udf(
     import pandas as pd
     import geopandas as gpd
 
-    common = fused.load("https://github.com/fusedio/udfs/tree/f430c25/public/common/")
+    common = fused.load("https://github.com/fusedio/udfs/tree/b6786d6/public/common/")
     path = "s3://fused-asset/demos/catchment_analysis/simplified_acs_bg_ca_2022.parquet"
 
     # Dynamic H3 resolution
@@ -179,15 +188,7 @@ def udf(
 
 ### Raster to Hex
 
-This example uses [AWS's Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) tiled GeoTiff data. Hexagons show elevation data:
-
-<iframe
-  src="https://www.fused.io/server/v1/realtime-shared/fsh_5o5UNLYxDNTN5ldzVFkeuR/run/file"
-  width="100%"
-  height="600px"
-  frameBorder="0"
-  style={{borderRadius: '8px'}}
-></iframe>
+This example uses [AWS's Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) tiled GeoTiff data. Hexagons show elevation data.
 
 Link to UDF in [Fused Catalog](https://www.fused.io/workbench/catalog/DEM_Tile_Hexify-c9aae65c-0047-42ba-8b3c-4326a5a2e47b)
 
@@ -300,7 +301,7 @@ def udf(
 ):
     # Cropland Data Layer ingested with "cnt" metric
     path = "s3://fused-asset/hex/cdls_v8/year=2024/"
-    utils = fused.load("https://github.com/fusedio/udfs/tree/79f8203/community/joris/Read_H3_dataset")
+    utils = fused.load("https://github.com/fusedio/udfs/tree/9780aef/community/joris/Read_H3_dataset")
     df = utils.read_h3_dataset(path, bounds, res=res)
     return df
 ```
@@ -330,7 +331,7 @@ def udf(
     res: int = None,
 ):
     path = "s3://fused-asset/hex/nyc_dem/"
-    utils = fused.load("https://github.com/fusedio/udfs/tree/79f8203/community/joris/Read_H3_dataset")
+    utils = fused.load("https://github.com/fusedio/udfs/tree/9780aef/community/joris/Read_H3_dataset")
     df = utils.read_h3_dataset(path, bounds, res=res)
     return df
 ```
@@ -427,7 +428,7 @@ The ingestion runs these steps in parallel via [`.map()`](/python-sdk/api-refere
 
 Override execution with:
 - `engine`: Specify execution engine (e.g., `"small"`, `"medium"`, `"c2-standard-4"`). Use `extract_engine`, `partition_engine` and `overview_engine` to specify the execution engine for only a single step.
-- `max_workers` and `worker_concurrency`: Control parallelism
+- `extract_max_workers`, `partition_max_workers`, `overview_max_workers`: Control parallelism for each step individually (there is no single generic `max_workers` or `worker_concurrency` argument)
 
 #### Running on GCP
 
@@ -474,7 +475,7 @@ If you point at more than twenty source files, the planner will use only the fir
 
 ### Reading Ingested Data
 
-Use `read_h3_dataset` to automatically select data vs overview files based on viewport:
+Use `read_h3_dataset` to automatically select data vs overview files based on viewport. The following example reads a public, pre-ingested copy of the NYC DEM dataset from the [Basic Example](#basic-example) above:
 
 ```python showLineNumbers {8}
 @fused.udf
@@ -482,8 +483,8 @@ def udf(
     bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],
     res: int = None,
 ):
-    path = "s3://fused-users/fused/joris/nyc_dem_h3/"
-    utils = fused.load("https://github.com/fusedio/udfs/tree/dd40354/community/joris/Read_H3_dataset/")
+    path = "s3://fused-asset/hex/nyc_dem/"
+    utils = fused.load("https://github.com/fusedio/udfs/tree/9780aef/community/joris/Read_H3_dataset/")
     df = utils.read_h3_dataset(path, bounds, res=res)
     return df
 ```
@@ -498,38 +499,45 @@ def udf(
   style={{borderRadius: '8px'}}
 ></iframe>
 
+Use `map_utils.deckgl_layers` to render the hexagons on a standalone map:
+
 <details>
 <summary>Standalone map code</summary>
 
-```python showLineNumbers {10,28}
+```python showLineNumbers {10-33}
 @fused.udf
 def udf(
     bounds: fused.types.Bounds = [-74.556, 40.400, -73.374, 41.029],
     res: int = 9,
 ):
-    path = "s3://fused-users/fused/joris/nyc_dem_h3/"
-    utils = fused.load("https://github.com/fusedio/udfs/tree/dd40354/community/joris/Read_H3_dataset/")
+    path = "s3://fused-asset/hex/nyc_dem/"
+    utils = fused.load("https://github.com/fusedio/udfs/tree/9780aef/community/joris/Read_H3_dataset/")
     df = utils.read_h3_dataset(path, bounds, res=res)
 
-    map_utils = fused.load("https://github.com/fusedio/udfs/tree/dd40354/community/milind/map_utils")
-    config = {
-        "hexLayer": {
-            "@@type": "H3HexagonLayer",
-            "filled": True,
-            "pickable": True,
-            "extruded": False,
-            "opacity": 0.25,
-            "getHexagon": "@@=properties.hex",
-            "getFillColor": {
-                "@@function": "colorContinuous",
-                "attr": "data_avg",
-                "domain": [0, 400],
-                "steps": 20,
-                "colors": "BrwnYl"
-            }
-        }
-    }
-    return map_utils.deckgl_hex(df, config=config)
+    map_utils = fused.load("https://github.com/fusedio/udfs/tree/3ada22d/community/milind/map_utils")
+    layers = [
+        {
+            "type": "hex",
+            "data": df,
+            "name": "NYC DEM H3 Hexagons",
+            "config": {
+                "style": {
+                    "fillColor": {
+                        "type": "continuous",
+                        "attr": "data_avg",
+                        "domain": [0, 400],
+                        "steps": 20,
+                        "palette": "BrwnYl",
+                    },
+                    "filled": True,
+                    "extruded": False,
+                    "stroked": False,
+                    "opacity": 0.7,
+                }
+            },
+        },
+    ]
+    return map_utils.deckgl_layers(layers=layers, basemap="dark")
 ```
 
 </details>
@@ -557,7 +565,7 @@ This method is for datasets < 100k vectors. Run in Single (viewport) mode, not T
 def udf(
     bounds: fused.types.Bounds = [8.4452104984018,41.76046948393174,8.903258920921276,42.053137175457145]
 ):
-    common = fused.load("https://github.com/fusedio/udfs/tree/208c30d/public/common/")
+    common = fused.load("https://github.com/fusedio/udfs/tree/b6786d6/public/common/")
     res = common.bounds_to_res(bounds, offset=0)
     res = max(9, res)
 
@@ -578,7 +586,7 @@ def udf(
 
 @fused.udf
 def hexagonify_udf(geometry, res: int = 12):
-    common = fused.load("https://github.com/fusedio/udfs/tree/208c30d/public/common/")
+    common = fused.load("https://github.com/fusedio/udfs/tree/b6786d6/public/common/")
     gdf = common.to_gdf(geometry)
     gdf = common.gdf_to_hex(gdf[['geometry']], res=15)
     con = common.duckdb_connect()
