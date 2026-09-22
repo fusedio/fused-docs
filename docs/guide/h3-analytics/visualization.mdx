@@ -90,6 +90,10 @@ We can create a more advanced version of these visualizations using by creating 
 
 We provide these UDFs for now as-is. You can duplicate them and modify them to work with your own data:
 
+:::note Why the data is embedded, not fetched
+Canvas node iframes run with an opaque origin, so a client-side `fetch()` from one node's HTML back to another node's URL is blocked by CORS. Each UDF below instead computes its data server-side with [`fused.load()`](/python-sdk/api-reference/udf#udf) and embeds the result directly in the page as JSON. Cross-component sync (the histogram brush filtering the map, the map's viewport filtering the histograms) still works over `postMessage`/`BroadcastChannel`, which isn't subject to CORS.
+:::
+
 <details>
   <summary>Range Histogram UDF</summary>
 
@@ -112,18 +116,20 @@ def udf(
     title: str = "Elevation",
     channel: str = "fused-elevation-temp"         # IMPORTANT: match the map’s CHANNEL
 ):
-    import base64
-    import io
-
     common = fused.load("https://github.com/fusedio/udfs/tree/b6786d6/public/common/")
 
-    # Compute the joined dataset server-side and embed it directly in the page --
-    # canvas node iframes run with an opaque origin, so a client-side fetch() back
-    # to another node's URL is blocked by CORS with no way to allow it from here.
-    df = fused.run("join_era5_cdl_elevation", bounds=bounds, res=res, year=year, month=month)
-    buf = io.BytesIO()
-    df.to_parquet(buf)
-    embedded_parquet_b64 = base64.b64encode(buf.getvalue()).decode()
+    # Compute the joined dataset server-side and embed it directly in the page as
+    # plain JSON -- canvas node iframes run with an opaque origin, so a client-side
+    # fetch() back to another node's URL is blocked by CORS with no way to allow it
+    # from here. The dataset is small (a few thousand rows), so there's no need for
+    # a client-side SQL engine either -- plain JS array filtering is enough and has
+    # far fewer moving parts (no WASM, no Worker, no CORS, no Parquet compatibility
+    # surface) to fail silently inside a sandboxed iframe.
+    join_era5_cdl_elevation = fused.load("join_era5_cdl_elevation")
+    df = join_era5_cdl_elevation(bounds=bounds, res=res, year=year, month=month)
+    df = df.copy()
+    df["hex"] = df["hex"].astype(str)  # preserve full 64-bit H3 id precision through JSON (JS numbers only hold 53 bits)
+    records_json = df.to_json(orient="records")
 
     themes = {
         'workbench': {
@@ -134,7 +140,7 @@ def udf(
         }
     }
     selected = themes.get(theme, themes['workbench'])
- 
+
     safe_title = (
         title.replace("&", "&amp;")
              .replace("<", "&lt;")
@@ -150,11 +156,6 @@ def udf(
         <meta charset="utf-8" />
         <title>""" + safe_title + """</title>
         <script src="https://d3js.org/d3.v7.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.1-dev132.0/dist/duckdb-wasm.js"></script>
-        <script type="module">
-            import * as duckdb_wasm from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.1-dev132.0/+esm";
-            window.__DUCKDB_WASM = duckdb_wasm;
-        </script>
         <style>
             * { margin: 0; padding: 0; border: none; outline: none; box-sizing: border-box; }
             body {
@@ -189,7 +190,7 @@ def udf(
         <div class="chart-container" id="chartContainer">
             <div id="loadingState" class="loading-state">
                 <div style="font-size: 24px;">📊</div>
-                <div style="margin-top: 8px; font-weight: 500;">Loading full dataset</div>
+                <div style="margin-top: 8px; font-weight: 500;">Loading dataset</div>
             </div>
             <svg id="histogram" style="display: none; width: 100%; height: 100%;"></svg>
         </div>
@@ -200,20 +201,18 @@ def udf(
         <div class="controls">
             <div class="controls-row">
                 <button class="btn" onclick="clearSelection()">Clear Selection</button>
-                <button class="btn" onclick="reloadData()">Reload Data</button>
             </div>
         </div>
-        <div class="status" id="status">Loading data from URL...</div>
+        <div class="status" id="status">Loading…</div>
 
         <script>
             // --- config ---
-            const componentId = 'histogram-v3-' + Math.random().toString(36).substr(2, 9);
-            const EMBEDDED_PARQUET_B64 = \"""" + embedded_parquet_b64 + """\";
+            const componentId = 'histogram-v4-' + Math.random().toString(36).substr(2, 9);
+            const RECORDS = """ + records_json + """;
             const DATASET   = """ + repr(dataset) + """;
             const NUM_BINS  = """ + str(num_bins) + """;
             const VALUE_FIELD = """ + repr(value_field) + """;
             const CHANNEL   = """ + repr(channel) + """;   // must match map
-            const DEFAULT_SQL = "SELECT * FROM data";
 
             // --- tiny bus: BroadcastChannel + postMessage fanout ---
             let bc = null;
@@ -233,24 +232,6 @@ def udf(
                 } catch(e) {}
             }
 
-            function sanitizeSQL(sql) {
-                if (sql == null) return "";
-                return String(sql).trim().replace(/;+\s*$/g, '');
-            }
-
-            function broadcastDuckDBQuery(sqlText, baseSql) {
-                const cleanSql = sanitizeSQL(sqlText);
-                if (!cleanSql) return;
-                busSend({
-                    type: 'duckdb_query',
-                    sql: cleanSql,
-                    base: sanitizeSQL(baseSql) || cleanSql,
-                    dataset: DATASET,
-                    fromComponent: componentId,
-                    timestamp: Date.now()
-                });
-            }
-
             function getFeatureValue(feature, fieldName = VALUE_FIELD) {
                 if (!feature) return 0;
                 if (feature[fieldName] !== undefined) {
@@ -265,13 +246,6 @@ def udf(
             }
 
             // --- state ---
-            let duckConn = null;
-            let duckDBReady = false;
-            let currentSQL = DEFAULT_SQL;
-            let remoteBaseSQL = DEFAULT_SQL;
-            let pendingDuckQuery = null;
-            let currentRangeClause = null;
-            let hasExecutedDuckQuery = false;
             let fullDataset = [];
             let filteredDataset = [];
             let activeFilters = new Map();
@@ -309,82 +283,6 @@ def udf(
                     bins.push({ label, min:binMin, max:binMax, count:0 });
                 }
                 return bins;
-            }
-
-            // --- duckdb init + querying ---
-            async function initDuckDB() {
-                if (duckDBReady && duckConn) return;
-                setUIState('loading');
-                statusElement.textContent = 'Initializing DuckDB…';
-                try {
-                    const duckmod = window.__DUCKDB_WASM;
-                    if (!duckmod) throw new Error('DuckDB WASM runtime not available');
-
-                    const bundle = await duckmod.selectBundle(duckmod.getJsDelivrBundles());
-                    const worker = new Worker(
-                        URL.createObjectURL(
-                            new Blob([await (await fetch(bundle.mainWorker)).text()], { type: 'application/javascript' })
-                        )
-                    );
-                    const db = new duckmod.AsyncDuckDB(new duckmod.ConsoleLogger(), worker);
-                    await db.instantiate(bundle.mainModule);
-                    duckConn = await db.connect();
-
-                    statusElement.textContent = 'Loading embedded dataset…';
-                    const binary = atob(EMBEDDED_PARQUET_B64);
-                    const bytes = new Uint8Array(binary.length);
-                    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-                    await db.registerFileBuffer('histogram.parquet', bytes);
-                    await duckConn.query("CREATE OR REPLACE VIEW data AS SELECT * FROM read_parquet('histogram.parquet')");
-
-                    duckDBReady = true;
-                    statusElement.textContent = 'DuckDB ready';
-                } catch (e) {
-                    duckDBReady = false;
-                    console.error(e);
-                    setUIState('loading');
-                    statusElement.textContent = `DuckDB init failed: ${e.message}`;
-                    throw e;
-                }
-            }
-
-            async function runHistogramQuery(options = {}) {
-                if (!duckConn) {
-                    throw new Error('DuckDB connection not ready');
-                }
-
-                const targetSql = sanitizeSQL(options.sql ?? currentSQL ?? DEFAULT_SQL) || sanitizeSQL(DEFAULT_SQL);
-                const baseSql = sanitizeSQL(options.baseSQL ?? remoteBaseSQL ?? targetSql) || targetSql;
-                const showLoading = options.showLoading !== false;
-
-                if (options.updateBase !== false) {
-                    remoteBaseSQL = baseSql;
-                }
-                currentSQL = targetSql;
-
-                try {
-                    if (showLoading) {
-                        setUIState('loading');
-                        statusElement.textContent = 'Running DuckDB query…';
-                    } else {
-                        statusElement.textContent = 'Updating selection…';
-                    }
-                    const res = await duckConn.query(targetSql);
-                    const rows = res.toArray();
-
-                    fullDataset = processRawData(rows);
-                    dynamicBins = calculateDynamicBins(fullDataset);
-                    applyAllFilters(true);
-                    hasExecutedDuckQuery = true;
-
-                    if (!options.suppressBroadcast) {
-                        broadcastDuckDBQuery(targetSql, baseSql);
-                    }
-                } catch (e) {
-                    console.error(e);
-                    if (showLoading) setUIState('loading');
-                    statusElement.textContent = `SQL error: ${e.message}`;
-                }
             }
 
             function processRawData(raw) {
@@ -428,15 +326,8 @@ def udf(
                 return [];
             }
 
-            function reloadData() {
-                clearAllFilters();
-                if (duckDBReady && duckConn) {
-                    runHistogramQuery({ sql: remoteBaseSQL, baseSQL: remoteBaseSQL, updateBase: true });
-                }
-            }
-
             // --- external filters application (so histogram reflects spatial from map) ---
-            function applyAllFilters(fromQuery = false) {
+            function applyAllFilters() {
                 let filtered = [...fullDataset];
                 for (let [,f] of activeFilters.entries()) filtered = applyFilter(filtered, f);
                 filteredDataset = filtered;
@@ -477,7 +368,6 @@ def udf(
 
             function clearAllFilters() {
                 activeFilters.clear();
-                clearRangeFilter();
                 filteredDataset = [...fullDataset];
                 updateHistogram();
                 statusElement.textContent = `${fullDataset.length} features (no filters)`;
@@ -591,7 +481,7 @@ def udf(
                         if (value > maxVal) maxVal = value;
                     }
                     for (let b of dynamicBins) {
-                        if (value >= b.min && value < b.max) { b.count++; break; }
+                        if (value >= b.min && (value < b.max || b === dynamicBins[dynamicBins.length - 1])) { b.count++; break; }
                     }
                 });
 
@@ -645,10 +535,6 @@ def udf(
                 if (!Number.isFinite(minArea) || !Number.isFinite(maxArea)) return;
                 const lower = Math.min(minArea, maxArea);
                 const upper = Math.max(minArea, maxArea);
-                const base = sanitizeSQL(remoteBaseSQL || DEFAULT_SQL) || DEFAULT_SQL;
-
-                currentRangeClause = `${VALUE_FIELD} BETWEEN ${lower} AND ${upper}`;
-                currentSQL = base;
 
                 statusElement.textContent = `Selected ${formatValue(lower)} – ${formatValue(upper)}`;
 
@@ -684,11 +570,7 @@ def udf(
                     rangeDebounceTimer = null;
                 }
                 pendingRangeSelection = null;
-                const base = sanitizeSQL(remoteBaseSQL || DEFAULT_SQL) || DEFAULT_SQL;
-                const hadRange = !!currentRangeClause;
-                currentRangeClause = null;
-                currentSQL = base;
-                if (hadRange) statusElement.textContent = 'Range cleared';
+                statusElement.textContent = 'Range cleared';
 
                 // unified
                 busSend({
@@ -712,38 +594,6 @@ def udf(
                     // ignore our own
                     if (message.fromComponent && message.fromComponent === componentId) return;
                     if (message.source && message.source === componentId) return;
-
-                    if (message.type === 'duckdb_query' && typeof message.sql === 'string') {
-                        if (message.dataset && DATASET !== 'all' && message.dataset !== DATASET) return;
-                        const incomingSql = sanitizeSQL(message.sql);
-                        if (!incomingSql) return;
-                        const baseSql = sanitizeSQL(message.base || message.sql) || incomingSql;
-                        remoteBaseSQL = baseSql;
-                        currentSQL = incomingSql;
-                        currentRangeClause = null;
-
-                        selectedBins = [];
-                        updateBarSelection();
-                        updateSelectionInfo();
-                        if (chartGroup && brush) {
-                            chartGroup.select('.brush').call(brush.clear);
-                        }
-
-                        const execute = () => runHistogramQuery({ sql: incomingSql, baseSQL: baseSql, suppressBroadcast: true, updateBase: true }).catch(() => {});
-                        if (!duckDBReady || !duckConn) {
-                            pendingDuckQuery = { sql: incomingSql, base: baseSql };
-                            initDuckDB().then(() => {
-                                if (pendingDuckQuery) {
-                                    const queued = pendingDuckQuery;
-                                    pendingDuckQuery = null;
-                                    runHistogramQuery({ sql: queued.sql, baseSQL: queued.base, suppressBroadcast: true, updateBase: true }).catch(() => {});
-                                }
-                            }).catch(() => {});
-                        } else {
-                            execute();
-                        }
-                        return;
-                    }
 
                     // unified
                     if (message.type === 'filter' && message.filter) {
@@ -796,32 +646,26 @@ def udf(
             if (bc) bc.onmessage = (ev) => onMessage(ev.data);
             window.addEventListener('message', (ev) => onMessage(ev.data));
 
-            // --- init ---
-            document.addEventListener('DOMContentLoaded', async function() {
-                try {
-                    await initDuckDB();
-                    if (pendingDuckQuery) {
-                        const queued = pendingDuckQuery;
-                        pendingDuckQuery = null;
-                        await runHistogramQuery({ sql: queued.sql, baseSQL: queued.base, suppressBroadcast: true, updateBase: true });
-                    } else if (!hasExecutedDuckQuery) {
-                        await runHistogramQuery({ sql: remoteBaseSQL, baseSQL: remoteBaseSQL, suppressBroadcast: true, updateBase: true });
-                    }
-                } catch (e) {
-                    console.error(e);
-                }
+            // --- init: data is embedded, so this is synchronous, no network/WASM involved ---
+            try {
+                fullDataset = processRawData(RECORDS);
+                dynamicBins = calculateDynamicBins(fullDataset);
+                applyAllFilters();
+            } catch (e) {
+                console.error(e);
+                statusElement.textContent = `Init failed: ${e && e.message ? e.message : e}`;
+            }
 
-                setTimeout(() => {
-                    busSend({
-                        type: 'component_ready',
-                        componentType: 'histogram',
-                        componentId: componentId,
-                        capabilities: ['filter'],
-                        dataSource: 'independent',
-                        protocol: 'unified'
-                    });
-                }, 300);
-            });
+            setTimeout(() => {
+                busSend({
+                    type: 'component_ready',
+                    componentType: 'histogram',
+                    componentId: componentId,
+                    capabilities: ['filter'],
+                    dataSource: 'independent',
+                    protocol: 'unified'
+                });
+            }, 300);
 
             function updateMinMaxLabels() {
                 const minEl = document.getElementById('histMin');
@@ -865,18 +709,20 @@ def udf(
     title: str = "Top 10 Crop Types",
     channel: str = "fused-elevation-temp"
 ):
-    import base64
-    import io
-
     common = fused.load("https://github.com/fusedio/udfs/tree/b6786d6/public/common/")
 
-    # Compute the joined dataset server-side and embed it directly in the page --
-    # canvas node iframes run with an opaque origin, so a client-side fetch() back
-    # to another node's URL is blocked by CORS with no way to allow it from here.
-    df = fused.run("join_era5_cdl_elevation", bounds=bounds, res=res, year=year, month=month)
-    buf = io.BytesIO()
-    df.to_parquet(buf)
-    embedded_parquet_b64 = base64.b64encode(buf.getvalue()).decode()
+    # Compute the joined dataset server-side and embed it directly in the page as
+    # plain JSON -- canvas node iframes run with an opaque origin, so a client-side
+    # fetch() back to another node's URL is blocked by CORS with no way to allow it
+    # from here. The dataset is small (a few thousand rows), so there's no need for
+    # a client-side SQL engine either -- plain JS array filtering is enough and has
+    # far fewer moving parts (no WASM, no Worker, no CORS, no Parquet compatibility
+    # surface) to fail silently inside a sandboxed iframe.
+    join_era5_cdl_elevation = fused.load("join_era5_cdl_elevation")
+    df = join_era5_cdl_elevation(bounds=bounds, res=res, year=year, month=month)
+    df = df.copy()
+    df["hex"] = df["hex"].astype(str)  # preserve full 64-bit H3 id precision through JSON (JS numbers only hold 53 bits)
+    records_json = df.to_json(orient="records")
 
     # USDA CDL classification codes -> crop name.
     crop_mapping = {
@@ -925,7 +771,7 @@ def udf(
         safe_name = str(crop_name).replace("'", "\\'")
         crop_mapping_js += f"                {crop_id}: '{safe_name}',\n"
     crop_mapping_js += "            }"
-    
+
     themes = {
         'workbench': {
             'background': '#1a1a1a',
@@ -951,11 +797,6 @@ def udf(
         <meta charset="utf-8" />
         <title>""" + safe_title + """</title>
         <script src="https://d3js.org/d3.v7.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.1-dev132.0/dist/duckdb-wasm.js"></script>
-        <script type="module">
-            import * as duckdb_wasm from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.1-dev132.0/+esm";
-            window.__DUCKDB_WASM = duckdb_wasm;
-        </script>
         <style>
             * { margin: 0; padding: 0; border: none; outline: none; box-sizing: border-box; }
             body {
@@ -967,11 +808,11 @@ def udf(
             }
             .header { text-align: center; margin-bottom: 10px; flex-shrink: 0; }
             .title { font-size: 16px; color: """ + selected['accent'] + """; margin-bottom: 6px; font-weight: 600; }
-            .most-common-crop { 
-                text-align: center; 
-                font-size: 18px; 
-                color: """ + selected['accent'] + """; 
-                margin-bottom: 10px; 
+            .most-common-crop {
+                text-align: center;
+                font-size: 18px;
+                color: """ + selected['accent'] + """;
+                margin-bottom: 10px;
                 padding: 10px;
                 background: """ + selected['chart_bg'] + """;
                 border-radius: 6px;
@@ -1007,7 +848,7 @@ def udf(
         <div class="chart-container" id="chartContainer">
             <div id="loadingState" class="loading-state">
                 <div style="font-size: 24px;">📊</div>
-                <div style="margin-top: 8px; font-weight: 500;">Loading full dataset</div>
+                <div style="margin-top: 8px; font-weight: 500;">Loading dataset</div>
             </div>
             <svg id="histogram" style="display: none; width: 100%; height: 100%;"></svg>
         </div>
@@ -1015,20 +856,18 @@ def udf(
         <div class="controls">
             <div class="controls-row">
                 <button class="btn" onclick="clearSelection()">Clear Selection</button>
-                <button class="btn" onclick="reloadData()">Reload Data</button>
             </div>
         </div>
-        <div class="status" id="status">Loading data from URL...</div>
+        <div class="status" id="status">Loading…</div>
 
         <script>
             // --- config ---
-            const componentId = 'histogram-v3-' + Math.random().toString(36).substr(2, 9);
-            const EMBEDDED_PARQUET_B64 = \"""" + embedded_parquet_b64 + """\";
+            const componentId = 'histogram-v4-' + Math.random().toString(36).substr(2, 9);
+            const RECORDS = """ + records_json + """;
             const DATASET   = """ + repr(dataset) + """;
             const VALUE_FIELD = """ + repr(value_field) + """;
             const CHANNEL   = """ + repr(channel) + """;
-            const DEFAULT_SQL = "SELECT * FROM data";
-            
+
             // Crop ID to Name mapping
             const CROP_NAMES = """ + crop_mapping_js + """;
 
@@ -1050,24 +889,6 @@ def udf(
                 } catch(e) {}
             }
 
-            function sanitizeSQL(sql) {
-                if (sql == null) return "";
-                return String(sql).trim().replace(/;+\\s*$/g, '');
-            }
-
-            function broadcastDuckDBQuery(sqlText, baseSql) {
-                const cleanSql = sanitizeSQL(sqlText);
-                if (!cleanSql) return;
-                busSend({
-                    type: 'duckdb_query',
-                    sql: cleanSql,
-                    base: sanitizeSQL(baseSql) || cleanSql,
-                    dataset: DATASET,
-                    fromComponent: componentId,
-                    timestamp: Date.now()
-                });
-            }
-
             function getFeatureValue(feature, fieldName = VALUE_FIELD) {
                 if (!feature) return 0;
                 if (feature[fieldName] !== undefined) {
@@ -1082,12 +903,6 @@ def udf(
             }
 
             // --- state ---
-            let duckConn = null;
-            let duckDBReady = false;
-            let currentSQL = DEFAULT_SQL;
-            let remoteBaseSQL = DEFAULT_SQL;
-            let pendingDuckQuery = null;
-            let hasExecutedDuckQuery = false;
             let fullDataset = [];
             let filteredDataset = [];
             let activeFilters = new Map();
@@ -1108,7 +923,7 @@ def udf(
             // --- Calculate top 10 categories ---
             function getTop10Categories(data) {
                 if (!data || data.length === 0) return [];
-                
+
                 const counts = {};
                 data.forEach(f => {
                     const value = getFeatureValue(f);
@@ -1116,13 +931,13 @@ def udf(
                         counts[value] = (counts[value] || 0) + 1;
                     }
                 });
-                
+
                 const entries = Object.entries(counts).map(([id, count]) => ({
                     id: parseInt(id),
                     name: CROP_NAMES[parseInt(id)] || `Crop ${id}`,
                     count: count
                 }));
-                
+
                 entries.sort((a, b) => b.count - a.count);
                 return entries.slice(0, 10);
             }
@@ -1151,118 +966,15 @@ def udf(
 
                 entries.sort((a, b) => b[1] - a[1]);
                 const [mostCommonValue, count] = entries[0];
-                
+
                 const cropId = parseInt(mostCommonValue);
                 const cropName = CROP_NAMES[cropId] || `Unknown Crop (ID: ${cropId})`;
-                
+
                 el.textContent = `Most Common: ${cropName} (${formatValue(count)})`;
             }
 
-            // --- duckdb init + querying ---
-            async function initDuckDB() {
-                if (duckDBReady && duckConn) return;
-                setUIState('loading');
-                statusElement.textContent = 'Initializing DuckDB…';
-                try {
-                    const duckmod = window.__DUCKDB_WASM;
-                    if (!duckmod) throw new Error('DuckDB WASM runtime not available');
-
-                    const bundle = await duckmod.selectBundle(duckmod.getJsDelivrBundles());
-                    const worker = new Worker(
-                        URL.createObjectURL(
-                            new Blob([await (await fetch(bundle.mainWorker)).text()], { type: 'application/javascript' })
-                        )
-                    );
-                    const db = new duckmod.AsyncDuckDB(new duckmod.ConsoleLogger(), worker);
-                    await db.instantiate(bundle.mainModule);
-                    duckConn = await db.connect();
-
-                    statusElement.textContent = 'Loading embedded dataset…';
-                    const binary = atob(EMBEDDED_PARQUET_B64);
-                    const bytes = new Uint8Array(binary.length);
-                    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-                    await db.registerFileBuffer('histogram.parquet', bytes);
-                    await duckConn.query("CREATE OR REPLACE VIEW data AS SELECT * FROM read_parquet('histogram.parquet')");
-
-                    duckDBReady = true;
-                    statusElement.textContent = 'DuckDB ready';
-                } catch (e) {
-                    duckDBReady = false;
-                    console.error(e);
-                    setUIState('loading');
-                    statusElement.textContent = `DuckDB init failed: ${e.message}`;
-                    throw e;
-                }
-            }
-
-            async function runHistogramQuery(options = {}) {
-                if (!duckConn) {
-                    throw new Error('DuckDB connection not ready');
-                }
-
-                const targetSql = sanitizeSQL(options.sql ?? currentSQL ?? DEFAULT_SQL) || sanitizeSQL(DEFAULT_SQL);
-                const baseSql = sanitizeSQL(options.baseSQL ?? remoteBaseSQL ?? targetSql) || targetSql;
-                const showLoading = options.showLoading !== false;
-
-                if (options.updateBase !== false) {
-                    remoteBaseSQL = baseSql;
-                }
-                currentSQL = targetSql;
-
-                try {
-                    if (showLoading) {
-                        setUIState('loading');
-                        statusElement.textContent = 'Running DuckDB query…';
-                    } else {
-                        statusElement.textContent = 'Updating selection…';
-                    }
-                    const res = await duckConn.query(targetSql);
-                    const rows = res.toArray();
-
-                    fullDataset = processRawData(rows);
-                    topCategories = getTop10Categories(fullDataset);
-                    applyAllFilters(true);
-                    hasExecutedDuckQuery = true;
-
-                    if (!options.suppressBroadcast) {
-                        broadcastDuckDBQuery(targetSql, baseSql);
-                    }
-                } catch (e) {
-                    console.error(e);
-                    if (showLoading) setUIState('loading');
-                    statusElement.textContent = `SQL error: ${e.message}`;
-                }
-            }
-
             function processRawData(raw) {
-                if (raw?.features && Array.isArray(raw.features)) {
-                    return raw.features.map(f => {
-                        const areaMeters = f.properties?.area_meters || 0;
-                        const areaKm = areaMeters / 1_000_000;
-                        let valueCandidate;
-                        if (f.properties && Object.prototype.hasOwnProperty.call(f.properties, VALUE_FIELD)) {
-                            valueCandidate = f.properties[VALUE_FIELD];
-                        } else if (VALUE_FIELD === 'count_mmsi') {
-                            valueCandidate = areaKm;
-                        } else {
-                            valueCandidate = f.properties?.value ?? f.properties?.cnt ?? areaKm;
-                        }
-                        const numericValue = Number(valueCandidate);
-                        const resolvedValue = Number.isFinite(numericValue) ? numericValue : 0;
-                        const props = Object.assign({}, f.properties, { count_mmsi: areaKm, [VALUE_FIELD]: resolvedValue });
-                        return {
-                            id: f.properties?.id || Math.random().toString(36),
-                            geometry: f.geometry,
-                            lng: f.geometry?.coordinates?.[0],
-                            lat: f.geometry?.coordinates?.[1],
-                            properties: props,
-                            count_mmsi: areaKm,
-                            area_meters: areaMeters,
-                            cnt: f.properties?.cnt || 0,
-                            [VALUE_FIELD]: resolvedValue
-                        };
-                    });
-                } else if (Array.isArray(raw)) {
+                if (Array.isArray(raw)) {
                     return raw.map(item => {
                         const valueCandidate = item[VALUE_FIELD] ?? item.value ?? item.count ?? item.count_mmsi ?? 0;
                         const numericValue = Number(valueCandidate);
@@ -1275,15 +987,8 @@ def udf(
                 return [];
             }
 
-            function reloadData() {
-                clearAllFilters();
-                if (duckDBReady && duckConn) {
-                    runHistogramQuery({ sql: remoteBaseSQL, baseSQL: remoteBaseSQL, updateBase: true });
-                }
-            }
-
             // --- external filters application ---
-            function applyAllFilters(fromQuery = false) {
+            function applyAllFilters() {
                 let filtered = [...fullDataset];
                 for (let [,f] of activeFilters.entries()) filtered = applyFilter(filtered, f);
                 filteredDataset = filtered;
@@ -1351,14 +1056,14 @@ def udf(
                 const container = document.getElementById('chartContainer');
                 const fullWidth = container.clientWidth;
                 const fullHeight = container.clientHeight;
-                
+
                 chartWidth = fullWidth - margin.left - margin.right;
                 chartHeight = fullHeight - margin.top - margin.bottom;
 
                 svg = d3.select('#histogram')
                     .attr('width', fullWidth)
                     .attr('height', fullHeight);
-                
+
                 chartGroup = svg.append('g')
                     .attr('transform', `translate(${margin.left},${margin.top})`);
 
@@ -1437,10 +1142,10 @@ def udf(
                 } else {
                     selectedCategories.add(cropId);
                 }
-                
+
                 updateBarSelection();
                 updateSelectionInfo();
-                
+
                 if (selectedCategories.size > 0) {
                     sendCategoricalFilter(Array.from(selectedCategories));
                 } else {
@@ -1538,7 +1243,7 @@ def udf(
 
                 // Update all bars
                 const allBars = bars.merge(newBars);
-                
+
                 if (animate) {
                     allBars.transition()
                         .duration(300)
@@ -1564,15 +1269,15 @@ def udf(
                     el.textContent = '';
                     return;
                 }
-                
+
                 const selectedNames = topCategories
                     .filter(d => selectedCategories.has(d.id))
                     .map(d => d.name);
-                
+
                 const total = topCategories
                     .filter(d => selectedCategories.has(d.id))
                     .reduce((sum, d) => sum + d.count, 0);
-                
+
                 if (selectedNames.length === 1) {
                     el.textContent = `Selected: ${selectedNames[0]} (${formatValue(total)} areas)`;
                 } else {
@@ -1583,22 +1288,14 @@ def udf(
             // --- selection actions -> send filters to others ---
             function sendCategoricalFilter(cropIds) {
                 if (!cropIds || cropIds.length === 0) return;
-                
-                const base = sanitizeSQL(remoteBaseSQL || DEFAULT_SQL) || DEFAULT_SQL;
-                
-                // Create SQL query with filter
-                const valuesList = cropIds.join(', ');
-                const filteredSQL = `SELECT * FROM (${base}) WHERE ${VALUE_FIELD} IN (${valuesList})`;
-                
-                currentSQL = filteredSQL;
-                
+
                 const cropNames = cropIds.map(id => {
                     const cat = topCategories.find(c => c.id === id);
                     return cat ? cat.name : `Crop ${id}`;
                 }).join(', ');
-                
+
                 statusElement.textContent = `Selected: ${cropNames}`;
-                
+
                 // Send unified filter message
                 busSend({
                     type: 'filter',
@@ -1611,20 +1308,14 @@ def udf(
                         values: cropIds
                     }
                 });
-                
-                // Also broadcast the SQL query
-                broadcastDuckDBQuery(filteredSQL, base);
             }
 
             function clearCategoricalFilter() {
                 selectedCategories.clear();
                 updateBarSelection();
                 updateSelectionInfo();
-                
-                const base = sanitizeSQL(remoteBaseSQL || DEFAULT_SQL) || DEFAULT_SQL;
-                currentSQL = base;
                 statusElement.textContent = 'Selection cleared';
-                
+
                 // Send unified filter clear
                 busSend({
                     type: 'filter',
@@ -1636,9 +1327,6 @@ def udf(
                         field: VALUE_FIELD
                     }
                 });
-                
-                // Also broadcast the base SQL query
-                broadcastDuckDBQuery(base, base);
             }
 
             function clearSelection() {
@@ -1656,45 +1344,6 @@ def udf(
                     // Ignore our own messages
                     if (message.fromComponent && message.fromComponent === componentId) return;
                     if (message.source && message.source === componentId) return;
-
-                    if (message.type === 'duckdb_query' && typeof message.sql === 'string') {
-                        if (message.dataset && DATASET !== 'all' && message.dataset !== DATASET) return;
-                        const incomingSql = sanitizeSQL(message.sql);
-                        if (!incomingSql) return;
-                        const baseSql = sanitizeSQL(message.base || message.sql) || incomingSql;
-                        remoteBaseSQL = baseSql;
-                        currentSQL = incomingSql;
-
-                        selectedCategories.clear();
-                        updateBarSelection();
-                        updateSelectionInfo();
-
-                        const execute = () => runHistogramQuery({
-                            sql: incomingSql,
-                            baseSQL: baseSql,
-                            suppressBroadcast: true,
-                            updateBase: true
-                        }).catch(() => {});
-                        
-                        if (!duckDBReady || !duckConn) {
-                            pendingDuckQuery = { sql: incomingSql, base: baseSql };
-                            initDuckDB().then(() => {
-                                if (pendingDuckQuery) {
-                                    const queued = pendingDuckQuery;
-                                    pendingDuckQuery = null;
-                                    runHistogramQuery({
-                                        sql: queued.sql,
-                                        baseSQL: queued.base,
-                                        suppressBroadcast: true,
-                                        updateBase: true
-                                    }).catch(() => {});
-                                }
-                            }).catch(() => {});
-                        } else {
-                            execute();
-                        }
-                        return;
-                    }
 
                     // Unified filter handling
                     if (message.type === 'filter' && message.filter) {
@@ -1789,42 +1438,26 @@ def udf(
             if (bc) bc.onmessage = (ev) => onMessage(ev.data);
             window.addEventListener('message', (ev) => onMessage(ev.data));
 
-            // --- init ---
-            document.addEventListener('DOMContentLoaded', async function() {
-                try {
-                    await initDuckDB();
-                    if (pendingDuckQuery) {
-                        const queued = pendingDuckQuery;
-                        pendingDuckQuery = null;
-                        await runHistogramQuery({
-                            sql: queued.sql,
-                            baseSQL: queued.base,
-                            suppressBroadcast: true,
-                            updateBase: true
-                        });
-                    } else if (!hasExecutedDuckQuery) {
-                        await runHistogramQuery({
-                            sql: remoteBaseSQL,
-                            baseSQL: remoteBaseSQL,
-                            suppressBroadcast: true,
-                            updateBase: true
-                        });
-                    }
-                } catch (e) {
-                    console.error(e);
-                }
+            // --- init: data is embedded, so this is synchronous, no network/WASM involved ---
+            try {
+                fullDataset = processRawData(RECORDS);
+                topCategories = getTop10Categories(fullDataset);
+                applyAllFilters();
+            } catch (e) {
+                console.error(e);
+                statusElement.textContent = `Init failed: ${e && e.message ? e.message : e}`;
+            }
 
-                setTimeout(() => {
-                    busSend({
-                        type: 'component_ready',
-                        componentType: 'categorical_chart',
-                        componentId: componentId,
-                        capabilities: ['filter'],
-                        dataSource: 'independent',
-                        protocol: 'unified'
-                    });
-                }, 300);
-            });
+            setTimeout(() => {
+                busSend({
+                    type: 'component_ready',
+                    componentType: 'categorical_chart',
+                    componentId: componentId,
+                    capabilities: ['filter'],
+                    dataSource: 'independent',
+                    protocol: 'unified'
+                });
+            }, 300);
         </script>
     </body>
     </html>
@@ -1862,9 +1495,9 @@ DEFAULT_CONFIG = r"""{
       "steps": 20,
       "colors": "OrYel"
     }
-  } 
+  }
 }"""
- 
+
 DEFAULT_STYLE_URL = "mapbox://styles/mapbox/dark-v11"
 
 @fused.udf
@@ -1879,32 +1512,34 @@ def udf(
     center_lat: float = 36.7783,
     zoom: float = 4,
     tooltip_columns: list = ["crop_rank_1", "elevation", "daily_mean"],
-    default_query: str = "SELECT * FROM data WHERE elevation > 0",
+    min_elevation: float = 0,
     map_style_url: str = DEFAULT_STYLE_URL,
     channel: str = "fused-elevation-temp",
     dataset: str = "all",
 ):
-    import base64
-    import io
-
     from jinja2 import Template
 
     style_url = map_style_url or DEFAULT_STYLE_URL
 
-    # Compute the joined dataset server-side and embed it directly in the page --
-    # canvas node iframes run with an opaque origin, so a client-side fetch() back
-    # to another node's URL is blocked by CORS with no way to allow it from here.
-    df = fused.run("join_era5_cdl_elevation", bounds=bounds, res=res, year=year, month=month)
-    buf = io.BytesIO()
-    df.to_parquet(buf)
-    embedded_parquet_b64 = base64.b64encode(buf.getvalue()).decode()
+    # Compute the joined dataset server-side and embed it directly in the page as
+    # plain JSON -- canvas node iframes run with an opaque origin, so a client-side
+    # fetch() back to another node's URL is blocked by CORS with no way to allow it
+    # from here. The dataset is small (a few thousand rows), so there's no need for
+    # a client-side SQL engine either -- plain JS array filtering is enough and has
+    # far fewer moving parts (no WASM, no Worker, no CORS, no Parquet compatibility
+    # surface) to fail silently inside a sandboxed iframe.
+    join_era5_cdl_elevation = fused.load("join_era5_cdl_elevation")
+    df = join_era5_cdl_elevation(bounds=bounds, res=res, year=year, month=month)
+    df = df.copy()
+    df["hex"] = df["hex"].astype(str)  # preserve full 64-bit H3 id precision through JSON (JS numbers only hold 53 bits)
+    records_json = df.to_json(orient="records")
 
     html = Template(r"""
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>H3 Parquet Viewer (browser-driven config + live SQL)</title>
+  <title>H3 Hexagon Viewer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css" rel="stylesheet" />
@@ -1915,25 +1550,13 @@ def udf(
   <script src="https://unpkg.com/@deck.gl/geo-layers@9.1.3/dist.min.js"></script>
   <script src="https://unpkg.com/@deck.gl/carto@9.1.3/dist.min.js"></script>
 
-  <script src="https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.1-dev132.0/dist/duckdb-wasm.js"></script>
-  <script type="module">
-    import * as duckdb_wasm from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.1-dev132.0/+esm";
-    window.__DUCKDB_WASM = duckdb_wasm;
-  </script>
-
   <style>
     :root {
       --bg-panel: rgba(15,15,15,0.9);
       --bg-panel-solid: #0f0f0f;
-      --bg-input: #1a1a1a;
-      --border-color: #3a3a3a;
-      --border-color-soft: #2a2a2a;
       --text-primary: #ffffff;
       --text-dim: #9e9e9e;
-      --text-muted: #6b6b6b;
       --radius-md: 6px;
-      --radius-lg: 8px;
-      --shadow-strong: 0 12px 24px rgba(0,0,0,.7);
       --shadow-soft: 0 -4px 12px rgba(0,0,0,.7);
     }
 
@@ -1957,7 +1580,7 @@ def udf(
       display: none;
       z-index: 6;
       white-space: nowrap;
-      border:1px solid var(--border-color);
+      border:1px solid #3a3a3a;
     }
 
     .status-pill {
@@ -1968,7 +1591,7 @@ def udf(
       color:var(--text-primary);
       padding:6px 10px;
       border-radius:var(--radius-md);
-      border:1px solid var(--border-color);
+      border:1px solid #3a3a3a;
       font-size:11px;
       z-index:7;
       pointer-events:none;
@@ -1976,52 +1599,6 @@ def udf(
       min-width:120px;
       text-align:center;
     }
-
-    /* bottom query bar */
-    .bottombar {
-      position:fixed;
-      left:0; right:0; bottom:0;
-      z-index:6;
-      background: var(--bg-panel);
-      color:var(--text-primary);
-      border-top:1px solid var(--border-color);
-      padding:8px;
-      box-shadow: var(--shadow-soft);
-      font-family: monospace;
-      font-size:12px;
-      line-height:1.4;
-    }
-    .bottombar .labelrow {
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      font-size:11px;
-      color:var(--text-dim);
-      margin-bottom:4px;
-    }
-    .bottombar .labelrow .left {
-      font-weight:500;
-      color:var(--text-primary);
-    }
-    .bottombar textarea {
-      width:100%;
-      height:80px;
-      resize:vertical;
-      padding:6px;
-      border:1px solid var(--border-color);
-      border-radius:var(--radius-md);
-      background:var(--bg-input);
-      color:var(--text-primary);
-      font-family: inherit;
-      font-size:12px;
-      line-height:1.4;
-      outline:none;
-    }
-    .bottombar textarea:focus {
-      border:1px solid var(--text-muted);
-      box-shadow:0 0 0 2px rgba(255,255,255,0.07);
-    }
-
   </style>
 </head>
 <body>
@@ -2031,24 +1608,16 @@ def udf(
 
   <div class="status-pill" id="statusPill">initializing…</div>
 
-  <div class="bottombar">
-    <div class="labelrow">
-      <div class="left">SQL query</div>
-
-    </div>
-    <textarea id="queryInput"></textarea>
-  </div>
-
   <script type="module">
     // --- UDF PARAMS ---------------------------------------------------------
-    const EMBEDDED_PARQUET_B64 = {{ embedded_parquet_b64 | tojson }};
+    const RECORDS         = {{ records_json | safe }};
     const MAPBOX_TOKEN    = {{ mapbox_token | tojson }};
     const MAP_STYLE_URL   = {{ map_style_url | tojson }};
     const DEFAULT_STYLE_URL = {{ default_style_url | tojson }};
     const START_CENTER    = [{{ center_lng }}, {{ center_lat }}];
     const START_ZOOM      = {{ zoom }};
     const TOOLTIP_COLUMNS = {{ tooltip_columns | tojson }};
-    const DEFAULT_QUERY   = {{ default_query | tojson }};
+    const MIN_ELEVATION   = {{ min_elevation }};
     const CHANNEL         = {{ channel | tojson }};
     const DATASET         = {{ dataset | tojson }};
     const componentId     = 'duckmap-' + Math.random().toString(36).slice(2);
@@ -2060,21 +1629,13 @@ def udf(
     const { colorContinuous } = deck.carto;
 
     // state
-    let duckConn;
     let overlay;
     let map;
     let didInitialFit = false;
-
-    let sqlTypingTimer = 0;
-    const DEBOUNCE_MS = 50;
-
     let currentConfObj = {};
-    let currentSQLText = DEFAULT_QUERY;
-    let suppressQueryBroadcast = false;
-    let pendingDuckQuery = null;
-    let baseSQLText = sanitizeSQL(DEFAULT_QUERY);
-    let activeRangeClause = null;
-    let activeRangeField = null;
+    let fullDataset = [];
+    let filteredDataset = [];
+    let activeFilters = new Map();
 
     function $(id){ return document.getElementById(id); }
 
@@ -2109,17 +1670,11 @@ def udf(
       } catch (e) {}
     }
 
-    function sanitizeSQL(sql) {
-      if (sql == null) return "";
-      return String(sql).trim().replace(/;+\s*$/g, '');
-    }
-
-    function sanitizeFieldName(field) {
-      if (typeof field !== 'string') return null;
-      const trimmed = field.trim();
-      if (!trimmed) return null;
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) return null;
-      return trimmed;
+    function getFeatureValue(feature, fieldName) {
+      if (!feature) return 0;
+      const direct = Number(feature[fieldName]);
+      if (Number.isFinite(direct)) return direct;
+      return 0;
     }
 
     function cloneConfig(conf) {
@@ -2133,6 +1688,14 @@ def udf(
         console.error('config clone error', err);
         return {};
       }
+    }
+
+    function sanitizeFieldName(field) {
+      if (typeof field !== 'string') return null;
+      const trimmed = field.trim();
+      if (!trimmed) return null;
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) return null;
+      return trimmed;
     }
 
     function applyIncomingStyle(style) {
@@ -2160,31 +1723,7 @@ def udf(
 
       currentConfObj = rawConf;
       updateStatus(`style ${attr} (${validSteps} steps)`);
-      if (duckConn) {
-        const sqlToUse = sanitizeSQL(currentSQLText) || sanitizeSQL(defaultSQL());
-        runQuery({ overrideSQL: sqlToUse, suppressBroadcast: true, baseSQL: baseSQLText }).catch(err => console.error('style requery error', err));
-      }
-    }
-
-    function resolveSQLText(pref) {
-      const candidate = pref != null ? pref : $("queryInput")?.value;
-      const sanitized = sanitizeSQL(candidate);
-      if (sanitized) return sanitized;
-      return sanitizeSQL(defaultSQL());
-    }
-
-    function broadcastDuckDBQuery(sqlText, baseSql) {
-      const cleanSql = sanitizeSQL(sqlText);
-      if (!cleanSql) return;
-      const message = {
-        type: 'duckdb_query',
-        sql: cleanSql,
-        base: sanitizeSQL(baseSql) || cleanSql,
-        dataset: DATASET,
-        fromComponent: componentId,
-        timestamp: Date.now()
-      };
-      busSend(message);
+      renderLayer();
     }
 
     function rafThrottle(fn) {
@@ -2202,6 +1741,46 @@ def udf(
     }
 
     let suppressSpatialEmits = 0;
+
+    // --- filtering (same model as the histogram/bar-chart panels) ----------
+
+    function applyFilter(data, filter) {
+      switch (filter.type) {
+        case 'spatial': return applySpatialFilter(data, filter);
+        case 'range':
+        case 'multi-range': return applyRangeFilter(data, filter);
+        case 'categorical': return applyCategoricalFilter(data, filter);
+        default: return data;
+      }
+    }
+
+    function applySpatialFilter(data, filter) {
+      const b = filter.bounds; if (!b) return data;
+      return data.filter(f => f.lng>=b.sw.lng && f.lng<=b.ne.lng && f.lat>=b.sw.lat && f.lat<=b.ne.lat);
+    }
+
+    function applyRangeFilter(data, filter) {
+      const field = filter.field;
+      const [min, max] = filter.values || [0, Number.POSITIVE_INFINITY];
+      return data.filter(f => {
+        const val = getFeatureValue(f, field);
+        return val >= min && val <= max;
+      });
+    }
+
+    function applyCategoricalFilter(data, filter) {
+      const field = filter.field;
+      const values = filter.values || [];
+      return data.filter(f => values.includes(getFeatureValue(f, field)));
+    }
+
+    function applyAllFilters() {
+      let filtered = fullDataset.filter(f => getFeatureValue(f, 'elevation') > MIN_ELEVATION);
+      for (const [, f] of activeFilters.entries()) filtered = applyFilter(filtered, f);
+      filteredDataset = filtered;
+      renderLayer();
+      updateStatus(`rendered ${filteredDataset.length.toLocaleString()} features`);
+    }
 
     // --- tiny helpers -------------------------------------------------------
 
@@ -2295,70 +1874,31 @@ def udf(
       return trimmed;
     }
 
-    function toH3String(hex) {
-      try {
-        if (hex == null) return null;
-        if (typeof hex === 'string') {
-          const s = hex.startsWith('0x') ? hex.slice(2) : hex;
-          return (/^\d+$/.test(s) ? BigInt(s).toString(16) : s.toLowerCase());
-        }
-        if (typeof hex === 'number') return BigInt(Math.trunc(hex)).toString(16);
-        if (typeof hex === 'bigint') return hex.toString(16);
-        if (Array.isArray(hex) && hex.length === 2) {
-          const a = (BigInt(hex[0]) << 32n) | BigInt(hex[1]);
-          const b = (BigInt(hex[1]) << 32n) | BigInt(hex[0]);
-          const sa = a.toString(16), sb = b.toString(16);
-          if (h3.isValidCell?.(sa)) return sa;
-          if (h3.isValidCell?.(sb)) return sb;
-          return sa;
-        }
-      } catch(_) {}
-      return null;
-    }
-
     function rowsToFeatures(rows, confObj){
       const colorAttr = confObj?.hexLayer?.getFillColor?.attr || "metric";
 
       return rows.map(p => {
-        const rawHex = p.hex ?? p.h3 ?? p.index ?? p.id;
-        const hex = toH3String(rawHex);
-        if (!hex) return null;
+        const hex = p.hex ?? p.h3 ?? p.index ?? p.id;
+        if (!hex || typeof hex !== 'string') return null;
 
         const obj = { ...p };
 
-        // normalize color column case
-        if (obj[colorAttr] === undefined) {
-          const lower = colorAttr.toLowerCase();
-          if (obj[lower] !== undefined) {
-            obj[colorAttr] = obj[lower];
-          }
-        }
-
-        // ensure numeric for ramp
         if (obj[colorAttr] !== undefined) {
           const n = Number(obj[colorAttr]);
           obj[colorAttr] = Number.isFinite(n) ? n : null;
         }
 
-        // normalize + numeric-ify tooltip cols
         (TOOLTIP_COLUMNS || []).forEach(col => {
-          if (obj[col] === undefined) {
-            const lowerCol = col.toLowerCase();
-            if (obj[lowerCol] !== undefined) {
-              obj[col] = obj[lowerCol];
-            }
-          }
           if (obj[col] !== undefined && typeof obj[col] !== "number") {
             const nn = Number(obj[col]);
             if (Number.isFinite(nn)) obj[col] = nn;
           }
         });
 
-        obj.hex = hex;
-
         return {
           ...obj,
-          properties: { ...obj }
+          hex,
+          properties: { ...obj, hex }
         };
       }).filter(Boolean);
     }
@@ -2467,45 +2007,14 @@ def udf(
         return;
       }
 
-      if (msg.type === 'duckdb_query' && typeof msg.sql === 'string' && datasetOk) {
-        const incomingSql = sanitizeSQL(msg.sql);
-        if (!incomingSql) return;
-        if (msg.fromComponent === componentId) return;
-        const baseSql = sanitizeSQL(msg.base || msg.sql) || incomingSql;
-        baseSQLText = baseSql;
-        activeRangeClause = null;
-        activeRangeField = null;
-
-        const applyQuery = () => {
-          const inputEl = $("queryInput");
-          if (inputEl) inputEl.value = incomingSql;
-          currentSQLText = incomingSql;
-          suppressQueryBroadcast = true;
-          runQuery({ overrideSQL: incomingSql, suppressBroadcast: true, baseSQL: baseSql })
-            .catch(err => console.error('duckdb_query apply error', err))
-            .finally(() => { suppressQueryBroadcast = false; });
-        };
-
-        if (!duckConn) {
-          pendingDuckQuery = { sql: incomingSql, base: baseSql };
-        } else {
-          applyQuery();
-        }
-        return;
-      }
-
       if (msg.type === 'filter' && msg.filter && datasetOk) {
         const f = msg.filter;
         if (f.type === 'clear') {
-          const shouldResetRange = f.clearAll || !f.field || (activeRangeField && f.field === activeRangeField);
-          if (shouldResetRange && activeRangeClause) {
-            const base = sanitizeSQL(baseSQLText) || sanitizeSQL(defaultSQL());
-            if (base && duckConn) {
-              activeRangeClause = null;
-              activeRangeField = null;
-              runQuery({ overrideSQL: base, suppressBroadcast: true, baseSQL: base }).catch(err => console.error('range clear error', err));
-            }
-          }
+          if (f.clearAll) activeFilters.clear();
+          else if (f.field) {
+            for (const k of Array.from(activeFilters.keys())) if (k.includes(`_${f.field}`)) activeFilters.delete(k);
+          } else if (f.filterId) activeFilters.delete(f.filterId);
+          applyAllFilters();
           updateStatus('incoming filter cleared');
           return;
         }
@@ -2521,18 +2030,18 @@ def udf(
         }
         if (f.type === 'range' && Array.isArray(f.values)) {
           const field = sanitizeFieldName(f.field || 'value');
-          const [minVal, maxVal] = f.values.map(Number);
-          if (!field || !Number.isFinite(minVal) || !Number.isFinite(maxVal)) return;
-          const base = sanitizeSQL(baseSQLText) || sanitizeSQL(defaultSQL());
-          if (!base) return;
-          const lower = Math.min(minVal, maxVal);
-          const upper = Math.max(minVal, maxVal);
-          const clause = `${field} BETWEEN ${lower} AND ${upper}`;
-          const newSQL = `SELECT * FROM (${base}) AS base WHERE ${clause}`;
-          activeRangeField = field;
-          activeRangeClause = clause;
-          runQuery({ overrideSQL: newSQL, suppressBroadcast: true, baseSQL: base }).catch(err => console.error('range apply error', err));
+          if (!field) return;
+          activeFilters.set(`range_${msg.fromComponent||'unknown'}_${field}`, { type: 'range', field, values: f.values });
+          applyAllFilters();
           updateStatus(`incoming range ${field}`);
+          return;
+        }
+        if (f.type === 'categorical' && Array.isArray(f.values)) {
+          const field = sanitizeFieldName(f.field || 'value');
+          if (!field) return;
+          activeFilters.set(`categorical_${msg.fromComponent||'unknown'}_${field}`, { type: 'categorical', field, values: f.values });
+          applyAllFilters();
+          updateStatus(`incoming categorical ${field}`);
           return;
         }
         return;
@@ -2544,6 +2053,8 @@ def udf(
       }
 
       if (msg.type === 'filter_cleared' && datasetOk) {
+        activeFilters.clear();
+        applyAllFilters();
         updateStatus('incoming filter cleared');
       }
     }
@@ -2644,9 +2155,16 @@ def udf(
       }
     }
 
-    // --- duckdb / map init --------------------------------------------------
+    function renderLayer() {
+      if (!map) return;
+      const data = rowsToFeatures(filteredDataset, currentConfObj);
+      fitToDataOnce(data);
+      updateOverlayLayers(data, currentConfObj);
+    }
 
-    async function initMapAndDuckDB(){
+    // --- map init -------------------------------------------------------
+
+    async function initMap(){
       updateStatus('initializing map…');
       const style = resolveStyleUrl(MAP_STYLE_URL, MAPBOX_TOKEN);
       mapboxgl.accessToken = MAPBOX_TOKEN;
@@ -2671,108 +2189,11 @@ def udf(
       const sendSpatial = rafThrottle(postSpatial);
       const spatialEvents = ['move','drag','zoom','moveend','zoomend','pitch','rotate'];
       spatialEvents.forEach(ev => map.on(ev, sendSpatial));
-
-      const duckmod = window.__DUCKDB_WASM;
-      const bundle = await duckmod.selectBundle(duckmod.getJsDelivrBundles());
-      const worker = new Worker(
-        URL.createObjectURL(
-          new Blob([await (await fetch(bundle.mainWorker)).text()], {type:'application/javascript'})
-        )
-      );
-      const db = new duckmod.AsyncDuckDB(new duckmod.ConsoleLogger(), worker);
-      await db.instantiate(bundle.mainModule);
-      duckConn = await db.connect();
-
-      try {
-        await duckConn.query("INSTALL h3 FROM community");
-      } catch (installErr) {
-        console.warn("INSTALL h3 failed (continuing):", installErr?.message || installErr);
-      }
-
-      try {
-        await duckConn.query("LOAD h3");
-      } catch (loadErr) {
-        console.warn("LOAD h3 failed (continuing):", loadErr?.message || loadErr);
-      }
-
-      updateStatus('loading embedded data…');
-      const binary = atob(EMBEDDED_PARQUET_B64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-
-      await db.registerFileBuffer('data.parquet', bytes);
-      await duckConn.query("CREATE OR REPLACE VIEW data AS SELECT * FROM read_parquet('data.parquet')");
-    }
-
-    // --- querying + live updates -------------------------------------------
-
-    // default query is always SELECT * FROM data
-    function defaultSQL() {
-      return DEFAULT_QUERY;
-    }
-
-    async function runQuery(options = {}) {
-      if (!duckConn || !currentConfObj) return;
-
-      const inputEl = $("queryInput");
-      const raw = options.overrideSQL != null ? options.overrideSQL : (inputEl ? inputEl.value : "");
-      let sqlText = resolveSQLText(raw);
-
-      if (!raw || !raw.trim()) {
-        const def = sanitizeSQL(defaultSQL());
-        sqlText = def;
-        if (inputEl) inputEl.value = def;
-      } else if (options.overrideSQL != null && inputEl) {
-        inputEl.value = sqlText;
-      }
-
-      if (!sqlText) return;
-
-      const baseCandidate = options.baseSQL != null ? sanitizeSQL(options.baseSQL) : null;
-      if (baseCandidate) {
-        baseSQLText = baseCandidate;
-        if (sanitizeSQL(options.overrideSQL) === baseCandidate) {
-          activeRangeClause = null;
-          activeRangeField = null;
-        }
-      } else if (options.overrideSQL == null) {
-        baseSQLText = sqlText;
-        activeRangeClause = null;
-        activeRangeField = null;
-      }
-
-      try {
-        updateStatus('running query…');
-        const res = await duckConn.query(sqlText);
-        const rows = res.toArray();
-
-        const data = rowsToFeatures(rows, currentConfObj);
-        currentSQLText = sqlText;
-        fitToDataOnce(data);
-        updateOverlayLayers(data, currentConfObj);
-        updateStatus(`rendered ${data.length.toLocaleString()} features`);
-        postSpatial();
-
-        if (!options.suppressBroadcast) {
-          broadcastDuckDBQuery(sqlText, options.baseSQL || sqlText);
-        }
-      } catch(e) {
-        console.error("SQL error:", e);
-        updateStatus('sql error');
-      }
-    }
-
-    // debounced handlers
-    function onSQLChanged(){
-      clearTimeout(sqlTypingTimer);
-      sqlTypingTimer = setTimeout(runQuery, DEBOUNCE_MS);
     }
 
     // --- main boot ----------------------------------------------------------
 
     async function main(){
-      await initMapAndDuckDB();
-
       try {
         currentConfObj = JSON.parse(INITIAL_CONFIG || "{}");
       } catch (_) {
@@ -2782,36 +2203,16 @@ def udf(
         currentConfObj = {};
       }
 
-      // init SQL box with SELECT * FROM data
-      $("queryInput").value = defaultSQL();
-      currentSQLText = sanitizeSQL($("queryInput").value);
+      // data is embedded, so this is synchronous, no network/WASM involved
+      fullDataset = RECORDS;
 
-      // set up listeners
-      $("queryInput").oninput = onSQLChanged;
-
-      const performInitialQuery = async () => {
-        if (pendingDuckQuery) {
-          const { sql, base } = pendingDuckQuery;
-          pendingDuckQuery = null;
-          await runQuery({ overrideSQL: sql, suppressBroadcast: true, baseSQL: base });
-        } else {
-          await runQuery();
-        }
-      };
-
-      const startInitialQuery = () => {
-        performInitialQuery().catch(err => console.error('initial query error', err));
-      };
-
-      if (typeof map?.isMoving === 'function' ? !map.isMoving() : false) {
-        startInitialQuery();
-      } else {
-        map.once('idle', startInitialQuery);
-      }
+      await initMap();
+      applyAllFilters();
     }
 
     main().catch(e=>{
       console.error("init error", e);
+      updateStatus('init error: ' + (e && e.message ? e.message : e));
     });
 
     // block pinch-zoom/ctrl+wheel zoom
@@ -2835,7 +2236,7 @@ def udf(
 </body>
 </html>
 """).render(
-        embedded_parquet_b64=embedded_parquet_b64,
+        records_json=records_json,
         config_json=config_json,
         mapbox_token=mapbox_token,
         map_style_url=style_url,
@@ -2844,7 +2245,7 @@ def udf(
         center_lat=center_lat,
         zoom=zoom,
         tooltip_columns=tooltip_columns,
-        default_query=default_query,
+        min_elevation=min_elevation,
         channel=channel,
         dataset=dataset,
     )
