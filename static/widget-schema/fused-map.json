@@ -1,6 +1,6 @@
 {
   "type": "fused-map",
-  "description": "Interactive map with tile and vector layers.",
+  "description": "Interactive map with tile, UDF and SQL layers.",
   "hasChildren": false,
   "propsSchema": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -90,12 +90,88 @@
             "data": {
               "description": "Inline GeoJSON FeatureCollection (geojson type)"
             },
+            "udf": {
+              "description": "UDF placeholder, e.g. {{my_udf}} or {{my_udf?param=value}}. The UDF is run directly (no share token needed) and re-run when it changes: the whole result as rows for geojson/deck layers, or per tile when tile is true. Combine with sql to query the result. Mutually exclusive with tileUrl.",
+              "type": "string"
+            },
+            "tile": {
+              "description": "With udf: run the UDF per XYZ tile (raster → PNG bitmaps, h3 → hexagons, other types → vector features). Tiles render through deck.gl.",
+              "type": "boolean"
+            },
             "sql": {
               "description": "DuckDB SQL query with {{udf_name}} placeholders. Rows are converted to GeoJSON for rendering.",
               "type": "string"
             },
+            "filters": {
+              "description": "Feature filters applied on the client: range filters on numeric properties, category filters on any property.",
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "attr": {
+                        "type": "string",
+                        "description": "Feature property to filter on"
+                      },
+                      "type": {
+                        "type": "string",
+                        "const": "range"
+                      },
+                      "min": {
+                        "description": "Inclusive lower bound",
+                        "type": "number"
+                      },
+                      "max": {
+                        "description": "Inclusive upper bound",
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "attr",
+                      "type"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "attr": {
+                        "type": "string",
+                        "description": "Feature property to filter on"
+                      },
+                      "type": {
+                        "type": "string",
+                        "const": "categories"
+                      },
+                      "values": {
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            }
+                          ]
+                        },
+                        "description": "Values to keep"
+                      }
+                    },
+                    "required": [
+                      "attr",
+                      "type",
+                      "values"
+                    ]
+                  }
+                ]
+              }
+            },
             "geometryColumn": {
-              "description": "Column containing GeoJSON geometry strings (use ST_AsGeoJSON in SQL). Defaults to 'geometry'.",
+              "description": "Column containing the geometry: GeoJSON strings (use ST_AsGeoJSON in SQL), GeoJSON objects, or WKB blobs as stored by GeoDataFrame outputs. Defaults to 'geometry'.",
               "type": "string"
             },
             "h3Column": {
@@ -215,6 +291,11 @@
         "description": "Show layer controls panel for toggling visibility and opacity",
         "type": "boolean"
       },
+      "showSidebar": {
+        "default": true,
+        "description": "Show the sidebar toggle for editing layer style, filters and SQL at runtime. Edits are runtime overrides; use the sidebar's copy action to bake them into this config.",
+        "type": "boolean"
+      },
       "param": {
         "description": "Canvas parameter name to sync viewport bounds [west, south, east, north]",
         "type": "string"
@@ -229,11 +310,19 @@
         "description": "Debounce ms for auto-send (0 = send on every move)",
         "type": "number"
       },
+      "clickParam": {
+        "description": "Canvas parameter that receives the properties of the last clicked feature",
+        "type": "string"
+      },
+      "stateParam": {
+        "description": "Canvas parameter that mirrors the sidebar's runtime edits (style, filters, SQL overrides) so other widgets can read them; restored on load when canvas-param restore is enabled. Use the sidebar's save action to write edits into this config permanently.",
+        "type": "string"
+      },
       "style": {
         "description": "Inline CSS styles as a plain CSS string",
         "type": "string"
       }
     },
-    "description": "Interactive map with Mapbox GL (mvt, raster, geojson) and deck.gl (h3, heatmap, arc, scatterplot) layers.\n\n## Example — MVT tile layer\n\n```json\n{\n  \"type\": \"fused-map\",\n  \"props\": {\n    \"layers\": [{\n      \"id\": \"counties\",\n      \"type\": \"mvt\",\n      \"tileUrl\": \"https://tiles.fused.io/public/my_tileset/{z}/{x}/{y}\",\n      \"style\": { \"fillColor\": [100, 150, 200], \"opacity\": 0.6 }\n    }]\n  }\n}\n```\n\n## Example — SQL with lat/lng points\n\n```json\n{\n  \"type\": \"fused-map\",\n  \"props\": {\n    \"layers\": [{\n      \"id\": \"sites\",\n      \"type\": \"geojson\",\n      \"sql\": \"SELECT name, lat, lng FROM {{my_udf}}\",\n      \"style\": { \"fillColor\": [255, 80, 0], \"pointRadius\": 8 }\n    }]\n  }\n}\n```\n\n## Example — raster tile layer\n\n```json\n{\n  \"type\": \"fused-map\",\n  \"props\": {\n    \"layers\": [{\n      \"id\": \"seismic\",\n      \"type\": \"raster\",\n      \"tileUrl\": \"https://udf.ai/<token>/run/tiles/{z}/{x}/{y}?format=png\",\n      \"style\": { \"opacity\": 0.8 }\n    }]\n  }\n}\n```\n\nRaster layers render through a Mapbox raster source, so `tileUrl` must be a publicly fetchable XYZ endpoint (a Fused UDF tile endpoint or any external raster service); only `opacity` and `visible` apply."
+    "description": "Interactive map with Mapbox GL (mvt, raster, geojson) and deck.gl (h3, heatmap, arc, scatterplot) layers. Layers load data from a UDF directly (`udf`), from a DuckDB query (`sql`) or from a tile endpoint (`tileUrl`). A sidebar lets viewers restyle, filter and re-query layers at runtime.\n\n## Example — UDF result (GeoDataFrame)\n\n```json\n{\n  \"type\": \"fused-map\",\n  \"props\": {\n    \"layers\": [{\n      \"id\": \"buildings\",\n      \"type\": \"geojson\",\n      \"udf\": \"{{my_udf}}\",\n      \"tooltip\": true,\n      \"style\": { \"fillColor\": { \"type\": \"continuous\", \"attr\": \"height\", \"palette\": \"Sunset\" } }\n    }]\n  }\n}\n```\n\n## Example — UDF as H3 tiles\n\n```json\n{\n  \"type\": \"fused-map\",\n  \"props\": {\n    \"layers\": [{\n      \"id\": \"hexes\",\n      \"type\": \"h3\",\n      \"udf\": \"{{my_h3_udf}}\",\n      \"tile\": true,\n      \"style\": { \"fillColor\": { \"type\": \"continuous\", \"attr\": \"count\", \"domain\": [0, 500] } }\n    }]\n  }\n}\n```\n\n## Example — MVT tile layer\n\n```json\n{\n  \"type\": \"fused-map\",\n  \"props\": {\n    \"layers\": [{\n      \"id\": \"counties\",\n      \"type\": \"mvt\",\n      \"tileUrl\": \"https://tiles.fused.io/public/my_tileset/{z}/{x}/{y}\",\n      \"style\": { \"fillColor\": [100, 150, 200], \"opacity\": 0.6 }\n    }]\n  }\n}\n```\n\n## Example — SQL with lat/lng points and a filter\n\n```json\n{\n  \"type\": \"fused-map\",\n  \"props\": {\n    \"layers\": [{\n      \"id\": \"sites\",\n      \"type\": \"geojson\",\n      \"sql\": \"SELECT name, lat, lng, score FROM {{my_udf}}\",\n      \"filters\": [{ \"attr\": \"score\", \"type\": \"range\", \"min\": 0.5 }],\n      \"style\": { \"fillColor\": [255, 80, 0], \"pointRadius\": 8 }\n    }]\n  }\n}\n```\n\n## Example — raster tile layer\n\n```json\n{\n  \"type\": \"fused-map\",\n  \"props\": {\n    \"layers\": [{\n      \"id\": \"seismic\",\n      \"type\": \"raster\",\n      \"tileUrl\": \"https://udf.ai/<token>/run/tiles/{z}/{x}/{y}?format=png\",\n      \"style\": { \"opacity\": 0.8 }\n    }]\n  }\n}\n```\n\nRaster layers with a `tileUrl` render through a Mapbox raster source, so the URL must be a publicly fetchable XYZ endpoint; only `opacity` and `visible` apply. `udf` with `tile: true` instead runs the UDF per tile through the workbench (or the canvas share token on a shared page), so no share token is needed and edits to the UDF re-render the layer."
   }
 }
