@@ -10399,13 +10399,15 @@ def udf(n: int = 5):
 
     notion = Client(auth=fused.secrets["NOTION_TOKEN"])
     blocks = notion.blocks.children.list(
-        block_id=fused.secrets["SIGNALS_PAGE_ID"]
+        block_id=fused.secrets["SIGNALS_PAGE_ID"], page_size=100
     )["results"]
 
     code_blocks = [b for b in blocks if b["type"] == "code"]
     if not code_blocks:
         return pd.DataFrame()
-    signals = json.loads(code_blocks[0]["code"]["rich_text"][0]["text"]["content"])
+    # Notion splits long code text into segments — join them all before parsing
+    rich_text = code_blocks[0]["code"]["rich_text"]
+    signals = json.loads("".join(t["text"]["content"] for t in rich_text))
 
     df = pd.DataFrame(signals)
     df["date"] = pd.to_datetime(df["date"])
@@ -10433,20 +10435,22 @@ def udf(date: str = "2026-05-28"):
 
     notion = Client(auth=fused.secrets["NOTION_TOKEN"])
     blocks = notion.blocks.children.list(
-        block_id=fused.secrets["SIGNALS_PAGE_ID"]
+        block_id=fused.secrets["SIGNALS_PAGE_ID"], page_size=100
     )["results"]
 
     code_blocks = [b for b in blocks if b["type"] == "code"]
     if not code_blocks:
         return pd.DataFrame()
-    signals = json.loads(code_blocks[0]["code"]["rich_text"][0]["text"]["content"])
+    # Notion splits long code text into segments — join them all before parsing
+    rich_text = code_blocks[0]["code"]["rich_text"]
+    signals = json.loads("".join(t["text"]["content"] for t in rich_text))
 
     df = pd.DataFrame(signals)
     df["date"] = pd.to_datetime(df["date"]).dt.date.astype(str)
     return df[df["date"] == date]
 ```
 
-Both UDFs read the same Notion page. The canvas wires them together, and the MCP endpoint exposes both as distinct tools. The docstrings tell agents which one to pick.
+Both UDFs read the same Notion page and are independent of each other. The canvas holds both, and the MCP endpoint exposes each as a distinct tool. The docstrings tell agents which one to pick.
 
 ## Test and deploy from Claude Code
 
@@ -10464,10 +10468,47 @@ The `--engine local` flag runs in your environment — no network call, no Fused
 
 ### Push to Fused
 
-Put both UDFs in a directory and push the canvas:
+A canvas directory needs a `canvas.toml` next to the UDF files, with one node per UDF (`udfName` is the file name without `.py`):
+
+```
+signals-canvas/
+├── canvas.toml
+├── get_latest_signals.py
+└── get_by_date.py
+```
+
+```toml
+type = "canvas"
+version = 2
+name = "signals-canvas"
+
+[canvas]
+edges = []
+
+[[canvas.nodes]]
+udfName = "get_latest_signals"
+title = "Get latest signals"
+x = 0
+y = 0
+zIndex = 1
+width = 500
+height = 400
+
+[[canvas.nodes]]
+udfName = "get_by_date"
+title = "Get by date"
+x = 540
+y = 0
+zIndex = 2
+width = 500
+height = 400
+```
+
+Validate, then push the canvas:
 
 ```bash
-fused canvas push ./signals-canvas/
+fused canvas validate ./signals-canvas
+fused canvas push ./signals-canvas --canvas signals-canvas
 ```
 
 This creates (or updates) a canvas named `signals-canvas` with both UDFs. Any UDFs missing from the local directory are removed from the remote canvas, so the canvas always reflects what's in the directory.
@@ -10489,17 +10530,17 @@ Once the canvas is live, register it as an MCP server:
 fused claude add-mcp signals-canvas
 ```
 
-Claude Code can now discover and call both tools. Share the canvas name with teammates — they run the same command to connect.
+Claude Code can now discover and call both tools. For a canvas owned by your team, teammates connect with `fused claude add-mcp --team signals-canvas`; for a shared canvas, use its `fc_...` token with `--token`. Team-scoped canvases get a session token that expires (1 hour by default; change it with `--session-max-age`).
 
 ## Update the endpoint
 
 When the UDF needs changing, edit the file locally and push again:
 
 ```bash
-fused canvas push ./signals-canvas/
+fused canvas push ./signals-canvas --canvas signals-canvas
 ```
 
-The endpoint updates immediately. Agents connected to it get the new behavior on the next call — no reconnection needed.
+Pushing to an existing canvas updates it in place and keeps its share token. Agents connected to it get the new behavior on the next call — no reconnection needed.
 
 ## Using it from Claude Code
 
@@ -10513,7 +10554,7 @@ Once connected, Claude picks the right tool based on the query:
 
 The Notion MCP server exists and works. The Fused layer earns its place in three specific situations:
 
-- **You don't want to share Notion credentials.** The `NOTION_TOKEN` lives in Fused Secrets. Each teammate connects via a canvas token — revokable independently of the Notion setup.
+- **You don't want to share Notion credentials.** The `NOTION_TOKEN` lives in Fused Secrets. Teammates connect to the canvas instead — access is managed in Fused, independently of the Notion setup.
 - **The endpoint needs to stay stable.** If you restructure the Notion page, only the UDF changes. Any agent connected to the canvas continues working without reconfiguration.
 - **The raw Notion structure is noisy.** A UDF normalizes field names, drops internal columns, and enforces a clean schema — so agents get predictable output rather than "whatever Notion returns."
 
