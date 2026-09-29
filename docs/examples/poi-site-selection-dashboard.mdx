@@ -7,7 +7,7 @@ sidebar_position: 11
 
 This example builds an interactive site selection dashboard that answers: **"What amenities and income levels surround a given address within a certain travel time?"**
 
-We'll chain together multiple UDFs on a [Canvas](/workbench/udf-builder/canvas) to geocode an address, compute a travel-time boundary (isochrone), pull Points of Interest from [Overture Maps](https://overturemaps.org/) and median income from the [US Census](https://www.census.gov/programs-surveys/acs), aggregate everything into H3 hexagons, and display the results on a map with interactive [Widgets](/guide/data-input-outputs/import-connection/widgets).
+A [Canvas](/workbench/udf-builder/canvas) chains small UDFs together. They geocode an address, compute a travel-time boundary (isochrone), pull Points of Interest from [Overture Maps](https://overturemaps.org/) and median household income from the [US Census](https://www.census.gov/programs-surveys/acs), aggregate everything into H3 hexagons, and show the result on a map with interactive [Widgets](/guide/data-input-outputs/import-connection/widgets).
 
 <ClickZoomImage src="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/poi-dashboard-hero.gif" alt="POI Site Selection Dashboard" />
 
@@ -15,106 +15,121 @@ We'll chain together multiple UDFs on a [Canvas](/workbench/udf-builder/canvas) 
 
 ## How to run
 
-Open the [Canvas](https://www.fused.io/canvas/fc_fused/Dashboard_Overture_Census_Isochrone), fill in the **Travel Settings** form (address, travel mode, POI category, travel time), and click **Submit**. The dashboard re-runs and shows a map with hexagons colored by POI density, the isochrone boundary, and the geocoded location for the address you entered, along with a bar chart of income distribution across the area.
+Open the [Canvas](https://www.fused.io/canvas/fc_fused/Dashboard_Overture_Census_Isochrone), fill in the **Travel Settings** form (address, POI category, travel mode, travel time, Overture release), and click **Submit**. The dashboard re-runs and shows:
 
-## What we're building
+- a map with hexagons colored by POI density, the isochrone boundary, and the geocoded address
+- the total number of matching POIs and the median household income inside the isochrone
+- a bar chart of how household income is distributed across the area
 
-The dashboard chains multiple UDFs together using [`fused.load()`](/python-sdk/api-reference/fused-load) — geocoding an address, computing an [isochrone](https://valhalla.github.io/valhalla/api/isochrone/api-reference/) (travel-time boundary), querying [Overture Maps](https://docs.overturemaps.org/) POIs, pulling [Census ACS](https://www.census.gov/programs-surveys/acs) income data, and aggregating everything into [H3 hexagons](/guide/h3-analytics/h3-overview) for visualization.
+The first run for a new address takes about 30 seconds. Repeat runs with the same inputs are [cached](/guide/working-with-udfs/udf-best-practices/caching) and load almost instantly.
+
+## How the canvas is organized
+
+The Canvas is laid out in four steps, left to right, with the dashboard on top. Each UDF does one thing and loads the UDF before it with [`fused.load()`](/python-sdk/api-reference/fused-load):
 
 ```mermaid
 flowchart LR
-    A["Type an address"] --> B["Geocode to lat/lng"]
-    B --> C["Calculate isochrone"]
-    C --> D["Get POIs from Overture Maps"]
-    C --> E["Get income from US Census"]
-    D --> F["Convert to H3 hexagons"]
-    E --> F
-    F --> G["Dashboard"]
+    subgraph S1["1 · Area of interest"]
+        A["geocode_point"] --> C["isochrone_chosen_site_overture"]
+        B["latlng_isochrone_simplified"] --> C
+    end
+    subgraph S2["2 · Load data"]
+        D["query_overture_pois"]
+        E["iso_census_intersect"]
+    end
+    subgraph S3["3 · Convert to hex"]
+        F["isochrone_to_hex_overture"]
+        G["pois_to_hex"]
+        H["iso_census_to_hex"]
+    end
+    subgraph S4["4 · Join & aggregate"]
+        I["merge_poi_census_data"]
+        J["chart_data_income"]
+    end
+    C --> D --> G --> I
+    C --> E --> H --> I
+    C --> F --> I
+    H --> J
+    I --> K["Dashboard"]
+    J --> K
 
-    style A fill:#2d4a6f,stroke:#4a82c4,color:#fff
-    style G fill:#1a6b4a,stroke:#2dbf7e,color:#fff
+    style K fill:#1a6b4a,stroke:#2dbf7e,color:#fff
 ```
 
+Every UDF takes the same inputs as the form (`manual_address`, `poi_category`, `costing`, `time_steps`, `overture_release`) and has the same defaults (San Francisco, cafes, 20 minutes by car). So any single node previews the same area when you run it on its own, and the cache is shared across the whole chain.
+
+To work on the canvas from your editor or an AI agent, pull it to a local folder with `fused canvas pull <canvas_name>` ([CLI reference](/cli/canvas)). Each UDF is one `.py` file and each widget is one `.json` file:
+
+```text
+Dashboard_Overture_Census_Isochrone/
+├── canvas.toml                        # node positions + edges
+│
+├── geocode_point.py                   # Step 1: area of interest
+├── latlng_isochrone_simplified.py
+├── isochrone_chosen_site_overture.py
+│
+├── Overture_Maps_Example.py           # Step 2: load data
+├── query_overture_pois.py
+├── iso_census_intersect.py
+│
+├── isochrone_to_hex_overture.py       # Step 3: convert to hex
+├── pois_to_hex.py
+├── iso_census_to_hex.py
+│
+├── merge_poi_census_data.py           # Step 4: join & aggregate
+├── chart_data_income.py
+│
+├── overture_poi_selector.json         # Dashboard: input form
+├── selected_poi_map.py                #   map
+├── total_pois.json                    #   metric
+├── median_income.json                 #   metric
+├── income_distribution_chart.json     #   bar chart
+└── note_*.md                          # canvas section headings
+```
+
+Edit any file, then push it back with `fused canvas push <folder> --canvas <canvas_name>`. See [AI coding tools](/guide/working-with-udfs/udf-best-practices/ai-coding-tools) for the full pull, edit, push loop.
+
 :::info Why H3 hexagons?
-We convert POIs, census polygons, and the isochrone into [H3 hexagons](/guide/h3-analytics/h3-overview) so that every cell covers the same area, making counts and averages directly comparable across the map.
+POIs are points, census block groups are irregular polygons, and the isochrone is a single polygon. Converting all three to [H3 hexagons](/guide/h3-analytics/h3-overview) gives them a shared key, so they can be joined with plain SQL, and every cell covers the same area, so counts are directly comparable across the map.
 :::
 
-### What is an isochrone?
-
-An isochrone is a polygon that represents all the area reachable from a point within a given travel time. A 15-minute driving isochrone around a store shows everywhere a customer could drive from in 15 minutes. Different travel modes (walking, cycling, driving) produce very different shapes — walking isochrones are small and roughly circular, while driving ones stretch along highways.
-
-We use the open-source [Valhalla routing engine](https://valhalla.github.io/valhalla/api/isochrone/api-reference/) to compute these.
-
-## Step 1: Get the Area of Interest
-
-We first define the area of interest to geocode the address to get coordinates, then compute an isochrone around that point.
+## Step 1: Get the area of interest
 
 ### Geocode the address
 
-The `geocode_point` UDF takes a plain-text address and returns a point geometry using [Nominatim](https://nominatim.openstreetmap.org/), the geocoder behind OpenStreetMap.
+`geocode_point` turns a plain-text address into a point using [Nominatim](https://nominatim.openstreetmap.org/), the geocoder behind OpenStreetMap. The lookup is wrapped in [`@fused.cache`](/guide/working-with-udfs/udf-best-practices/caching) because several UDFs in the chain geocode the same address, and Nominatim rate-limits repeated requests.
 
 <details>
 <summary>geocode_point UDF</summary>
 
 ```python showLineNumbers
 @fused.udf
-def udf(manual_address: str = "401 Haltom Rd, Fort Worth, TX 76117, USA"):  # Change this to any address
-    import pandas as pd
+def udf(manual_address: str = "San Francisco, CA"):
     import geopandas as gpd
-    from geopy.geocoders import Nominatim
     from shapely.geometry import Point
 
-    geolocator = Nominatim(user_agent="fused_geocoding_udf")
-    result = geolocator.geocode(manual_address)
+    @fused.cache
+    def geocode(address):
+        from geopy.geocoders import Nominatim
 
-    if result:
-        df = pd.DataFrame({
-            'location': [manual_address],
-            'lat': [result.latitude],
-            'lng': [result.longitude],
-            'address': [result.address]
-        })
-        gdf = gpd.GeoDataFrame(
-            df,
-            geometry=[Point(result.longitude, result.latitude)],
-            crs="EPSG:4326"
-        )
-        return gdf
+        result = Nominatim(user_agent="fused_geocoding_udf").geocode(address)
+        if result is None:
+            raise ValueError(f"Could not geocode address: {address!r}")
+        return result.latitude, result.longitude, result.address
+
+    lat, lng, address = geocode(manual_address.strip())
+    return gpd.GeoDataFrame(
+        {"location": [manual_address], "lat": [lat], "lng": [lng], "address": [address]},
+        geometry=[Point(lng, lat)],
+        crs="EPSG:4326",
+    )
 ```
 
 </details>
-
-The `manual_address` parameter will be wired to the form widget later — the user types an address and this UDF resolves it to coordinates.
 
 ### Calculate the isochrone
 
-The `isochrone_chosen_site_overture` UDF chains the geocoder with the Valhalla isochrone API. It loads the geocode UDF with [`fused.load()`](/python-sdk/api-reference/fused-load), extracts the lat/lng, and passes them to `latlng_isochrone_simplified`:
-
-<details>
-<summary>isochrone_chosen_site_overture UDF</summary>
-
-```python showLineNumbers
-@fused.udf
-def udf(
-    manual_address: str = 'Manhattan, New York, NY',
-    time_steps: str = '15',  # Travel time in minutes
-    costing: str = 'truck',  # Travel mode: pedestrian, bicycle, auto
-):
-    # Load and run the geocode UDF to get coordinates
-    geocode_udf = fused.load("geocode_point")
-    geocoded = geocode_udf(manual_address=manual_address, engine='local')
-    lat = geocoded.lat.values[0]
-    lng = geocoded.lng.values[0]
-
-    # Pass coordinates to the Valhalla isochrone UDF
-    isochrone_udf = fused.load('latlng_isochrone_simplified')
-    gdf = isochrone_udf(lat=lat, lng=lng, costing=costing, time_steps=time_steps)
-    return gdf
-```
-
-</details>
-
-Under the hood, `latlng_isochrone_simplified` calls the [Valhalla public API](https://valhalla.github.io/valhalla/api/isochrone/api-reference/) and returns the isochrone as a GeoDataFrame.
+An isochrone is a polygon covering everywhere you can reach from a point within a given travel time. Walking isochrones are small and roughly circular, while driving ones stretch along highways. `latlng_isochrone_simplified` calls the public [Valhalla routing API](https://valhalla.github.io/valhalla/api/isochrone/api-reference/):
 
 <details>
 <summary>latlng_isochrone_simplified UDF</summary>
@@ -122,11 +137,16 @@ Under the hood, `latlng_isochrone_simplified` calls the [Valhalla public API](ht
 ```python showLineNumbers
 @fused.udf
 def udf(
-    lat: float = 34.0522,
-    lng: float = -118.2437,
-    costing: str = "bicycle",
-    time_steps: str = "15",
+    lat: float = 37.7792588,
+    lng: float = -122.4193286,
+    costing: str = "auto",
+    time_steps: str = "20",
 ):
+    """Isochrone polygons around a point from the public Valhalla routing API.
+
+    costing: auto, pedestrian, bicycle, truck, bus, motor_scooter
+    time_steps: comma-separated minutes, e.g. "10" or "5,10,15"
+    """
     import geopandas as gpd
     import pandas as pd
     import requests
@@ -134,35 +154,60 @@ def udf(
     steps = [int(t.strip()) for t in time_steps.split(",")]
 
     @fused.cache
-    def _get_isochrone(lat, lng, costing, time_steps_tuple):
-        url = "https://valhalla1.openstreetmap.de/isochrone"
-        params = {
-            "locations": [{"lon": lng, "lat": lat}],
-            "contours": [{"time": t} for t in list(time_steps_tuple)],
-            "costing": costing,
-            "polygons": 1,
-        }
-        response = requests.post(url, json=params)
-        response.raise_for_status()
-        return gpd.GeoDataFrame.from_features(response.json())
+    def get_isochrone(lat, lng, costing, steps):
+        # Valhalla returns at most 4 contours per request
+        chunks = [steps[i:i + 4] for i in range(0, len(steps), 4)]
+        results = []
+        for chunk in chunks:
+            response = requests.post(
+                "https://valhalla1.openstreetmap.de/isochrone",
+                json={
+                    "locations": [{"lon": lng, "lat": lat}],
+                    "contours": [{"time": t} for t in chunk],
+                    "costing": costing,
+                    "polygons": 1,
+                },
+            )
+            response.raise_for_status()
+            results.append(gpd.GeoDataFrame.from_features(response.json(), crs="EPSG:4326"))
+        return pd.concat(results, ignore_index=True)
 
-    gdf = _get_isochrone(lat, lng, costing, tuple(steps))
+    gdf = get_isochrone(lat, lng, costing, tuple(steps))
     gdf["contour_minutes"] = gdf["contour"].astype(int)
     return gdf
 ```
 
 </details>
 
-## Step 2: Load data in the Area of Interest
+`isochrone_chosen_site_overture` chains the two: address → lat/lng → isochrone. Every later step loads this UDF to get the area of interest.
 
-With the isochrone defined, we pull two datasets into that boundary.
+<details>
+<summary>isochrone_chosen_site_overture UDF</summary>
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    manual_address: str = "San Francisco, CA",
+    time_steps: str = "20",
+    costing: str = "auto",
+):
+    # Address -> lat/lng
+    geocoded = fused.load("geocode_point")(manual_address=manual_address, engine="local")
+    lat, lng = geocoded.lat.iloc[0], geocoded.lng.iloc[0]
+
+    # lat/lng -> travel-time polygon
+    return fused.load("latlng_isochrone_simplified")(
+        lat=lat, lng=lng, costing=costing, time_steps=time_steps
+    )
+```
+
+</details>
+
+## Step 2: Load data in the area of interest
 
 ### Points of Interest from Overture Maps
 
-[Overture Maps](https://overturemaps.org/) is an open dataset of millions of POIs globally (restaurants, cafes, schools, parks, etc.) stored as Parquet files on S3. The `query_overture_pois` UDF:
-- Gets the isochrone bounding box
-- Queries Overture tiles within that area
-- Filters by POI category
+[Overture Maps](https://docs.overturemaps.org/) publishes millions of places (restaurants, cafes, schools, parks and more) as GeoParquet. `query_overture_pois` reads the places inside the isochrone's bounding box with the public [`Overture_Maps_Example`](https://github.com/fusedio/udfs/tree/main/public/Overture_Maps_Example) UDF, then keeps the ones whose `categories` mention `poi_category`.
 
 <details>
 <summary>query_overture_pois UDF</summary>
@@ -170,45 +215,46 @@ With the isochrone defined, we pull two datasets into that boundary.
 ```python showLineNumbers
 @fused.udf
 def udf(
-    manual_address: str = 'Manhattan, New York, NY',
-    poi_category: str = "cafe",  # Change to: restaurant, grocery, school, park, etc.
-    time_steps: str = '5',
-    costing: str = 'pedestrian',
-    overture_release: str = "2026-02-18-0",  # Overture Maps release version
+    manual_address: str = "San Francisco, CA",
+    poi_category: str = "cafe",
+    time_steps: str = "20",
+    costing: str = "auto",
+    overture_release: str = "2026-02-18-0",
+    preview: bool = True,  # Return only 20 rows so the canvas preview stays light
 ):
-    # Get the isochrone boundary to determine the search area
-    parent_udf = fused.load('isochrone_chosen_site_overture')
-    result = parent_udf(
-        time_steps=time_steps,
-        costing=costing,
-        manual_address=manual_address,
+    isochrone = fused.load("isochrone_chosen_site_overture")(
+        manual_address=manual_address, time_steps=time_steps, costing=costing
     )
 
-    # Query Overture Maps POIs within the isochrone bounding box
-    overture_udf = fused.load("Overture_Maps_Example")
-    gdf = overture_udf(
-        bounds=list(result.total_bounds),
+    # Overture places inside the isochrone bounding box
+    gdf = fused.load("Overture_Maps_Example")(
+        bounds=list(isochrone.total_bounds),
         release=overture_release,
         theme="places",
+        min_zoom=5,  # Return individual POIs, not aggregated chunks
     )
+    if gdf is None:
+        return None
 
-    # Filter by selected POI category
-    if gdf is not None and poi_category != "all":
-        if "categories" in gdf.columns:
-            gdf = gdf[gdf["categories"].apply(
-                lambda x: poi_category in str(x).lower() if x is not None else False
-            )]
+    # `categories` is a struct like {"primary": "coffee_shop", "alternate": [...]}
+    if poi_category != "all":
+        gdf = gdf[gdf["categories"].apply(lambda c: c is not None and poi_category in str(c).lower())]
 
-    return gdf
+    print(f"{len(gdf)} '{poi_category}' POIs from Overture {overture_release}")
+    return gdf.head(20) if preview else gdf
 ```
 
 </details>
 
-### Median income from Census
+`preview=True` returns 20 rows so the node on the canvas stays light. `pois_to_hex` passes `preview=False` to get every POI.
 
-Income data comes from the [American Community Survey (ACS) 5-Year Estimates](https://www.census.gov/programs-surveys/acs) at the block group level. The `iso_census_intersect` UDF:
-- Loads Census ACS block groups covering the isochrone extent via a [community UDF](https://github.com/fusedio/udfs)
-- Clips them to the isochrone boundary with `gpd.overlay`
+:::note Supported Overture releases
+The form offers releases from `2024-08-20-0` to `2026-02-18-0`. Newer releases (`2026-03-18-0` and later) fail to load in the Overture reader with a pyarrow list-type error.
+:::
+
+### Median household income from the Census
+
+Income comes from the [American Community Survey (ACS) 5-Year Estimates](https://www.census.gov/programs-surveys/acs) at block group level, loaded with a [community UDF](https://github.com/fusedio/udfs/tree/main/community/sina/Census_ACS_5yr). `iso_census_intersect` loads the block groups covering the isochrone, drops suppressed estimates, and clips them to the isochrone with `gpd.overlay`.
 
 <details>
 <summary>iso_census_intersect UDF</summary>
@@ -216,277 +262,495 @@ Income data comes from the [American Community Survey (ACS) 5-Year Estimates](ht
 ```python showLineNumbers
 @fused.udf
 def udf(
-    manual_address: str = 'Manhattan, New York, NY',
+    manual_address: str = "San Francisco, CA",
     costing: str = "auto",
-    time_steps: str = "15",
-    census_variable: str = "Median Household Income in the Past 12 Months (in 2022 Inflation-Adjusted Dollars)",  # Swap for any ACS variable
+    time_steps: str = "20",
+    census_variable: str = "Median Household Income in the Past 12 Months (in 2022 Inflation-Adjusted Dollars)",
     year: int = 2022,
 ):
     import geopandas as gpd
+    from shapely.validation import make_valid
 
-    # Get the isochrone boundary
-    iso_udf = fused.load("isochrone_chosen_site_overture")
-    df_iso = iso_udf(manual_address=manual_address, costing=costing, time_steps=time_steps)
+    isochrone = fused.load("isochrone_chosen_site_overture")(
+        manual_address=manual_address, costing=costing, time_steps=time_steps
+    )
 
-    # Load Census ACS block groups from a community UDF
+    # Census ACS 5-year block groups covering the isochrone extent.
+    # is_density=False + scale_factor=1000 makes `metric` the raw ACS value (metric = value * scale_factor / 1000).
     acs = fused.load("https://github.com/fusedio/udfs/tree/c9bc8a2/community/sina/Census_ACS_5yr/")
-    df_acs = acs(bounds=df_iso.total_bounds, year=year, census_variable=census_variable)
+    # Shrink the bounds slightly: clipping block groups exactly on the bbox edge can raise topology errors.
+    # If the small inset still fails, retry once with a larger one.
+    xmin, ymin, xmax, ymax = isochrone.total_bounds
+    for inset in (0.001, 0.011):
+        bounds = [xmin + inset, ymin + inset, xmax - inset, ymax - inset]
+        try:
+            df_acs = acs(bounds=bounds, census_variable=census_variable, year=year, is_density=False, scale_factor=1000)
+            break
+        except Exception as e:
+            if inset == 0.011:
+                raise
+            print(f"ACS clip failed with inset {inset}: {e}; retrying with a larger inset")
 
-    df_acs["orig_area"] = df_acs.geometry.area
+    # ACS marks suppressed estimates with negative sentinels (e.g. -666666666)
+    df_acs = df_acs[df_acs["metric"] >= 0]
+    df_acs["geometry"] = df_acs.geometry.apply(make_valid)
 
-    # Clip census block groups to the isochrone boundary
-    iso_union = df_iso.dissolve().geometry.values[0]
-    iso_gdf = gpd.GeoDataFrame(geometry=[iso_union], crs=df_iso.crs)
-    result = gpd.overlay(df_acs, iso_gdf, how="intersection")
-    return result
+    # Clip block groups to the isochrone
+    iso = gpd.GeoDataFrame(geometry=[make_valid(isochrone.union_all())], crs=isochrone.crs)
+    return gpd.overlay(df_acs[["GEOID", "metric", "geometry"]], iso, how="intersection")
 ```
 
 </details>
 
+:::warning Get the raw ACS value
+The Census UDF returns the selected variable in a `metric` column scaled as `value * scale_factor / 1000`, with `scale_factor=200` by default, which is built for map styling. Pass `is_density=False, scale_factor=1000` so `metric` is the actual income in dollars.
+:::
+
 ## Step 3: Convert everything to H3 hexagons
 
-We now have three layers with different geometries: an isochrone polygon, POI points, and census block group polygons. To combine them, we convert each to [H3 hexagons](/guide/h3-analytics/converting) at resolution 9 (~174m edge length, ~0.1 km2 per hex) — fine enough to show neighborhood-level variation while keeping the total cell count manageable for a city-scale isochrone.
+Each layer is converted to [H3 cells](/guide/h3-analytics/converting) at resolution 9 (~200 m edge, ~0.1 km² per cell). That's fine enough to show variation between neighborhoods while keeping a city-scale isochrone to a few thousand cells. All three UDFs take a `hex_res` parameter if you want to change it.
 
 ### Isochrone to hex
 
-Converts the isochrone polygon into a set of H3 hex cell IDs using `gdf_to_hex` from the Fused [common utilities](https://github.com/fusedio/udfs/tree/main/public/common). These hex IDs become the base layer that POI and income data are joined onto.
+`isochrone_to_hex_overture` lists every cell inside the isochrone using `gdf_to_hex` from the Fused [common utilities](https://github.com/fusedio/udfs/tree/main/public/common). These cells are the base layer that POIs and income are joined onto.
 
 <details>
 <summary>isochrone_to_hex_overture UDF</summary>
 
 ```python showLineNumbers
 @fused.udf
-def udf(manual_address: str = 'Manhattan, New York, NY', time_steps: str = '15', costing: str = 'truck'):
-    import geopandas as gpd
-
+def udf(
+    manual_address: str = "San Francisco, CA",
+    time_steps: str = "20",
+    costing: str = "auto",
+    hex_res: int = 9,
+):
     common = fused.load("https://github.com/fusedio/udfs/tree/507b2a3/public/common/")
 
-    parent_udf = fused.load('isochrone_chosen_site_overture')
-    result = parent_udf(time_steps=time_steps, costing=costing, manual_address=manual_address)
+    isochrone = fused.load("isochrone_chosen_site_overture")(
+        manual_address=manual_address, time_steps=time_steps, costing=costing
+    )
 
-    gdf = common.gdf_to_hex(result[['geometry', 'contour']], res=9)
-    gdf = gdf[['hex']].drop_duplicates()
-    return gdf
+    # Every H3 cell whose center falls inside the isochrone
+    hexes = common.gdf_to_hex(isochrone[["geometry"]], res=hex_res)
+    return hexes[["hex"]].drop_duplicates()
 ```
 
 </details>
 
 ### POIs to hex
 
-Aggregates POI point locations into hex cells with a count per cell using [DuckDB's H3 extension](/guide/h3-analytics/converting):
+`pois_to_hex` counts POIs per cell with [DuckDB's H3 extension](/guide/h3-analytics/converting):
 
 <details>
 <summary>pois_to_hex UDF</summary>
 
 ```python showLineNumbers
 @fused.udf
-def udf(hex_res: int = 9, poi_category: str = "cafe", manual_address: str = "Manhattan, New York, NY",
-        time_steps: str = "10", costing: str = "pedestrian", overture_release: str = "2026-02-18-0"):
-    common = fused.load("https://github.com/fusedio/udfs/tree/9bad664/public/common/")
-    con = common.duckdb_connect()
+def udf(
+    manual_address: str = "San Francisco, CA",
+    poi_category: str = "cafe",
+    time_steps: str = "20",
+    costing: str = "auto",
+    overture_release: str = "2026-02-18-0",
+    hex_res: int = 9,
+):
+    import pandas as pd
 
-    query_pois = fused.load("query_overture_pois")
-    gdf = query_pois(manual_address=manual_address, poi_category=poi_category,
-                     time_steps=time_steps, costing=costing, overture_release=overture_release, preview=False, engine='local')
+    common = fused.load("https://github.com/fusedio/udfs/tree/507b2a3/public/common/")
+    con = common.duckdb_connect()  # DuckDB with the H3 extension loaded
 
-    gdf['lat'] = gdf.geometry.y
-    gdf['lon'] = gdf.geometry.x
-    df_simple = gdf[['lat', 'lon']].copy()
+    gdf = fused.load("query_overture_pois")(
+        manual_address=manual_address,
+        poi_category=poi_category,
+        time_steps=time_steps,
+        costing=costing,
+        overture_release=overture_release,
+        preview=False,  # All POIs, not the 20-row preview
+        engine="local",
+    )
+    if gdf is None or len(gdf) == 0:
+        return pd.DataFrame({"hex": pd.Series(dtype="uint64"), "count_pois": pd.Series(dtype="int64")})
 
-    result = con.sql(f"""
-        SELECT h3_latlng_to_cell(lat, lon, {hex_res}) as hex, COUNT(*) as count_pois
-        FROM df_simple
+    points = pd.DataFrame({"lat": gdf.geometry.y, "lng": gdf.geometry.x})
+    return con.sql(f"""
+        SELECT h3_latlng_to_cell(lat, lng, {hex_res}) AS hex, COUNT(*) AS count_pois
+        FROM points
         GROUP BY hex
         ORDER BY count_pois DESC
     """).df()
-    return result
 ```
 
 </details>
 
 ### Census income to hex
 
-Uses `gdf_to_hex` from the Fused [common utilities](https://github.com/fusedio/udfs/tree/main/public/common) to convert census polygons into hexagons, weighting the income value by area overlap:
+`iso_census_to_hex` gives each cell the income of the block group it falls in. Median household income is a per-household value, not a count, so a cell covering two block groups takes their **average**. Splitting it by area would be wrong.
 
 <details>
 <summary>iso_census_to_hex UDF</summary>
 
 ```python showLineNumbers
 @fused.udf
-def udf(manual_address: str = 'Manhattan, New York, NY', costing: str = 'auto', time_steps: str = '15',
-        census_variable: str = 'Median Household Income in the Past 12 Months (in 2022 Inflation-Adjusted Dollars)',
-        year: int = 2022):
-    parent_udf = fused.load('iso_census_intersect')
-    result = parent_udf(manual_address=manual_address, costing=costing, time_steps=time_steps,
-                        census_variable=census_variable, year=year, engine='local')
-
-    del result["GEOID"]
-
+def udf(
+    manual_address: str = "San Francisco, CA",
+    costing: str = "auto",
+    time_steps: str = "20",
+    census_variable: str = "Median Household Income in the Past 12 Months (in 2022 Inflation-Adjusted Dollars)",
+    year: int = 2022,
+    hex_res: int = 9,
+):
     common = fused.load("https://github.com/fusedio/udfs/tree/507b2a3/public/common/")
-    hex_gdf = common.gdf_to_hex(result, res=9)
-    hex_gdf.rename(columns={'metric': 'median_income_12_months'}, inplace=True)
-    hex_gdf = hex_gdf[hex_gdf['median_income_12_months'] >= 0]
-    return hex_gdf[['hex', 'median_income_12_months']]
+    con = common.duckdb_connect()
+
+    block_groups = fused.load("iso_census_intersect")(
+        manual_address=manual_address,
+        costing=costing,
+        time_steps=time_steps,
+        census_variable=census_variable,
+        year=year,
+        engine="local",
+    )
+
+    # Each hex takes the value of the block group(s) it falls in.
+    # Median income is a per-household value, so hexes on a boundary average it rather than sum it.
+    hexes = common.gdf_to_hex(block_groups[["metric", "geometry"]], res=hex_res, add_latlng_cols=None)
+    return con.sql("""
+        SELECT hex, AVG(metric) AS median_income_12_months
+        FROM hexes
+        GROUP BY hex
+    """).df()
 ```
 
 </details>
 
 Read more about polygon-to-hex conversion in the [H3 Converting guide](/guide/h3-analytics/converting) and aggregation strategies in [H3 Aggregations](/guide/h3-analytics/aggregations).
 
-## Step 4: Merge and visualize
+## Step 4: Join and aggregate
 
 ### Merge all hex layers
 
-The `merge_poi_census_data` UDF joins the three hex layers — isochrone boundary, POI counts, and census income — on the hex ID using DuckDB:
+`merge_poi_census_data` left-joins POI counts and income onto the isochrone cells, so the result has exactly one row per cell inside the isochrone:
 
 <details>
 <summary>merge_poi_census_data UDF</summary>
 
 ```python showLineNumbers
 @fused.udf
-def udf(manual_address: str = "Manhattan, NY", poi_category: str = "cafe",
-        time_steps: str = "5", costing: str = "pedestrian", overture_release: str = "2026-02-18-0"):
+def udf(
+    manual_address: str = "San Francisco, CA",
+    poi_category: str = "cafe",
+    time_steps: str = "20",
+    costing: str = "auto",
+    overture_release: str = "2026-02-18-0",
+):
     common = fused.load("https://github.com/fusedio/udfs/tree/507b2a3/public/common/")
     con = common.duckdb_connect()
 
-    isochrone_hex_df = fused.load("isochrone_to_hex_overture")(
-        manual_address=manual_address, time_steps=time_steps, costing=costing)
-    poi_df = fused.load("pois_to_hex")(
-        manual_address=manual_address, poi_category=poi_category,
-        time_steps=time_steps, costing=costing, overture_release=overture_release)
-    census_df = fused.load("iso_census_to_hex")(
-        manual_address=manual_address, costing=costing, time_steps=time_steps)
+    area = dict(manual_address=manual_address, time_steps=time_steps, costing=costing)
+    isochrone_hex_df = fused.load("isochrone_to_hex_overture")(**area)
+    poi_df = fused.load("pois_to_hex")(**area, poi_category=poi_category, overture_release=overture_release)
+    census_df = fused.load("iso_census_to_hex")(**area)
 
-    merged_df = con.sql("""
-        WITH poi_dedup AS (
-            SELECT hex, SUM(count_pois) AS count_pois FROM poi_df GROUP BY hex
-        ),
-        census_dedup AS (
-            SELECT hex, AVG(median_income_12_months) AS median_income_12_months FROM census_df GROUP BY hex
-        )
-        SELECT i.hex, p.count_pois, c.median_income_12_months
+    # One row per hex inside the isochrone; hexes with no POIs get 0
+    return con.sql("""
+        SELECT i.hex,
+               COALESCE(p.count_pois, 0) AS count_pois,
+               c.median_income_12_months
         FROM isochrone_hex_df i
-        LEFT JOIN poi_dedup p ON i.hex = p.hex
-        LEFT JOIN census_dedup c ON i.hex = c.hex
+        LEFT JOIN poi_df p ON i.hex = p.hex
+        LEFT JOIN census_df c ON i.hex = c.hex
     """).df()
-    return merged_df
 ```
 
 </details>
 
-### Building the dashboard with Widgets
+### Income distribution
 
-The dashboard uses [Widgets](/guide/data-input-outputs/import-connection/widgets) to connect user input to UDF outputs. The **form widget** acts as an input — its `param` fields [broadcast values to UDFs on the canvas](/guide/data-input-outputs/import-connection/widgets#step-2-connect-it-to-a-udf). The **big-number** and **bar-chart** widgets are outputs that query UDF results via SQL. The map is a regular UDF (`selected_poi_map`) that renders deck.gl layers as HTML.
-
-### Wiring widgets to UDFs
-
-For the dashboard to re-run correctly when you click **Submit**, each node on the Canvas needs to be connected to the right upstream nodes via edges:
-
-- The **form widget** must be connected to all data UDFs and output widgets so its parameter values propagate downstream
-- Each **data UDF** must be connected to the UDF it depends on (e.g. `pois_to_hex` connects to `query_overture_pois`, which connects to `isochrone_chosen_site_overture`)
-- Each **output widget** (big-number, bar-chart) must be connected to the data UDF it queries
-
-If a widget or UDF isn't connected, it won't re-run when inputs change. If a UDF is connected to too many nodes, the dashboard may take longer than necessary. You can toggle nodes on/off in the Canvas to see how the edges are wired. See the [Widgets guide](/guide/data-input-outputs/import-connection/widgets#step-2-connect-it-to-a-udf) for a walkthrough on connecting UDFs to widgets.
-
-![Connecting widgets to UDFs via edges on the Canvas](https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/connector-poi-gif.gif)
-
-*Toggle nodes on/off to inspect which edges connect the form widget to data UDFs and output widgets.*
+`chart_data_income` splits the income range into 20 equal-width bins and counts the cells in each. `bin_order` keeps the bars in income order in the chart.
 
 <details>
-<summary>Form widget JSON (input)</summary>
+<summary>chart_data_income UDF</summary>
+
+```python showLineNumbers
+@fused.udf
+def udf(
+    manual_address: str = "San Francisco, CA",
+    costing: str = "auto",
+    time_steps: str = "20",
+    n_bins: int = 20,
+):
+    import numpy as np
+    import pandas as pd
+
+    census_df = fused.load("iso_census_to_hex")(
+        manual_address=manual_address, costing=costing, time_steps=time_steps
+    )
+    income = census_df["median_income_12_months"].dropna()
+
+    # Equal-width income bins; count = number of hexes in each bin
+    edges = np.linspace(income.min(), income.max(), n_bins + 1)
+    labels = [f"${edges[i]:,.0f} - ${edges[i + 1]:,.0f}" for i in range(n_bins)]
+    bins = pd.cut(income, bins=edges, labels=labels, include_lowest=True)
+
+    df = bins.value_counts(sort=False).rename_axis("income_bin").reset_index(name="count")
+    df["income_bin"] = df["income_bin"].astype(str)
+    df["bin_order"] = range(len(df))
+    return df
+```
+
+</details>
+
+## Build the dashboard
+
+The dashboard is made of [Widgets](/guide/data-input-outputs/import-connection/widgets) plus one map UDF:
+
+| Node | Type | Reads from |
+|---|---|---|
+| `overture_poi_selector` | [`form`](/widget-api/form) (input) | — |
+| `total_pois` | [`metric`](/widget-api/metric) | `merge_poi_census_data` |
+| `median_income` | [`metric`](/widget-api/metric) | `merge_poi_census_data` |
+| `income_distribution_chart` | [`bar-chart`](/widget-api/bar-chart) | `chart_data_income` |
+| `selected_poi_map` | UDF returning HTML | `merge_poi_census_data`, `isochrone_chosen_site_overture`, `geocode_point` |
+
+### Input form
+
+Each field's `param` matches a UDF parameter name. When you click **Submit**, the form [broadcasts every value to the UDFs it is connected to](/guide/data-input-outputs/import-connection/widgets#step-2-connect-it-to-a-udf).
+
+<details>
+<summary>overture_poi_selector (form widget)</summary>
 
 ```json showLineNumbers
 {
   "type": "form",
-  "props": {"submitLabel": "Submit", "title": "Travel Settings"},
+  "props": {
+    "title": "Travel Settings",
+    "submitLabel": "Submit",
+    "submitPosition": "bottom",
+    "card": true,
+    "centered": true
+  },
   "children": [
-    {"type": "dropdown", "props": {"label": "Overture Release", "param": "overture_release",
-      "options": [{"value": "2024-08-20-0", "label": "2024-08-20"}, {"value": "2026-02-18-0", "label": "2026-02-18 (Latest)"}]}},
-    {"type": "dropdown", "props": {"label": "POI Category", "param": "poi_category",
-      "options": [{"value": "restaurant", "label": "Restaurants"}, {"value": "cafe", "label": "Cafes & Bars"},
-        {"value": "grocery", "label": "Grocery & Markets"}, {"value": "school", "label": "Schools"}, {"value": "park", "label": "Parks & Recreation"}]}},
-    {"type": "input", "props": {"label": "Enter Address", "param": "manual_address", "defaultValue": "San Francisco, CA"}},
-    {"type": "dropdown", "props": {"label": "Travel Mode", "param": "costing",
-      "options": [{"value": "pedestrian", "label": "Pedestrian"}, {"value": "bicycle", "label": "Bicycle"}, {"value": "auto", "label": "Auto"}]}},
-    {"type": "dropdown", "props": {"label": "Travel Time (minutes)", "param": "time_steps",
-      "options": [{"value": "5", "label": "5"}, {"value": "10", "label": "10"}, {"value": "15", "label": "15"}, {"value": "20", "label": "20"}, {"value": "30", "label": "30"}]}}
+    {
+      "type": "text-input",
+      "props": {
+        "label": "Address",
+        "param": "manual_address",
+        "placeholder": "Type an address...",
+        "defaultValue": "San Francisco, CA"
+      }
+    },
+    {
+      "type": "dropdown",
+      "props": {
+        "label": "POI Category",
+        "param": "poi_category",
+        "searchable": true,
+        "defaultValue": "cafe",
+        "options": [
+          { "value": "restaurant", "label": "Restaurants" },
+          { "value": "cafe", "label": "Cafes & Bars" },
+          { "value": "retail", "label": "Retail" },
+          { "value": "grocery", "label": "Grocery & Markets" },
+          { "value": "pharmacy", "label": "Pharmacies" },
+          { "value": "school", "label": "Schools" },
+          { "value": "bank", "label": "Banks & Financial" },
+          { "value": "hospital", "label": "Hospitals & Healthcare" },
+          { "value": "park", "label": "Parks & Recreation" },
+          { "value": "gym", "label": "Gyms & Fitness" }
+        ]
+      }
+    },
+    {
+      "type": "dropdown",
+      "props": {
+        "label": "Travel Mode",
+        "param": "costing",
+        "defaultValue": "auto",
+        "options": [
+          { "value": "pedestrian", "label": "Pedestrian" },
+          { "value": "bicycle", "label": "Bicycle" },
+          { "value": "auto", "label": "Auto" }
+        ]
+      }
+    },
+    {
+      "type": "dropdown",
+      "props": {
+        "label": "Travel Time (minutes)",
+        "param": "time_steps",
+        "defaultValue": "20",
+        "options": [
+          { "value": "5", "label": "5" },
+          { "value": "10", "label": "10" },
+          { "value": "15", "label": "15" },
+          { "value": "20", "label": "20" },
+          { "value": "25", "label": "25" },
+          { "value": "30", "label": "30" }
+        ]
+      }
+    },
+    {
+      "type": "dropdown",
+      "props": {
+        "label": "Overture Release",
+        "param": "overture_release",
+        "defaultValue": "2026-02-18-0",
+        "options": [
+          { "value": "2024-08-20-0", "label": "2024-08-20" },
+          { "value": "2024-11-13-0", "label": "2024-11-13" },
+          { "value": "2025-06-25-0", "label": "2025-06-25" },
+          { "value": "2025-12-17-0", "label": "2025-12-17" },
+          { "value": "2026-02-18-0", "label": "2026-02-18" }
+        ]
+      }
+    }
   ]
 }
 ```
 
 </details>
 
+### Metrics and chart
+
+Output widgets query UDF results with DuckDB SQL. `{{udf_name}}` refers to that UDF's output table:
+
+```json showLineNumbers
+{
+  "type": "metric",
+  "props": {
+    "sql": "SELECT SUM(count_pois) FROM {{merge_poi_census_data}}",
+    "label": "Total Points of Interest",
+    "format": "comma",
+    "decimals": 0,
+    "size": 90,
+    "color": "#CDDC39"
+  }
+}
+```
+
+```json showLineNumbers
+{
+  "type": "metric",
+  "props": {
+    "sql": "SELECT MEDIAN(median_income_12_months) FROM {{merge_poi_census_data}}",
+    "label": "Median Household Income",
+    "prefix": "$",
+    "format": "compact",
+    "decimals": 0,
+    "size": 90,
+    "color": "#CDDC39"
+  }
+}
+```
+
+```json showLineNumbers
+{
+  "type": "bar-chart",
+  "props": {
+    "sql": "SELECT income_bin AS label, count AS value FROM {{chart_data_income}} ORDER BY bin_order",
+    "title": "Distribution of Median Household Income (hex count)"
+  }
+}
+```
+
+### Map
+
+`selected_poi_map` draws three [deck.gl](https://deck.gl/) layers (the address, the POI hexagons, and the isochrone) and returns the map as HTML. It runs `merge_poi_census_data` with `engine="local"` so the whole chain runs inside the map UDF, which keeps the map working when the canvas is shared.
+
 <details>
-<summary>selected_poi_map UDF (map)</summary>
+<summary>selected_poi_map UDF</summary>
 
 ```python showLineNumbers
 @fused.udf
 def udf(
-    time_steps: str='20',
-    costing: str='auto',
-    poi_category: str='cafe',
-    overture_release: str='2026-02-18-0',
-    manual_address: str = 'San Francisco',
+    manual_address: str = "San Francisco, CA",
+    poi_category: str = "cafe",
+    time_steps: str = "20",
+    costing: str = "auto",
+    overture_release: str = "2026-02-18-0",
 ):
-    import geopandas as gpd
-
-    # Load merged POI + Census hex data
-    merge_udf = fused.load('merge_poi_census_data')
-    poi_hex_data = merge_udf(
-        manual_address=manual_address, poi_category=poi_category,
-        time_steps=time_steps, costing=costing,
-        overture_release=overture_release, engine='local')
-    dynamic_col = f"number of '{poi_category}' POIs"
-    poi_hex_data = poi_hex_data.rename(columns={"count_pois": dynamic_col})
-    poi_hex_data[dynamic_col] = poi_hex_data[dynamic_col].fillna(0)
-
-    # Load isochrone boundary and geocoded point
-    isochrone_gdf = fused.load("isochrone_chosen_site_overture")(
-        manual_address=manual_address, time_steps=time_steps, costing=costing)
-    geocoded_gdf = fused.load("geocode_point")(
-        manual_address=manual_address, engine='local')
-
-    # Build deck.gl layers and render as HTML
     map_utils = fused.load("https://github.com/fusedio/udfs/tree/3ada22d/community/milind/map_utils/")
+
+    # engine="local" runs the chain inside this UDF, so the map also works when the canvas is shared
+    hex_df = fused.load("merge_poi_census_data")(
+        manual_address=manual_address,
+        poi_category=poi_category,
+        time_steps=time_steps,
+        costing=costing,
+        overture_release=overture_release,
+        engine="local",
+    )
+    isochrone_gdf = fused.load("isochrone_chosen_site_overture")(
+        manual_address=manual_address, time_steps=time_steps, costing=costing
+    )
+    geocoded_gdf = fused.load("geocode_point")(manual_address=manual_address, engine="local")
+
+    poi_col = f"number of '{poi_category}' POIs"
+    hex_df = hex_df.rename(columns={"count_pois": poi_col})
+
     layers = [
-        {"type": "vector", "data": geocoded_gdf, "name": "Chosen Location",
-         "config": {"style": {"fillColor": [0, 188, 212], "pointRadius": 10, "opacity": 1}}},
-        {"type": "hex", "data": poi_hex_data, "name": f"POI ({poi_category}) + Census (H3 Hex)",
-         "config": {"style": {"fillColor": {"type": "continuous", "attr": dynamic_col,
-                    "domain": [0, 10], "palette": "OrYel"}, "opacity": 0.9}}},
-        {"type": "vector", "data": isochrone_gdf, "name": "Isochrone",
-         "config": {"style": {"fillColor": [191, 64, 64], "lineWidth": 2, "opacity": 0.3}}},
+        {
+            "type": "vector",
+            "name": "Chosen Location",
+            "data": geocoded_gdf,
+            "config": {"style": {"fillColor": [0, 188, 212], "lineColor": [255, 255, 255], "lineWidth": 2, "pointRadius": 10, "opacity": 1}},
+        },
+        {
+            "type": "hex",
+            "name": f"POI ({poi_category}) + Census (H3 Hex)",
+            "data": hex_df,
+            "config": {
+                "style": {
+                    "fillColor": {"type": "continuous", "attr": poi_col, "domain": [0, 10], "steps": 20, "palette": "OrYel"},
+                    "stroked": False,
+                    "opacity": 0.9,
+                    "coverage": 0.9,
+                },
+                "tooltip": [poi_col, "median_income_12_months"],
+            },
+        },
+        {
+            "type": "vector",
+            "name": "Isochrone",
+            "data": isochrone_gdf,
+            "config": {"style": {"fillColor": [191, 64, 64], "lineColor": [191, 64, 64], "lineWidth": 2, "opacity": 0.3}},
+        },
     ]
-    return map_utils.deckgl_layers(layers=layers, basemap="dark", theme="dark")
+    return map_utils.deckgl_layers(
+        layers=layers,
+        basemap="dark",
+        theme="dark",
+        widgets={
+            "controls": "bottom-right",
+            "scale": "bottom-left",
+            "basemap": "bottom-right",
+            "layers": {"position": "top-right", "expanded": False},
+            "legend": {"position": "top-right", "expanded": True},
+            "filter": "top-right",
+        },
+    )
 ```
 
 </details>
 
-<details>
-<summary>Big-number widgets (output)</summary>
+### Wire the nodes together
 
-```json showLineNumbers
-{"type": "big-number", "props": {"sql": "SELECT SUM(count_pois) FROM {{merge_poi_census_data}}", "label": "Total Points of Interest"}}
-```
+A node re-runs when one of its upstream nodes changes, so edges decide what refreshes when you click **Submit**:
 
-```json showLineNumbers
-{"type": "big-number", "props": {"sql": "SELECT ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY median_income_12_months) / 1000) FROM {{merge_poi_census_data}}", "label": "Median Average Income (thousand USD)"}}
-```
+- The **form** connects to `merge_poi_census_data`, `chart_data_income`, `selected_poi_map`, and each output widget.
+- Each **data UDF** connects to the UDF it loads (for example `query_overture_pois` → `pois_to_hex` → `merge_poi_census_data`).
+- Each **output widget** connects to the UDF its SQL reads.
 
-</details>
+A node that isn't connected won't refresh when the inputs change. Extra edges make the dashboard slower than it needs to be. Toggle nodes on and off in the Canvas to see how they're wired, or read the `edges` list in `canvas.toml`.
 
-<details>
-<summary>Bar chart widget (output)</summary>
+![Connecting widgets to UDFs via edges on the Canvas](https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/connector-poi-gif.gif)
 
-```json showLineNumbers
-{"type": "bar-chart", "props": {"sql": "SELECT income_bin as label, count as value FROM {{chart_data_income}}", "title": "Distribution of Median Income"}}
-```
-
-</details>
+*Toggle nodes on/off to inspect which edges connect the form widget to data UDFs and output widgets.*
 
 ### Live map preview
 
-Interact with the POI map below — hexagons are colored by POI density, with the isochrone boundary and geocoded point overlaid. [Try it out](https://www.fused.io/canvas/fc_fused/Dashboard_Overture_Census_Isochrone) ->
+The POI map below colors hexagons by POI density, with the isochrone boundary and the geocoded point on top. [Try it out](https://www.fused.io/canvas/fc_fused/Dashboard_Overture_Census_Isochrone) ->
 
 <iframe
   src="https://unstable.udf.ai/fc_4fUqKOCoKL0gIX4YwgCk7z/selected_poi_map.html"
@@ -496,13 +760,8 @@ Interact with the POI map below — hexagons are colored by POI density, with th
   title="POI Site Selection Map"
 />
 
-## Performance
+## See also
 
-- **First run** (~30s): all UDFs execute end-to-end — geocoding, isochrone calculation, Overture queries, Census overlay, and hex aggregation
-- **Subsequent runs with the same inputs** (near-instant): Runs with pre-executed parameters are [cached](/guide/working-with-udfs/udf-best-practices/caching) so the dashboard loads immediately
-
-This gives you the best of both worlds — if you change a UDF, you don't need to redeploy anything; but if multiple people open the same dashboard with the same inputs, they get cached results with no wait.
-
-### See also
-
+- [H3 analytics](/guide/h3-analytics/h3-overview): converting and aggregating data on hexagons
+- [Widgets guide](/guide/data-input-outputs/import-connection/widgets): connecting input and output widgets to UDFs
 - Expose this Canvas as an [MCP server](/guide/data-input-outputs/import-connection/ai-data-connection) so an AI agent can query the dashboard
