@@ -84,22 +84,29 @@ def load_s1_scene(bounds, time_of_interest, resolution: int = 10):
 Calm water reflects radar away from the satellite and looks dark, while metal hulls reflect it back and look bright. So the detector keeps pixels that are more than `contrast_db` brighter than the mean of the surrounding ~500 m, then groups nearby pixels into one detection per ship:
 
 ```python showLineNumbers
-vv = scene["vv"]
-valid = np.isfinite(vv)
-db = np.where(valid, 20 * np.log10(np.where(valid, vv, 1)), np.nan)
+def detect_vessels(scene, bounds, contrast_db: float = 12.0, min_pixels: int = 10, background_px: int = 51, merge_px: int = 3):
+    """Bright-target detection: pixels `contrast_db` brighter than the local sea background."""
+    import numpy as np
+    from scipy import ndimage
 
-# Local background = mean dB over a ~500 m window (NaN-aware)
-filled = np.where(valid, db, 0)
-num = ndimage.uniform_filter(filled, background_px)
-den = ndimage.uniform_filter(valid.astype("float32"), background_px)
-background = num / np.maximum(den, 1e-6)
+    vv = scene["vv"]
+    valid = np.isfinite(vv)
+    db = np.where(valid, 20 * np.log10(np.where(valid, vv, 1)), np.nan)
 
-water = ~land_mask(bounds, tuple(vv.shape), scene["transform"], scene["crs"])
-candidates = valid & water & ((db - background) > contrast_db)
+    # Local background = mean dB over a ~500 m window (NaN-aware)
+    filled = np.where(valid, db, 0)
+    num = ndimage.uniform_filter(filled, background_px)
+    den = ndimage.uniform_filter(valid.astype("float32"), background_px)
+    background = num / np.maximum(den, 1e-6)
 
-# Group pixels within ~30 m of each other so one ship's fragments/sidelobes form one detection
-grouped = ndimage.binary_dilation(candidates, iterations=merge_px)
-labels, n = ndimage.label(grouped, structure=np.ones((3, 3)))
+    water = ~land_mask(bounds, tuple(vv.shape), scene["transform"], scene["crs"])
+    candidates = valid & water & ((db - background) > contrast_db)
+
+    # Group pixels within ~30 m of each other so one ship's fragments/sidelobes form one detection
+    grouped = ndimage.binary_dilation(candidates, iterations=merge_px)
+    labels, n = ndimage.label(grouped, structure=np.ones((3, 3)))
+    labels = np.where(candidates, labels, 0)
+    ...  # drop groups smaller than min_pixels, then vectorise each group into a polygon
 ```
 
 Land, piers, breakwaters and artificial islands are just as bright as ships. `land_mask` removes them using [ESA WorldCover](https://planetarycomputer.microsoft.com/dataset/esa-worldcover) at 10 m: every pixel that isn't permanent water (class 80), plus a 50 m margin, is excluded. Each remaining group becomes a polygon with its centroid, approximate length, peak brightness and the scene's exact acquisition time.
