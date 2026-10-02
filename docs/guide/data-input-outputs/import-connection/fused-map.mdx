@@ -107,44 +107,9 @@ If the UDF has no `bounds` argument, every tile gets the same result.
 
 ## H3 hexagons
 
-This UDF reads a Source Coop file of US census data. The `hex` column in the file is an integer. The UDF changes it to the H3 string form, for example `872830828ffffff`. The map needs this form.
+An H3 layer needs a column of H3 cell IDs. Return each ID as a hex string, for example `872830828ffffff`. If your data has the ID as an integer, change it with `lower(printf('%x', hex))` in DuckDB. An integer ID shows with commas and does not draw.
 
-The `bounds` argument is optional:
-
-- If you do not set `bounds`, the UDF returns rows from the whole file. The `limit` argument keeps about 100,000 rows, spread evenly across the file.
-- If you set `bounds`, the UDF returns only the cells with a center inside `bounds`.
-
-```python
-@fused.udf
-def udf(
-    bounds: fused.types.Bounds = None,
-    path: str = "s3://us-west-2.opendata.source.coop/fused/hex/release_2025_04_beta/census/2020_partitioned_h7.parquet",
-    limit: int = 100000,
-):
-    import duckdb
-
-    con = duckdb.connect()
-    con.sql("INSTALL httpfs; LOAD httpfs;")
-    con.sql("SET s3_region='us-west-2'; SET s3_url_style='path';")
-
-    where = "TRUE"
-    if bounds:
-        west, south, east, north = [float(v) for v in bounds]
-        con.sql("INSTALL h3 FROM community; LOAD h3;")
-        where = f"""h3_cell_to_lng(hex) BETWEEN {west} AND {east}
-                    AND h3_cell_to_lat(hex) BETWEEN {south} AND {north}"""
-    elif limit:
-        total = con.sql(f"SELECT count(*) FROM read_parquet('{path}')").fetchone()[0]
-        step = max(1, total // int(limit))
-        where = f"file_row_number % {step} = 0"
-
-    df = con.sql(f"""
-        SELECT lower(printf('%x', hex)) AS hex, state, county, POP20, HOUSING20
-        FROM read_parquet('{path}', file_row_number=true)
-        WHERE {where}
-    """).df()
-    return df
-```
+The examples use a Source Coop file of US census data. The file has 2.1 million cells at H3 resolution 7. Use two UDFs: a small one for a map without tiles, and a tile UDF for the detail.
 
 :::note
 The bucket name has dots in it. Set `s3_url_style` to `path` so that DuckDB can connect.
@@ -152,7 +117,32 @@ The bucket name has dots in it. Set `s3_url_style` to `path` so that DuckDB can 
 
 ### Without tiles
 
-Connect the UDF to a widget node. Name the UDF `source_coop_hex`. The map calls the UDF one time and draws the sample.
+A map without tiles calls the UDF one time. Do not return all 2.1 million cells. Add the cells into larger parent cells. This UDF adds the cells to H3 resolution 4 with `h3_cell_to_parent`. The result has about 6,000 rows and covers the whole file.
+
+```python
+@fused.udf
+def udf(
+    res: int = 4,
+    path: str = "s3://us-west-2.opendata.source.coop/fused/hex/release_2025_04_beta/census/2020_partitioned_h7.parquet",
+):
+    import duckdb
+
+    con = duckdb.connect()
+    con.sql("INSTALL httpfs; LOAD httpfs; INSTALL h3 FROM community; LOAD h3;")
+    con.sql("SET s3_region='us-west-2'; SET s3_url_style='path';")
+    df = con.sql(f"""
+        SELECT
+            lower(printf('%x', h3_cell_to_parent(hex, {int(res)}))) AS hex,
+            sum(POP20)::BIGINT AS POP20,
+            sum(HOUSING20)::BIGINT AS HOUSING20,
+            count(*) AS cells
+        FROM read_parquet('{path}')
+        GROUP BY 1
+    """).df()
+    return df
+```
+
+Name the UDF `hex_overview`.
 
 ```json
 {
@@ -161,24 +151,25 @@ Connect the UDF to a widget node. Name the UDF `source_coop_hex`. The map calls 
     "centerLng": -98,
     "centerLat": 39.5,
     "zoom": 3,
+    "autoFit": false,
     "layers": [
       {
         "id": "hex",
-        "name": "Census hex",
+        "name": "Census hex overview",
         "type": "h3",
-        "udf": "{{source_coop_hex}}",
+        "udf": "{{hex_overview}}",
         "h3Column": "hex",
-        "tooltip": ["hex", "state", "county", "POP20", "HOUSING20"],
+        "tooltip": ["hex", "POP20", "HOUSING20", "cells"],
         "legend": { "title": "POP20" },
         "style": {
           "fillColor": {
             "type": "continuous",
             "attr": "POP20",
             "palette": "Sunset",
-            "domain": [0, 500]
+            "domain": [0, 500000]
           },
           "opacity": 0.8,
-          "coverage": 0.9
+          "coverage": 0.95
         }
       }
     ]
@@ -188,7 +179,30 @@ Connect the UDF to a widget node. Name the UDF `source_coop_hex`. The map calls 
 
 ### With tiles
 
-Add `tile: true`. The map calls the UDF for each tile and sends `bounds`. Each call returns only the cells in the tile.
+For the detail, use the resolution 7 cells and set `tile: true`. The map calls the UDF for each tile and sends `bounds`. This UDF returns only the cells with a center inside `bounds`.
+
+```python
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-122.5, 37.7, -122.3, 37.85],
+    path: str = "s3://us-west-2.opendata.source.coop/fused/hex/release_2025_04_beta/census/2020_partitioned_h7.parquet",
+):
+    import duckdb
+
+    west, south, east, north = [float(v) for v in bounds]
+    con = duckdb.connect()
+    con.sql("INSTALL httpfs; LOAD httpfs; INSTALL h3 FROM community; LOAD h3;")
+    con.sql("SET s3_region='us-west-2'; SET s3_url_style='path';")
+    df = con.sql(f"""
+        SELECT lower(printf('%x', hex)) AS hex, state, county, POP20, HOUSING20
+        FROM read_parquet('{path}')
+        WHERE h3_cell_to_lng(hex) BETWEEN {west} AND {east}
+          AND h3_cell_to_lat(hex) BETWEEN {south} AND {north}
+    """).df()
+    return df
+```
+
+Name the UDF `source_coop_hex`.
 
 ```json
 {
