@@ -1,0 +1,408 @@
+---
+id: fused-map
+title: Fused Map
+sidebar_label: Fused Map
+sidebar_position: 8
+---
+
+# Fused Map
+
+Fused Map is a widget that shows geospatial data on an interactive map. It draws data from a UDF, from a SQL query, or from a tile URL. Use it for H3 hexagons, vector features, and raster tiles.
+
+Fused Map is a widget of type `fused-map`. For the general widget concepts, see [Widgets](/guide/data-input-outputs/import-connection/widgets). For every prop, see the [Fused Map API reference](/widget-api/fused-map).
+
+With Fused Map, you can:
+
+- **Show a UDF result** — Add a layer that points to a UDF. The map draws the result.
+- **Load data per tile** — Set `tile: true`. The UDF runs once for each map tile, and only the visible area loads.
+- **Query with SQL** — Run DuckDB SQL on a UDF result before the map draws it.
+- **Restyle in the browser** — Use the sidebar to change colors, filters, and queries without a code change.
+
+To see all the examples on one canvas, open the [Fused Map example canvas](https://unstable.fused.io/workbench/aman/map_experiments_mvt).
+
+## Add a Fused Map widget
+
+1. In the Workbench canvas, select the **Widget** icon in the toolbar.
+2. In the **Widget configuration** panel, select **Preset**, then **Maps and geo**, then **Fused map**.
+3. Connect the UDF node to the widget node with an edge.
+4. In the JSON, set `udf` to the name of the UDF in double braces, for example `{{my_udf}}`.
+
+The smallest Fused Map widget has one layer:
+
+```json
+{
+  "type": "fused-map",
+  "props": {
+    "layers": [
+      { "id": "my_layer", "type": "geojson", "udf": "{{my_udf}}", "tooltip": true }
+    ]
+  }
+}
+```
+
+:::note
+The UDF must be on the same canvas. The name in `{{ }}` must match the UDF name exactly, with the same case.
+:::
+
+## Layer types and data sources
+
+Set the `type` of each layer to `geojson`, `h3`, `raster`, `mvt`, `heatmap`, `scatterplot`, `arc`, or `deck-geojson`. A map can have many layers.
+
+A layer reads data in one of four ways:
+
+| Property | What the map does |
+|---|---|
+| `udf` | Runs the UDF one time and draws the whole result. |
+| `udf` and `tile: true` | Runs the UDF for each map tile. The UDF gets the tile `bounds`. |
+| `sql` | Runs a DuckDB query on a UDF result, then draws the rows. |
+| `tileUrl` | Reads tiles from a URL with `{z}`, `{x}`, and `{y}` placeholders. |
+
+The UDF returns a GeoDataFrame for `geojson` layers, a DataFrame with an H3 column for `h3` layers, and an image array for `raster` layers. Every other column is a property of the feature. The tooltip, the filters, and the data-driven colors use these properties.
+
+If `tile` is `true`, the map sends the tile area to the UDF in the `bounds` argument, as `[west, south, east, north]` in `EPSG:4326`. Add `bounds: fused.types.Bounds` to the UDF and return only the rows inside `bounds`.
+
+:::warning
+If the UDF has no `bounds` argument, every tile gets the same result.
+:::
+
+For the style, tooltip, legend, filter, and map options, see the [Fused Map API reference](/widget-api/fused-map).
+
+## Examples
+
+Each example has the UDF code and the widget JSON. Open a dropdown to see it.
+
+### H3 hexagons without tiles
+
+An H3 layer needs a column of H3 cell IDs as hex strings, for example `872830828ffffff`. If the ID is an integer, change it with `lower(printf('%x', hex))` in DuckDB.
+
+This example uses a Source Coop file of US census data with 2.1 million cells. A map without tiles calls the UDF one time, so the UDF adds the cells into larger parent cells with `h3_cell_to_parent`. The result has about 6,000 rows. Name the UDF `hex_overview`.
+
+<details>
+<summary>Show the <code>hex_overview</code> UDF code</summary>
+
+```python
+@fused.udf
+def udf(
+    res: int = 4,
+    path: str = "s3://us-west-2.opendata.source.coop/fused/hex/release_2025_04_beta/census/2020_partitioned_h7.parquet",
+):
+    import duckdb
+
+    con = duckdb.connect()
+    con.sql("INSTALL httpfs; LOAD httpfs; INSTALL h3 FROM community; LOAD h3;")
+    con.sql("SET s3_region='us-west-2'; SET s3_url_style='path';")
+    df = con.sql(f"""
+        SELECT
+            lower(printf('%x', h3_cell_to_parent(hex, {int(res)}))) AS hex,
+            sum(POP20)::BIGINT AS POP20,
+            sum(HOUSING20)::BIGINT AS HOUSING20,
+            count(*) AS cells
+        FROM read_parquet('{path}')
+        GROUP BY 1
+    """).df()
+    return df
+```
+
+</details>
+
+<details>
+<summary>Show the widget JSON</summary>
+
+```json
+{
+  "type": "fused-map",
+  "props": {
+    "centerLng": -98,
+    "centerLat": 39.5,
+    "zoom": 3,
+    "autoFit": false,
+    "layers": [
+      {
+        "id": "hex",
+        "name": "Census hex overview",
+        "type": "h3",
+        "udf": "{{hex_overview}}",
+        "h3Column": "hex",
+        "tooltip": ["hex", "POP20", "HOUSING20", "cells"],
+        "legend": { "title": "POP20" },
+        "style": {
+          "fillColor": {
+            "type": "continuous",
+            "attr": "POP20",
+            "palette": "Sunset",
+            "domain": [0, 500000]
+          },
+          "opacity": 0.8,
+          "coverage": 0.95
+        }
+      }
+    ]
+  }
+}
+```
+
+</details>
+
+:::note
+The bucket name has dots in it. Set `s3_url_style` to `path` so that DuckDB can connect.
+:::
+
+### H3 hexagons with tiles
+
+For the detail, use the resolution 7 cells and set `tile: true`. The UDF returns only the cells with a center inside `bounds`. Name the UDF `source_coop_hex`.
+
+<details>
+<summary>Show the <code>source_coop_hex</code> UDF code</summary>
+
+```python
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-122.5, 37.7, -122.3, 37.85],
+    path: str = "s3://us-west-2.opendata.source.coop/fused/hex/release_2025_04_beta/census/2020_partitioned_h7.parquet",
+):
+    import duckdb
+
+    west, south, east, north = [float(v) for v in bounds]
+    con = duckdb.connect()
+    con.sql("INSTALL httpfs; LOAD httpfs; INSTALL h3 FROM community; LOAD h3;")
+    con.sql("SET s3_region='us-west-2'; SET s3_url_style='path';")
+    df = con.sql(f"""
+        SELECT lower(printf('%x', hex)) AS hex, state, county, POP20, HOUSING20
+        FROM read_parquet('{path}')
+        WHERE h3_cell_to_lng(hex) BETWEEN {west} AND {east}
+          AND h3_cell_to_lat(hex) BETWEEN {south} AND {north}
+    """).df()
+    return df
+```
+
+</details>
+
+<details>
+<summary>Show the widget JSON</summary>
+
+```json
+{
+  "type": "fused-map",
+  "props": {
+    "centerLng": -122.4,
+    "centerLat": 37.77,
+    "zoom": 8,
+    "autoFit": false,
+    "layers": [
+      {
+        "id": "hex",
+        "name": "Census hex (tiled)",
+        "type": "h3",
+        "udf": "{{source_coop_hex}}",
+        "tile": true,
+        "h3Column": "hex",
+        "tooltip": ["hex", "state", "county", "POP20", "HOUSING20"],
+        "style": {
+          "fillColor": {
+            "type": "continuous",
+            "attr": "POP20",
+            "palette": "Sunset",
+            "domain": [0, 500]
+          },
+          "opacity": 0.8,
+          "coverage": 0.9
+        }
+      }
+    ]
+  }
+}
+```
+
+</details>
+
+### Vector tiles
+
+Use a `geojson` layer with `tile: true` to load a large vector table. This UDF reads Microsoft building footprints. The `table_to_tile` helper returns only the buildings in `bounds`. Name the UDF `sf_buildings_tile`.
+
+<details>
+<summary>Show the <code>sf_buildings_tile</code> UDF code</summary>
+
+```python
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-122.446, 37.756, -122.430, 37.770],
+    table_path: str = "s3://fused-asset/infra/building_msft_us",
+):
+    common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
+    return common.table_to_tile(bounds, table=table_path)
+```
+
+</details>
+
+<details>
+<summary>Show the widget JSON</summary>
+
+```json
+{
+  "type": "fused-map",
+  "props": {
+    "centerLng": -122.44,
+    "centerLat": 37.76,
+    "zoom": 13,
+    "autoFit": false,
+    "layers": [
+      {
+        "id": "buildings",
+        "name": "SF buildings",
+        "type": "geojson",
+        "udf": "{{sf_buildings_tile}}",
+        "tile": true,
+        "minZoom": 12,
+        "maxZoom": 18,
+        "tooltip": true,
+        "style": {
+          "fillColor": {
+            "type": "continuous",
+            "attr": "num_rows",
+            "palette": "Sunset",
+            "domain": [0, 80000]
+          },
+          "lineColor": [255, 255, 255],
+          "lineWidth": 1,
+          "opacity": 0.8
+        }
+      }
+    ]
+  }
+}
+```
+
+</details>
+
+If you already have vector tiles on a server, use an `mvt` layer with a `tileUrl`.
+
+<details>
+<summary>Show the <code>mvt</code> widget JSON</summary>
+
+```json
+{
+  "type": "fused-map",
+  "props": {
+    "layers": [
+      {
+        "id": "counties",
+        "type": "mvt",
+        "tileUrl": "https://tiles.fused.io/public/my_tileset/{z}/{x}/{y}",
+        "style": { "fillColor": [100, 150, 200], "opacity": 0.6 }
+      }
+    ]
+  }
+}
+```
+
+</details>
+
+### Raster tiles
+
+Use a `raster` layer with `tile: true` to show an image. The UDF reads the raster for `bounds` and returns an image array. Name the UDF `seismic_raster`.
+
+<details>
+<summary>Show the <code>seismic_raster</code> UDF code</summary>
+
+```python
+@fused.udf
+def udf(
+    bounds: fused.types.Bounds = [-122.6, 37.2, -121.7, 38.0],
+    path: str = "s3://fused-asset/demos/seismic_data/v2023_1_pga_475_rock_3min.tif",
+):
+    common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
+    tile = common.get_tiles(bounds, zoom=common.estimate_zoom(bounds))
+    arr = common.read_tiff(tile, input_tiff_path=path)
+    return common.arr_to_plasma(arr.filled(0), min_max=(0, 1.5))
+```
+
+</details>
+
+<details>
+<summary>Show the widget JSON</summary>
+
+```json
+{
+  "type": "fused-map",
+  "props": {
+    "centerLng": -122.2,
+    "centerLat": 37.6,
+    "zoom": 8.5,
+    "autoFit": false,
+    "layers": [
+      {
+        "id": "seismic",
+        "name": "Seismic hazard",
+        "type": "raster",
+        "udf": "{{seismic_raster}}",
+        "tile": true,
+        "style": { "opacity": 0.8 }
+      }
+    ]
+  }
+}
+```
+
+</details>
+
+For a raster layer from a `tileUrl`, only `opacity` and `visible` apply.
+
+### SQL on a UDF result
+
+Use `sql` to filter or reshape a UDF result before the map draws it. Use `{{udf_name}}` in the query. The map runs the query in the browser with DuckDB. Name the UDF `sf_listings`.
+
+<details>
+<summary>Show the <code>sf_listings</code> UDF code</summary>
+
+```python
+@fused.udf
+def udf():
+    import pandas as pd
+
+    path = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"
+    df = pd.read_parquet(path).dropna(subset=["latitude", "longitude", "price_in_dollar"])
+    return df[["name", "latitude", "longitude", "price_in_dollar", "room_type"]]
+```
+
+</details>
+
+<details>
+<summary>Show the widget JSON</summary>
+
+```json
+{
+  "type": "fused-map",
+  "props": {
+    "basemap": "mapbox://styles/mapbox/dark-v11",
+    "centerLng": -122.43,
+    "centerLat": 37.76,
+    "zoom": 11,
+    "layers": [
+      {
+        "id": "listings",
+        "type": "geojson",
+        "sql": "SELECT name, latitude, longitude, price_in_dollar FROM {{sf_listings}}",
+        "latColumn": "latitude",
+        "lngColumn": "longitude",
+        "tooltip": ["name", "price_in_dollar"],
+        "filters": [
+          { "attr": "price_in_dollar", "type": "range", "min": 0, "max": 1000 }
+        ],
+        "style": { "fillColor": [232, 255, 89], "pointRadius": 2 }
+      }
+    ]
+  }
+}
+```
+
+</details>
+
+## The sidebar
+
+The sidebar lets the viewer change the style, the filters, and the SQL of each layer in the browser. These changes are temporary. To keep them, use the copy action in the sidebar and paste the result into the widget configuration.
+
+## Next steps
+
+- Read the [Fused Map API reference](/widget-api/fused-map) for the style, tooltip, legend, filter, and map props.
+- Read [Widgets](/guide/data-input-outputs/import-connection/widgets) to combine a map with inputs, charts, and tables in one widget.
+- Open the [Fused Map example canvas](https://unstable.fused.io/workbench/aman/map_experiments_mvt) to see each example on a map.
