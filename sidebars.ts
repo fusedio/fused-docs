@@ -333,6 +333,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "workbench/canvas-checkpoints", label: "Canvas Checkpoints" },
         { type: "doc", id: "workbench/versions", label: "Versions" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/widgets", label: "Widgets" },
+        { type: "doc", id: "guide/data-input-outputs/import-connection/fused-map", label: "Fused Map" },
       ],
     },
 
