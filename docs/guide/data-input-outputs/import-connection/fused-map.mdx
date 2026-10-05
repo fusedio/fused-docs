@@ -1,0 +1,126 @@
+---
+id: fused-map
+title: Fused Map
+sidebar_label: Fused Map
+sidebar_position: 8
+---
+
+# Fused Map
+
+:::warning Fused Map is an experimental feature
+Fused Map is hidden by default. To turn it on, go to [Preferences](/workbench/preferences/) → **Experimental features** → **Fused map widget**.
+:::
+
+Fused Map is a map widget in Fused. It draws geospatial data from a UDF, a SQL query, or a tile URL: points, polygons, H3 hexagons, and raster tiles, with many layers on one map.
+
+Its type is `fused-map`. It works like any other [widget](/guide/data-input-outputs/import-connection/widgets): configure it in JSON, connect UDFs with edges, and share it as a URL. To see working examples, open the [Fused Map example canvas](https://www.fused.io/canvas/fc_fused/map_widget_canvas). For the props, see the [Fused Map API reference](/widget-api/fused-map).
+
+## Add a Fused Map widget
+
+1. In the Workbench canvas, select the **Widget** icon in the toolbar.
+2. In the **Widget configuration** panel, select **Preset**, then **Maps and geo**, then **Fused map**.
+3. Connect the UDF node to the widget node with an edge.
+4. In the JSON, set `udf` to the name of the UDF in double braces, for example `{{my_udf}}`.
+
+For a faster way, drag an edge from the output handle of a UDF node to an empty spot on the canvas, then select **Fused map** in the menu. Workbench creates a Fused Map widget that is already connected to the UDF and draws its result.
+
+![Drag an edge from a UDF node and select Fused map](/img/widgets/fused-map-drag-node.gif)
+
+:::note
+The UDF must be on the same canvas. The name in `{{ }}` must match the UDF name exactly, with the same case.
+:::
+
+## Layer types and data sources
+
+Set the `type` of each layer to `geojson`, `h3`, `raster`, `mvt`, `heatmap`, `scatterplot`, `arc`, or `deck-geojson`. Each layer reads its data in one of four ways:
+
+| Property | What the map does |
+|---|---|
+| `udf` | Runs the UDF one time and draws the whole result. |
+| `udf` and `tile: true` | Runs the UDF for each map tile. The UDF gets the tile `bounds`. |
+| `sql` | Runs a DuckDB query on a UDF result, then draws the rows. |
+| `tileUrl` | Reads tiles from a URL with `{z}`, `{x}`, and `{y}` placeholders. |
+
+The UDF returns a GeoDataFrame for `geojson` layers, a DataFrame with an H3 column for `h3` layers, and an image array for `raster` layers. A DataFrame with latitude and longitude columns also works for `geojson` layers: set `latColumn` and `lngColumn`. Every other column is a property of the feature. The tooltip, the filters, and the data-driven colors use these properties.
+
+If `tile` is `true`, the map sends the tile area to the UDF in the `bounds` argument, as `[west, south, east, north]` in `EPSG:4326`. Return only the rows inside `bounds`.
+
+:::warning First argument must be named `bounds`
+For `tile: true`, the UDF's **first argument must be named `bounds`** and typed as `fused.types.Bounds`, for example:
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds):
+    ...
+```
+
+If the UDF has no `bounds` argument, every tile gets the same result.
+:::
+
+## Example
+
+This map shows San Francisco Airbnb listings as points on top of a Bay Area seismic hazard raster.
+
+<iframe
+  src="https://www.fused.io/share/fc_fused%2Fmap_widget_canvas/combined_layers_map"
+  width="100%"
+  height="500px"
+  loading="lazy"
+  style={{border: 'none', borderRadius: '8px'}}
+  title="Fused Map with a raster layer and a point layer"
+/>
+
+<details>
+<summary>Show the widget JSON</summary>
+
+```json
+{
+  "type": "fused-map",
+  "props": {
+    "basemap": "mapbox://styles/mapbox/dark-v11",
+    "centerLng": -122.3,
+    "centerLat": 37.7,
+    "zoom": 9.5,
+    "autoFit": false,
+    "layers": [
+      {
+        "id": "seismic",
+        "name": "Bay Area seismic hazard (raster)",
+        "type": "raster",
+        "udf": "{{bay_area_seismic_raster}}",
+        "tile": true,
+        "minZoom": 0,
+        "maxZoom": 19,
+        "style": { "opacity": 0.6 }
+      },
+      {
+        "id": "sf_listings",
+        "name": "SF Airbnb listings",
+        "type": "geojson",
+        "udf": "{{sf_listings}}",
+        "latColumn": "latitude",
+        "lngColumn": "longitude",
+        "tooltip": ["name", "price_in_dollar", "room_type"],
+        "legend": true,
+        "style": {
+          "fillColor": { "type": "categorical", "attr": "room_type", "palette": "Bold" },
+          "pointRadius": 4,
+          "opacity": 0.85
+        }
+      }
+    ]
+  }
+}
+```
+
+</details>
+
+The [Fused Map example canvas](https://www.fused.io/canvas/fc_fused/map_widget_canvas) has working UDF and widget examples. For the style, tooltip, legend, and filter props, see the [Fused Map API reference](/widget-api/fused-map).
+
+## The sidebar
+
+The sidebar lets the viewer change the style, the filters, and the SQL of each layer in the browser. Each layer has a **Style** tab and a **Filters** tab. In **Style**, set the layer type, the fill mode (for example **By value** with a property, a palette, steps, and a domain), the stroke, and the opacity.
+
+![The Fused Map sidebar next to the map and the widget configuration](/img/widgets/fused-map-sidebar.jpg)
+
+These changes are temporary. To keep them, select **Save to widget** to write them into the widget configuration, or select **Copy config** and paste the result into the JSON. Select **Reset** to undo the changes.

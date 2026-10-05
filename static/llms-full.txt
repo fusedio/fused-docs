@@ -2756,6 +2756,96 @@ Connect Fused to external databases. See the dedicated integration guides:
 
 ================================================================================
 
+## Fused Map
+Path: guide/data-input-outputs/import-connection/fused-map.mdx
+URL: https://docs.fused.io/guide/data-input-outputs/import-connection/fused-map
+
+# Fused Map
+
+Fused Map is hidden by default. To turn it on, go to Preferences → **Experimental features** → **Fused map widget**.
+
+Fused Map is a map widget in Fused. It draws geospatial data from a UDF, a SQL query, or a tile URL: points, polygons, H3 hexagons, and raster tiles, with many layers on one map.
+
+Its type is `fused-map`. It works like any other widget: configure it in JSON, connect UDFs with edges, and share it as a URL. To see working examples, open the Fused Map example canvas. For the props, see the Fused Map API reference.
+
+## Add a Fused Map widget
+
+1. In the Workbench canvas, select the **Widget** icon in the toolbar.
+2. In the **Widget configuration** panel, select **Preset**, then **Maps and geo**, then **Fused map**.
+3. Connect the UDF node to the widget node with an edge.
+4. In the JSON, set `udf` to the name of the UDF in double braces, for example `}`.
+
+For a faster way, drag an edge from the output handle of a UDF node to an empty spot on the canvas, then select **Fused map** in the menu. Workbench creates a Fused Map widget that is already connected to the UDF and draws its result.
+
+[Image: Drag an edge from a UDF node and select Fused map]
+
+The UDF must be on the same canvas. The name in `}` must match the UDF name exactly, with the same case.
+
+## Layer types and data sources
+
+Set the `type` of each layer to `geojson`, `h3`, `raster`, `mvt`, `heatmap`, `scatterplot`, `arc`, or `deck-geojson`. Each layer reads its data in one of four ways:
+
+| Property | What the map does |
+|---|---|
+| `udf` | Runs the UDF one time and draws the whole result. |
+| `udf` and `tile: true` | Runs the UDF for each map tile. The UDF gets the tile `bounds`. |
+| `sql` | Runs a DuckDB query on a UDF result, then draws the rows. |
+| `tileUrl` | Reads tiles from a URL with ``, ``, and `` placeholders. |
+
+The UDF returns a GeoDataFrame for `geojson` layers, a DataFrame with an H3 column for `h3` layers, and an image array for `raster` layers. A DataFrame with latitude and longitude columns also works for `geojson` layers: set `latColumn` and `lngColumn`. Every other column is a property of the feature. The tooltip, the filters, and the data-driven colors use these properties.
+
+If `tile` is `true`, the map sends the tile area to the UDF in the `bounds` argument, as `[west, south, east, north]` in `EPSG:4326`. Return only the rows inside `bounds`.
+
+For `tile: true`, the UDF's **first argument must be named `bounds`** and typed as `fused.types.Bounds`, for example:
+
+```python
+@fused.udf
+def udf(bounds: fused.types.Bounds):
+    ...
+```
+
+If the UDF has no `bounds` argument, every tile gets the same result.
+
+## Example
+
+This map shows San Francisco Airbnb listings as points on top of a Bay Area seismic hazard raster.
+
+```json
+}",
+        "tile": true,
+        "minZoom": 0,
+        "maxZoom": 19,
+        "style": 
+      },
+      }",
+        "latColumn": "latitude",
+        "lngColumn": "longitude",
+        "tooltip": ["name", "price_in_dollar", "room_type"],
+        "legend": true,
+        "style": ,
+          "pointRadius": 4,
+          "opacity": 0.85
+        }
+      }
+    ]
+  }
+}
+```
+
+</details>
+
+The Fused Map example canvas has working UDF and widget examples. For the style, tooltip, legend, and filter props, see the Fused Map API reference.
+
+## The sidebar
+
+The sidebar lets the viewer change the style, the filters, and the SQL of each layer in the browser. Each layer has a **Style** tab and a **Filters** tab. In **Style**, set the layer type, the fill mode (for example **By value** with a property, a palette, steps, and a domain), the stroke, and the opacity.
+
+[Image: The Fused Map sidebar next to the map and the widget configuration]
+
+These changes are temporary. To keep them, select **Save to widget** to write them into the widget configuration, or select **Copy config** and paste the result into the JSON. Select **Reset** to undo the changes.
+
+================================================================================
+
 ## Google Earth Engine
 Path: guide/data-input-outputs/import-connection/geospatial/gee.mdx
 URL: https://docs.fused.io/guide/data-input-outputs/import-connection/geospatial/gee
@@ -3040,52 +3130,13 @@ def udf():
 
 *When you share a widget URL, Fused automatically appends all canvas parameters as query parameters so the shared view can be reproduced exactly.* Try it out →
 
-## Map widgets
+## Maps
 
-```python
-@fused.udf
-def udf():
+To show geospatial data, use the map widget, Fused Map (`fused-map`). It draws points, polygons, H3 hexagons, and raster tiles from your UDFs.
 
-    path = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"
-    df = pd.read_parquet(path).dropna(subset=["latitude", "longitude", "price_in_dollar"])
-    gdf = gpd.GeoDataFrame(
-        df, geometry=gpd.points_from_xy(df["longitude"], df["latitude"]), crs="EPSG:4326"
-    )
-    grouped = gdf.groupby("neighbourhood_cleansed")
-    return gpd.GeoDataFrame(
-        ,
-        crs="EPSG:4326",
-    )
-```
+## Available Widgets
 
-```python
-@fused.udf
-def udf(bounds: fused.types.Bounds = [-122.446, 37.756, -122.430, 37.770]):
-    table_path = "s3://fused-asset/infra/building_msft_us"
-    common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
-    return common.table_to_tile(bounds, table=table_path)
-```
-
-```python
-@fused.udf
-def udf(
-    bounds: fused.types.Bounds = [-122.6, 37.2, -121.7, 38.0],
-    path: str = "s3://fused-asset/demos/seismic_data/v2023_1_pga_475_rock_3min.tif",
-):
-    common = fused.load("https://github.com/fusedio/udfs/tree/fbf5682/public/common/")
-    tile = common.get_tiles(bounds, zoom=common.estimate_zoom(bounds))
-    arr = common.read_tiff(tile, input_tiff_path=path)
-    return common.arr_to_plasma(arr.filled(0), min_max=(0, 1.5))
-```
-
-```python
-@fused.udf
-def udf():
-
-    path = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"
-    df = pd.read_parquet(path).dropna(subset=["latitude", "longitude", "price_in_dollar"])
-    return df[["name", "latitude", "longitude", "price_in_dollar", "room_type"]]
-```
+For the full list of widget types and their props, see the Widget API reference. To explore every widget live, open the Widget Showcase canvas →
 
 ## Multi-Component Widgets
 
@@ -29589,5 +29640,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-10-01
+Generated automatically from Fused documentation. Last updated: 2026-10-05
 Total sections: 7
