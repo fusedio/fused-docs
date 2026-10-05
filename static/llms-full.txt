@@ -2797,28 +2797,62 @@ This live map draws a Bay Area seismic hazard raster under the San Francisco Air
 }
 ```
 
-```json
-,
-  "children": [
-    }", "tile": true, "minZoom": 2, "maxZoom": 12 }
-        ]
-      }
-    },
-    }", "tile": true, "minZoom": 2, "maxZoom": 12 }
-        ]
-      }
-    },
-    }", "tile": true, "minZoom": 2, "maxZoom": 12 }
-        ]
-      }
-    }
-  ]
-}
-```
-
 </details>
 
-The state is saved with the canvas. Two other props send map events to the canvas: `param` writes the viewport bounds, and `clickParam` writes the properties of the last clicked feature.
+The UDF must be on the same canvas. The name in `}` must match the UDF name exactly, with the same case.
+
+## Layer types and data sources
+
+Set the `type` of each layer to `geojson`, `h3`, `raster`, `mvt`, `heatmap`, `scatterplot`, `arc`, or `deck-geojson`. Each layer reads its data in one of four ways:
+
+```mermaid
+flowchart LR
+    A["udf"] -->|runs once| M["Fused Map layer"]
+    B["udf + tile: true"] -->|runs per tile, gets bounds| M
+    C["sql"] -->|DuckDB query on a UDF result| M
+    D["tileUrl"] -->|"fetches // tiles"| M
+```
+
+| Property | What the map does |
+|---|---|
+| `udf` | Runs the UDF one time and draws the whole result. |
+| `udf` and `tile: true` | Runs the UDF for each map tile. The UDF gets the tile `bounds`. |
+| `sql` | Runs a DuckDB query on a UDF result, then draws the rows. |
+| `tileUrl` | Reads tiles from a URL with ``, ``, and `` placeholders. |
+
+The UDF returns a GeoDataFrame for `geojson` layers, a DataFrame with an H3 column for `h3` layers, and an image array for `raster` layers. A DataFrame with latitude and longitude columns also works for `geojson` layers: set `latColumn` and `lngColumn`. Every other column is a property of the feature. The tooltip, the filters, and the data-driven colors use these properties.
+
+If `tile` is `true`, the map sends the tile area to the UDF in the `bounds` argument, as `[west, south, east, north]` in `EPSG:4326`. Add `bounds: fused.types.Bounds` to the UDF and return only the rows inside `bounds`.
+
+If the UDF has no `bounds` argument, every tile gets the same result.
+
+## What you can render
+
+- **H3 hexagons** — an `h3` layer with a column of H3 cell IDs as hex strings, for example `872830828ffffff`. Return a rolled-up overview without tiles, or full-resolution cells with `tile: true`.
+- **Vectors** — a `geojson` layer from a GeoDataFrame, or from a DataFrame with `latColumn` and `lngColumn`. Add `tile: true` for large datasets, or use an `mvt` layer with a `tileUrl`.
+- **Rasters** — a `raster` layer from a UDF that returns an image array. Return a fourth band as alpha to make pixels without data transparent.
+- **SQL results** — a `sql` layer runs a DuckDB query on a UDF result in the browser.
+
+This live map loads US census H3 cells with `tile: true`. Each tile runs the UDF for its own `bounds`.
+
+<iframe
+  src="https://www.fused.io/share/fc_fused%2Fmap_widget_canvas/hex_tiled_map"
+  width="100%"
+  height="450px"
+  loading="lazy"
+  style=}
+  title="US census population as tiled H3 hexagons"
+/>
+
+The Fused Map example canvas has a UDF and a widget for each of these. For the style, tooltip, legend, and filter props, see the Fused Map API reference.
+
+## Connect the map to the canvas
+
+Three props write map state to canvas parameters, so other widgets and UDFs can read it:
+
+- `param` — the viewport bounds, as `[west, south, east, north]`.
+- `clickParam` — the properties of the last clicked feature.
+- `stateParam` — the camera and the sidebar changes. Maps with the same `stateParam` move together, and the state is saved with the canvas.
 
 ## The sidebar
 
