@@ -41,11 +41,19 @@ def escape_mdx_braces(text: str) -> str:
     """
     lines = text.split('\n')
     result = []
-    in_fence = False
+    fence = None  # backtick run that opened the current fence
     for line in lines:
-        if re.match(r'^\s*```', line):
-            in_fence = not in_fence
-        if in_fence:
+        m = re.match(r'^\s*(`{3,})', line)
+        if m:
+            if fence is None:
+                fence = m.group(1)
+            elif len(m.group(1)) >= len(fence) and not line.strip()[len(m.group(1)):]:
+                # A closing fence is at least as long as the opener, with no info string;
+                # shorter runs (```` wrapping ```) stay inside the fence.
+                fence = None
+                result.append(line)
+                continue
+        if fence is not None:
             result.append(line)
         else:
             # Split by inline code spans so we don't escape inside them
@@ -589,7 +597,13 @@ with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w", encod
 ## `fused.h3` page
 
 api_listing = sorted([
+    "delete_index",
+    "index",
+    "index_status",
+    "indexed_files",
+    "partition",
     "persist_hex_table_metadata",
+    "query",
     "read_hex_table",
     "read_hex_table_slow",
     "read_hex_table_with_persisted_metadata",
@@ -613,11 +627,20 @@ mod_api = mod["h3"]
 config_h3 = dict(default_config)
 config_h3["show_root_full_path"] = False
 
+# `fused.h3.index`/`query`/... are bound as `index = catalog.index` in
+# `fused/_h3/__init__.py`, and `index` is also a submodule name, so static
+# analysis resolves them to the alias line or the submodule. Render the
+# function defined in `catalog` instead.
+h3_catalog_names = {"delete_index", "index", "index_status", "indexed_files", "query"}
+
 for obj in api_listing:
-    if obj not in mod_api.members:
+    target = mod_api
+    if obj in h3_catalog_names and "catalog" in mod_api.members:
+        target = mod_api["catalog"]
+    if obj not in target.members:
         print(f"Warning: {obj} not found in fused.h3 module, skipping")
         continue
-    docstring = render_object_docs(mod_api[obj], config_h3)
+    docstring = render_object_docs(target[obj], config_h3)
     result += docstring + "\n---\n\n"
 
 result = result.replace("`fused.submit()`", "[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)")
