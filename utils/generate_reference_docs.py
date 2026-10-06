@@ -640,7 +640,11 @@ for obj in api_listing:
     if obj not in target.members:
         print(f"Warning: {obj} not found in fused.h3 module, skipping")
         continue
-    docstring = render_object_docs(target[obj], config_h3)
+    member = target[obj]
+    # `partition` is both a submodule and the function it defines: render the function.
+    if member.is_module and obj in member.members:
+        member = member[obj]
+    docstring = render_object_docs(member, config_h3)
     result += docstring + "\n---\n\n"
 
 result = result.replace("`fused.submit()`", "[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)")

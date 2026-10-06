@@ -5,6 +5,289 @@ toc_max_heading_level: 5
 sidebar_position: 3
 ---
 
+## delete_index
+
+```python
+delete_index(path: str, *, base_url: str | None = None) -> None
+```
+
+Delete the index registered for `path`. The data files are untouched.
+
+**Parameters:**
+
+- **path** (`str`) – The location an earlier `fused.h3.index` call registered.
+- **base_url** (`str | None`) – Base URL for the API. If None, uses the current environment.
+
+---
+
+## index
+
+```python
+index(
+    path: str,
+    hex_column: str = "hex",
+    time_column: str | None = None,
+    *,
+    partition_columns: str | list[str] | None = None,
+    space: str | None = None,
+    time: str | None = None,
+    instance_type: InstanceType = "small",
+    wait: bool = True,
+    overwrite: bool = False,
+    base_url: str | None = None,
+    **submit_kwargs: Any
+) -> dict[str, Any] | JobPool
+```
+
+Register a hive-partitioned parquet tree as a queryable H3 location.
+
+Runs a batch job, via `fused.submit`, that indexes every file under `path`.
+
+**Parameters:**
+
+- **path** (`str`) – Path to the parquet tree (e.g. `"s3://my-bucket/my-dataset/"`).
+  Every `.parquet` file under it, at any depth, must carry an
+  integer H3 cell column named `hex_column` at a single resolution.
+- **hex_column** (`str`) – Name of the H3 cell column present in every file.
+  Defaults to `"hex"`, what `fused.h3.partition` writes.
+- **time_column** (`str | None`) – Optional. Names either an in-file timestamp/date column,
+  or a folder level written `key=value` whose value is a `YYYY`,
+  `YYYY-MM`, or `YYYY-MM-DD` period covering every row under that
+  folder, or an ISO timestamp (an instant). If None, the only `date` partition column filters by time,
+  and a location without one is timeless.
+- **partition_columns** (`str | list[str] | None`) – The `key=value` folder levels (e.g.
+  `scenario=ssp245/date=2050-01/`) whose values `query` can filter
+  by, as a column name or a list of names in folder order. Defaults
+  to the `partition_by` columns in the tree's `_manifest.json`
+  (written by `fused.h3.partition`), else none. Each column is typed
+  `"string"`, `"number"` or `"date"` from the manifest, else from
+  its values (all numbers: number; all `YYYY`, `YYYY-MM`,
+  `YYYY-MM-DD` periods or ISO instants: date; otherwise string). Each
+  leaf folder must have exactly one folder per column, in that
+  order; a folder that does not fails the run.
+- **space** (`str | None`) – Deprecated alias of `hex_column`.
+- **time** (`str | None`) – Deprecated alias of `time_column`.
+- **instance_type** (`InstanceType`) – The batch instance type the indexing job runs on.
+  Defaults to `"small"`.
+- **wait** (`bool`) – If True (the default), tails the job (printing status lines)
+  until it finishes and returns its result. Inside a realtime UDF
+  it gives up watching after ~90 s and raises `TimeoutError`; the
+  batch job keeps running, so poll it with `index_status`. If
+  False, returns the `JobPool` immediately without waiting, so the
+  caller can poll or `.wait()` on it themselves. The batch job id
+  is printed as soon as the job is submitted either way.
+- **overwrite** (`bool`) – If False (the default), re-running is incremental: folders
+  unchanged since the last run are skipped, and only new, changed
+  and removed files are indexed or dropped. A run that was stopped
+  or partly failed resumes where it left off. If True, the whole
+  tree is indexed again from scratch, replacing the previous index.
+- **base_url** (`str | None`) – Base URL for the API. If None, uses the current environment.
+- \*\***submit_kwargs** (`Any`) – Additional keyword arguments passed through to
+  `fused.submit`. `max_retry` defaults to `0` here (unlike
+  `fused.submit`'s own default) -- pass it explicitly to override.
+
+**Returns:**
+
+- `[dict](#dict)\[[str](#str), [Any](#typing.Any)\] | [JobPool](#fused._submit.JobPool)` – If `wait=True`, a dictionary with the indexing results:
+- path: The indexed path.
+- status: `"ready"`.
+- files: Number of parquet files indexed.
+- row_groups: Number of row groups indexed.
+- resolution: The H3 resolution found across the tree.
+- time_min: Earliest time found, or None for a timeless location.
+- time_max: Latest time found, or None for a timeless location.
+- hex_column, time_column: The columns the location was indexed with.
+- partition_columns: Per partition column, its `name`, `type`, the
+  number of `distinct` values and their `min` and `max`.
+- `[dict](#dict)\[[str](#str), [Any](#typing.Any)\] | [JobPool](#fused._submit.JobPool)` – If `wait=False`, the `JobPool` running the indexing job.
+
+**Raises:**
+
+- `[TimeoutError](#TimeoutError)` – `wait=True` inside a realtime UDF and the job was still
+  running after ~90 s. The job is not cancelled; the message names
+  the job id.
+- `[RuntimeError](#RuntimeError)` – `wait=True` and the indexing job failed. If only some
+  files failed to index, everything else is indexed and queryable;
+  the error names the failed paths, and re-running retries them.
+
+**Example:**
+
+````python
+```py
+fused.h3.index(
+    path="s3://my-bucket/era5_h3/",
+    hex_column="hex",
+    partition_columns=["scenario", "date"],
+)
+````
+
+```
+
+```
+
+---
+
+## index_status
+
+```python
+index_status(path: str, *, base_url: str | None = None) -> dict[str, Any]
+```
+
+Describe the index registered for `path`.
+
+**Parameters:**
+
+- **path** (`str`) – The location an earlier `fused.h3.index` call registered.
+- **base_url** (`str | None`) – Base URL for the API. If None, uses the current environment.
+
+**Returns:**
+
+- `[dict](#dict)\[[str](#str), [Any](#typing.Any)\]` – A dictionary with `path`, `status`, `indexing` (True while an index
+- `[dict](#dict)\[[str](#str), [Any](#typing.Any)\]` – job is running), `files`, `row_groups`, `resolution`, `hex_column`,
+- `[dict](#dict)\[[str](#str), [Any](#typing.Any)\]` – `time_column`, `partition_columns` (per column: `name`, `type`,
+- `[dict](#dict)\[[str](#str), [Any](#typing.Any)\]` – `distinct`, `min`, `max`), `time_min`, `time_max`, `indexed_as_of` (files modified after this may not be
+- `[dict](#dict)\[[str](#str), [Any](#typing.Any)\]` – indexed yet), `last_run_mode` (`"incremental"` or `"overwrite"`),
+- `[dict](#dict)\[[str](#str), [Any](#typing.Any)\]` – `last_run_finished_at`, and `failures` (a list of `{path, error}`
+- `[dict](#dict)\[[str](#str), [Any](#typing.Any)\]` – for files the last run could not index).
+
+---
+
+## indexed_files
+
+```python
+indexed_files(
+    path: str, *, prefix: str | None = None, base_url: str | None = None
+) -> Iterator[str]
+```
+
+Iterate the files indexed under `path`, in path order.
+
+**Parameters:**
+
+- **path** (`str`) – The location an earlier `fused.h3.index` call registered.
+- **prefix** (`str | None`) – Only yield files under this folder or path prefix.
+- **base_url** (`str | None`) – Base URL for the API. If None, uses the current environment.
+
+**Yields:**
+
+- `[str](#str)` – The full path of each indexed file.
+
+---
+
+## partition
+
+```python
+partition(
+    data: Any,
+    output: str | Path,
+    *,
+    hex_column: str | None = None,
+    point_column: str | tuple[str, str] | None = None,
+    h3_res: int = 7,
+    file_res: int = 1,
+    fill: str | None = None,
+    partition_by: str | list[str] | None = None,
+    sort_by: str | list[str] | None = None,
+    overwrite: bool = False,
+    append: bool = False,
+    row_group_size: int = 65536,
+    compression: str = "zstd",
+    compression_level: int = 5,
+    key_columns: list[str] | None = None
+) -> None
+```
+
+Write data as hex-sorted H3 parquet files with a `_manifest.json`.
+
+**Parameters:**
+
+- **data** (`Any`) – An iterator of `pyarrow.RecordBatch`, or a `pandas.DataFrame`,
+  `pyarrow.Table` or `pyarrow.RecordBatch`. Everything runs in
+  this process. Paths are not accepted: wrap one with
+  `fused.h3.sources.parquet(path)`.
+- **output** (`str | Path`) – Output folder. Files are written as
+  `<output>/<col>=<value>/.../<H3 parent cell hex>.parquet`, one
+  `col=value` folder per `partition_by` column in that order
+  (for example `scenario=ssp245/date=2050-01-01/`), or
+  `<output>/<H3 parent cell hex>.parquet` when `partition_by` is None.
+- **hex_column** (`str | None`) – Name of an existing H3 cell column (uint64). Give exactly
+  one of `hex_column` and `point_column`.
+- **point_column** (`str | tuple[str, str] | None`) – Where each row is, so the cell at `h3_res` can be computed.
+  Either `("lat_column", "lng_column")`, two numeric columns (lat
+  first), or the name of one geometry column holding WKB (`binary`),
+  such as `point_column="geometry"`. A Point geometry hexes itself; any
+  other geometry gets the cell covering its centroid. Nothing is
+  polyfilled: one row in, one row out. Null and empty geometries
+  raise. The centroid is planar, taken on the coordinates as stored,
+  which must be lon/lat degrees (EPSG:4326); a centroid outside lon
+  -180..180 / lat -90..90 (for example projected coordinates)
+  raises. Geometries that cross the antimeridian or wrap a pole get
+  a centroid on the wrong side, so split them or pass lat/lng
+  columns for those rows. The point columns stay in the files. A
+  `geopandas.GeoDataFrame` passed as `data` arrives with its
+  geometry as WKB, and GeoParquet read with
+  `fused.h3.sources.parquet` is already WKB.
+- **h3_res** (`int`) – Resolution of the cell each row gets; this is the `hex`
+  column.
+- **file_res** (`int`) – Resolution of the H3 parent cell that groups rows into
+  files: each row's cell is walked up to its ancestor at this
+  resolution and all rows under one ancestor are written to one
+  file named after it (default 1, about 117k res-7 cells per file;
+  raise it for more, smaller files).
+- **fill** (`str | None`) – `"nearest"` fills every cell at `h3_res` from the nearest point
+  of a regular lat/lng raster, instead of hexing each row as it is
+  (the default). Each input batch must then hold a complete raster
+  per key tuple, one row per raster point, as
+  `fused.h3.sources.era5` yields. Key columns are `key_columns`,
+  `partition_by` and every column that is not floating point (such
+  as `date` or `hour`); the floating point columns are the values
+  to fill, and none is an error. Needs `point_column=("lat", "lng")`. One
+  filled batch becomes one batch per H3 parent cell.
+- **partition_by** (`str | list[str] | None`) – Column, or list of columns, whose values become nested
+  `col=value` folders, or None (the default) for no folders. Values
+  are written by type: dates as `YYYY-MM-DD`, timestamps as ISO 8601
+  (`2050-01-01T06:00:00`), integers as plain digits, floats and
+  strings as they print. The type of each column is recorded in
+  `_manifest.json`. Values may not be null, empty, start with `_` or
+  contain `/`. The columns stay in the files.
+- **sort_by** (`str | list[str] | None`) – Extra column(s) to sort by after `hex`.
+- **overwrite** (`bool`) – Replace existing output. Without it, an any existing
+  file in `output` (a dataset, or leftovers of an aborted run
+  that has no `_manifest.json`) raises.
+- **append** (`bool`) – Add to an existing partitioned dataset instead of failing on it.
+  Every leaf partition folder this run writes replaces that folder
+  in `output` (so re-running a day is idempotent) and the other
+  folders are left alone; `_manifest.json` is updated to match.
+  Needs `partition_by` and an existing `_manifest.json` whose
+  `h3_res`, `file_res`, `fill`, `partition_by`, `sort_by`
+  and partition column types match this call, checked before
+  anything is written. Cannot be combined with `overwrite`. A run
+  that dies midway leaves the folders it already replaced rewritten
+  only in part, and the manifest unchanged, until it is run again.
+- **row_group_size** (`int`) – Rows per parquet row group.
+- **compression** (`str`) – Parquet compression codec.
+- **compression_level** (`int`) – Compression level (zstd only).
+- **key_columns** (`list[str] | None`) – Columns that get dictionary encoding (`hex` never
+  does). Defaults to the `partition_by` columns when set, else none; name
+  other low-cardinality columns here. With `fill="nearest"` the
+  non-floating columns are added automatically.
+
+**Raises:**
+
+- `[TypeError](#TypeError)` – `data` is a path or another unsupported type.
+- `[ValueError](#ValueError)` – An inconsistent argument, a named column missing from the
+  input (checked on the first batch), input with no rows, an
+  existing output without `overwrite` or `append`, `append`
+  without `partition_by`, with `overwrite`, without an existing
+  manifest or with settings that differ from it, or a problem found while
+  bucketing (null coordinates, null hex, null or folder-unsafe
+  partition values).
+
+Output is written so that a failed run never wipes a good dataset: an existing
+output is only replaced once the new data is ready to write.
+
+---
+
 ## persist_hex_table_metadata
 
 ```python
@@ -78,6 +361,109 @@ fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/", metadata_path=
 # 's3://my-bucket/metadata/'
 fused.h3.persist_hex_table_metadata("s3://my-bucket/my-dataset/", pool_size=4)
 # 's3://my-bucket/my-dataset/.fused/file1.metadata.parquet'
+```
+
+---
+
+## query
+
+```python
+query(
+    path: str,
+    cell: str | None = None,
+    *,
+    lat: float | None = None,
+    lng: float | None = None,
+    bbox: tuple[float, float, float, float] | None = None,
+    hex_range: tuple[str, str] | None = None,
+    time_min: str | None = None,
+    time_max: str | None = None,
+    partition: dict[str, Any] | None = None,
+    partition_range: dict[str, Any] | None = None,
+    columns: list[str] | None = None,
+    format: str = "parquet",
+    max_row_groups: int | None = None,
+    base_url: str | None = None
+) -> pd.DataFrame | dict[str, Any]
+```
+
+Read the rows of a previously indexed H3 location.
+
+At most one spatial selector may be given: `cell` (an H3 cell id, as a
+hex string -- matches every row filed under a descendant of `cell`, or
+under `cell` itself if it is already at the location's resolution),
+`lat`+`lng` (a point), `bbox` (a `(min_lng, min_lat, max_lng, max_lat)`
+tuple), or `hex_range` (an inclusive raw H3 cell-id range, as a
+`(hex_min, hex_max)` tuple of hex strings). Omitting all of them returns
+every row at the location.
+
+**Parameters:**
+
+- **path** (`str`) – The location an earlier `fused.h3.index` call registered.
+- **cell** (`str | None`) – An H3 cell id (as a hex string, e.g. `"8928308280fffff"`).
+- **lat** (`float | None`) – Latitude of a point selector. Requires `lng`.
+- **lng** (`float | None`) – Longitude of a point selector. Requires `lat`.
+- **bbox** (`tuple[float, float, float, float] | None`) – `(min_lng, min_lat, max_lng, max_lat)` bounding box selector.
+- **hex_range** (`tuple[str, str] | None`) – `(hex_min, hex_max)` inclusive raw H3 cell-id range.
+- **time_min** (`str | None`) – Inclusive lower bound (ISO datetime). Only valid against a
+  location with a time column (a `time_column`, or a single `date`
+  partition column).
+- **time_max** (`str | None`) – Inclusive upper bound (ISO datetime). Only valid against a
+  location with a time column.
+- **partition** (`dict[str, Any] | None`) – Keep only the folders whose partition values match, as
+  `{column: value}`. A list or tuple of values matches any of them:
+  `{"scenario": ["ssp245", "ssp585"], "date": "2050-01"}`. A folder
+  must match every column named. A `date` column matches by
+  overlap: `"2050-01"` matches a folder holding January 2050.
+- **partition_range** (`dict[str, Any] | None`) – Keep only the folders whose partition value lies in
+  an inclusive `(min, max)` range, as `{column: (min, max)}`; `None`
+  leaves an end open: `{"date": ("2050-01", None)}`. Works for
+  string, number and date columns. A range on the location's time
+  column also narrows the time window.
+- **columns** (`list[str] | None`) – Which columns to read. Defaults to all columns.
+- **format** (`str`) – `"parquet"` (the default) returns the matching rows as a
+  DataFrame.
+- **max_row_groups** (`int | None`) – Caps the number of matching row groups the query may
+  read/describe; a query matching more than that raises a 413
+  before any row data is read. If None (the default), a default limit applies. Raise this for a query that legitimately
+  spans many row groups (e.g. a wide time window over many cells).
+- **base_url** (`str | None`) – Base URL for the API. If None, uses the current environment.
+
+**Returns:**
+
+- `[DataFrame](#pandas.DataFrame)` – A pandas DataFrame with the matching rows.
+
+**Raises:**
+
+- `[HTTPError](#requests.HTTPError)` – If the API request fails (404 if `path` has not
+  been indexed, 409 if it is not yet `"ready"`, 400 for an invalid
+  or conflicting selector, against time bounds on a timeless
+  location, or for a `partition` or `partition_range` naming a
+  column that is not a partition column or holding a value that does
+  not fit it, 413 if the query matches more row groups than `limit`
+  and/or `max_row_groups` allow).
+
+**Example:**
+
+````python
+```py
+df = fused.h3.query(
+    path="s3://my-bucket/era5_h3/",
+    cell="8928308280fffff",
+    time_min="2024-01-01T00:00:00",
+    time_max="2024-01-31T23:59:59",
+)
+
+df = fused.h3.query(
+    path="s3://my-bucket/climate_h3/",
+    bbox=(-122.5, 37.7, -122.4, 37.8),
+    partition={"scenario": "ssp245"},
+    partition_range={"date": ("2050-01", "2050-06")},
+)
+````
+
+```
+
 ```
 
 ---
@@ -529,10 +915,11 @@ further aggregating. For overview files, it will then create aggregated data.
   each file of the Parquet dataset (ignored when `max_rows_per_chunk`
   is specified). By default will be inferred based on the target
   resolution `res`.
-- **overview_res** (`list of int`) – The H3 resolutions for which to create
-  overview files. By default, overviews are created for resolutions 3
-  to 7 (or capped at a lower value if the `res` of the output dataset
-  is lower).
+- **overview_res** (`list of int`) – The H3 resolutions for which to
+  create overview files. Overviews are opt-in: by default (`None`),
+  or when given an empty list, no overview files are created. Pass a
+  list of resolutions, each lower than the output dataset's `res`,
+  to build overviews at those resolutions.
 - **overview_chunk_res** (`int or list of int`) – The H3 resolution(s) to chunk
   the row groups within each overview file of the Parquet dataset. By
   default, each overview file is chunked at the overview resolution
