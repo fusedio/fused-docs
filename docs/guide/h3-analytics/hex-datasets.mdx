@@ -11,6 +11,8 @@ toc_max_heading_level: 3
 
 `fused.h3` turns tabular data into a **hex dataset**: H3-sorted Parquet files you can query by point, bounding box, cell, time or partition value without scanning every file.
 
+It works for every kind of data: points, vector geometries, GeoTIFF / COG rasters, gridded weather data, and tables that already have an H3 column.
+
 The workflow has three steps:
 
 1. **Partition**: `fused.h3.partition()` ingests your data and writes the hex dataset.
@@ -60,9 +62,10 @@ Pass exactly one of `hex_column` or `point_column`:
 | Already has an integer H3 column | `hex_column="h3"`, with `h3_res` set to that column's resolution. The column is renamed to `hex`. |
 | Latitude / longitude columns | `point_column=("lat", "lng")` (latitude first) |
 | A geometry column (GeoDataFrame) | `point_column="geometry"`. Points use their location; other shapes use their centroid. Polygons are **not** polyfilled. |
-| A regular lat/lng raster that should cover every cell | `point_column=("lat", "lng"), fill="nearest"` |
+| A regular lat/lng raster that should cover every cell | `point_column=("lat", "lng"), fill="nearest"`. See [ERA5 example](#example-era5-weather). |
+| A GeoTIFF / COG raster | Turn pixels into lat/lng rows and average them per hex, then `hex_column="hex"`. See [GeoTIFF example](#example-geotiff-raster). |
 
-Coordinates must be in EPSG:4326.
+Coordinates must be in EPSG:4326. To polyfill polygons, compute their cells first (e.g. with [`common.gdf_to_hex()`](https://github.com/fusedio/udfs/blob/main/public/common/common.py)) and pass `hex_column`.
 
 ### Parameters
 
@@ -99,6 +102,43 @@ def udf(src: str = "s3://my-bucket/raw/stations/", out: str = "s3://my-bucket/he
         overwrite=True,
     )
 ```
+
+### Example: GeoTIFF raster
+
+Read the raster, turn each valid pixel into a lat/lng point, average the pixels inside each hex with DuckDB's [`h3_latlng_to_cell()`](https://duckdb.org/community_extensions/extensions/h3.html), then partition on the resulting `hex` column:
+
+```python
+@fused.udf(cache_max_age=0)
+def udf(src: str = "s3://fused-asset/data/nyc_dem.tif", out: str = "fd://h3/nyc_dem/", h3_res: int = 9):
+    import numpy as np
+    import pandas as pd
+    import rasterio
+    from pyproj import Transformer
+
+    # 1. Each valid pixel becomes a (lat, lng, value) row
+    with rasterio.open(src) as ds:
+        band = ds.read(1)
+        rows, cols = np.nonzero(band != ds.nodata)
+        xs, ys = rasterio.transform.xy(ds.transform, rows, cols)
+        lng, lat = Transformer.from_crs(ds.crs, 4326, always_xy=True).transform(xs, ys)
+    pixels = pd.DataFrame({"lat": lat, "lng": lng, "elevation": band[rows, cols].astype("float64")})
+
+    # 2. Average the pixels inside each hex
+    common = fused.load("https://github.com/fusedio/udfs/tree/b6786d6/public/common/")
+    con = common.duckdb_connect()
+    df = con.sql(f"""
+        SELECT h3_latlng_to_cell(lat, lng, {h3_res})::UBIGINT AS hex,
+               AVG(elevation) AS elevation, COUNT(*) AS pixels
+        FROM pixels GROUP BY 1
+    """).df()
+
+    # 3. Partition, index, query
+    fused.h3.partition(df, out, hex_column="hex", h3_res=h3_res, file_res=5, overwrite=True)
+    fused.h3.index(out, overwrite=True)
+    return fused.h3.query(out, lat=40.7128, lng=-74.0060)
+```
+
+This turns the 52,633 pixels of the NYC elevation model into 8,047 res-9 hexes. For rasters too large to read at once, split the area into tiles, run the pixel-to-hex step on each tile with [`.map()`](/guide/working-with-udfs/fused-submit), write each tile to Parquet, then partition the folder with `fused.h3.sources.parquet()`.
 
 ### Example: ERA5 weather
 
@@ -150,7 +190,7 @@ Register the dataset so it can be queried:
 fused.h3.index("s3://my-bucket/hex/stations/")
 ```
 
-This starts a batch job and waits until it finishes. Re-running is incremental: only new or changed files are indexed.
+This starts a batch job and waits until it finishes. Re-running is incremental: only new or changed files are indexed. If you rewrite the dataset with different settings (for example a new `h3_res`), pass `overwrite=True` to rebuild the index.
 
 | Parameter | Default | Description |
 |---|---|---|
@@ -218,5 +258,5 @@ Pass at most one spatial selector (`cell`, `lat`/`lng`, `bbox`, or `hex_range`);
 
 ## See also
 
-- [Converting to H3](/guide/h3-analytics/converting): on-the-fly conversion and the older `run_ingest_raster_to_h3` ingestion
+- [Converting to H3](/guide/h3-analytics/converting): on-the-fly conversion, and the deprecated `run_ingest_raster_to_h3` ingestion
 - [H3 resolution guide](/guide/h3-analytics/resolution-guide): choosing `h3_res`
