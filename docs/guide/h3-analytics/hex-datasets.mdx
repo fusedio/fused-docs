@@ -1,0 +1,184 @@
+---
+id: hex-datasets
+title: Ingest, Index & Query H3 Datasets
+sidebar_label: Ingest, Index & Query
+sidebar_position: 2.5
+toc_min_heading_level: 2
+toc_max_heading_level: 3
+---
+
+# Ingest, Index & Query H3 Datasets
+
+`fused.h3` turns tabular data into a **hex dataset**: H3-sorted Parquet files you can query by point, bounding box, cell, time or partition value without scanning every file.
+
+The workflow has three steps:
+
+1. **Partition**: `fused.h3.partition()` ingests your data and writes the hex dataset.
+2. **Index**: `fused.h3.index()` registers the dataset with Fused.
+3. **Query**: `fused.h3.query()` reads rows back as a DataFrame.
+
+:::note
+`fused.h3.partition()` must run inside a [UDF](/guide/working-with-udfs/writing-udfs). `index()` and `query()` work anywhere the `fused` SDK is authenticated.
+:::
+
+---
+
+## Partition
+
+Write any DataFrame, GeoDataFrame, Arrow table, or record-batch iterator as a hex dataset:
+
+```python
+@fused.udf(cache_max_age=0)
+def udf(out: str = "s3://my-bucket/hex/stations/"):
+    import pandas as pd
+
+    df = pd.DataFrame({
+        "lat": [37.77, 37.78, 40.71, 40.72],
+        "lng": [-122.42, -122.41, -74.00, -74.01],
+        "date": pd.to_datetime(["2024-01-01", "2024-01-01", "2024-01-02", "2024-01-02"]).date,
+        "value": [1.0, 2.0, 3.0, 4.0],
+    })
+    fused.h3.partition(
+        df,
+        out,
+        point_column=("lat", "lng"),
+        h3_res=9,
+        file_res=3,
+        partition_by="date",
+        overwrite=True,
+    )
+```
+
+Each output row gets a `hex` column (H3 cell at `h3_res`) alongside every input column.
+
+### How rows get a hex
+
+Pass exactly one of `hex_column` or `point_column`:
+
+| Your data | Argument |
+|---|---|
+| Already has an integer H3 column | `hex_column="h3"`, with `h3_res` set to that column's resolution. The column is renamed to `hex`. |
+| Latitude / longitude columns | `point_column=("lat", "lng")` (latitude first) |
+| A geometry column (GeoDataFrame) | `point_column="geometry"`. Points use their location; other shapes use their centroid. Polygons are **not** polyfilled. |
+| A regular lat/lng raster that should cover every cell | `point_column=("lat", "lng"), fill="nearest"` |
+
+Coordinates must be in EPSG:4326.
+
+### Parameters
+
+| Parameter | Default | Description |
+|---|---|---|
+| `data` | | DataFrame, GeoDataFrame, `pyarrow.Table`, `RecordBatch`, or an iterator of record batches. Wrap file paths with `fused.h3.sources.parquet()`. |
+| `output` | | Output folder: `s3://...`, `fd://...`, or a local path. |
+| `hex_column` | `None` | Existing integer H3 column. |
+| `point_column` | `None` | `(lat, lng)` column names, or a geometry column name. |
+| `h3_res` | `7` | H3 resolution of the `hex` column. |
+| `file_res` | `1` | Coarser parent resolution that groups rows into files. Raise it for finer `h3_res` or regional data. Must be `<= h3_res`. |
+| `fill` | `None` | `"nearest"` fills every cell at `h3_res` from the nearest raster point. |
+| `partition_by` | `None` | Column(s) written as `key=value` folders, e.g. `"date"` or `["scenario", "date"]`. |
+| `sort_by` | `None` | Secondary sort inside each file, after `hex`. |
+| `overwrite` | `False` | Replace an existing output. |
+| `append` | `False` | Add or replace partitions in an existing output. Requires `partition_by` and the same settings as the original run. Run appends one at a time, not in parallel. |
+| `row_group_size` | `65_536` | Rows per Parquet row group. |
+| `compression` | `"zstd"` | Parquet compression codec. |
+| `compression_level` | `5` | Compression level. |
+
+### Reading from files
+
+Use `fused.h3.sources.parquet()` to stream a Parquet file, or every `.parquet` file under a folder:
+
+```python
+@fused.udf(cache_max_age=0)
+def udf(src: str = "s3://my-bucket/raw/stations/", out: str = "s3://my-bucket/hex/stations/"):
+    fused.h3.partition(
+        fused.h3.sources.parquet(src, columns=["lat", "lng", "value"]),
+        out,
+        point_column=("lat", "lng"),
+        h3_res=9,
+        file_res=3,
+        overwrite=True,
+    )
+```
+
+For large ingests that exceed the realtime timeout, run the UDF with `engine="large"`.
+
+---
+
+## Index
+
+Register the dataset so it can be queried:
+
+```python
+fused.h3.index("s3://my-bucket/hex/stations/")
+```
+
+This starts a batch job and waits until it finishes. Re-running is incremental: only new or changed files are indexed.
+
+| Parameter | Default | Description |
+|---|---|---|
+| `path` | | Dataset folder written by `partition()`. |
+| `hex_column` | `"hex"` | H3 cell column in every file. |
+| `time_column` | `None` | Column or `key=value` folder holding time. A single `date` partition column is used automatically. |
+| `partition_columns` | `None` | Folder levels `query()` can filter on. Defaults to the `partition_by` columns. |
+| `instance_type` | `"small"` | Instance type for the indexing job. |
+| `wait` | `True` | Wait for the job to finish. |
+| `overwrite` | `False` | Rebuild the index from scratch. |
+
+Inside a realtime UDF, `wait=True` stops waiting after ~90 seconds while the job keeps running. Check progress with `index_status()`:
+
+```python
+status = fused.h3.index_status("s3://my-bucket/hex/stations/")
+print(status["status"])  # "ready" once indexing is done
+```
+
+Other management helpers:
+
+- `fused.h3.indexed_files(path)`: iterate the indexed files.
+- `fused.h3.delete_index(path)`: remove the index (data files are kept).
+
+---
+
+## Query
+
+Read rows from an indexed dataset:
+
+```python
+path = "s3://my-bucket/hex/stations/"
+
+# By point
+df = fused.h3.query(path, lat=37.77, lng=-122.42)
+
+# By bounding box and time
+df = fused.h3.query(path, bbox=(-125, 30, -70, 45), time_min="2024-01-02", time_max="2024-01-02")
+
+# By partition value (dates match by overlap: "2024-01" matches every day in January)
+df = fused.h3.query(path, partition={"date": "2024-01"})
+```
+
+| Parameter | Description |
+|---|---|
+| `cell` | H3 cell id as a string. Matches the cell and its descendants. |
+| `lat`, `lng` | A point. |
+| `bbox` | `(min_lng, min_lat, max_lng, max_lat)`. |
+| `hex_range` | `(hex_min, hex_max)` inclusive range of H3 ids as strings. |
+| `time_min`, `time_max` | Inclusive ISO time bounds. Only for datasets with a time column. |
+| `partition` | `{column: value}` or `{column: [values]}`, e.g. `{"scenario": ["ssp245", "ssp585"]}`. |
+| `partition_range` | `{column: (min, max)}`; use `None` for an open end. |
+| `columns` | Columns to return. Defaults to all. |
+| `max_row_groups` | Cap on row groups read (up to 4096). |
+
+Pass at most one spatial selector (`cell`, `lat`/`lng`, `bbox`, or `hex_range`); none returns everything. Results are capped at 10,000 rows, so narrow the query rather than paging.
+
+| Error | Meaning |
+|---|---|
+| 404 | The path was never indexed. |
+| 409 | The index is still building. Poll `index_status()`. |
+| 400 | Invalid selectors, e.g. two spatial selectors, `lat` without `lng`, or time bounds on a dataset without time. |
+| 413 | Query matches too many row groups. Narrow it or raise `max_row_groups`. |
+
+---
+
+## See also
+
+- [Converting to H3](/guide/h3-analytics/converting): on-the-fly conversion and the older `run_ingest_raster_to_h3` ingestion
+- [H3 resolution guide](/guide/h3-analytics/resolution-guide): choosing `h3_res`
