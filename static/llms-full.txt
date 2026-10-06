@@ -10452,7 +10452,7 @@ First, make a copy of the Canvas. Then follow the Share Modal guide to publish i
 Path: examples/monthly-median-composite.mdx
 URL: https://docs.fused.io/examples/monthly-median-composite
 
-Cloud-free monthly composites are normally a batch job you kick off and come back to tomorrow. This canvas turns them into something you watch happen: every calendar month in your date range gets its own machine, all of them run at once, and the month grid fills in as each one publishes. Draw an AOI, pick a five-year range, press **Run pipeline** — the run in the screenshot below finished 37 monthly composites in **6.2 seconds of wall time** off **61.5 seconds of actual work**, because the work was spread across 37 machines instead of queued on one.
+Cloud-free monthly composites are usually an overnight batch job. This canvas runs every month in your date range on its own machine, all at once, and fills in a month grid as each one finishes. In the run shown below, 37 monthly composites finished in **6.2 seconds of wall time** from **61.5 seconds of total work**, spread across 37 machines.
 
 <ClickZoomImage src="/img/examples/monthly-median-composite.png" alt="Monthly median composite canvas — Request widget on the left feeding scene search and the monthly fan-out, with the month grid on the right showing a filmstrip of NDVI composites and the selected month enlarged" />
 
@@ -10460,25 +10460,30 @@ Cloud-free monthly composites are normally a batch job you kick off and come bac
 
 **Open the Canvas →**
 
-A 12-month range over a few square kilometres returns in a couple of seconds. Widen to five years once you've seen the shape of it — the wall-clock time barely moves, since each extra month is an extra machine rather than an extra turn in a queue.
+A 12-month range over a few square kilometres returns in a couple of seconds. Widening to five years barely changes the wall time, since each extra month gets its own machine.
 
 ## 1 · Request
 
-The widget is a MapLibre map with a **Draw box** tool; if you don't draw anything, the pipeline uses the current map view. Alongside it: a start and end date, an **Output** toggle (`NDVI median` or `RGB median`), a max cloud-cover percentage, and `Scenes / month` — leave that at `0` to composite every scene in the month, or set a small number to sample evenly across it.
+The widget is a MapLibre map with a **Draw box** tool. If you don't draw a box, the pipeline uses the current map view. The other inputs are:
 
-**Run pipeline** packs all of that into a single JSON `pipeline_request` parameter and broadcasts it to the three nodes below, along with a `run_id` timestamp so a re-run is never mistaken for the previous one.
+- **Start** and **end date**
+- **Output**: `NDVI median` or `RGB median`
+- **Max cloud cover** (%)
+- **Scenes / month**: `0` composites every scene in the month; a small number samples that many evenly across it.
+
+**Run pipeline** sends these as one JSON `pipeline_request` parameter to the three nodes below, with a `run_id` timestamp so each run is distinct from the last.
 
 ## 2 · Scene search
 
-This UDF queries Fused's partitioned Sentinel-2 L2A STAC index (`s3://fused-asset/stac/sentinel-2-l2a/partitioned_2015_2025/`) for scenes whose footprint intersects your AOI, then filters on the date range and the cloud-cover limit and drops duplicate product URIs.
+This UDF queries Fused's partitioned Sentinel-2 L2A STAC index (`s3://fused-asset/stac/sentinel-2-l2a/partitioned_2015_2025/`) for scenes that intersect your AOI, filters by date range and cloud cover, and drops duplicate products.
 
-Rather than resolving each STAC item's assets, it derives the COG URLs directly from the product URI — mission, date, and MGRS tile parse straight into a `sentinel-cogs.s3.us-west-2.amazonaws.com` path. The output is a flat `(scene_id, datetime, band, url, cloud_cover)` table: Red, NIR and SCL for NDVI mode, plus Green and Blue for RGB.
+It builds COG URLs directly from each product URI (mission, date and MGRS tile map to a `sentinel-cogs.s3.us-west-2.amazonaws.com` path) instead of resolving STAC assets. The output is a `(scene_id, datetime, band, url, cloud_cover)` table with Red, NIR and SCL for NDVI, plus Green and Blue for RGB.
 
 ## 3 · Monthly fan-out
 
-The interesting node. Before any pixels move, it builds a plan from the request alone: it expands the date range into `YYYY-MM` labels, computes the output raster shape (10 m/px, capped at 640 px on the long edge), and hashes the whole request spec into a 16-character key. That key is the object-storage prefix — `fd://monthly_median/<key>` — which means the same AOI, dates and settings always resolve to the same location.
+This node plans the run from the request alone. It lists the `YYYY-MM` months in the date range, sets the output size (10 m/px, at most 640 px on the long edge), and hashes the request into a 16-character key. Results are stored under `fd://monthly_median/<key>`, so the same request always maps to the same location.
 
-Scenes are grouped by month, then each month becomes one argument dict and the whole list is handed to `.map()`:
+Scenes are grouped by month, and each month becomes one call to `.map()`:
 
 ```python
 # doctest: skip
@@ -10492,17 +10497,22 @@ result = month_udf.map(
 ).df()
 ```
 
-`max_workers=len(args)` with `worker_concurrency=1` is what flattens the wall clock: 37 months means 37 machines, each doing one month's worth of work. On its own machine, each month reads its scenes with windowed rasterio reads across a 12-thread pool, masks clouds using the Sentinel-2 SCL classification band, computes NDVI as `(NIR − Red) / (NIR + Red)`, and takes a `nanmedian` across the stack — so a pixel that was clouded in half the month's passes still gets a value from the other half.
+Setting `max_workers=len(args)` with `worker_concurrency=1` gives each month its own machine, so 37 months run on 37 machines in parallel. Each machine:
 
-Each machine then publishes three small objects for its month and exits: a colorized PNG for display, a second grayscale PNG holding the quantized NDVI values, and a JSON status blob with scene count, valid-pixel coverage, elapsed seconds, and which worker ran it. Nothing is returned through the pipeline — the results go to object storage, which is what lets the view read them independently.
+1. Reads the month's scenes with windowed rasterio reads on a 12-thread pool.
+2. Masks clouds using the Sentinel-2 SCL band.
+3. Computes NDVI as `(NIR − Red) / (NIR + Red)`.
+4. Takes a `nanmedian` across the scenes, so a pixel clouded in some passes still gets a value from the others.
+
+It then writes three objects to storage: a colorized PNG for display, a grayscale PNG with the quantized NDVI values, and a JSON status file (scene count, valid-pixel coverage, run time, worker). Nothing is returned through the pipeline; the view reads results straight from storage.
 
 ## 4 · Month grid
 
-The output node recomputes the same plan from the same request, so it knows every month's storage path before a single composite exists. It signs a URL for each one and hands the browser a self-contained page, which then polls object storage once a second and swaps each card from a "queued" placeholder to the real image the moment its machine finishes. That's why the grid fills in progressively rather than appearing all at once.
+The output node recomputes the same plan, so it knows every month's storage path before any composite exists. It signs a URL for each month and returns a page that polls storage once a second, replacing each "queued" card with its image as soon as that month finishes.
 
-Click any month to enlarge it; hover the enlarged image to read the median NDVI at that pixel, decoded client-side from the values PNG. The footer keeps a running tally, and when the last month lands it reports the wall time against the summed worker time — the number quoted at the top of this page.
+Click a month to enlarge it, and hover over the image to read the median NDVI at that pixel. When the last month lands, the footer shows wall time against total worker time.
 
-This node sets `cache_max_age="0s"` deliberately. The page embeds signed URLs that expire an hour after signing, so a cached copy would eventually hand you a grid of broken images.
+This node uses `cache_max_age="0s"` on purpose. The signed URLs expire an hour after signing, so a cached page would eventually show broken images.
 
 ## About the data
 
@@ -10510,16 +10520,16 @@ This node sets `cache_max_age="0s"` deliberately. The page embeds signed URLs th
 |---|---|
 | Imagery | Sentinel-2 L2A COGs, AWS Open Data (anonymous) |
 | Scene catalog | Fused STAC index, partitioned 2015–2025 |
-| Bands | Red (B04), NIR (B08), SCL — plus Green (B03) and Blue (B02) in RGB mode |
+| Bands | Red (B04), NIR (B08), SCL, plus Green (B03) and Blue (B02) in RGB mode |
 | Cloud masking | SCL classes 0, 1, 3, 7–11 |
 | NDVI display range | −0.2 (built-up / bare soil) to 0.8 (dense vegetation) |
 
 ## See also
 
-- **Sentinel-2 Composite** — a single composite of any three bands over the current map view, computed in parallel blocks and served as tiles.
-- **NDVI Time Series for Farm Fields** — the same Sentinel-2 index sampled per field centroid to produce time-series curves, rather than monthly rasters.
-- **AI Change Detection** — year-over-year change from embeddings instead of a composited spectral index.
-- **Parallel execution with fused.submit** — the fan-out primitive behind `.map()`.
+- **Sentinel-2 Composite**: a single composite of any three bands over the current map view, served as tiles.
+- **NDVI Time Series for Farm Fields**: the same Sentinel-2 index sampled per field as time series instead of monthly rasters.
+- **AI Change Detection**: year-over-year change from embeddings instead of a spectral index.
+- **Parallel execution with fused.submit**: the fan-out primitive behind `.map()`.
 
 ================================================================================
 
@@ -12630,7 +12640,7 @@ Further reading:
 Path: examples/sentinel-2-composite.mdx
 URL: https://docs.fused.io/examples/sentinel-2-composite
 
-Pan the map to any place on Earth, pick three bands and a date range, and this canvas builds a cloud-reduced 10 m Sentinel-2 composite of exactly what you're looking at. It splits the view into 1024 px blocks and computes up to 50 of them at once on separate machines. Each block shows up on the map when it finishes and is saved as a Cloud-Optimized GeoTIFF (COG). After that, panning and zooming only stream tiles from those saved files. Nothing is recomputed.
+Pick three bands and a date range, and this canvas builds a 10 m Sentinel-2 composite of the current map view. The view is split into blocks that run on up to 50 machines at once. Each finished block is saved as a COG, so panning and zooming afterwards only stream tiles.
 
 <ClickZoomImage src="/img/examples/sentinel-2-composite.png" alt="Sentinel-2 composite canvas: the dashboard with band, date and quality controls next to a true-colour median composite over New York City and the scene table, above the s2_scenes, s2_composite_block and s2_composite_tiles data-processing nodes" />
 
@@ -12638,54 +12648,41 @@ Pan the map to any place on Earth, pick three bands and a date range, and this c
 
 **Open the Canvas →**
 
-The dashboard runs as soon as it loads, using the area in view. Zoom in to a city before you widen the view: a few dozen blocks finish in seconds. A view that's already been computed with the same settings comes straight back from storage.
+The dashboard runs on load using the area in view. Start zoomed in on a city; a view already computed with the same settings loads straight from storage.
 
 ## 1 · Dashboard
 
-The dashboard is a MapLibre map with a control panel next to it:
+A MapLibre map with a control panel:
 
-- **Area**: the current map view. **Run composite** reads the view's bounding box, so pan or zoom and run again to move the composite.
-- **Bands**: any three of `red`, `green`, `blue`, `nir`, `rededge1–3`, `nir08`, `swir16`, `swir22`, mapped to R, G and B. Presets switch between **true colour** (`red,green,blue`), **false colour** (`nir,red,green`) and **SWIR** (`swir22,nir,red`).
-- **Dates** and **Quality**: a start and end date, a max cloud-cover percentage, the max scenes per block, and the **Composite** method: `median`, `mean`, `min`, `max`, or `first` (the earliest valid pixel).
+- **Bands**: any three Sentinel-2 bands, with presets for true colour, false colour (`nir,red,green`) and SWIR (`swir22,nir,red`).
+- **Dates** and **Quality**: date range, max cloud cover, max scenes per block, and the composite method (`median`, `mean`, `min`, `max`, `first`).
+- **Run composite** uses the current map view. Pan or zoom, then run again.
 
-Below the map, a table lists every matching scene with its date, MGRS tile, cloud cover and no-data percentage. **Footprints** draws the scene outlines on the map.
+A table below the map lists the matching scenes; **Footprints** draws their outlines.
 
 ## 2 · Scene search
 
-`s2_scenes` searches the tge-labs Sentinel-2 Collection 1 L2A STAC-GeoParquet mirror on Source Cooperative. It has one Parquet file per year, so DuckDB reads only the years in your date range over HTTP. Each scene's footprint is checked against your bounding box, scenes over the cloud-cover limit are dropped, and the rest are sorted with the least cloudy first. The UDF unpacks each scene's STAC `assets` into one `href_<band>` column per band, so later steps get COG URLs directly instead of making a second STAC request.
-
-You can call it on its own as an HTTP endpoint:
+`s2_scenes` queries the tge-labs Sentinel-2 L2A STAC-GeoParquet mirror with DuckDB, filtering by bounding box, date range and cloud cover. It returns one row per scene with a `href_<band>` COG URL for each band.
 
 ```bash
 curl "https://udf.ai/fc_fused/Sentinel2_Composite/s2_scenes/run/file?format=csv&aoi=-74.05,40.68,-73.90,40.82&date_start=2025-06-01&date_end=2025-09-30&max_cloud=10&limit=5"
 ```
 
-The result has one row per scene: `id`, `datetime`, `tile`, `cloud_cover`, `nodata_pct`, `epsg`, the `href_*` band URLs, and the footprint `geometry`.
-
 ## 3 · Composite blocks
 
-The dashboard plans the work in the browser. It divides the view into zoom-12 web-map tiles, each rendered at 1024 px (about 10 m per pixel at mid-latitudes). For each block it picks the least-cloudy scenes per MGRS tile, up to **Max scenes per block**. It then hashes the bands, dates and settings into a job ID. Blocks already saved under `fd://s2_composite_blocks/<job>/` are skipped. The rest are sent to `s2_composite_block` as up to 50 parallel requests, one block per request.
+The dashboard splits the view into zoom-12 tiles of 1024 px each and sends every block to `s2_composite_block`, up to 50 in parallel. Each call loads its scenes onto the block's grid with `odc.stac.load`, reduces over time with xarray, and writes the result as a COG:
 
-Each call to `s2_composite_block` does three things:
+```python
+# doctest: skip
+da = ds.to_array("band").where(lambda v: v > 0)
+comp = getattr(da, method)("time", skipna=True)   # median / mean / min / max
+```
 
-1. Turns the scene list into `pystac` Items and loads every scene and band onto the block's Web Mercator grid with `odc.stac.load`. odc-stac picks the right COG overview, reprojects across UTM zones and reads in parallel.
-2. Masks zero values as no-data and reduces over time with xarray:
-
-   ```python
-   # doctest: skip
-   da = ds.to_array("band").where(lambda v: v > 0)
-   comp = getattr(da, method)("time", skipna=True)   # median / mean / min / max
-   ```
-
-3. Scales reflectance from 1000–3000 to 8-bit RGB, adds an alpha band where any input had data, and writes the block as a COG to object storage.
-
-Since every block is saved under a key derived from its settings, a block is computed only once. Running the same settings again, or pressing **Run composite** after panning back, skips the blocks that already exist.
+Blocks are stored under `fd://s2_composite_blocks/<job>/`, where the job ID is a hash of the settings. Re-running the same settings skips blocks that already exist.
 
 ## 4 · Tile server
 
-`s2_composite_tiles` turns the stored blocks into an XYZ tile layer. For each requested tile it finds the block COGs that overlap it and mosaics them with rio-tiler. It reads from the matching overview, so zooming out stays fast. It never reads Sentinel-2 imagery itself, only the saved blocks. A `v` parameter carries the number of finished blocks, so tiles refresh while a run is still writing.
-
-Pass `job=all` to serve every composite in the bucket as a single layer, or a job ID to serve just one:
+`s2_composite_tiles` serves the stored blocks as XYZ tiles with rio-tiler. It only reads the saved COGs, never the source imagery. Pass `job=all` for every stored composite, or a job ID for one:
 
 ```bash
 curl -o tile.png "https://udf.ai/fc_fused/Sentinel2_Composite/s2_composite_tiles/run/tiles/12/1206/1539?dtype_out_raster=png&job=all"
@@ -12695,18 +12692,16 @@ curl -o tile.png "https://udf.ai/fc_fused/Sentinel2_Composite/s2_composite_tiles
 
 | Property | Value |
 |---|---|
-| Imagery | Sentinel-2 Collection 1 L2A COGs, Element 84 Earth Search on AWS Open Data (anonymous) |
-| Scene catalog | tge-labs `s2-stac-geoparquet` on Source Cooperative, one Parquet file per year |
-| Bands | B02–B08, B8A, B11, B12 (`blue` … `swir22`), any three at a time |
-| Resolution | 10 m composite on 1024 px zoom-12 blocks (20 m bands are resampled bilinearly) |
-| Output | RGBA COGs under `fd://s2_composite_blocks/<job>/`, served as XYZ tiles |
+| Imagery | Sentinel-2 Collection 1 L2A COGs, AWS Open Data (anonymous) |
+| Scene catalog | tge-labs `s2-stac-geoparquet` on Source Cooperative |
+| Bands | `blue` … `swir22` (B02–B12), any three at a time |
+| Output | 10 m RGBA COGs, served as XYZ tiles |
 
 ## See also
 
-- **Monthly Median Composite**: one NDVI or RGB composite per calendar month, with each month on its own machine.
-- **NDVI Time Series for Farm Fields**: Sentinel-2 sampled per field to produce time-series curves instead of a single mosaic.
+- **Monthly Median Composite**: one composite per calendar month, each on its own machine.
+- **NDVI Time Series for Farm Fields**: Sentinel-2 sampled per field as time series.
 - **STAC catalogs guide**: how Fused reads Sentinel-2 scenes through STAC.
-- **Running UDFs**: calling UDFs as HTTP endpoints and tile servers, like the dashboard does here.
 
 ================================================================================
 
