@@ -28,7 +28,14 @@ def fix_code_tags(text: str) -> str:
     griffe2md templates hardcode <code> HTML tags for parameter/return types.
     Backticks render identically but are far more readable in raw markdown.
     """
-    return re.sub(r'<code>(.*?)</code>', r'`\1`', text, flags=re.DOTALL)
+    def _clean(m):
+        # Markdown inside a code span renders literally: drop cross-reference links
+        # ([str](#str) -> str) and the escapes on brackets (\[ -> [).
+        inner = re.sub(r'\[([^\[\]]*)\]\(#[^)]*\)', r'\1', m.group(1))
+        inner = inner.replace('\\[', '[').replace('\\]', ']')
+        return f'`{inner}`'
+
+    return re.sub(r'<code>(.*?)</code>', _clean, text, flags=re.DOTALL)
 
 
 def escape_mdx_braces(text: str) -> str:
