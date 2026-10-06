@@ -184,8 +184,18 @@ const sidebars: SidebarsConfig = {
         "examples/poi-site-selection-dashboard",
         "examples/seismic-hazard-mapping",
         "examples/ai-change-detection",
-        "examples/temporal-pixel-analysis",
+      ],
+    },
+
+    // Sentinel-2 Data
+    {
+      type: "category",
+      label: "Sentinel-2 Data",
+      collapsible: false,
+      items: [
+        "examples/sentinel-2-composite",
         "examples/monthly-median-composite",
+        "examples/temporal-pixel-analysis",
       ],
     },
 
