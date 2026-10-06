@@ -1,0 +1,86 @@
+---
+id: sentinel-2-composite
+title: Sentinel-2 Composites for Any Map View
+sidebar_label: Sentinel-2 Composite
+sidebar_position: 20
+---
+
+Pan the map to any place on Earth, pick three bands and a date range, and this canvas builds a cloud-reduced 10 m Sentinel-2 composite of exactly what you're looking at. It splits the view into 1024 px blocks and computes up to 50 of them at once on separate machines. Each block shows up on the map when it finishes and is saved as a Cloud-Optimized GeoTIFF (COG). After that, panning and zooming only stream tiles from those saved files. Nothing is recomputed.
+
+<ClickZoomImage src="/img/examples/sentinel-2-composite.png" alt="Sentinel-2 composite canvas: the dashboard with band, date and quality controls next to a true-colour median composite over New York City and the scene table, above the s2_scenes, s2_composite_block and s2_composite_tiles data-processing nodes" />
+
+## Try it out
+
+[**Open the Canvas →**](https://www.fused.io/canvas/fc_fused/Sentinel2_Composite)
+
+:::tip Start small
+The dashboard runs as soon as it loads, using the area in view. Zoom in to a city before you widen the view: a few dozen blocks finish in seconds. A view that's already been computed with the same settings comes straight back from storage.
+:::
+
+## 1 · Dashboard
+
+The dashboard is a MapLibre map with a control panel next to it:
+
+- **Area**: the current map view. **Run composite** reads the view's bounding box, so pan or zoom and run again to move the composite.
+- **Bands**: any three of `red`, `green`, `blue`, `nir`, `rededge1–3`, `nir08`, `swir16`, `swir22`, mapped to R, G and B. Presets switch between **true colour** (`red,green,blue`), **false colour** (`nir,red,green`) and **SWIR** (`swir22,nir,red`).
+- **Dates** and **Quality**: a start and end date, a max cloud-cover percentage, the max scenes per block, and the **Composite** method: `median`, `mean`, `min`, `max`, or `first` (the earliest valid pixel).
+
+Below the map, a table lists every matching scene with its date, MGRS tile, cloud cover and no-data percentage. **Footprints** draws the scene outlines on the map.
+
+## 2 · Scene search
+
+`s2_scenes` searches the [tge-labs Sentinel-2 Collection 1 L2A STAC-GeoParquet mirror](https://source.coop/tge-labs/s2-stac-geoparquet) on Source Cooperative. It has one Parquet file per year, so DuckDB reads only the years in your date range over HTTP. Each scene's footprint is checked against your bounding box, scenes over the cloud-cover limit are dropped, and the rest are sorted with the least cloudy first. The UDF unpacks each scene's STAC `assets` into one `href_<band>` column per band, so later steps get COG URLs directly instead of making a second STAC request.
+
+You can call it on its own as an HTTP endpoint:
+
+```bash
+curl "https://udf.ai/fc_fused/Sentinel2_Composite/s2_scenes/run/file?format=csv&aoi=-74.05,40.68,-73.90,40.82&date_start=2025-06-01&date_end=2025-09-30&max_cloud=10&limit=5"
+```
+
+The result has one row per scene: `id`, `datetime`, `tile`, `cloud_cover`, `nodata_pct`, `epsg`, the `href_*` band URLs, and the footprint `geometry`.
+
+## 3 · Composite blocks
+
+The dashboard plans the work in the browser. It divides the view into zoom-12 web-map tiles, each rendered at 1024 px (about 10 m per pixel at mid-latitudes). For each block it picks the least-cloudy scenes per MGRS tile, up to **Max scenes per block**. It then hashes the bands, dates and settings into a job ID. Blocks already saved under `fd://s2_composite_blocks/<job>/` are skipped. The rest are sent to `s2_composite_block` as up to 50 parallel requests, one block per request.
+
+Each call to `s2_composite_block` does three things:
+
+1. Turns the scene list into `pystac` Items and loads every scene and band onto the block's Web Mercator grid with [`odc.stac.load`](https://odc-stac.readthedocs.io/). odc-stac picks the right COG overview, reprojects across UTM zones and reads in parallel.
+2. Masks zero values as no-data and reduces over time with xarray:
+
+   ```python
+   # doctest: skip
+   da = ds.to_array("band").where(lambda v: v > 0)
+   comp = getattr(da, method)("time", skipna=True)   # median / mean / min / max
+   ```
+
+3. Scales reflectance from 1000–3000 to 8-bit RGB, adds an alpha band where any input had data, and writes the block as a COG to object storage.
+
+Since every block is saved under a key derived from its settings, a block is computed only once. Running the same settings again, or pressing **Run composite** after panning back, skips the blocks that already exist.
+
+## 4 · Tile server
+
+`s2_composite_tiles` turns the stored blocks into an XYZ tile layer. For each requested tile it finds the block COGs that overlap it and mosaics them with [rio-tiler](https://cogeotiff.github.io/rio-tiler/). It reads from the matching overview, so zooming out stays fast. It never reads Sentinel-2 imagery itself, only the saved blocks. A `v` parameter carries the number of finished blocks, so tiles refresh while a run is still writing.
+
+Pass `job=all` to serve every composite in the bucket as a single layer, or a job ID to serve just one:
+
+```bash
+curl -o tile.png "https://udf.ai/fc_fused/Sentinel2_Composite/s2_composite_tiles/run/tiles/12/1206/1539?dtype_out_raster=png&job=all"
+```
+
+## About the data
+
+| Property | Value |
+|---|---|
+| Imagery | Sentinel-2 Collection 1 L2A COGs, Element 84 Earth Search on AWS Open Data (anonymous) |
+| Scene catalog | tge-labs `s2-stac-geoparquet` on Source Cooperative, one Parquet file per year |
+| Bands | B02–B08, B8A, B11, B12 (`blue` … `swir22`), any three at a time |
+| Resolution | 10 m composite on 1024 px zoom-12 blocks (20 m bands are resampled bilinearly) |
+| Output | RGBA COGs under `fd://s2_composite_blocks/<job>/`, served as XYZ tiles |
+
+## See also
+
+- [**Monthly Median Composite**](/examples/monthly-median-composite): one NDVI or RGB composite per calendar month, with each month on its own machine.
+- [**NDVI Time Series for Farm Fields**](/examples/temporal-pixel-analysis): Sentinel-2 sampled per field to produce time-series curves instead of a single mosaic.
+- [**STAC catalogs guide**](/guide/data-input-outputs/import-connection/geospatial/stac): how Fused reads Sentinel-2 scenes through STAC.
+- [**Running UDFs**](/guide/working-with-udfs/fused-run): calling UDFs as HTTP endpoints and tile servers, like the dashboard does here.
