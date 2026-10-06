@@ -100,7 +100,45 @@ def udf(src: str = "s3://my-bucket/raw/stations/", out: str = "s3://my-bucket/he
     )
 ```
 
-For large ingests that exceed the realtime timeout, run the UDF with `engine="large"`.
+### Example: ERA5 weather
+
+`fused.h3.sources.era5()` reads a month of [ERA5](https://www.ecmwf.int/en/forecasts/dataset/ecmwf-reanalysis-v5) weather (0.25° grid) as lat/lng rows. Combine it with `fill="nearest"` so every H3 cell in the region gets the value of its nearest grid point:
+
+```python
+@fused.udf(cache_max_age=0)
+def udf(out: str = "fd://era5/bay_area/"):
+    # San Francisco Bay Area, first 3 days of January 2024
+    bbox = (-123.5, 36.5, -121.0, 38.5)  # (min_lng, min_lat, max_lng, max_lat)
+    batches = fused.h3.sources.era5(
+        2024, 1, outputs=["t2m_mean", "tp"], days=[1, 2, 3], bbox=bbox
+    )
+    fused.h3.partition(
+        batches,
+        out,
+        point_column=("lat", "lng"),
+        fill="nearest",
+        h3_res=6,
+        file_res=2,
+        partition_by="date",
+        overwrite=True,
+    )
+    fused.h3.index(out)
+    return fused.h3.query(out, lat=37.77, lng=-122.42)
+```
+
+This returns one row per day for the cell containing San Francisco, with `t2m_mean` (mean 2 m temperature, Kelvin) and `tp` (total precipitation, mm).
+
+| Parameter | Default | Description |
+|---|---|---|
+| `year`, `month` | | Month to read. |
+| `outputs` | | Variables to read. Daily: `t2m_min`, `t2m_max`, `t2m_mean`, `tp`, `ssrd`, and more. Hourly: `t2m`, `tp`, and more. |
+| `cadence` | `"daily"` | `"daily"` or `"hourly"`. For hourly, pass `partition_by="date"` to `partition()`. |
+| `days` | `None` | Days of the month to read. Defaults to every day. |
+| `bbox` | `None` | `(min_lng, min_lat, max_lng, max_lat)`. Defaults to the whole globe. Must span at least two grid points on each axis. |
+
+With `fill="nearest"`, cast any integer measurement columns to float: non-float columns are treated as keys (like `date`), not values.
+
+For large ingests that exceed the realtime timeout (many months, global extent), run the UDF with `engine="large"`.
 
 ---
 
