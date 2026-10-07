@@ -12640,25 +12640,26 @@ Further reading:
 Path: examples/sentinel-2-composite.mdx
 URL: https://docs.fused.io/examples/sentinel-2-composite
 
-Pick three bands and a date range, and this canvas builds a 10 m Sentinel-2 composite of the current map view. The view is split into blocks that run on up to 50 machines at once. Each finished block is saved as a COG, so panning and zooming afterwards only stream tiles.
+Pick three bands and a date range, and this canvas builds a 10 m Sentinel-2 composite of the current map view. The view is split into blocks that run on up to 200 machines at once, then merged into one Cloud-Optimized GeoTIFF you can download.
 
-<ClickZoomImage src="/img/examples/sentinel-2-composite.png" alt="Sentinel-2 composite canvas: the dashboard with band, date and quality controls next to a true-colour median composite over New York City and the scene table, above the s2_scenes, s2_composite_block and s2_composite_tiles data-processing nodes" />
+<ClickZoomImage src="/img/examples/sentinel-2-composite.png" alt="Sentinel-2 composite canvas: the dashboard with band, date and quality controls next to a true-colour median composite over New York City and the scene table, above the data-processing nodes" />
 
 ## Try it out
 
 **Open the Canvas →**
 
-The dashboard runs on load using the area in view. Start zoomed in on a city; a view already computed with the same settings loads straight from storage.
+On load, the dashboard composites a small box over New York, the same default area `s2_scenes` searches. An area already computed with the same settings loads straight from storage.
 
 ## 1 · Dashboard
 
 A MapLibre map with a control panel:
 
+- **Area**: a box you drag on the map after clicking **Draw box**, or the current map view.
 - **Bands**: any three Sentinel-2 bands, with presets for true colour, false colour (`nir,red,green`) and SWIR (`swir22,nir,red`).
-- **Dates** and **Quality**: date range, max cloud cover, max scenes per block, and the composite method (`median`, `mean`, `min`, `max`, `first`).
-- **Run composite** uses the current map view. Pan or zoom, then run again.
+- **Dates** and **Settings**: date range, max cloud cover, max images per block, and the composite method (`median`, `mean`, `min`, `max`, `first`).
+- **Machines**: how many blocks run in parallel, 50 by default and up to 200. A run never uses more machines than it has blocks to compute.
 
-A table below the map lists the matching scenes; **Footprints** draws their outlines.
+When the run finishes, **Download COG** appears with the file size and the file's Fused path. The layer chip on the map sets the opacity, **Scenes** opens the table of matching scenes, and **Footprints** draws their outlines.
 
 ## 2 · Scene search
 
@@ -12670,7 +12671,7 @@ curl "https://udf.ai/fc_fused/Sentinel2_Composite/s2_scenes/run/file?format=csv&
 
 ## 3 · Composite blocks
 
-The dashboard splits the view into zoom-12 tiles of 1024 px each and sends every block to `s2_composite_block`, up to 50 in parallel. Each call loads its scenes onto the block's grid with `odc.stac.load`, reduces over time with xarray, and writes the result as a COG:
+The dashboard splits the view into zoom-12 tiles and, for each one, picks the least cloudy acquisition days whose footprints cover it. Every block goes to `s2_composite` with `mode=block`, which loads the scenes onto a 1024 px grid with `odc.stac.load`, one time slice per day, and reduces over time with xarray:
 
 ```python
 # doctest: skip
@@ -12678,15 +12679,13 @@ da = ds.to_array("band").where(lambda v: v > 0)
 comp = getattr(da, method)("time", skipna=True)   # median / mean / min / max
 ```
 
-Blocks are stored under `fd://s2_composite_blocks/<job>/`, where the job ID is a hash of the settings. Re-running the same settings skips blocks that already exist.
+Each block is stored as a COG under `fd://s2_composite_blocks/<job>/`, where the job ID is a hash of the settings, and a preview goes back to the map. Re-running the same settings skips blocks that already exist.
 
-## 4 · Tile server
+## 4 · Download and tiles
 
-`s2_composite_tiles` serves the stored blocks as XYZ tiles with rio-tiler. It only reads the saved COGs, never the source imagery. Pass `job=all` for every stored composite, or a job ID for one:
+After the last block, the dashboard calls `s2_composite` with `mode=mosaic`. It merges the blocks in the view into one COG: EPSG:3857, JPEG-compressed, with an internal mask and overviews. The file is built once per set of blocks and reused after that. The download link is signed for one hour.
 
-```bash
-curl -o tile.png "https://udf.ai/fc_fused/Sentinel2_Composite/s2_composite_tiles/run/tiles/12/1206/1539?dtype_out_raster=png&job=all"
-```
+The map then switches to `mode=tile`, which serves XYZ tiles from that single COG with rio-tiler. Every zoom level reads one file's overviews instead of many blocks.
 
 ## About the data
 
@@ -12695,7 +12694,7 @@ curl -o tile.png "https://udf.ai/fc_fused/Sentinel2_Composite/s2_composite_tiles
 | Imagery | Sentinel-2 Collection 1 L2A COGs, AWS Open Data (anonymous) |
 | Scene catalog | tge-labs `s2-stac-geoparquet` on Source Cooperative |
 | Bands | `blue` … `swir22` (B02–B12), any three at a time |
-| Output | 10 m RGBA COGs, served as XYZ tiles |
+| Output | One COG (.tif) per view, EPSG:3857 at about 10 m, also served as XYZ tiles |
 
 ## See also
 
@@ -17331,10 +17330,11 @@ further aggregating. For overview files, it will then create aggregated data.
   each file of the Parquet dataset (ignored when `max_rows_per_chunk`
   is specified). By default will be inferred based on the target
   resolution `res`.
-- **overview_res** (`list of int`) – The H3 resolutions for which to create
-  overview files. By default, overviews are created for resolutions 3
-  to 7 (or capped at a lower value if the `res` of the output dataset
-  is lower).
+- **overview_res** (`list of int`) – The H3 resolutions for which to
+  create overview files. Overviews are opt-in: by default (`None`),
+  or when given an empty list, no overview files are created. Pass a
+  list of resolutions, each lower than the output dataset's `res`,
+  to build overviews at those resolutions.
 - **overview_chunk_res** (`int or list of int`) – The H3 resolution(s) to chunk
   the row groups within each overview file of the Parquet dataset. By
   default, each overview file is chunked at the overview resolution
@@ -18964,6 +18964,25 @@ Path: python-sdk/changelog.mdx
 URL: https://docs.fused.io/python-sdk/changelog
 
 # Changelog
+
+## v2.9.1 (2026-10-06)
+
+**Fused map widget sidebar**
+
+The experimental `fused-map` widget sidebar now lets you add, duplicate, delete, and rename layers, pick palettes and color steps, and save edits straight into the widget config, with full undo/redo in the code editor. The map also detects the layer type from your UDF result, so you can show a map for any UDF, including single-image rasters.
+
+**Improvements**
+
+- Widgets: drop a UDF onto a `fused-map` node in the Canvas to add it as a layer
+- Widgets: `fused-map` adds a reset-view button, a basemap that follows your theme, automatic retry for failed tiles, and a per-layer bounds lock that runs the UDF once instead of on every pan or zoom
+- UDFs can now access the share token they were called with, and the new `fused.api.shared_udf_url` builds shared UDF links
+- AI models updated to Claude 5.5, GPT-6, Gemini 3.8, Kimi K3, and GLM 5.3
+
+**Bug fixes**
+
+- Fixed: `fused-map` color ramps no longer draw black past the palette, and categorical colors stay consistent across tiles
+- Fixed: `fused-map` share links failing with a 422 error on whole-run layers
+- Fixed: DuckDB results showing `<16 bytes>`
 
 ## v2.9.0 (2026-09-30)
 
@@ -29722,5 +29741,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-10-06
+Generated automatically from Fused documentation. Last updated: 2026-10-07
 Total sections: 7
