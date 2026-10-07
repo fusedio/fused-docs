@@ -5,7 +5,7 @@ sidebar_label: Sentinel-2 Composite
 sidebar_position: 20
 ---
 
-Pick three bands and a date range, and this canvas builds a 10 m Sentinel-2 composite of the current map view. The view is split into blocks that run on up to 200 machines at once, then merged into one Cloud-Optimized GeoTIFF you can download.
+Satellite images are often cloudy. A composite combines several passes over the same place into one clear image. Draw a box on the map, pick a date range, and this canvas builds a 10 m Sentinel-2 composite you can download as a GeoTIFF.
 
 <ClickZoomImage src="/img/examples/sentinel-2-composite.png" alt="Sentinel-2 composite canvas: the dashboard with band, date and quality controls next to a true-colour median composite over New York City and the scene table, above the data-processing nodes" />
 
@@ -13,55 +13,42 @@ Pick three bands and a date range, and this canvas builds a 10 m Sentinel-2 comp
 
 [**Open the Canvas →**](https://www.fused.io/canvas/fc_fused/Sentinel2_Composite)
 
-:::tip Start small
-On load, the dashboard shows a stored composite of a small box over New York, the same default area `s2_scenes` searches. Click **Run composite** to build one for your own area. Blocks already computed with the same settings load straight from storage.
+:::tip
+The dashboard opens on a stored composite of New York. Draw your own box and click **Run composite** to make a new one.
 :::
 
 ## 1 · Dashboard
 
-A MapLibre map with a control panel:
+- **Area**: click **Draw box** and drag on the map, or use the current view.
+- **Bands**: any three Sentinel-2 bands, with presets for true colour, false colour and SWIR.
+- **Dates** and **Settings**: the date range, how cloudy an image may be, and how to combine them (`median` by default).
+- **Machines**: how many parts of the area run at the same time, up to 200.
 
-- **Area**: a box you drag on the map after clicking **Draw box**, or the current map view.
-- **Bands**: any three Sentinel-2 bands, with presets for true colour, false colour (`nir,red,green`) and SWIR (`swir22,nir,red`).
-- **Dates** and **Settings**: date range, max cloud cover, max images per block, and the composite method (`median`, `mean`, `min`, `max`, `first`).
-- **Machines**: how many blocks run in parallel, 50 by default and up to 200. A run never uses more machines than it has blocks to compute.
+When the run finishes, click **Download COG** to save the image.
 
-When the run finishes, **Download COG** appears with the file size and the file's Fused path. The layer chip on the map sets the opacity, **Scenes** opens the table of matching scenes, and **Footprints** draws their outlines.
+## 2 · Find the images
 
-## 2 · Scene search
-
-`s2_scenes` queries the [tge-labs Sentinel-2 L2A STAC-GeoParquet mirror](https://source.coop/tge-labs/s2-stac-geoparquet) with DuckDB, filtering by bounding box, date range and cloud cover. It returns one row per scene with a `href_<band>` COG URL for each band.
+`s2_scenes` lists the Sentinel-2 images that cover your box in the date range, least cloudy first:
 
 ```bash
 curl "https://udf.ai/fc_fused/Sentinel2_Composite/s2_scenes/run/file?format=csv&aoi=-74.05,40.68,-73.90,40.82&date_start=2025-06-01&date_end=2025-09-30&max_cloud=10&limit=5"
 ```
 
-## 3 · Composite blocks
+## 3 · Build the composite
 
-The dashboard splits the view into zoom-12 tiles and, for each one, picks the least cloudy acquisition days whose footprints cover it. Every block goes to `s2_composite` with `mode=block`, which loads the scenes onto a 1024 px grid with [`odc.stac.load`](https://odc-stac.readthedocs.io/), one time slice per day, and reduces over time with xarray:
+The box is split into square blocks of about 10 km. Each block runs on its own machine: `s2_composite` loads the clearest images for that block with [`odc.stac`](https://odc-stac.readthedocs.io/) and takes the median of each pixel over time. That keeps the ground and drops most clouds. Finished blocks are saved, so running the same settings again is instant.
 
-```python
-# doctest: skip
-da = ds.to_array("band").where(lambda v: v > 0)
-comp = getattr(da, method)("time", skipna=True)   # median / mean / min / max
-```
+## 4 · Download
 
-Each block is stored as a COG under `fd://s2_composite_blocks/<job>/`, where the job ID is a hash of the settings, and a preview goes back to the map. Re-running the same settings skips blocks that already exist.
-
-## 4 · Download and tiles
-
-After the last block, the dashboard calls `s2_composite` with `mode=mosaic`. It merges the blocks into one COG cut to the area: EPSG:3857, JPEG-compressed, with an internal mask and overviews. The file is built once per area and reused after that. The download link is signed for one hour.
-
-The map then switches to `mode=tile`, which serves XYZ tiles from that single COG with [rio-tiler](https://cogeotiff.github.io/rio-tiler/). Every zoom level reads one file's overviews instead of many blocks.
+The blocks are then joined into one Cloud-Optimized GeoTIFF (COG), cut to your box. The map shows it at every zoom level, and **Download COG** saves it.
 
 ## About the data
 
 | Property | Value |
 |---|---|
-| Imagery | Sentinel-2 Collection 1 L2A COGs, AWS Open Data (anonymous) |
-| Scene catalog | tge-labs `s2-stac-geoparquet` on Source Cooperative |
-| Bands | `blue` … `swir22` (B02–B12), any three at a time |
-| Output | One COG (.tif) per area, EPSG:3857 at about 10 m, also served as XYZ tiles |
+| Imagery | Sentinel-2 L2A, AWS Open Data |
+| Scene catalog | [tge-labs `s2-stac-geoparquet`](https://source.coop/tge-labs/s2-stac-geoparquet) on Source Cooperative |
+| Output | One COG (.tif) per box, about 10 m per pixel |
 
 ## See also
 
