@@ -62,7 +62,7 @@ Pass exactly one of `hex_column` or `point_column`:
 | Your data | Argument |
 |---|---|
 | Already has an integer H3 column | `hex_column="h3"`, with `h3_res` set to that column's resolution. The column is renamed to `hex`. |
-| Latitude / longitude columns | `point_column=("lat", "lng")` (latitude first) |
+| Latitude / longitude columns | `point_column=("lat", "lng")` (latitude first). See [NYC 311 example](#example-nyc-311-points). |
 | A geometry column (GeoDataFrame) | `point_column="geometry"`. Points use their location; other shapes use their centroid. Polygons are **not** polyfilled. |
 | A regular lat/lng raster that should cover every cell | `point_column=("lat", "lng"), fill="nearest"`. See [ERA5 example](#example-era5-weather). |
 | A GeoTIFF / COG raster | Turn pixels into lat/lng rows and average them per hex, then `hex_column="hex"`. See [GeoTIFF example](#example-geotiff-raster). |
@@ -104,83 +104,6 @@ def udf(src: str = "s3://my-bucket/raw/stations/", out: str = "s3://my-bucket/he
         overwrite=True,
     )
 ```
-
-### Example: GeoTIFF raster
-
-Read the raster, turn each valid pixel into a lat/lng point, average the pixels inside each hex with DuckDB's `h3_latlng_to_cell()`, then partition on the resulting `hex` column:
-
-```python
-@fused.udf(cache_max_age=0)
-def udf(src: str = "s3://fused-asset/data/nyc_dem.tif", out: str = "fd://h3/nyc_dem/", h3_res: int = 9):
-    import numpy as np
-    import pandas as pd
-    import rasterio
-    from pyproj import Transformer
-
-    # 1. Each valid pixel becomes a (lat, lng, value) row
-    with rasterio.open(src) as ds:
-        band = ds.read(1)
-        rows, cols = np.nonzero(band != ds.nodata)
-        xs, ys = rasterio.transform.xy(ds.transform, rows, cols)
-        lng, lat = Transformer.from_crs(ds.crs, 4326, always_xy=True).transform(xs, ys)
-    pixels = pd.DataFrame({"lat": lat, "lng": lng, "elevation": band[rows, cols].astype("float64")})
-
-    # 2. Average the pixels inside each hex
-    common = fused.load("https://github.com/fusedio/udfs/tree/b6786d6/public/common/")
-    con = common.duckdb_connect()
-    df = con.sql(f"""
-        SELECT h3_latlng_to_cell(lat, lng, {h3_res})::UBIGINT AS hex,
-               AVG(elevation) AS elevation, COUNT(*) AS pixels
-        FROM pixels GROUP BY 1
-    """).df()
-
-    # 3. Partition, index, query
-    fused.h3.partition(df, out, hex_column="hex", h3_res=h3_res, file_res=5, overwrite=True)
-    fused.h3.index(out, overwrite=True)
-    return fused.h3.query(out, lat=40.7128, lng=-74.0060)
-```
-
-This turns the 52,633 pixels of the NYC elevation model into 8,047 res-9 hexes. For rasters too large to read at once, split the area into tiles, run the pixel-to-hex step on each tile with [`.map()`](/guide/working-with-udfs/fused-submit), write each tile to Parquet, then partition the folder with `fused.h3.sources.parquet()`.
-
-### Example: ERA5 weather
-
-`fused.h3.sources.era5()` reads a month of ERA5 weather (0.25° grid) as lat/lng rows. Combine it with `fill="nearest"` so every H3 cell in the region gets the value of its nearest grid point:
-
-```python
-@fused.udf(cache_max_age=0)
-def udf(out: str = "fd://era5/bay_area/"):
-    # San Francisco Bay Area, first 3 days of January 2024
-    bbox = (-123.5, 36.5, -121.0, 38.5)  # (min_lng, min_lat, max_lng, max_lat)
-    batches = fused.h3.sources.era5(
-        2024, 1, outputs=["t2m_mean", "tp"], days=[1, 2, 3], bbox=bbox
-    )
-    fused.h3.partition(
-        batches,
-        out,
-        point_column=("lat", "lng"),
-        fill="nearest",
-        h3_res=6,
-        file_res=2,
-        partition_by="date",
-        overwrite=True,
-    )
-    fused.h3.index(out)
-    return fused.h3.query(out, lat=37.77, lng=-122.42)
-```
-
-This returns one row per day for the cell containing San Francisco, with `t2m_mean` (mean 2 m temperature, Kelvin) and `tp` (total precipitation, mm).
-
-| Parameter | Default | Description |
-|---|---|---|
-| `year`, `month` | | Month to read. |
-| `outputs` | | Variables to read. Daily: `t2m_min`, `t2m_max`, `t2m_mean`, `tp`, `ssrd`, and more. Hourly: `t2m`, `tp`, and more. |
-| `cadence` | `"daily"` | `"daily"` or `"hourly"`. For hourly, pass `partition_by="date"` to `partition()`. |
-| `days` | `None` | Days of the month to read. Defaults to every day. |
-| `bbox` | `None` | `(min_lng, min_lat, max_lng, max_lat)`. Defaults to the whole globe. Must span at least two grid points on each axis. |
-
-With `fill="nearest"`, cast any integer measurement columns to float: non-float columns are treated as keys (like `date`), not values.
-
-For large ingests that exceed the realtime timeout (many months, global extent), run the UDF with `engine="large"`.
 
 ---
 
@@ -245,9 +168,9 @@ df = fused.h3.query(path, partition={"date": "2024-01"})
 | `partition` | `{column: value}` or `{column: [values]}`, e.g. `{"scenario": ["ssp245", "ssp585"]}`. |
 | `partition_range` | `{column: (min, max)}`; use `None` for an open end. |
 | `columns` | Columns to return. Defaults to all. |
-| `max_row_groups` | Cap on row groups read (up to 4096). |
+| `max_row_groups` | Cap on row groups read. Defaults to 1,024, up to 4,096. |
 
-Pass at most one spatial selector (`cell`, `lat`/`lng`, `bbox`, or `hex_range`); none returns everything. Results are capped at 10,000 rows, so narrow the query rather than paging.
+Pass at most one spatial selector (`cell`, `lat`/`lng`, `bbox`, or `hex_range`); none returns everything. A query reads at most 1,024 row groups by default (raise `max_row_groups` up to 4,096); one that matches more fails with 413 before reading any data, so narrow the query.
 
 | Error | Meaning |
 |---|---|
@@ -255,6 +178,137 @@ Pass at most one spatial selector (`cell`, `lat`/`lng`, `bbox`, or `hex_range`);
 | 409 | The index is still building. Poll `index_status()`. |
 | 400 | Invalid selectors, e.g. two spatial selectors, `lat` without `lng`, or time bounds on a dataset without time. |
 | 413 | Query matches too many row groups. Narrow it or raise `max_row_groups`. |
+
+---
+
+## End-to-end examples
+
+Each example runs the whole flow (source, partition, index, query) on a small sample of a cloud-native dataset. Every step is also a node in the `H3_Converting_Examples` canvas, where you can see its output; its read-me note explains how to scale it up to the full dataset.
+
+### Example: NYC 311 points
+
+[Open this example in Canvas →](https://www.fused.io/canvas/fc_fused/H3_Converting_Examples?bounds=-20,780,3860,1460)
+
+One week of NYC 311 noise complaints from the NYC Open Data API, partitioned by day:
+
+```python
+@fused.udf(cache_max_age=0)
+def udf(out: str = "fd://h3/nyc311_noise/"):
+    import pandas as pd
+    from urllib.parse import urlencode
+
+    # 1. One week of 311 noise complaints. The NYC Open Data API filters on the server.
+    query = urlencode({
+        "$select": "unique_key, created_date, complaint_type, latitude, longitude",
+        "$where": "created_date between '2024-07-01T00:00:00' and '2024-07-07T23:59:59'"
+                  " AND complaint_type like 'Noise%' AND latitude IS NOT NULL",
+        "$limit": 200000,
+    })
+    df = pd.read_csv(f"https://data.cityofnewyork.us/resource/erm2-nwe9.csv?{query}")
+    df["date"] = pd.to_datetime(df.pop("created_date")).dt.date
+
+    # 2. Partition: res-11 hexes, one folder per day
+    fused.h3.partition(
+        df, out, point_column=("latitude", "longitude"),
+        h3_res=11, file_res=5, partition_by="date", overwrite=True,
+    )
+
+    # 3. Index, then 4. query July 4 in lower Manhattan
+    fused.h3.index(out, overwrite=True)
+    return fused.h3.query(out, bbox=(-74.02, 40.70, -73.97, 40.75), partition={"date": "2024-07-04"})
+```
+
+The week has about 16,000 complaints; the query returns the 435 from July 4 inside the lower Manhattan box. To scale up, fetch one day per worker with [`.map()`](/guide/working-with-udfs/fused-submit), write each day to Parquet, then partition the whole folder in one call with `fused.h3.sources.parquet()`.
+
+### Example: GeoTIFF raster
+
+[Open this example in Canvas →](https://www.fused.io/canvas/fc_fused/H3_Converting_Examples?bounds=-20,1580,3860,2260)
+
+Read a window of a Cloud-Optimized GeoTIFF, turn each pixel into a lat/lng point, average the pixels inside each hex with DuckDB's `h3_latlng_to_cell()`, then partition on the resulting `hex` column:
+
+```python
+@fused.udf(cache_max_age=0)
+def udf(out: str = "fd://h3/nyc_elevation/", h3_res: int = 10):
+    import numpy as np
+    import pandas as pd
+    import rasterio
+    from rasterio.windows import from_bounds
+
+    # 1. Read only an NYC window of the Copernicus DEM, a 30 m Cloud-Optimized GeoTIFF on AWS
+    cog = (
+        "https://copernicus-dem-30m.s3.eu-central-1.amazonaws.com/"
+        "Copernicus_DSM_COG_10_N40_00_W074_00_DEM/Copernicus_DSM_COG_10_N40_00_W074_00_DEM.tif"
+    )
+    with rasterio.open(cog) as ds:
+        window = from_bounds(-74.0, 40.6, -73.75, 40.9, transform=ds.transform)
+        band = ds.read(1, window=window)
+        transform = ds.window_transform(window)
+    rows, cols = np.indices(band.shape).reshape(2, -1)
+    lng, lat = rasterio.transform.xy(transform, rows, cols)  # EPSG:4326 already
+    pixels = pd.DataFrame({"lat": lat, "lng": lng, "elevation": band[rows, cols].astype("float64")})
+
+    # 2. Average the pixels inside each hex
+    common = fused.load("https://github.com/fusedio/udfs/tree/b6786d6/public/common/")
+    con = common.duckdb_connect()
+    df = con.sql(f"""
+        SELECT h3_latlng_to_cell(lat, lng, {h3_res})::UBIGINT AS hex,
+               AVG(elevation) AS elevation, COUNT(*) AS pixels
+        FROM pixels GROUP BY 1
+    """).df()
+
+    # 3. Partition, index, then 4. query the hex containing Central Park
+    fused.h3.partition(df, out, hex_column="hex", h3_res=h3_res, file_res=5, overwrite=True)
+    fused.h3.index(out, overwrite=True)
+    return fused.h3.query(out, lat=40.7829, lng=-73.9654)
+```
+
+The window holds 972,000 pixels, which become 46,862 res-10 hexes; the Central Park hex averages 22 pixels. This COG is already in EPSG:4326; for a raster in a projected CRS, transform the pixel coordinates to lat/lng first (for example with `pyproj`). To scale up, split the area into tiles (or one per COG), run the pixel-to-hex step on each tile with [`.map()`](/guide/working-with-udfs/fused-submit), write each tile to Parquet, then partition the folder with `fused.h3.sources.parquet()`.
+
+### Example: ERA5 weather
+
+[Open this example in Canvas →](https://www.fused.io/canvas/fc_fused/H3_Converting_Examples?bounds=-20,2380,3860,3060)
+
+`fused.h3.sources.era5()` reads ERA5 weather (0.25° grid) from Google's public ARCO ERA5 Zarr store as lat/lng rows. Combine it with `fill="nearest"` so every H3 cell in the region gets the value of its nearest grid point. One day around New York:
+
+```python
+@fused.udf(cache_max_age=0)
+def udf(out: str = "fd://h3/era5_nyc_1day/"):
+    # 1. One day of ERA5 around New York (July 4, 2024)
+    bbox = (-76.5, 39.5, -71.5, 42.5)  # (min_lng, min_lat, max_lng, max_lat)
+    batches = fused.h3.sources.era5(2024, 7, outputs=["t2m_max", "tp"], days=[4], bbox=bbox)
+
+    # 2. Partition: every res-6 hex gets its nearest grid point's values
+    fused.h3.partition(
+        batches,
+        out,
+        point_column=("lat", "lng"),
+        fill="nearest",
+        h3_res=6,
+        file_res=2,
+        partition_by="date",
+        overwrite=True,
+    )
+
+    # 3. Index, then 4. query the cell containing New York City
+    fused.h3.index(out, overwrite=True)
+    return fused.h3.query(out, lat=40.7128, lng=-74.0060)
+```
+
+The 273 grid points fill 4,368 res-6 hexes. The query returns the New York cell's `t2m_max` (daily maximum 2 m temperature, Kelvin) and `tp` (total precipitation, mm).
+
+| Parameter | Default | Description |
+|---|---|---|
+| `year`, `month` | | Month to read. |
+| `outputs` | | Variables to read. Daily: `t2m_min`, `t2m_max`, `t2m_mean`, `tp`, `ssrd`, and more. Hourly: `t2m`, `tp`, and more. |
+| `cadence` | `"daily"` | `"daily"` or `"hourly"`. For hourly, pass `partition_by="date"` to `partition()`. |
+| `days` | `None` | Days of the month to read. Defaults to every day. |
+| `bbox` | `None` | `(min_lng, min_lat, max_lng, max_lat)`. Defaults to the whole globe. Must span at least two grid points on each axis. |
+
+With `fill="nearest"`, cast any integer measurement columns to float: non-float columns are treated as keys (like `date`), not values.
+
+With `fill="nearest"`, cast any integer measurement columns to float: non-float columns are treated as keys (like `date`), not values.
+
+To scale up, drop `days` and `bbox` to read whole months globally, chain several months of `sources.era5()` batches (for example with `itertools.chain`) into one `partition()` call, and run the UDF with `engine="large"` to get past the realtime timeout.
 
 ---
 
