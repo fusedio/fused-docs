@@ -12640,9 +12640,9 @@ Further reading:
 Path: examples/sentinel-2-composite.mdx
 URL: https://docs.fused.io/examples/sentinel-2-composite
 
-Pick three bands and a date range, and this canvas builds a 10 m Sentinel-2 composite of the current map view. The view is split into blocks that run on up to 50 machines at once. Each finished block is saved as a COG, so panning and zooming afterwards only stream tiles.
+Pick three bands and a date range, and this canvas builds a 10 m Sentinel-2 composite of the current map view. The view is split into blocks that run on up to 200 machines at once, then merged into one Cloud-Optimized GeoTIFF you can download.
 
-<ClickZoomImage src="/img/examples/sentinel-2-composite.png" alt="Sentinel-2 composite canvas: the dashboard with band, date and quality controls next to a true-colour median composite over New York City and the scene table, above the s2_scenes, s2_composite_block and s2_composite_tiles data-processing nodes" />
+<ClickZoomImage src="/img/examples/sentinel-2-composite.png" alt="Sentinel-2 composite canvas: the dashboard with band, date and quality controls next to a true-colour median composite over New York City and the scene table, above the data-processing nodes" />
 
 ## Try it out
 
@@ -12655,10 +12655,11 @@ The dashboard runs on load using the area in view. Start zoomed in on a city; a 
 A MapLibre map with a control panel:
 
 - **Bands**: any three Sentinel-2 bands, with presets for true colour, false colour (`nir,red,green`) and SWIR (`swir22,nir,red`).
-- **Dates** and **Quality**: date range, max cloud cover, max scenes per block, and the composite method (`median`, `mean`, `min`, `max`, `first`).
+- **Dates** and **Quality**: date range, max cloud cover, max acquisition days per block, and the composite method (`median`, `mean`, `min`, `max`, `first`).
+- **Machines**: how many blocks run in parallel, 50 by default and up to 200. A run never uses more machines than it has blocks to compute.
 - **Run composite** uses the current map view. Pan or zoom, then run again.
 
-A table below the map lists the matching scenes; **Footprints** draws their outlines.
+When the run finishes, **Download COG (.tif)** appears with the file size. A table below the map lists the matching scenes; **Footprints** draws their outlines.
 
 ## 2 · Scene search
 
@@ -12670,7 +12671,7 @@ curl "https://udf.ai/fc_fused/Sentinel2_Composite/s2_scenes/run/file?format=csv&
 
 ## 3 · Composite blocks
 
-The dashboard splits the view into zoom-12 tiles of 1024 px each and sends every block to `s2_composite_block`, up to 50 in parallel. Each call loads its scenes onto the block's grid with `odc.stac.load`, reduces over time with xarray, and writes the result as a COG:
+The dashboard splits the view into zoom-12 tiles and, for each one, picks the least cloudy acquisition days whose footprints cover it. Every block goes to `s2_composite` with `mode=block`, which loads the scenes onto a 1024 px grid with `odc.stac.load`, one time slice per day, and reduces over time with xarray:
 
 ```python
 # doctest: skip
@@ -12678,15 +12679,13 @@ da = ds.to_array("band").where(lambda v: v > 0)
 comp = getattr(da, method)("time", skipna=True)   # median / mean / min / max
 ```
 
-Blocks are stored under `fd://s2_composite_blocks/<job>/`, where the job ID is a hash of the settings. Re-running the same settings skips blocks that already exist.
+Each block is stored as a COG under `fd://s2_composite_blocks/<job>/`, where the job ID is a hash of the settings, and a preview goes back to the map. Re-running the same settings skips blocks that already exist.
 
-## 4 · Tile server
+## 4 · Download and tiles
 
-`s2_composite_tiles` serves the stored blocks as XYZ tiles with rio-tiler. It only reads the saved COGs, never the source imagery. Pass `job=all` for every stored composite, or a job ID for one:
+After the last block, the dashboard calls `s2_composite` with `mode=mosaic`. It merges the blocks in the view into one COG: EPSG:3857, JPEG-compressed, with an internal mask and overviews. The file is built once per set of blocks and reused after that. The download link is signed for one hour. Views larger than 500 blocks are written at half or quarter resolution so that one file still builds within a single call.
 
-```bash
-curl -o tile.png "https://udf.ai/fc_fused/Sentinel2_Composite/s2_composite_tiles/run/tiles/12/1206/1539?dtype_out_raster=png&job=all"
-```
+The map then switches to `mode=tile`, which serves XYZ tiles from that single COG with rio-tiler. Every zoom level reads one file's overviews instead of many blocks.
 
 ## About the data
 
@@ -12695,7 +12694,7 @@ curl -o tile.png "https://udf.ai/fc_fused/Sentinel2_Composite/s2_composite_tiles
 | Imagery | Sentinel-2 Collection 1 L2A COGs, AWS Open Data (anonymous) |
 | Scene catalog | tge-labs `s2-stac-geoparquet` on Source Cooperative |
 | Bands | `blue` … `swir22` (B02–B12), any three at a time |
-| Output | 10 m RGBA COGs, served as XYZ tiles |
+| Output | One COG (.tif) per view, EPSG:3857 at about 10 m, also served as XYZ tiles |
 
 ## See also
 
@@ -29722,5 +29721,5 @@ Join us in our journey to break from old geospatial infrastructure. Let's revolu
 
 ---
 
-Generated automatically from Fused documentation. Last updated: 2026-10-06
+Generated automatically from Fused documentation. Last updated: 2026-10-07
 Total sections: 7
