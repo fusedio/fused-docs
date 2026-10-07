@@ -208,7 +208,7 @@ This example uses [AWS's Terrain Tiles](https://registry.opendata.aws/terrain-ti
   style={{borderRadius: '8px'}}
 ></iframe>
 
-[Open this UDF in Canvas →](https://www.fused.io/canvas/fc_fused/H3_Converting_Examples?bounds=3950,-50,4750,550)
+[Open this UDF in Canvas →](https://www.fused.io/canvas/fc_fused/H3_Converting_Examples?bounds=4767,-50,5567,550)
 
 <details>
 <summary>Code</summary>
@@ -602,10 +602,10 @@ For more on standalone maps, see [Standalone Maps](/examples/standalone-html-map
 
 ### Vector to H3
 
-For vector data, use `.map()` to parallelize hexagonification:
+For vector data, turn each geometry into hexes with `common.gdf_to_hex()` and aggregate per hex. This example runs once over a small area of Ajaccio (Corsica) and shows the result on a map widget:
 
 <iframe
-  src="https://udf.ai/fc_fused/H3_Converting_Examples/vector_to_h3.html"
+  src="https://www.fused.io/share/fc_fused%2FH3_Converting_Examples/vec_h3"
   width="100%"
   height="600px"
   frameBorder="0"
@@ -616,10 +616,13 @@ For vector data, use `.map()` to parallelize hexagonification:
 This method is for datasets < 100k vectors. Run in Single (viewport) mode, not Tiled.
 :::
 
-```python showLineNumbers {16,51,53}
+<details>
+<summary>Code</summary>
+
+```python showLineNumbers {24,36,40}
 @fused.udf
 def udf(
-    bounds: fused.types.Bounds = [8.4452104984018,41.76046948393174,8.903258920921276,42.053137175457145]
+    bounds: fused.types.Bounds = [8.72, 41.91, 8.76, 41.935]  # small test area (central Ajaccio)
 ):
     common = fused.load("https://github.com/fusedio/udfs/tree/b6786d6/public/common/")
     res = common.bounds_to_res(bounds, offset=0)
@@ -627,40 +630,25 @@ def udf(
 
     gdf = get_data()
 
+    # Clip to the bounds so we only process a small test region
+    minx, miny, maxx, maxy = bounds
+    gdf = gdf.cx[minx:maxx, miny:maxy]
+    print(f"Buildings in test area: {gdf.shape[0]}")
+    if gdf.empty:
+        print("No buildings in these bounds.")
+        return
+
     if gdf.shape[0] > 100_000:
         print("Dataset too large. Contact info@fused.io for scaling.")
         return
 
-    vector_chunks = common.split_gdf(gdf[["geometry"]], n=32, return_type="file")
-    pool = hexagonify_udf.map(vector_chunks, res=res, engine="remote")
-    df = pool.df().reset_index(drop=True)
-    df = df.groupby('hex').sum(['cnt','area']).sort_values('hex').reset_index()[['hex', 'cnt', 'area']]
+    # Single (non-map) run over the clipped dataset
+    df = hexagonify_udf(gdf[["geometry"]], res=res)
+    df = df.reset_index(drop=True)
+    df = df.groupby('hex').sum(['cnt', 'area']).sort_values('hex').reset_index()[['hex', 'cnt', 'area']]
     df['area'] = df['area'].astype(int)
 
-    map_utils = fused.load("https://github.com/fusedio/udfs/tree/3ada22d/community/milind/map_utils")
-    layers = [
-        {
-            "type": "hex",
-            "data": df,
-            "name": "Overture buildings per hex",
-            "config": {
-                "style": {
-                    "fillColor": {
-                        "type": "continuous",
-                        "attr": "cnt",
-                        "domain": [0, 5000],
-                        "steps": 20,
-                        "palette": "OrYel",
-                    },
-                    "filled": True,
-                    "extruded": False,
-                    "stroked": False,
-                    "opacity": 0.7,
-                }
-            },
-        },
-    ]
-    return map_utils.deckgl_layers(layers=layers, basemap="dark")
+    return df
 
 
 @fused.udf
@@ -691,7 +679,11 @@ def get_data():
     return gdf
 ```
 
-[Open the Vector to H3 UDF in Canvas →](https://www.fused.io/canvas/fc_fused/H3_Converting_Examples?bounds=3150,-50,3950,550)
+</details>
+
+For larger datasets, split the geometries and run `hexagonify_udf` on each chunk in parallel with [`.map()`](/guide/working-with-udfs/fused-submit).
+
+[Open the Vector to H3 UDF in Canvas →](https://www.fused.io/canvas/fc_fused/H3_Converting_Examples?bounds=3150,-50,4754,550)
 
 :::info Need help with larger datasets?
 Reach out to our team at info@fused.io
