@@ -944,3 +944,166 @@ the processing steps and how to configure the execution.
 
 ---
 
+## sources.era5
+
+```python
+era5(
+    year: int,
+    month: int,
+    *,
+    outputs: Sequence[str],
+    cadence: str = "daily",
+    days: Sequence[int] | None = None,
+    bbox: Sequence[float] | None = None,
+    read_workers: int = 16
+) -> Iterator[pa.RecordBatch]
+```
+
+Read a month of ERA5 weather from the public ARCO store as lat/lng rows.
+
+ARCO ERA5 is Google's public copy of the ECMWF ERA5 reanalysis: hourly
+global weather on a 0.25 degree latitude/longitude raster, 1940 to now.
+Reading needs network access to `storage.googleapis.com`. Decoding the
+zarr chunks needs `numcodecs`, which the Fused runtime provides;
+anywhere else, install it yourself.
+
+Yields record batches with columns `lat`, `lng`, `date` (`date32`),
+`hour` (`uint8`, hourly only) and one float32 column per output, in the
+order given. Longitudes are converted to `[-180, 180)` for a tidy output
+column; the nearest-point fill does not need it. Cells are not computed
+here: hex it with
+`fused.h3.partition(..., point_column=("lat", "lng"), fill="nearest")`, which
+fills every cell from its nearest raster point.
+
+A daily call yields the whole month one lat/lng tile at a time (90 by 90
+degrees, so 8 tiles over the globe). A tile batch holds every requested
+day, day-major: one complete raster of the tile's 0.25 degree points per
+`date`. Tiles are disjoint sets of raster points, so each cell is filled
+from exactly one tile. Without `partition_by`, `partition` writes one
+monthly file per H3 parent cell; `partition_by="date"` writes one folder
+per day instead.
+
+An hourly call yields one batch per day (a month of hourly rasters is about
+3 GB per column, too much to hold at once). A batch holds all 24 hours,
+hour-major: 24 complete rasters, one per `hour` 0 to 23. Pass
+`partition_by="date"` so each day becomes a folder
+(`output/date=<date>/<parent>.parquet`) of one file per H3 parent cell.
+
+This function is the template for a new datasource: any generator that
+yields batches of this shape (a complete regular lat/lng raster per key
+tuple, plus key and value columns) works with `partition`. `partition`
+treats every column that is not floating point (`date`, `hour`) as a
+key and fills the float32 outputs.
+
+**Parameters:**
+
+- **year** (`int`) – Calendar year.
+- **month** (`int`) – Month, 1 to 12.
+- **outputs** (`Sequence[str]`) – Output columns to read. Names depend on `cadence`: daily
+  has statistics such as `t2m_min`, `t2m_max`, `t2m_mean`,
+  `tp` (precipitation, mm) and `ssrd` (radiation, W/m2); hourly
+  has one column per variable such as `t2m` and `tp`.
+- **cadence** (`str`) – `"daily"` reduces each day's hours to one row per point per
+  day and yields the month in lat/lng tiles. `"hourly"` keeps every
+  hour (24 times the rows) in one batch per day and reads one day at a
+  time to bound memory.
+- **days** (`Sequence[int] | None`) – Days of the month to read. Default is every day.
+- **bbox** (`Sequence[float] | None`) – `(min_lng, min_lat, max_lng, max_lat)` in degrees, longitude in
+  `[-180, 180]`, to keep only the raster points inside the box
+  (edges inclusive). `min_lng > max_lng` means the box crosses the
+  antimeridian. Default `None` reads the whole globe. The store's
+  chunks hold the whole globe per hour, so `bbox` saves memory and
+  output, not download. Cells emitted by `partition` are those
+  whose nearest raster point is in the box. The box must keep at
+  least two latitude rows and two longitude columns (span at least
+  two 0.25 degree points on each axis).
+- **read_workers** (`int`) – Concurrent chunk downloads.
+
+**Raises:**
+
+- `ValueError` – Unknown `cadence` or `outputs`, a bad `month`,
+  `days` outside the month, or a `bbox` that is malformed, out of
+  range, selects no raster point, or spans fewer than two points on an
+  axis.
+- `Era5SourceError` – Raised during iteration, not at the call, when the
+  ARCO store cannot be read or `numcodecs` is missing.
+
+**Example:**
+
+```python
+from fused import h3
+batches = h3.sources.era5(
+    2024, 1, outputs=["t2m_mean", "tp"], days=[1, 2]
+)
+h3.partition(
+    batches, "s3://bucket/era5/", point_column=("lat", "lng"),
+    fill="nearest", h3_res=7, file_res=1,
+)  # doctest: +SKIP
+
+# Hourly takes the same call plus ``partition_by="date"``; each day's
+# file holds all 24 hours.
+
+batches = h3.sources.era5(
+    2024, 1, outputs=["t2m"], cadence="hourly", days=[1, 2]
+)
+h3.partition(
+    batches, "s3://bucket/era5_hourly/", point_column=("lat", "lng"),
+    fill="nearest", partition_by="date",
+    h3_res=7, file_res=1,
+)  # doctest: +SKIP
+```
+
+---
+
+## sources.parquet
+
+```python
+parquet(
+    path: str | Path,
+    *,
+    columns: Sequence[str] | None = None,
+    batch_size: int = 65536
+) -> Iterator[pa.RecordBatch]
+```
+
+Stream a parquet file, or every `.parquet` file under a folder.
+
+Files are read in sorted path order. `path` can be a local path or any
+fsspec URL (`fd://`, `file://`, `s3://`, `gs://`, `az://`, `memory://`).
+Remote schemes need their fsspec backend installed (s3fs, gcsfs, adlfs).
+
+**Parameters:**
+
+- **path** (`str | Path`) – A parquet file or a folder of them (searched recursively).
+- **columns** (`Sequence[str] | None`) – Read only these columns. Default is all columns.
+- **batch_size** (`int`) – Maximum rows per yielded batch.
+
+**Raises:**
+
+- `ValueError` – No parquet files were found under `path`.
+
+---
+
+## sources.table
+
+```python
+table(data: Any) -> Iterator[pa.RecordBatch]
+```
+
+Yield the batches of a `pandas.DataFrame`, `pyarrow.Table` or
+`pyarrow.RecordBatch`.
+
+A DataFrame index becomes a column only when every level is named;
+otherwise (a `RangeIndex` or an unnamed index, such as after filtering)
+it is dropped. A `geopandas.GeoDataFrame`'s geometry columns arrive as
+WKB (`binary`), the form `fused.h3.partition(..., point_column=...)`
+expects; GeoParquet read with `parquet` is already WKB. The centroid
+is planar in the coordinates as stored (lon/lat degrees expected), so
+geometries that cross the antimeridian or wrap a pole are mis-hexed;
+split them or pass lat/lng columns as `point_column=` for those rows.
+
+**Raises:**
+
+- `TypeError` – `data` is none of those.
+
+---

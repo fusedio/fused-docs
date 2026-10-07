@@ -654,6 +654,16 @@ for obj in api_listing:
     docstring = render_object_docs(member, config_h3)
     result += docstring + "\n---\n\n"
 
+# `fused.h3.sources.*`: data sources for `partition`, headed `sources.<name>`
+if "sources" in mod_api.members:
+    for obj in ["era5", "parquet", "table"]:
+        if obj not in mod_api["sources"].members:
+            print(f"Warning: sources.{obj} not found in fused.h3 module, skipping")
+            continue
+        docstring = render_object_docs(mod_api["sources"][obj], config_h3)
+        docstring = re.sub(rf"^## {obj}$", f"## sources.{obj}", docstring, count=1, flags=re.M)
+        result += docstring + "\n---\n\n"
+
 result = result.replace("`fused.submit()`", "[`fused.submit()`](/python-sdk/top-level-functions/#fusedsubmit)")
 
 with open(ROOT / "docs" / "python-sdk" / "api-reference" / "h3.mdx", "w", encoding="utf-8") as f:
