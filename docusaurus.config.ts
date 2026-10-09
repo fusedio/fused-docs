@@ -264,7 +264,7 @@ const config: Config = {
           { to: "/guide/h3-analytics/aggregations", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling/when-to-use-h3", "/tutorials/Geospatial with Fused/h3-tiling/when-to-use-h3"] },
           { to: "/guide/h3-analytics/converting", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling/file-to-h3", "/tutorials/Geospatial with Fused/h3-tiling/file-to-h3"] },
           { to: "/guide/h3-analytics/converting", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling/dynamic-tile-to-h3", "/tutorials/Geospatial with Fused/h3-tiling/dynamic-tile-to-h3"] },
-          { to: "/guide/h3-analytics/converting", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling/ingesting-dataset-to-h3", "/tutorials/Geospatial with Fused/h3-tiling/ingesting-dataset-to-h3"] },
+          { to: "/guide/h3-analytics/raster-ingestion", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling/ingesting-dataset-to-h3", "/tutorials/Geospatial with Fused/h3-tiling/ingesting-dataset-to-h3"] },
           { to: "/guide/h3-analytics/aggregations", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling/analysis-with-h3/aggregating-h3-data", "/tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/aggregating-h3-data"] },
           { to: "/guide/h3-analytics/joining", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling/analysis-with-h3/joining-h3-data", "/tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/joining-h3-data"] },
           { to: "/examples/zonal-stats", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling/analysis-with-h3/zonal-statistics", "/tutorials/Geospatial with Fused/h3-tiling/analysis-with-h3/zonal-statistics"] },

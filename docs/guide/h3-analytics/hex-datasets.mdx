@@ -1,0 +1,378 @@
+---
+id: hex-datasets
+title: Ingest, Index & Query H3 Datasets
+sidebar_label: "Ingest: Partition, Index & Query"
+sidebar_position: 2.5
+toc_min_heading_level: 2
+toc_max_heading_level: 3
+---
+
+# Ingest, Index & Query H3 Datasets
+
+`fused.h3` turns your data into a **hex dataset** you can query by point, area, cell or time without scanning every file. It takes three steps:
+
+1. **Partition**: [`fused.h3.partition()`](/python-sdk/api-reference/h3#partition) writes your rows as H3-sorted Parquet files.
+2. **Index**: [`fused.h3.index()`](/python-sdk/api-reference/h3#index) registers the dataset with Fused.
+3. **Query**: [`fused.h3.query()`](/python-sdk/api-reference/h3#query) reads back only the rows you ask for.
+
+Use it for large datasets of any type: points, vectors, tables and multi-dimensional data such as weather. It partitions and indexes your data; any conversion or aggregation, such as averaging raster pixels per hex, is yours to do before partitioning. For rasters where you want aggregation and overviews built in, use the [raster ingestion pipeline](/guide/h3-analytics/raster-ingestion). See [Choose your path](/guide/h3-analytics/h3-overview#choose-your-path).
+
+A query reads only the part you ask for, so the benefit grows with the dataset. The first three examples are small and finish quickly ([canvas →](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion)); the last two, [AIS](#example-one-month-of-ais-ship-positions) and [LiDAR](#example-every-lidar-point-in-manhattan), ingest over 300 million rows each.
+
+<img
+  alt="H3 End to End Ingestion canvas: one row per example, from source to partition, index and query map"
+  src={require('/static/img/tutorials/geospatial/h3/h3_end_to_end_ingestion_canvas.webp').default}
+  style={{width: "100%", margin: "1em auto", display: "block"}}
+/>
+
+:::note Don't use `partition_by` for location
+`partition()` already groups rows by location; use `file_res` to adjust file coverage. Use `partition_by` for nonspatial columns, such as `date`, `hour` or `scenario`.
+:::
+
+## Examples
+
+### Example: NYC 311 points
+
+[Open this example in Canvas →](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion?bounds=-20,-20,3975,680)
+
+Count noise complaints per hex for one week in New York City. The source is the NYC Open Data API; each complaint has a latitude and longitude, and the dataset is split into one folder per day.
+
+<details>
+<summary>Code</summary>
+
+```python showLineNumbers {17-20,23,26}
+@fused.udf(cache_max_age=0)
+def udf(out: str = "fd://h3/nyc311_noise/"):
+    import pandas as pd
+    from urllib.parse import urlencode
+
+    # 1. Source: one week of noise complaints from the NYC Open Data API
+    query = urlencode({
+        "$select": "unique_key, created_date, complaint_type, latitude, longitude",
+        "$where": "created_date between '2024-07-01T00:00:00' and '2024-07-07T23:59:59'"
+                  " AND complaint_type like 'Noise%' AND latitude IS NOT NULL",
+        "$limit": 200000,
+    })
+    df = pd.read_csv(f"https://data.cityofnewyork.us/resource/erm2-nwe9.csv?{query}")
+    df["date"] = pd.to_datetime(df.pop("created_date")).dt.date  # a date, so it becomes the time column
+
+    # 2. Partition: each complaint has a lat/lng, so use point_column; one folder per day
+    fused.h3.partition(
+        df, out, point_column=("latitude", "longitude"),
+        h3_res=11, file_res=5, partition_by="date", overwrite=True,
+    )
+
+    # 3. Index: records where each hex is, so queries read only what they need
+    fused.h3.index(out, overwrite=True)
+
+    # 4. Query: complaints on July 4 in lower Manhattan
+    return fused.h3.query(out, bbox=(-74.02, 40.70, -73.97, 40.75), partition={"date": "2024-07-04"})
+```
+
+</details>
+
+### Example: GeoTIFF raster
+
+[Open this example in Canvas →](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion?bounds=-20,780,3975,1480)
+
+Average elevation per hex over New York City. The source is the Copernicus DEM, a Cloud-Optimized GeoTIFF on AWS: only the NYC window is read, and its pixels are averaged into hexes before partitioning.
+
+<details>
+<summary>Code</summary>
+
+```python showLineNumbers {31,34-35}
+@fused.udf(cache_max_age=0)
+def udf(out: str = "fd://h3/nyc_elevation/", h3_res: int = 10):
+    import numpy as np
+    import pandas as pd
+    import rasterio
+    from rasterio.windows import from_bounds
+
+    # 1. Source: read only the NYC window of the Copernicus DEM (30 m COG on AWS)
+    cog = (
+        "https://copernicus-dem-30m.s3.eu-central-1.amazonaws.com/"
+        "Copernicus_DSM_COG_10_N40_00_W074_00_DEM/Copernicus_DSM_COG_10_N40_00_W074_00_DEM.tif"
+    )
+    with rasterio.open(cog) as ds:
+        window = from_bounds(-74.0, 40.6, -73.75, 40.9, transform=ds.transform)
+        band = ds.read(1, window=window)
+        transform = ds.window_transform(window)
+    rows, cols = np.indices(band.shape).reshape(2, -1)
+    lng, lat = rasterio.transform.xy(transform, rows, cols)  # already lat/lng (EPSG:4326)
+    pixels = pd.DataFrame({"lat": lat, "lng": lng, "elevation": band[rows, cols].astype("float64")})
+
+    # 2. Average the pixels inside each hex
+    common = fused.load("https://github.com/fusedio/udfs/tree/b6786d6/public/common/")
+    con = common.duckdb_connect()
+    df = con.sql(f"""
+        SELECT h3_latlng_to_cell(lat, lng, {h3_res})::UBIGINT AS hex,
+               AVG(elevation) AS elevation, COUNT(*) AS pixels
+        FROM pixels GROUP BY 1
+    """).df()
+
+    # 3. Partition: rows already have a hex, so use hex_column
+    fused.h3.partition(df, out, hex_column="hex", h3_res=h3_res, file_res=5, overwrite=True)
+
+    # 4. Index, then query the hex containing Central Park
+    fused.h3.index(out, overwrite=True)
+    return fused.h3.query(out, lat=40.7829, lng=-73.9654)
+```
+
+</details>
+
+### Example: ERA5 weather
+
+[Open this example in Canvas →](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion?bounds=-20,1580,3975,2280)
+
+Daily maximum and minimum temperature per hex for one day around New York City. The source is ERA5, read from Google's public ARCO store with [`fused.h3.sources.era5()`](/python-sdk/api-reference/h3#sourcesera5), which returns the weather grid as latitude/longitude rows ready to partition.
+
+<details>
+<summary>Code</summary>
+
+```python showLineNumbers {5,8-17,20-21}
+@fused.udf(cache_max_age=0)
+def udf(out: str = "fd://h3/era5_nyc/"):
+    # 1. Source: one day of ERA5 around New York City, as lat/lng rows
+    bbox = (-76.5, 39.5, -71.5, 42.5)  # (min_lng, min_lat, max_lng, max_lat)
+    batches = fused.h3.sources.era5(2024, 7, outputs=["t2m_max", "t2m_min"], days=[4], bbox=bbox)
+
+    # 2. Partition: fill="nearest" gives every hex its nearest grid point's values
+    fused.h3.partition(
+        batches,
+        out,
+        point_column=("lat", "lng"),
+        fill="nearest",
+        h3_res=6,
+        file_res=2,
+        partition_by="date",
+        overwrite=True,
+    )
+
+    # 3. Index, then 4. query the hex containing New York City
+    fused.h3.index(out, overwrite=True)
+    return fused.h3.query(out, lat=40.7128, lng=-74.0060)
+```
+
+</details>
+
+For a larger region or more days, widen `bbox` and `days` and run it as a [batch job](#tips-for-large-datasets).
+
+### Example: one month of AIS ship positions
+
+[Open this example in Canvas →](https://www.fused.io/canvas/fc_fused/H3_AIS_One_Month)
+
+Query **309.5 million ship positions** from [NOAA's AIS data](https://hub.marinecadastre.gov/pages/vesseltraffic), covering July 2024. After ingestion, a one-hour New York Harbor query takes **0.1 seconds**.
+
+Draw a box, pick dates, and use the slider to explore.
+
+<iframe
+  src="https://udf.ai/fc_fused/H3_AIS_One_Month/map_app_draw_box.html"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+<details>
+<summary>Code</summary>
+
+The canvas's first step copies NOAA's daily zips to `raw` as they are. The partition step then reads one day at a time and passes each day to `partition()` as one batch:
+
+```python showLineNumbers {38-46}
+@fused.udf(engine="m5.xlarge")
+def udf(
+    start_date: str = "2024-07-01",
+    end_date: str = "2024-08-01",
+    raw: str = "fd://h3/ais_raw/",
+    out: str = "fd://h3/ais_july_2024/",
+):
+    import zipfile
+
+    import fsspec
+    import numpy as np
+    import pandas as pd
+    import pyarrow as pa
+    import pyarrow.compute as pc
+    import pyarrow.csv as pacsv
+
+    types = {
+        "MMSI": pa.int64(), "BaseDateTime": pa.timestamp("s"),
+        "LAT": pa.float64(), "LON": pa.float64(), "SOG": pa.float64(), "COG": pa.float64(), "Heading": pa.float64(),
+        "VesselName": pa.string(), "IMO": pa.string(), "CallSign": pa.string(),
+        "VesselType": pa.float64(), "Status": pa.float64(), "Length": pa.float64(), "Width": pa.float64(),
+        "Draft": pa.float64(), "Cargo": pa.float64(), "TransceiverClass": pa.string(),
+    }
+    days = list(pd.date_range(start_date, end_date, freq="D").strftime("%Y-%m-%d"))
+
+    # 1. Source: one batch per day, read from that day's zipped CSV (about 10 million rows)
+    def one_batch_per_day():
+        for day in days:
+            y, m, d = day.split("-")
+            zip_path = f"{fused.api.resolve(raw)}AIS_{y}_{m}_{d}.zip"
+            with fsspec.open(zip_path, "rb") as f, zipfile.ZipFile(f) as z, z.open(z.namelist()[0]) as csv:
+                table = pacsv.read_csv(csv, convert_options=pacsv.ConvertOptions(column_types=types))
+            table = table.filter(pc.and_(pc.is_valid(table["LAT"]), pc.is_valid(table["LON"])))
+            date = pa.array(np.full(table.num_rows, np.datetime64(day, "D")), pa.date32())
+            yield table.append_column("date", date).combine_chunks().to_batches()[0]
+
+    # 2. Partition: one folder per day, one file per res-1 cell, each report as a res-10 hex
+    fused.h3.partition(
+        one_batch_per_day(),
+        out,
+        point_column=("LAT", "LON"),
+        h3_res=10,
+        file_res=1,
+        partition_by="date",
+        overwrite=True,
+    )
+    return pd.DataFrame({"days": [len(days)]})
+```
+
+Index it with `BaseDateTime` as the time column:
+
+```python showLineNumbers
+@fused.udf
+def udf(out: str = "fd://h3/ais_july_2024/"):
+    fused.h3.index(out, time_column="BaseDateTime", overwrite=True, wait=False)
+```
+
+Then query any area and time window:
+
+```python showLineNumbers
+@fused.udf
+def udf(out: str = "fd://h3/ais_july_2024/"):
+    # Every position report in New York Harbor between 12:00 and 13:00 UTC on July 3
+    return fused.h3.query(
+        out,
+        bbox=(-74.10, 40.55, -73.90, 40.72),
+        time_min="2024-07-03T12:00:00",
+        time_max="2024-07-03T12:59:59",
+    )
+```
+
+</details>
+
+### Example: every LiDAR point in Manhattan
+
+[Open this example in Canvas →](https://www.fused.io/canvas/fc_fused/H3_LiDAR_Manhattan)
+
+Explore **367.8 million Manhattan points** from the [USGS 3DEP](https://www.usgs.gov/3d-elevation-program) LiDAR survey. A 250-meter box query around the Empire State Building takes **0.4 seconds**.
+
+Draw a box to explore Manhattan in 3D. The app splits large areas into smaller queries automatically.
+
+<iframe
+  src="https://udf.ai/fc_fused/H3_LiDAR_Manhattan/map_app_3d.html"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+<details>
+<summary>Code</summary>
+
+The canvas's first step copies the LAZ tiles to `raw` as they are. The partition step reads one tile at a time with [PDAL](https://pdal.io/), which also reprojects it to lat/lng:
+
+```python showLineNumbers {44-53}
+@fused.udf(engine="r5.2xlarge")
+def udf(
+    raw: str = "fd://h3/lidar_laz/",
+    out: str = "fd://h3/lidar_manhattan/",
+):
+    import json
+
+    import fsspec
+    import geopandas as gpd
+    import pandas as pd
+    import pdal
+    import pyarrow as pa
+    import shapely
+
+    fs = fsspec.filesystem("s3")
+    tiles = sorted(fs.glob(f"{fused.api.resolve(raw)}*.laz"))
+    nyc = gpd.read_file("https://data.cityofnewyork.us/resource/gthc-hcne.geojson")
+    shape = nyc[nyc["boroname"] == "Manhattan"].union_all()
+    shapely.prepare(shape)
+
+    # 1. Source: one batch per LAZ tile, moved to lat/lng and cut to Manhattan
+    def one_batch_per_tile():
+        for path in tiles:
+            fs.get(path, "/tmp/tile.laz")
+            pipeline = pdal.Pipeline(json.dumps([
+                {"type": "readers.las", "filename": "/tmp/tile.laz"},
+                {"type": "filters.reprojection", "out_srs": "EPSG:4326"},
+            ]))
+            pipeline.execute()
+            a = pipeline.arrays[0]
+            a = a[shapely.contains_xy(shape, a["X"], a["Y"])]
+            if len(a):
+                yield pa.record_batch({
+                    "lat": a["Y"], "lon": a["X"], "Z": a["Z"].astype("float32"),
+                    "Classification": a["Classification"], "Intensity": a["Intensity"],
+                    "ReturnNumber": a["ReturnNumber"], "NumberOfReturns": a["NumberOfReturns"],
+                    "time": pd.to_datetime(a["GpsTime"] + 1e9 - 16, unit="s", origin="1980-01-06"),
+                    "PointSourceId": a["PointSourceId"],
+                })
+
+    # 2. Partition: one file per res-7 cell, each point tagged with its res-12 cell.
+    # All of Manhattan (about 18 GB) fits under memory_budget, so nothing spills;
+    # each writer holds a whole file (up to 460 MB) in memory, so keep workers low.
+    fused.h3.partition(
+        one_batch_per_tile(),
+        out,
+        point_column=("lat", "lon"),
+        h3_res=12,
+        file_res=7,
+        memory_budget=32 << 30,
+        workers=2,
+        overwrite=True,
+    )
+    return pd.DataFrame({"tiles": [len(tiles)]})
+```
+
+Index it, then query a box. For an exact edge, pad the box by about one cell and cut the rows to it:
+
+```python showLineNumbers
+@fused.udf
+def udf(out: str = "fd://h3/lidar_manhattan/"):
+    fused.h3.index(out, overwrite=True, wait=False)
+```
+
+```python showLineNumbers
+@fused.udf
+def udf(out: str = "fd://h3/lidar_manhattan/"):
+    # Every point in a box around the Empire State Building, about 250 m x 210 m
+    w, s, e, n = (-73.9872, 40.7475, -73.9842, 40.7494)
+    pad = 0.0002  # about one res-12 cell, so edge points whose cell centre is outside are kept
+    df = fused.h3.query(out, bbox=(w - pad, s - pad, e + pad, n + pad),
+                        columns=["lat", "lon", "Z", "Classification", "Intensity"])
+    return df[df["lon"].between(w, e) & df["lat"].between(s, n)]
+```
+
+</details>
+
+## Tips for large datasets
+
+**Partition**
+- Use a batch job (`engine="m5.xlarge"` or larger) for large datasets.
+- Pass one batch per source file; rows can be unsorted.
+- Use latitude/longitude coordinates (EPSG:4326); `partition()` does not reproject them.
+- Reduce `workers` to 2–4 if you run out of memory.
+- Convert oversized datasets in parallel with [`.map()`](/guide/working-with-udfs/fused-submit), then partition using `fused.h3.sources.parquet()`.
+
+**Index**
+- Pass `wait=False` to `index()` and monitor progress with `fused.h3.index_status()`.
+- Rebuild the index whenever you change dataset files.
+
+**Query**
+- Queries return at most 2,000,000 rows; split larger requests into smaller queries.
+- Filter by location, time, or `partition_by`; apply other filters afterward.
+- For exact boundaries, pad the box by one cell, then filter by latitude/longitude.
+- Use `format="index"` to preview which row groups a query would read.
+
+## See also
+
+- [`fused.h3` API reference](/python-sdk/api-reference/h3): every parameter of `partition`, `index`, `query` and the `sources`
+- [Convert to H3 on the fly](/guide/h3-analytics/converting): for small data
+- [Raster ingestion pipeline](/guide/h3-analytics/raster-ingestion): large rasters with built-in aggregation and overviews
+- [H3 resolution guide](/guide/h3-analytics/resolution-guide): choosing `h3_res`

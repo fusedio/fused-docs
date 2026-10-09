@@ -206,10 +206,12 @@ const sidebars: SidebarsConfig = {
       collapsible: false,
       items: [
         "guide/h3-analytics/h3-overview",
+        "guide/h3-analytics/resolution-guide",
         "guide/h3-analytics/converting",
+        "guide/h3-analytics/hex-datasets",
+        "guide/h3-analytics/raster-ingestion",
         "guide/h3-analytics/aggregations",
         "guide/h3-analytics/joining",
-        "guide/h3-analytics/resolution-guide",
         "guide/h3-analytics/visualization",
       ],
     },

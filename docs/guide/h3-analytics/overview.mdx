@@ -9,6 +9,8 @@ sidebar_position: 0
 
 [Try the basics of H3 in Fused on Canvas →](https://www.fused.io/canvas/fc_public/Basics_of_H3_in_Fused)
 
+New to H3 in Fused? Start with [Working with H3](/guide/working-with-udfs/udf-best-practices/working-with-h3) for the five-step workflow, then come back here for the details.
+
 ## When to use H3
 
 Consider using H3 tiling when:
@@ -49,17 +51,41 @@ def bounds_to_res(bounds, res_offset=0, max_res=14, min_res=3):
 
 </details>
 
-## Converting Datasets to H3 tiles
+## Choose your path
 
-We've provided a few options for converting datasets to H3 tiles:
+How you get data into H3 depends on its type and size. Small data (under about 100 MB) can be [converted on the fly](/guide/h3-analytics/converting) inside a UDF, every time it runs. Large data is better ingested once, so later reads touch only the part you need.
 
-| Type | Data Size | Hexagonification Type | H3 Output | Consideration |
-|------|-----------|----------------------|-----------|---------------|
-| [File to H3](/guide/h3-analytics/converting#file-to-h3) | Small (< 100MB) | On the fly | Static Resolution | Easy to adjust. Can easily change field to hexagonify |
-| [Dynamic Tile to H3](/guide/h3-analytics/converting#dynamic-tile-to-h3) | Small or Large | On the fly | Dynamic Resolution | Easy to adjust. Can easily change field to hexagonify |
-| [Ingesting Dataset to H3](/guide/h3-analytics/converting#ingesting-dataset-to-h3) | Large (> 100MB) | Pre-computed | Dynamic Resolution | Requires deciding on which variable to hexagonify ahead of time |
+| Data | Small: convert on the fly | Large: ingest once, query parts |
+|------|---------------------------|---------------------------------|
+| Points (CSV, Parquet, lat/lng columns) | [`h3_latlng_to_cell()` in DuckDB](/guide/h3-analytics/converting#points) | [`partition(point_column=...)`](/python-sdk/api-reference/h3#partition), then [`index()`](/python-sdk/api-reference/h3#index) and [`query()`](/python-sdk/api-reference/h3#query). See the [NYC 311 example](/guide/h3-analytics/hex-datasets#example-nyc-311-points) |
+| Polygons and other vectors | [`common.gdf_to_hex()`](/guide/h3-analytics/converting#polygons-and-vectors) | Convert to hexes, then [`partition(hex_column=...)`](/python-sdk/api-reference/h3#partition), `index()` and `query()` |
+| Raster, categorical or high resolution (e.g. crop types) | [Raster to Hex](/guide/h3-analytics/converting#rasters) per tile | [Raster ingestion pipeline](/guide/h3-analytics/raster-ingestion) |
+| Raster, continuous (e.g. elevation) | [Raster to Hex](/guide/h3-analytics/converting#rasters) per tile | [Raster ingestion pipeline](/guide/h3-analytics/raster-ingestion) for built-in aggregation and overviews, or aggregate per hex yourself and [`partition(hex_column=...)`](/python-sdk/api-reference/h3#partition). See the [GeoTIFF example](/guide/h3-analytics/hex-datasets#example-geotiff-raster) |
+| Gridded and multi-dimensional (e.g. ERA5 weather) | — | [`sources.era5()`](/python-sdk/api-reference/h3#sourcesera5), then [`partition(fill="nearest")`](/python-sdk/api-reference/h3#partition), `index()` and `query()`. See the [ERA5 example](/guide/h3-analytics/hex-datasets#example-era5-weather) |
 
-For choosing the right resolution, see [Resolution Guide](/guide/h3-analytics/resolution-guide).
+### Ingest large datasets
+
+Fused has two ways to ingest a large dataset to H3. They solve different problems:
+
+| | [Partition, index & query](/guide/h3-analytics/hex-datasets) | [Raster ingestion pipeline](/guide/h3-analytics/raster-ingestion) |
+|---|---|---|
+| API | `fused.h3.partition()`, `index()`, `query()` | `fused.h3.run_ingest_raster_to_h3()`, read with the [`read_h3_dataset`](/guide/h3-analytics/raster-ingestion#reading-ingested-data) UDF |
+| Best for | Points, vectors, tables, multi-dimensional data; any very large dataset you want to query in parts | Single-band rasters, especially categorical or high-resolution ones |
+| Built in | Partitioning, indexing, and queries by point, area, cell, time or partition | Pixel-to-hex aggregation (`avg`, `cnt`, ...) and overviews at coarser resolutions |
+| Up to you | Any conversion or aggregation before partitioning | Choosing the metric and resolution; input is single-band rasters only |
+
+:::info Working with a very large dataset?
+If your dataset doesn't fit the patterns above (hundreds of GB, tens of thousands of files, or a custom ingestion shape), reach out to **info@fused.io**. We can help you scale the ingestion.
+:::
+
+## Work with H3 data
+
+Once your data is in H3:
+
+1. **Pick a resolution.** The resolution controls hex size and drives everything downstream: fidelity, storage, and the granularity available for aggregation and joins. See the [Resolution Guide](/guide/h3-analytics/resolution-guide).
+2. **Aggregate.** Roll data up to coarser (parent) resolutions to render and analyze it at different zoom levels: sum, mean, max, min or stddev for numerical data; counts or mode for categorical data. See [Aggregations](/guide/h3-analytics/aggregations).
+3. **Join.** Two H3 datasets at the same resolution join on `hex` with plain SQL, with no spatial join, even across projections, sparse data, or raster and vector sources. See [Joining](/guide/h3-analytics/joining).
+4. **Visualize.** Render hexagons in the Workbench Map Viewer or combine UDFs in Canvas. See [Visualization](/guide/h3-analytics/visualization).
 
 ## Example UDFs
 
