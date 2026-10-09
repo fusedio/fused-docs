@@ -25,12 +25,8 @@ A query reads only the part you ask for, so the benefit grows with the dataset. 
   style={{width: "100%", margin: "1em auto", display: "block"}}
 />
 
-:::note
-`fused.h3.partition()` must run inside a [UDF](/guide/working-with-udfs/writing-udfs). Every parameter is in the [`fused.h3` API reference](/python-sdk/api-reference/h3).
-:::
-
 :::note Don't use `partition_by` for location
-`partition()` already groups rows by location: each file holds the hexes under one H3 parent cell at `file_res`, sorted by hex. Use `partition_by` for columns that are not about space, such as `date`, `hour` or `scenario`. Partitioning by a spatial column (a state, county, tile or coarser hex) splits neighbouring hexes into different folders, so the same area is spread over more files and an area query reads more of them. To change how much area each file covers, change `file_res` instead.
+`partition()` already groups rows by location; use `file_res` to adjust file coverage. Use `partition_by` for nonspatial columns, such as `date`, `hour` or `scenario`.
 :::
 
 ## Examples
@@ -165,19 +161,9 @@ For a larger region or more days, widen `bbox` and `days` and run it as a [batch
 
 [Open this example in Canvas →](https://www.fused.io/canvas/fc_fused/H3_AIS_One_Month)
 
-A large dataset, ingested once and queried in seconds. The source is [NOAA's AIS data](https://hub.marinecadastre.gov/pages/vesseltraffic): every position report broadcast by ships in US waters, one zip per day. July 1 to August 1, 2024 is 32 zips (12.4 GB zipped) and **309.5 million rows**.
+Query **309.5 million ship positions** from [NOAA's AIS data](https://hub.marinecadastre.gov/pages/vesseltraffic), covering July 2024. After ingestion, a one-hour New York Harbor query takes **0.1 seconds**.
 
-- **Partition** (a batch job): one folder per day, one file per res-1 cell, each report as a res-10 hex. The result is 1,950 files, 4.5 GB.
-- **Index** (a batch job): `BaseDateTime` is the time column, so queries can ask for any time window, not just whole days. The index covers 6,332 row groups.
-- **Query**: each query reads only the row groups that match its area and time window.
-
-| Query | Row groups read | Rows returned | Query time |
-|---|---|---|---|
-| New York Harbor, one hour (Jul 3, 12:00 UTC) | 5 of 6,332 | 6,214 | 0.1 s |
-| New York Harbor, a whole day (Jul 3) | 5 of 6,332 | 126,828 | 0.1 s |
-| All US waters, one hour (Jul 3, 12:00 UTC) | 199 of 6,332 | 423,418 | 1.9 s |
-
-Try it below: it opens on the table's first query. Draw a box (top right), pick dates, then drag the slider or press play; each change queries the month.
+Draw a box, pick dates, and use the slider to explore.
 
 <iframe
   src="https://udf.ai/fc_fused/H3_AIS_One_Month/map_app_draw_box.html"
@@ -270,22 +256,9 @@ def udf(out: str = "fd://h3/ais_july_2024/"):
 
 [Open this example in Canvas →](https://www.fused.io/canvas/fc_fused/H3_LiDAR_Manhattan)
 
-Dense points, stored one row per point. The source is the [USGS 3DEP](https://www.usgs.gov/3d-elevation-program) LiDAR survey of New York City (2013–14): 58 LAZ tiles (2.4 GB) and **367.8 million points** inside Manhattan, about 6 per m². Each row keeps its exact lat/lng and height; the res-12 cell is only the search key.
+Explore **367.8 million Manhattan points** from the [USGS 3DEP](https://www.usgs.gov/3d-elevation-program) LiDAR survey. A 250-meter box query around the Empire State Building takes **0.4 seconds**.
 
-- **Partition** (a batch job on a 64 GB machine, 22 minutes): one LAZ tile per batch, moved to lat/lng with PDAL and cut to Manhattan. One file per res-7 cell gives 29 files, 5.6 GB.
-- **Index** (a batch job): 5,624 row groups, no time column.
-- **Query**: a street-level box reads a few dozen row groups.
-
-| Query | Row groups read | Rows returned | Query time |
-|---|---|---|---|
-| Empire State Building, its res-12 cell | 1 of 5,624 | 738 | 0.4 s |
-| Empire State Building, a 250 m box | 27 of 5,624 | 194,612 | 0.4 s |
-| One street-level map tile | 18 of 5,624 | 174,472 | 0.3 s |
-| 1 km² of Midtown | 287 of 5,624 | over 2 million: fails | — |
-
-At this density one query reaches the 2-million-row cap well before 1 km². The cap is per query, so the canvas's 3D map app splits a box into pieces of at most 0.15 km² and runs one query per piece, 8 at a time: a 0.9 km² box becomes 9 queries and 3.7 million points.
-
-Try it below: it opens on the blocks around the Empire State Building in 3D. Draw a box of up to 1 km² to load any part of Manhattan.
+Draw a box to explore Manhattan in 3D. The app splits large areas into smaller queries automatically.
 
 <iframe
   src="https://udf.ai/fc_fused/H3_LiDAR_Manhattan/map_app_3d.html"
@@ -381,21 +354,21 @@ def udf(out: str = "fd://h3/lidar_manhattan/"):
 ## Tips for large datasets
 
 **Partition**
-- Run it as a batch job (`engine="m5.xlarge"` or larger): realtime UDFs stop after 120 s.
-- Pass one batch per source file, such as a day's CSV. Batches can come in any order, unsorted.
-- Coordinates must already be lat/lng degrees (EPSG:4326). `partition()` does not reproject.
-- Out of memory with large output files? Pass a lower `workers`, such as 2 to 4.
-- Too big for one run? Convert pieces in parallel with [`.map()`](/guide/working-with-udfs/fused-submit), write Parquet, then partition the folder with `fused.h3.sources.parquet()`.
+- Use a batch job (`engine="m5.xlarge"` or larger) for large datasets.
+- Pass one batch per source file; rows can be unsorted.
+- Use latitude/longitude coordinates (EPSG:4326); `partition()` does not reproject them.
+- Reduce `workers` to 2–4 if you run out of memory.
+- Convert oversized datasets in parallel with [`.map()`](/guide/working-with-udfs/fused-submit), then partition using `fused.h3.sources.parquet()`.
 
 **Index**
-- `index()` runs as its own batch job: pass `wait=False` and check `fused.h3.index_status()`.
-- Index again after changing files, or queries fail with "The index is stale".
+- Pass `wait=False` to `index()` and monitor progress with `fused.h3.index_status()`.
+- Rebuild the index whenever you change dataset files.
 
 **Query**
-- One query returns at most 2,000,000 rows. Split a bigger area or time window into smaller queries.
-- Only space, time and `partition_by` values are filtered. Filter other columns on the result.
-- A box keeps rows whose cell centre is inside it. For an exact edge, pad the box by one cell, then filter on lat/lng.
-- `format="index"` lists the row groups a query would read, without reading them.
+- Queries return at most 2,000,000 rows; split larger requests into smaller queries.
+- Filter by location, time, or `partition_by`; apply other filters afterward.
+- For exact boundaries, pad the box by one cell, then filter by latitude/longitude.
+- Use `format="index"` to preview which row groups a query would read.
 
 ## See also
 
