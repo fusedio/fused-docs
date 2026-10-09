@@ -17,13 +17,7 @@ toc_max_heading_level: 3
 
 Use it for large datasets of any type: points, vectors, tables and multi-dimensional data such as weather. It partitions and indexes your data; any conversion or aggregation, such as averaging raster pixels per hex, is yours to do before partitioning. For rasters where you want aggregation and overviews built in, use the [raster ingestion pipeline](/guide/h3-analytics/raster-ingestion). See [Choose your path](/guide/h3-analytics/h3-overview#choose-your-path).
 
-A query reads only the part you ask for, so the benefit grows with the dataset. The first example, NYC 311, is small and finishes quickly ([canvas →](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion)); the last two, [AIS](#example-one-month-of-ais-ship-positions) and [LiDAR](#example-every-lidar-point-in-manhattan), ingest over 300 million rows each.
-
-<img
-  alt="H3 End to End Ingestion canvas: one row per example, from source to partition, index and query map"
-  src={require('/static/img/tutorials/geospatial/h3/h3_end_to_end_ingestion_canvas.webp').default}
-  style={{width: "100%", margin: "1em auto", display: "block"}}
-/>
+A query reads only the part you ask for, so the benefit grows with the dataset. The examples below ingest [10.4 million NYC 311 requests](#example-41-months-of-nyc-311-requests), and over 300 million rows each of [AIS](#example-one-month-of-ais-ship-positions) and [LiDAR](#example-every-lidar-point-in-manhattan).
 
 :::note Don't use `partition_by` for location
 `partition()` already groups rows by location; use `file_res` to adjust file coverage. Use `partition_by` for nonspatial columns, such as `date`, `hour` or `scenario`.
@@ -31,42 +25,80 @@ A query reads only the part you ask for, so the benefit grows with the dataset. 
 
 ## Examples
 
-### Example: NYC 311 points
+### Example: 41 months of NYC 311 requests
 
-[Open this example in Canvas →](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion?bounds=-20,-20,3975,680)
+[Open this example in Canvas →](https://www.fused.io/canvas/fc_fused/H3_NYC_311)
 
-Count noise complaints per hex for one week in New York City. The source is the NYC Open Data API; each complaint has a latitude and longitude, and the dataset is split into one folder per day.
+Query **10.4 million service requests** from [NYC 311](https://data.cityofnewyork.us/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9), January 2020 to May 2023. After ingestion, one month of a few Midtown blocks reads 2 of 455 row groups in **0.3 seconds**.
+
+Pick a month to see every request. Zoom in to load only what is on screen.
+
+<iframe
+  src="https://www.fused.io/share/fc_fused%2FH3_NYC_311/nyc_month_map"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
 
 <details>
 <summary>Code</summary>
 
-```python showLineNumbers {17-20,23,26}
-@fused.udf(cache_max_age=0)
-def udf(out: str = "fd://h3/nyc311_noise/"):
+The canvas's first step copies the NYC Open Data API to `raw`, one Parquet file per month. The partition step streams every month into one `partition()` call:
+
+```python showLineNumbers {21-29}
+@fused.udf(engine="medium")
+def udf(
+    raw: str = "fd://h3/nyc311_raw/",
+    out: str = "fd://h3/nyc311/",
+):
     import pandas as pd
-    from urllib.parse import urlencode
+    import pyarrow as pa
+    import pyarrow.compute as pc
 
-    # 1. Source: one week of noise complaints from the NYC Open Data API
-    query = urlencode({
-        "$select": "unique_key, created_date, complaint_type, latitude, longitude",
-        "$where": "created_date between '2024-07-01T00:00:00' and '2024-07-07T23:59:59'"
-                  " AND complaint_type like 'Noise%' AND latitude IS NOT NULL",
-        "$limit": 200000,
-    })
-    df = pd.read_csv(f"https://data.cityofnewyork.us/resource/erm2-nwe9.csv?{query}")
-    df["date"] = pd.to_datetime(df.pop("created_date")).dt.date  # a date, so it becomes the time column
+    files = sorted(p for p in fused.api.list(raw) if p.endswith(".parquet"))
 
-    # 2. Partition: each complaint has a lat/lng, so use point_column; one folder per day
+    # 1. Source: every month's file, in batches, tagged with its month
+    def batches():
+        for path in files:
+            month = path.rsplit("/", 1)[-1].removesuffix(".parquet")  # "2023-05"
+            for batch in fused.h3.sources.parquet(path):
+                batch = batch.filter(pc.and_(pc.is_valid(batch["latitude"]), pc.is_valid(batch["longitude"])))
+                yield batch.append_column("month", pa.array([month] * batch.num_rows, pa.string()))
+
+    # 2. Partition: one folder per month, one file per res-5 cell, each request as a res-11 hex
     fused.h3.partition(
-        df, out, point_column=("latitude", "longitude"),
-        h3_res=11, file_res=5, partition_by="date", overwrite=True,
+        batches(),
+        out,
+        point_column=("latitude", "longitude"),
+        h3_res=11,
+        file_res=5,
+        partition_by="month",
+        overwrite=True,
     )
+    return pd.DataFrame({"months": [len(files)]})
+```
 
-    # 3. Index: records where each hex is, so queries read only what they need
-    fused.h3.index(out, overwrite=True)
+Index it with `created_date` as the time column:
 
-    # 4. Query: complaints on July 4 in lower Manhattan
-    return fused.h3.query(out, bbox=(-74.02, 40.70, -73.97, 40.75), partition={"date": "2024-07-04"})
+```python showLineNumbers
+@fused.udf
+def udf(out: str = "fd://h3/nyc311/"):
+    fused.h3.index(out, time_column="created_date", overwrite=True, wait=False)
+```
+
+Then query any area and month:
+
+```python showLineNumbers
+@fused.udf
+def udf(out: str = "fd://h3/nyc311/"):
+    # Every request in a few blocks of Midtown in May 2023
+    return fused.h3.query(
+        out,
+        bbox=(-73.990, 40.752, -73.980, 40.760),
+        partition={"month": "2023-05"},
+        columns=["latitude", "longitude", "complaint_type", "created_date"],
+    )
 ```
 
 </details>
