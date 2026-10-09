@@ -17,7 +17,7 @@ toc_max_heading_level: 3
 
 Use it for large datasets of any type: points, vectors, tables and multi-dimensional data such as weather. It partitions and indexes your data; any conversion or aggregation, such as averaging raster pixels per hex, is yours to do before partitioning. For rasters where you want aggregation and overviews built in, use the [raster ingestion pipeline](/guide/h3-analytics/raster-ingestion). See [Choose your path](/guide/h3-analytics/h3-overview#choose-your-path).
 
-The benefit grows with the dataset: a query reads only the part you ask for, not the whole dataset. The examples below run all three steps on small samples of points, a raster and gridded weather data, so they finish quickly. Each one is a row in the [H3 End to End Ingestion canvas →](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion)
+The benefit grows with the dataset: a query reads only the part you ask for, not the whole dataset. The first three examples below run all three steps on small samples of points, a raster and gridded weather data, so they finish quickly. Each one is a row in the [H3 End to End Ingestion canvas →](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion) The last one, [one month of AIS ship positions](#example-one-month-of-ais-ship-positions), ingests 309 million rows and queries them in seconds.
 
 <img
   alt="H3 End to End Ingestion canvas: one row per example, from source to partition, index and query map"
@@ -160,6 +160,111 @@ def udf(out: str = "fd://h3/era5_nyc/"):
 </details>
 
 For a larger region or more days, widen `bbox` and `days` and run the UDF with `engine="large"`.
+
+### Example: one month of AIS ship positions
+
+[Open this example in Canvas →](https://www.fused.io/canvas/fc_fused/H3_AIS_One_Month)
+
+A large dataset, ingested once and queried in seconds. The source is [NOAA's AIS data](https://hub.marinecadastre.gov/pages/vesseltraffic): every position report broadcast by ships in US waters, one zip per day. July 1 to August 1, 2024 is 32 zips (12.4 GB zipped) and **309.5 million rows**.
+
+- **Partition** (a batch job): one folder per day, one file per res-1 cell, each report as a res-10 hex. The result is 1,950 files, 4.5 GB.
+- **Index** (a batch job): `BaseDateTime` is the time column, so queries can ask for any time window, not just whole days. The index covers 6,332 row groups.
+- **Query**: each query reads only the row groups that match its area and time window.
+
+| Query | Row groups read | Rows returned | Query time |
+|---|---|---|---|
+| New York Harbor, one hour (Jul 3, 12:00 UTC) | 5 of 6,332 | 6,214 | 0.1 s |
+| New York Harbor, a whole day (Jul 3) | 5 of 6,332 | 126,828 | 0.1 s |
+| All US waters, one hour (Jul 3, 12:00 UTC) | 199 of 6,332 | 423,418 | 1.9 s |
+
+Try it below: the map app queries the whole month for the area in view. Zoom in to a harbor, then press the refresh button (top right) to fetch the vessels in view. Upper New York Bay for all of July returns 1.6 million reports from 1,610 vessels in about 2 seconds. If the view holds too many reports, the app says "Too much data for one view": zoom in and refresh again.
+
+<iframe
+  src="https://udf.ai/fc_fused/H3_AIS_One_Month/map_app_current_view.html"
+  width="100%"
+  height="600px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+<details>
+<summary>Code</summary>
+
+The canvas's first step copies NOAA's daily zips to `raw` as they are. The partition step then reads one day at a time and passes each day to `partition()` as one batch:
+
+```python showLineNumbers {38-46}
+@fused.udf(engine="m5.xlarge")
+def udf(
+    start_date: str = "2024-07-01",
+    end_date: str = "2024-08-01",
+    raw: str = "fd://h3/ais_raw/",
+    out: str = "fd://h3/ais_july_2024/",
+):
+    import zipfile
+
+    import fsspec
+    import numpy as np
+    import pandas as pd
+    import pyarrow as pa
+    import pyarrow.compute as pc
+    import pyarrow.csv as pacsv
+
+    types = {
+        "MMSI": pa.int64(), "BaseDateTime": pa.timestamp("s"),
+        "LAT": pa.float64(), "LON": pa.float64(), "SOG": pa.float64(), "COG": pa.float64(), "Heading": pa.float64(),
+        "VesselName": pa.string(), "IMO": pa.string(), "CallSign": pa.string(),
+        "VesselType": pa.float64(), "Status": pa.float64(), "Length": pa.float64(), "Width": pa.float64(),
+        "Draft": pa.float64(), "Cargo": pa.float64(), "TransceiverClass": pa.string(),
+    }
+    days = list(pd.date_range(start_date, end_date, freq="D").strftime("%Y-%m-%d"))
+
+    # 1. Source: one batch per day, read from that day's zipped CSV (about 10 million rows)
+    def one_batch_per_day():
+        for day in days:
+            y, m, d = day.split("-")
+            zip_path = f"{fused.api.resolve(raw)}AIS_{y}_{m}_{d}.zip"
+            with fsspec.open(zip_path, "rb") as f, zipfile.ZipFile(f) as z, z.open(z.namelist()[0]) as csv:
+                table = pacsv.read_csv(csv, convert_options=pacsv.ConvertOptions(column_types=types))
+            table = table.filter(pc.and_(pc.is_valid(table["LAT"]), pc.is_valid(table["LON"])))
+            date = pa.array(np.full(table.num_rows, np.datetime64(day, "D")), pa.date32())
+            yield table.append_column("date", date).combine_chunks().to_batches()[0]
+
+    # 2. Partition: one folder per day, one file per res-1 cell, each report as a res-10 hex
+    fused.h3.partition(
+        one_batch_per_day(),
+        out,
+        point_column=("LAT", "LON"),
+        h3_res=10,
+        file_res=1,
+        partition_by="date",
+        overwrite=True,
+    )
+    return pd.DataFrame({"days": [len(days)]})
+```
+
+Index it with `BaseDateTime` as the time column. `index()` runs as its own batch job; with `wait=False` the UDF returns right away, and `fused.h3.index_status(out)` shows when the index is ready:
+
+```python showLineNumbers
+@fused.udf
+def udf(out: str = "fd://h3/ais_july_2024/"):
+    fused.h3.index(out, time_column="BaseDateTime", overwrite=True, wait=False)
+```
+
+Then query any area and time window:
+
+```python showLineNumbers
+@fused.udf
+def udf(out: str = "fd://h3/ais_july_2024/"):
+    # Every position report in New York Harbor between 12:00 and 13:00 UTC on July 3
+    return fused.h3.query(
+        out,
+        bbox=(-74.10, 40.55, -73.90, 40.72),
+        time_min="2024-07-03T12:00:00",
+        time_max="2024-07-03T12:59:59",
+    )
+```
+
+</details>
 
 ## See also
 
