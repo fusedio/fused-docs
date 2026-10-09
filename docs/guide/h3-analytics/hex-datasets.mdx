@@ -17,7 +17,7 @@ toc_max_heading_level: 3
 
 Use it for large datasets of any type: points, vectors, tables and multi-dimensional data such as weather. It partitions and indexes your data; any conversion or aggregation, such as averaging raster pixels per hex, is yours to do before partitioning. For rasters where you want aggregation and overviews built in, use the [raster ingestion pipeline](/guide/h3-analytics/raster-ingestion). See [Choose your path](/guide/h3-analytics/h3-overview#choose-your-path).
 
-A query reads only the part you ask for, so the benefit grows with the dataset. The first three examples are small and finish quickly ([canvas →](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion)); the last two, [AIS](#example-one-month-of-ais-ship-positions) and [LiDAR](#example-every-lidar-point-in-manhattan), ingest over 300 million rows each.
+A query reads only the part you ask for, so the benefit grows with the dataset. The first example, NYC 311, is small and finishes quickly ([canvas →](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion)); the last two, [AIS](#example-one-month-of-ais-ship-positions) and [LiDAR](#example-every-lidar-point-in-manhattan), ingest over 300 million rows each.
 
 <img
   alt="H3 End to End Ingestion canvas: one row per example, from source to partition, index and query map"
@@ -70,92 +70,6 @@ def udf(out: str = "fd://h3/nyc311_noise/"):
 ```
 
 </details>
-
-### Example: GeoTIFF raster
-
-[Open this example in Canvas →](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion?bounds=-20,780,3975,1480)
-
-Average elevation per hex over New York City. The source is the Copernicus DEM, a Cloud-Optimized GeoTIFF on AWS: only the NYC window is read, and its pixels are averaged into hexes before partitioning.
-
-<details>
-<summary>Code</summary>
-
-```python showLineNumbers {31,34-35}
-@fused.udf(cache_max_age=0)
-def udf(out: str = "fd://h3/nyc_elevation/", h3_res: int = 10):
-    import numpy as np
-    import pandas as pd
-    import rasterio
-    from rasterio.windows import from_bounds
-
-    # 1. Source: read only the NYC window of the Copernicus DEM (30 m COG on AWS)
-    cog = (
-        "https://copernicus-dem-30m.s3.eu-central-1.amazonaws.com/"
-        "Copernicus_DSM_COG_10_N40_00_W074_00_DEM/Copernicus_DSM_COG_10_N40_00_W074_00_DEM.tif"
-    )
-    with rasterio.open(cog) as ds:
-        window = from_bounds(-74.0, 40.6, -73.75, 40.9, transform=ds.transform)
-        band = ds.read(1, window=window)
-        transform = ds.window_transform(window)
-    rows, cols = np.indices(band.shape).reshape(2, -1)
-    lng, lat = rasterio.transform.xy(transform, rows, cols)  # already lat/lng (EPSG:4326)
-    pixels = pd.DataFrame({"lat": lat, "lng": lng, "elevation": band[rows, cols].astype("float64")})
-
-    # 2. Average the pixels inside each hex
-    common = fused.load("https://github.com/fusedio/udfs/tree/b6786d6/public/common/")
-    con = common.duckdb_connect()
-    df = con.sql(f"""
-        SELECT h3_latlng_to_cell(lat, lng, {h3_res})::UBIGINT AS hex,
-               AVG(elevation) AS elevation, COUNT(*) AS pixels
-        FROM pixels GROUP BY 1
-    """).df()
-
-    # 3. Partition: rows already have a hex, so use hex_column
-    fused.h3.partition(df, out, hex_column="hex", h3_res=h3_res, file_res=5, overwrite=True)
-
-    # 4. Index, then query the hex containing Central Park
-    fused.h3.index(out, overwrite=True)
-    return fused.h3.query(out, lat=40.7829, lng=-73.9654)
-```
-
-</details>
-
-### Example: ERA5 weather
-
-[Open this example in Canvas →](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion?bounds=-20,1580,3975,2280)
-
-Daily maximum and minimum temperature per hex for one day around New York City. The source is ERA5, read from Google's public ARCO store with [`fused.h3.sources.era5()`](/python-sdk/api-reference/h3#sourcesera5), which returns the weather grid as latitude/longitude rows ready to partition.
-
-<details>
-<summary>Code</summary>
-
-```python showLineNumbers {5,8-17,20-21}
-@fused.udf(cache_max_age=0)
-def udf(out: str = "fd://h3/era5_nyc/"):
-    # 1. Source: one day of ERA5 around New York City, as lat/lng rows
-    bbox = (-76.5, 39.5, -71.5, 42.5)  # (min_lng, min_lat, max_lng, max_lat)
-    batches = fused.h3.sources.era5(2024, 7, outputs=["t2m_max", "t2m_min"], days=[4], bbox=bbox)
-
-    # 2. Partition: fill="nearest" gives every hex its nearest grid point's values
-    fused.h3.partition(
-        batches,
-        out,
-        point_column=("lat", "lng"),
-        fill="nearest",
-        h3_res=6,
-        file_res=2,
-        partition_by="date",
-        overwrite=True,
-    )
-
-    # 3. Index, then 4. query the hex containing New York City
-    fused.h3.index(out, overwrite=True)
-    return fused.h3.query(out, lat=40.7128, lng=-74.0060)
-```
-
-</details>
-
-For a larger region or more days, widen `bbox` and `days` and run it as a [batch job](#tips-for-large-datasets).
 
 ### Example: one month of AIS ship positions
 
