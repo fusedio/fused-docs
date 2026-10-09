@@ -11,68 +11,18 @@ sidebar_position: 0
 
 New to H3 in Fused? Start with [Working with H3](/guide/working-with-udfs/udf-best-practices/working-with-h3) for the five-step workflow, then come back here for the details.
 
-## When to use H3
+## Get your data into H3
 
-Consider using H3 tiling when:
-- Creating heatmaps of events (populations, counts, etc.)
-- Wanting to compare datasets across resolutions & scale
-- Working with sparse datasets
+Size decides how. Small data (under about 100 MB) is converted inside a UDF every time it runs. Large data is ingested once, so later reads touch only the part you need.
 
-Example of buildings heatmap based on the Overture Buildings dataset:
+| | Small: convert on the fly | Large: partition, index & query | Large: raster ingestion pipeline |
+|---|---|---|---|
+| How | Convert inside the UDF on every run | You control each step: partition, index, query | One managed call ingests, aggregates and builds overviews |
+| Data | Points, polygons and vectors, single-band rasters | Any: points, vectors, rasters, tables, gridded and multi-dimensional | Single-band rasters |
+| API | [`h3_latlng_to_cell()`](/guide/h3-analytics/converting#points) in DuckDB, [`common.gdf_to_hex()`](/guide/h3-analytics/converting#polygons-and-vectors) | [`partition()`](/python-sdk/api-reference/h3#partition), [`index()`](/python-sdk/api-reference/h3#index), [`query()`](/python-sdk/api-reference/h3#query) | [`run_ingest_raster_to_h3()`](/python-sdk/api-reference/h3#run_ingest_raster_to_h3) |
+| Guide | [Convert on the fly](/guide/h3-analytics/converting) | [Ingest: partition, index & query](/guide/h3-analytics/hex-datasets) | [Raster ingestion](/guide/h3-analytics/raster-ingestion) |
 
-<iframe 
-  src="https://www.fused.io/server/v1/realtime-shared/fsh_1P5dqTKyPeryNpoPslct0o/run/file"
-  width="100%"
-  height="600px"
-  frameBorder="0"
-  style={{borderRadius: '8px'}}
-></iframe>
-
-<details>
-<summary>Code</summary>
-
-```python showLineNumbers
-common = fused.load("https://github.com/fusedio/udfs/blob/main/public/common/")
-@fused.udf
-def udf(bounds: fused.types.Bounds = [-122.71963771127753,36.53196328805067,-120.70395948802646,38.082911654639275]):
-    res = bounds_to_res(bounds)
-    print(res)
-    releases = ['2024-02-15-alpha-0', '2024-03-12-alpha-0', '2024-08-20-0', '2024-09-18-0', '2024-10-23-0', '2024-11-13-0', '2024-12-18-0', '2025-01-22-0', '2025-03-19-1', '2025-04-23-0', '2025-05-21-0']
-    release1 = releases[-1]
-    df1 = common.read_hexfile(bounds, f"s3://fused-users/fused/sina/overture_overview/{release1}/hex{res}.parquet", clip=True)
-
-    return df1
-
-@fused.cache
-def bounds_to_res(bounds, res_offset=0, max_res=14, min_res=3):
-    z = common.estimate_zoom(bounds)
-    return max(min(int(3 + max(0, z - 3) / 1.7 + res_offset), max_res), min_res)
-```
-
-</details>
-
-## Choose your path
-
-How you get data into H3 depends on its type and size. Small data (under about 100 MB) can be [converted on the fly](/guide/h3-analytics/converting) inside a UDF, every time it runs. Large data is better ingested once, so later reads touch only the part you need.
-
-| Data | Small: convert on the fly | Large: ingest once, query parts |
-|------|---------------------------|---------------------------------|
-| Points (CSV, Parquet, lat/lng columns) | [`h3_latlng_to_cell()` in DuckDB](/guide/h3-analytics/converting#points) | [`partition(point_column=...)`](/python-sdk/api-reference/h3#partition), then [`index()`](/python-sdk/api-reference/h3#index) and [`query()`](/python-sdk/api-reference/h3#query). See the [NYC 311 example](/guide/h3-analytics/hex-datasets#example-nyc-311-points) |
-| Polygons and other vectors | [`common.gdf_to_hex()`](/guide/h3-analytics/converting#polygons-and-vectors) | Convert to hexes, then [`partition(hex_column=...)`](/python-sdk/api-reference/h3#partition), `index()` and `query()` |
-| Raster, categorical or high resolution (e.g. crop types) | [Raster to Hex](/guide/h3-analytics/converting#rasters) per tile | [Raster ingestion pipeline](/guide/h3-analytics/raster-ingestion) |
-| Raster, continuous (e.g. elevation) | [Raster to Hex](/guide/h3-analytics/converting#rasters) per tile | [Raster ingestion pipeline](/guide/h3-analytics/raster-ingestion) for built-in aggregation and overviews, or aggregate per hex yourself and [`partition(hex_column=...)`](/python-sdk/api-reference/h3#partition). See the [GeoTIFF example](/guide/h3-analytics/hex-datasets#example-geotiff-raster) |
-| Gridded and multi-dimensional (e.g. ERA5 weather) | — | [`sources.era5()`](/python-sdk/api-reference/h3#sourcesera5), then [`partition(fill="nearest")`](/python-sdk/api-reference/h3#partition), `index()` and `query()`. See the [ERA5 example](/guide/h3-analytics/hex-datasets#example-era5-weather) |
-
-### Ingest large datasets
-
-Fused has two ways to ingest a large dataset to H3. They solve different problems:
-
-| | [Partition, index & query](/guide/h3-analytics/hex-datasets) | [Raster ingestion pipeline](/guide/h3-analytics/raster-ingestion) |
-|---|---|---|
-| API | `fused.h3.partition()`, `index()`, `query()` | `fused.h3.run_ingest_raster_to_h3()`, read with the [`read_h3_dataset`](/guide/h3-analytics/raster-ingestion#reading-ingested-data) UDF |
-| Best for | Points, vectors, tables, multi-dimensional data; any very large dataset you want to query in parts | Single-band rasters, especially categorical or high-resolution ones |
-| Built in | Partitioning, indexing, and queries by point, area, cell, time or partition | Pixel-to-hex aggregation (`avg`, `cnt`, ...) and overviews at coarser resolutions |
-| Up to you | Any conversion or aggregation before partitioning | Choosing the metric and resolution; input is single-band rasters only |
+For rasters where you want aggregation and overviews built in, use the raster ingestion pipeline. For everything else, use partition, index & query.
 
 :::info Working with a very large dataset?
 If your dataset doesn't fit the patterns above (hundreds of GB, tens of thousands of files, or a custom ingestion shape), reach out to **info@fused.io**. We can help you scale the ingestion.
@@ -87,8 +37,8 @@ Once your data is in H3:
 3. **Join.** Two H3 datasets at the same resolution join on `hex` with plain SQL, with no spatial join, even across projections, sparse data, or raster and vector sources. See [Joining](/guide/h3-analytics/joining).
 4. **Visualize.** Render hexagons in the Workbench Map Viewer or combine UDFs in Canvas. See [Visualization](/guide/h3-analytics/visualization).
 
-## Example UDFs
+## Example canvases
 
-- [Ookla Download Speed Heatmap](https://www.fused.io/workbench/catalog/Ookla_Download_Speeds-12a8bc7e-5baf-4eac-b695-a4434cff0554): Visualize download speeds across the world.
-- [US Crop Viewer](https://www.fused.io/workbench/catalog/Hex_CDL_explorer-5b621c26-590d-4a11-b30c-d8d24ca16b3e): Explore crops around the US
-- [Overture Release Difference Heatmap](https://www.fused.io/workbench/catalog/Overture_Hex_Diff-b513710b-bc22-4eb3-9c3e-78672927abb8): Visually identify differences between 2 Overture Building dataset releases.
+- [H3 Converting Examples](https://www.fused.io/canvas/fc_fused/H3_Converting_Examples): points, polygons, vectors and rasters converted to hexes on the fly.
+- [Seismic Hazard Building Risk](https://www.fused.io/canvas/fc_fused/Seismic_Hazard_Building_Risk): a hazard raster and Overture buildings, each converted to hexes and joined on H3 ([walkthrough](/examples/seismic-hazard-mapping)).
+- [Overture, Census & Isochrone Dashboard](https://www.fused.io/canvas/fc_fused/Dashboard_Overture_Census_Isochrone): points of interest and household income inside a travel-time area, aggregated to hexes ([walkthrough](/examples/poi-site-selection-dashboard)).
