@@ -1,0 +1,229 @@
+---
+id: kubernetes-agent
+title: Kubernetes agent
+sidebar_label: Kubernetes agent
+description: Run Fused batch jobs on your own Kubernetes cluster with the Fused Kubernetes agent — installation with Helm, configuration, permissions, and troubleshooting.
+---
+
+import Tag from '@site/src/components/Tag';
+
+# Kubernetes agent <Tag color="#f0a500">Beta</Tag>
+
+The **Fused Kubernetes agent** is a small service you install in your own Kubernetes cluster. Once it's connected, batch jobs that your team submits with `instance_type="agent"` run as native Kubernetes Jobs on your cluster instead of on Fused-managed machines. Your data and compute stay in your own infrastructure, and you keep control of node pools, scheduling, and networking.
+
+:::note
+This page is about running compute on your own cluster. To build UDFs that AI agents can call as tools, see [Building UDFs for agents](/guide/working-with-udfs/udf-best-practices/agents).
+:::
+
+## How it works
+
+1. The agent runs as a single Deployment in your cluster. It opens an **outbound** WebSocket connection to the Fused server and authenticates with your team's [service account](/guide/advanced-setup/service-accounts) token. No inbound ports or load balancers are needed.
+2. When someone on your team submits a batch job with `instance_type="agent"`, the Fused server sends the job to the agent over that connection.
+3. The agent downloads the job configuration and creates a ConfigMap and a `batch/v1` Job in its namespace. The Job runs the Fused job runtime image.
+4. The job pod reports its status and results back to Fused, just like any other batch job. Cancelling the job deletes the Kubernetes Job, and fetching logs reads them from the job's pod.
+
+Each team (execution environment) has **one active agent** at a time. The team is determined by the service account token the agent uses.
+
+## Requirements
+
+| Requirement | Details |
+|---|---|
+| Kubernetes cluster | Any conformant cluster (EKS, GKE, AKS, or self-managed) with permission to create a namespace and namespaced RBAC |
+| Helm | Helm 3 |
+| Outbound network access | The Fused server (`https://www.fused.io/server`), Amazon S3 (job configurations are fetched from presigned S3 URLs), and the container registry hosting the agent and job images |
+| Fused plan | Service accounts require a paid plan |
+| Chart and images | The agent Helm chart and pull access to the agent and job images, provided by Fused |
+
+:::note
+The Kubernetes agent chart and images are not publicly published. [Contact Fused](mailto:info@fused.io) to get the Helm chart, the image tags to use, and registry pull access for your cluster.
+:::
+
+## Step 1: Create a service account token
+
+The agent authenticates as your team using a service account token.
+
+1. Open **Integrations & Secrets** in Workbench.
+2. Under **Service accounts**, click **+ Create service account** and name it after the cluster, for example `k8s-agent-prod`.
+3. Copy the token. It has the form `<service-account-id>:<token>`.
+
+:::important
+The token is shown **only once**. Store it in a secrets manager. Anyone with this token can run jobs as your team. See [Service accounts](/guide/advanced-setup/service-accounts) for details.
+:::
+
+## Step 2: Install the agent with Helm
+
+Create the namespace and store the token in a Kubernetes Secret. The Secret must contain a `fused-auth-token` key:
+
+```bash
+kubectl create namespace fused
+kubectl create secret generic fused-agent-secret \
+  --namespace fused \
+  --from-literal=fused-auth-token='<service-account-id>:<token>'
+```
+
+Install the chart from the directory Fused provided, referencing the Secret and the image tags Fused gave you:
+
+```bash
+helm install fused-agent ./helm \
+  --namespace fused \
+  --set namespace=fused \
+  --set existingSecret=fused-agent-secret \
+  --set image.tag=<agent-image-tag> \
+  --set fusedJobDockerImage=<job-image>:<job-image-tag>
+```
+
+Alternatively, let the chart create the Secret for you by passing the token directly. This stores the token in your Helm release values, so prefer `existingSecret` in production:
+
+```bash
+helm install fused-agent ./helm \
+  --namespace fused --create-namespace \
+  --set namespace=fused \
+  --set fusedAuthToken='<service-account-id>:<token>' \
+  --set image.tag=<agent-image-tag>
+```
+
+:::warning
+Always set the chart's `namespace` value to the same namespace you pass to `helm --namespace`. The Deployment and its ServiceAccount are created in the Helm release namespace, while the Role and RoleBinding use the `namespace` value. If they differ, the agent won't have permission to create jobs.
+:::
+
+## Step 3: Verify the connection
+
+Check the agent's logs:
+
+```bash
+kubectl logs deploy/fused-agent-helm --namespace fused
+```
+
+A healthy agent logs lines like these:
+
+```text
+Starting Fused Agent
+Connecting to WebSocket server at wss://www.fused.io/server/v1/agent/ws/<agent-id>
+Connected as agent <agent-id>
+```
+
+If it logs `WebSocket error: ... Retrying in 20 seconds` instead, see [Troubleshooting](#troubleshooting).
+
+## Step 4: Run a job on your cluster
+
+Submit a batch job with `instance_type="agent"`. Anyone on the team the token belongs to can do this:
+
+```python
+# doctest: skip
+import fused
+
+@fused.udf
+def udf(n: int = 10):
+    import pandas as pd
+    return pd.DataFrame({"x": range(n)})
+
+result = fused.run(udf, instance_type="agent")
+```
+
+`fused.run` prints the batch job ID, waits for the job to finish on your cluster, and returns its result. You can also set the agent as the UDF's default with `@fused.udf(engine="agent")`, or pass `instance_type="agent"` to [`fused.submit`](/python-sdk/api-reference/fused-submit) to fan out over many inputs.
+
+On your cluster, each job appears as a Kubernetes Job named after the Fused job ID:
+
+```bash
+kubectl get jobs,pods --namespace fused -l type=fused-job
+```
+
+Monitor and manage the job as usual with [`get_status`, `print_logs`, `tail_logs`, and `cancel`](/python-sdk/api-reference/job). Cancelling deletes the Kubernetes Job and its pods.
+
+## Configuration reference
+
+Set these values with `--set` or in a values file.
+
+| Value | Default | Description |
+|---|---|---|
+| `fusedAuthToken` | `""` | Service account token (`<id>:<token>`). Required unless `existingSecret` is set. |
+| `existingSecret` | `""` | Name of an existing Secret with a `fused-auth-token` key. When set, the chart doesn't create a Secret. |
+| `fusedAuthTokenType` | `Fused-Service-Token` | Authorization scheme for the token. Leave as the default. |
+| `fusedServerUrl` | `https://www.fused.io/server` | Fused server URL. Change only if Fused gives you a different endpoint. |
+| `namespace` | `fused` | Namespace where job pods are created and where the Role and RoleBinding live. Must match the Helm release namespace. |
+| `fusedJobDockerImage` | Provided by Fused | Image that job pods run. |
+| `fusedJobNodeSelector` | `{}` | Node selector for job pods. |
+| `fusedJobTolerations` | `[]` | Tolerations for job pods. |
+| `fusedJobPodAffinity` | `false` | When `true`, adds a required pod anti-affinity so at most one Fused job runs per node. |
+| `fusedJobResourceRequests` | `cpu: "2"`, `memory: 4Gi`, `ephemeral-storage: 25Gi` | Resource requests for every job pod. |
+| `image.repository` / `image.tag` / `image.pullPolicy` | Provided by Fused / — / `Always` | The agent's own image. |
+| `serviceAccount.create` / `.name` / `.annotations` | `true` / generated / `{}` | ServiceAccount for the agent pod. |
+| `nodeSelector`, `tolerations`, `affinity` | empty | Scheduling for the **agent pod only**. Use the `fusedJob*` values for job pods. |
+| `replicaCount` | `1` | Keep at `1`. See [Limitations](#limitations). |
+
+### Example: dedicated node pool
+
+This values file schedules job pods onto a dedicated spot node pool, gives each job more resources, and runs one job per node:
+
+```yaml title="values-prod.yaml"
+namespace: fused
+existingSecret: fused-agent-secret
+
+image:
+  tag: <agent-image-tag>
+
+fusedJobDockerImage: <job-image>:<job-image-tag>
+
+fusedJobNodeSelector:
+  node-pool: fused-jobs
+
+fusedJobTolerations:
+  - key: fused-jobs
+    value: spot
+    effect: NoSchedule
+
+fusedJobResourceRequests:
+  cpu: "8"
+  memory: "32Gi"
+  ephemeral-storage: "100Gi"
+
+fusedJobPodAffinity: true
+```
+
+Apply changes or remove the agent:
+
+```bash
+helm upgrade fused-agent ./helm --namespace fused -f values-prod.yaml
+helm uninstall fused-agent --namespace fused
+```
+
+## Permissions
+
+The chart creates a namespaced Role and RoleBinding for the agent's ServiceAccount. No ClusterRole is needed.
+
+| API group | Resource | Verbs |
+|---|---|---|
+| `batch` | `jobs` | `create`, `get`, `delete`, `list` |
+| core | `pods` | `get`, `list`, `watch` |
+| core | `pods/log` | `get` |
+| core | `configmaps` | `create`, `delete` |
+
+## Limitations
+
+The Kubernetes agent is in beta. Be aware of the following:
+
+- **One active agent per team.** A second agent using a token from the same team is rejected and keeps retrying. Setting `replicaCount` above `1` doesn't add capacity. To scale, give job pods more nodes; the agent only creates Jobs.
+- **Short-lived job logs.** Kubernetes deletes finished Jobs and their pods about 10 seconds after they complete, after which Fused can no longer fetch their logs. Use your cluster's log collection (for example Fluent Bit or CloudWatch Container Insights) if you need log history.
+- **Cluster-wide sizing.** Resource requests, node selector, and tolerations apply to every job. Per-job sizing isn't supported, and resource limits aren't set.
+- **No GPU support.** GPUs can't currently be requested for job pods.
+- **ConfigMaps accumulate.** The agent creates one ConfigMap per job (named after the job ID) and doesn't delete it. Clean them up periodically if needed.
+- **Pods that die abruptly.** If a job pod is OOM-killed or evicted before it reports back, the job may stay in a starting or running state in Fused. Cancel it manually.
+- **Token visibility.** Job pods receive the service account token as an environment variable. Restrict `get` access on Jobs and Pods in the agent's namespace to people allowed to act as your team.
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| `No agents connected to this environment.` (HTTP 503) when submitting, or a job fails with "no Fused agent is connected to this execution environment" | No agent is connected for your team. Check that the agent pod is running, that its logs show `Connected as agent`, and that the token belongs to the same team as the user submitting the job. |
+| Agent logs `WebSocket error: ... Retrying in 20 seconds` repeatedly | The connection is failing. Check outbound access to `fusedServerUrl`, and that the token is valid and in `<id>:<token>` form. An invalid token is rejected with close code `4403`. |
+| Agent keeps reconnecting with close code `4409` | Another agent is already connected for this team, for example in another cluster or a second replica. Only one can be active. |
+| `Timed out waiting for response from agent.` (HTTP 504) | The agent didn't respond within 10 seconds. Check the agent logs for errors and that the pod isn't CPU-throttled. |
+| Agent logs `Failed to schedule job ...` | The Kubernetes API rejected the Job. Check that the `namespace` value matches the release namespace, that the job image is pullable, and that resource requests fit on your nodes. |
+| Job pods stuck in `Pending` | No node satisfies `fusedJobResourceRequests`, `fusedJobNodeSelector`, or `fusedJobTolerations`. Run `kubectl describe pod` on the pod for scheduling events. |
+| `No pods found for job '<job-id>'` when fetching logs | The Job has already been cleaned up. See [Limitations](#limitations). |
+
+## See also
+
+- [Service accounts](/guide/advanced-setup/service-accounts) — create and manage the token the agent uses
+- [On-prem setup](/guide/advanced-setup/on-prem-setup) — deploy all of Fused inside your own AWS account
+- [`fused.submit`](/python-sdk/api-reference/fused-submit) — run a UDF over many inputs as batch jobs

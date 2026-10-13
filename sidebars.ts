@@ -124,6 +124,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/advanced-setup/dependencies", label: "Dependencies" },
         { type: "doc", id: "guide/advanced-setup/service-accounts", label: "Service accounts" },
         { type: "doc", id: "guide/advanced-setup/on-prem-setup", label: "On-prem setup" },
+        { type: "doc", id: "guide/advanced-setup/kubernetes-agent", label: "Kubernetes agent" },
       ],
     },
 
