@@ -41,7 +41,8 @@ index(
 
 Register a hive-partitioned parquet tree as a queryable H3 location.
 
-Runs a batch job, via `fused.submit`, that indexes every file under `path`.
+Runs a batch job that walks `path` and streams its row-group index into
+the server, via `fused.submit`.
 
 **Parameters:**
 
@@ -89,15 +90,16 @@ Runs a batch job, via `fused.submit`, that indexes every file under `path`.
 **Returns:**
 
 - `dict[str, Any] | JobPool` – If `wait=True`, a dictionary with the indexing results:
-  - `path`: The indexed path.
-  - `status`: `"ready"`.
-  - `files`: Number of parquet files indexed.
-  - `resolution`: The H3 resolution found across the tree.
-  - `time_min`: Earliest time found, or None for a timeless location.
-  - `time_max`: Latest time found, or None for a timeless location.
-  - `hex_column`, `time_column`: The columns the location was indexed with.
-  - `partition_columns`: Per partition column, its `name`, `type`, the
-    number of `distinct` values and their `min` and `max`.
+- path: The indexed path.
+- status: `"ready"`.
+- files: Number of parquet files indexed.
+- row_groups: Number of row groups indexed.
+- resolution: The H3 resolution found across the tree.
+- time_min: Earliest time found, or None for a timeless location.
+- time_max: Latest time found, or None for a timeless location.
+- hex_column, time_column: The columns the location was indexed with.
+- partition_columns: Per partition column, its `name`, `type`, the
+  number of `distinct` values and their `min` and `max`.
 - `dict[str, Any] | JobPool` – If `wait=False`, the `JobPool` running the indexing job.
 
 **Raises:**
@@ -282,8 +284,19 @@ Write data as hex-sorted H3 parquet files with a `_manifest.json`.
   bucketing (null coordinates, null hex, null or folder-unsafe
   partition values).
 
-Output is written so that a failed run never wipes a good dataset: an existing
-output is only replaced once the new data is ready to write.
+A file is written as soon as its rows are complete: the first time a
+(partition values, H3 parent cell) shows up its file is written directly.
+If a later batch has rows for the same file, the file is read back and
+merged with them through a temporary folder, so readers may yield any mix
+of parent cells in any order and only files hit twice are written twice.
+
+Output is touched as late as possible, so a failed run never wipes a good
+dataset. Any existing file in `output` without `overwrite` raises before
+any work. Otherwise existing output is deleted (`overwrite=True`) just
+before the first file is written, after the first batch is proven to have
+the named columns and a batch with at least one row has been bucketed;
+files are written under a hidden name and moved into place, and
+`_manifest.json` comes last.
 
 ---
 
@@ -419,18 +432,23 @@ every row at the location.
   leaves an end open: `{"date": ("2050-01", None)}`. Works for
   string, number and date columns. A range on the location's time
   column also narrows the time window.
-- **columns** (`list[str] | None`) – Which columns to read. Defaults to all columns.
+- **columns** (`list[str] | None`) – Which columns to read. Defaults to all columns. Ignored
+  when `format="index"`.
 - **format** (`str`) – `"parquet"` (the default) returns the matching rows as a
-  DataFrame.
+  DataFrame. `"index"` instead returns a dictionary describing the
+  matching row groups without reading any row data (`ranges`,
+  `footers`, `row_groups` -- see the server's `/h3/query` docs).
 - **max_row_groups** (`int | None`) – Caps the number of matching row groups the query may
   read/describe; a query matching more than that raises a 413
-  before any row data is read. If None (the default), a default limit applies. Raise this for a query that legitimately
+  before any row data is read. If None (the default), the server's
+  own default applies. Raise this for a query that legitimately
   spans many row groups (e.g. a wide time window over many cells).
 - **base_url** (`str | None`) – Base URL for the API. If None, uses the current environment.
 
 **Returns:**
 
-- `DataFrame` – A pandas DataFrame with the matching rows.
+- `DataFrame | dict[str, Any]` – A pandas DataFrame with the matching rows (`format="parquet"`), or a
+- `DataFrame | dict[str, Any]` – dictionary describing the matching row groups (`format="index"`).
 
 **Raises:**
 
@@ -964,8 +982,8 @@ Read a month of ERA5 weather from the public ARCO store as lat/lng rows.
 ARCO ERA5 is Google's public copy of the ECMWF ERA5 reanalysis: hourly
 global weather on a 0.25 degree latitude/longitude raster, 1940 to now.
 Reading needs network access to `storage.googleapis.com`. Decoding the
-zarr chunks needs `numcodecs`, which the Fused runtime provides;
-anywhere else, install it yourself.
+zarr chunks needs `numcodecs`, which the Fused runtime and job2
+environments provide; anywhere else, install it yourself.
 
 Yields record batches with columns `lat`, `lng`, `date` (`date32`),
 `hour` (`uint8`, hourly only) and one float32 column per output, in the
@@ -979,9 +997,10 @@ A daily call yields the whole month one lat/lng tile at a time (90 by 90
 degrees, so 8 tiles over the globe). A tile batch holds every requested
 day, day-major: one complete raster of the tile's 0.25 degree points per
 `date`. Tiles are disjoint sets of raster points, so each cell is filled
-from exactly one tile. Without `partition_by`, `partition` writes one
-monthly file per H3 parent cell; `partition_by="date"` writes one folder
-per day instead.
+from exactly one tile. Without `partition_by`, `partition` therefore
+writes one monthly file per H3 parent cell directly; only parents that
+straddle a tile edge are hit by two tiles and merged. `partition_by="date"`
+still works and writes one folder per day instead.
 
 An hourly call yields one batch per day (a month of hourly rasters is about
 3 GB per column, too much to hold at once). A batch holds all 24 hours,
@@ -1107,3 +1126,4 @@ split them or pass lat/lng columns as `point_column=` for those rows.
 - `TypeError` – `data` is none of those.
 
 ---
+
