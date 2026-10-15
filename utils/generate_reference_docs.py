@@ -609,13 +609,8 @@ api_listing = sorted([
     "index_status",
     "indexed_files",
     "partition",
-    "persist_hex_table_metadata",
     "query",
-    "read_hex_table",
-    "read_hex_table_slow",
-    "read_hex_table_with_persisted_metadata",
     "run_ingest_raster_to_h3",
-    "run_partition_to_h3",
 ])
 
 result = """\
