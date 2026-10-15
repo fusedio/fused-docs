@@ -110,12 +110,13 @@ FUSED_API_CLASS_METHODS = [
 ]
 
 H3_FUNCTIONS = sorted([
-    "persist_hex_table_metadata",
-    "read_hex_table",
-    "read_hex_table_slow",
-    "read_hex_table_with_persisted_metadata",
+    "delete_index",
+    "index",
+    "index_status",
+    "indexed_files",
+    "partition",
+    "query",
     "run_ingest_raster_to_h3",
-    "run_partition_to_h3",
 ])
 
 # Per connection class: all public documented methods, discovered dynamically.
