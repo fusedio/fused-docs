@@ -13,7 +13,9 @@ toc_max_heading_level: 3
 
 1. **Partition**: [`fused.h3.partition()`](/python-sdk/api-reference/h3#partition) writes your rows as H3 Parquet files.
 2. **Index**: [`fused.h3.index()`](/python-sdk/api-reference/h3#index) registers the dataset with Fused.
-3. **Query**: [`fused.h3.query()`](/python-sdk/api-reference/h3#query) reads back only the rows you ask for, in a UDF or [over HTTP](#query-over-http).
+3. **Query**: [`fused.h3.query()`](/python-sdk/api-reference/h3#query) reads back only the rows you ask for, in a UDF or over HTTP.
+
+   You can also send a query as a `curl` request to [`GET /h3/query`](/rest-api/h3); each example below shows one.
 
 Use it for large datasets of any type: points, vectors, tables and multi-dimensional data such as weather. It partitions and indexes your data; any conversion or aggregation, such as averaging raster pixels per hex, is yours to do before partitioning. For rasters where you want aggregation and overviews built in, use the [raster ingestion pipeline](/guide/h3-analytics/raster-ingestion). See [Get your data into H3](/guide/h3-analytics/h3-overview#get-your-data-into-h3).
 
@@ -45,19 +47,23 @@ Pick a month to see every request. Zoom in to load only what is on screen.
 <details>
 <summary>Code</summary>
 
-The canvas's first step copies the NYC Open Data API to `raw`, one Parquet file per month. The partition step streams every month into one `partition()` call:
+The canvas's first step copies the NYC Open Data API to `raw`, one Parquet file per month. The partition step streams every month from `since` on into one `partition()` call:
 
-```python showLineNumbers {21-29}
+```python showLineNumbers {25-33}
 @fused.udf(engine="medium")
 def udf(
-    raw: str = "fd://h3/nyc311_raw/",
+    raw: str = "fd://h3_examples/nyc311_raw/",
     out: str = "s3://fused-asset/data/nyc311/",
+    since: str = "2020-01",
 ):
     import pandas as pd
     import pyarrow as pa
     import pyarrow.compute as pc
 
-    files = sorted(p for p in fused.api.list(raw) if p.endswith(".parquet"))
+    files = sorted(
+        p for p in fused.api.list(raw)
+        if p.endswith(".parquet") and p.rsplit("/", 1)[-1] >= f"{since}.parquet"
+    )
 
     # 1. Source: every month's file, in batches, tagged with its month
     def batches():
@@ -102,6 +108,17 @@ def udf(out: str = "s3://fused-asset/data/nyc311/"):
     )
 ```
 
+The same query with `curl`. The dataset is public, so no token is needed:
+
+```bash
+curl -G "https://www.fused.io/server/v1/h3/query" \
+  --data-urlencode "path=s3://fused-asset/data/nyc311/" \
+  -d min_lng=-73.990 -d min_lat=40.752 -d max_lng=-73.980 -d max_lat=40.760 \
+  --data-urlencode 'partition={"month": "2023-05"}' \
+  -d columns=latitude -d columns=longitude -d columns=complaint_type -d columns=created_date \
+  -o midtown.parquet
+```
+
 </details>
 
 ### Example: four months of AIS ship positions
@@ -110,7 +127,7 @@ def udf(out: str = "s3://fused-asset/data/nyc311/"):
 
 Query **1.12 billion ship positions** from [NOAA's AIS data](https://hub.marinecadastre.gov/pages/vesseltraffic), covering July to October 2024. After ingestion, a one-hour New York Harbor query takes **0.2 seconds**.
 
-Pick a UTC time window and what to colour the reports by. The map reads every report in view straight from [`GET /h3/query`](#query-over-http), one request per map tile, so panning loads only the new tiles.
+Pick a UTC time window and what to colour the reports by. The map reads every report in view straight from [`GET /h3/query`](/rest-api/h3), one request per map tile, so panning loads only the new tiles.
 
 <iframe
   src="https://www.fused.io/share/fc_fused%2FH3_AIS_One_Month/ais_points_map_by_variable_and_time"
@@ -124,17 +141,18 @@ Pick a UTC time window and what to colour the reports by. The map reads every re
 <details>
 <summary>Code</summary>
 
-The canvas's first step copies NOAA's daily zips to `raw` as they are. The partition step then reads one day at a time and passes each day to `partition()` as one batch:
+The canvas's first step copies NOAA's daily zips to `raw` as they are. The partition step then reads one day at a time, skips a day whose zip cannot be read, and passes each day to `partition()` as one batch:
 
-```python showLineNumbers {38-46}
+```python showLineNumbers {42-50}
 @fused.udf(engine="m5.xlarge")
 def udf(
     start_date: str = "2024-07-01",
     end_date: str = "2024-10-31",
-    raw: str = "fd://h3/ais_raw/",
+    raw: str = "fd://h3_examples/ais_raw/",
     out: str = "s3://fused-asset/data/ais/ais_week_h3_v2/",
 ):
     import zipfile
+    import zlib
 
     import fsspec
     import numpy as np
@@ -157,8 +175,11 @@ def udf(
         for day in days:
             y, m, d = day.split("-")
             zip_path = f"{fused.api.resolve(raw)}AIS_{y}_{m}_{d}.zip"
-            with fsspec.open(zip_path, "rb") as f, zipfile.ZipFile(f) as z, z.open(z.namelist()[0]) as csv:
-                table = pacsv.read_csv(csv, convert_options=pacsv.ConvertOptions(column_types=types))
+            try:
+                with fsspec.open(zip_path, "rb") as f, zipfile.ZipFile(f) as z, z.open(z.namelist()[0]) as csv:
+                    table = pacsv.read_csv(csv, convert_options=pacsv.ConvertOptions(column_types=types))
+            except (zipfile.BadZipFile, zlib.error, EOFError):
+                continue
             table = table.filter(pc.and_(pc.is_valid(table["LAT"]), pc.is_valid(table["LON"])))
             date = pa.array(np.full(table.num_rows, np.datetime64(day, "D")), pa.date32())
             yield table.append_column("date", date).combine_chunks().to_batches()[0]
@@ -200,6 +221,16 @@ def udf(out: str = "s3://fused-asset/data/ais/ais_week_h3_v2/"):
     )
 ```
 
+The same query with `curl`. The dataset is public, so no token is needed:
+
+```bash
+curl -G "https://www.fused.io/server/v1/h3/query" \
+  --data-urlencode "path=s3://fused-asset/data/ais/ais_week_h3_v2/" \
+  -d min_lng=-74.10 -d min_lat=40.55 -d max_lng=-73.90 -d max_lat=40.72 \
+  -d time_min=2024-07-03T12:00:00 -d time_max=2024-07-03T12:59:59 \
+  -o harbor.parquet
+```
+
 </details>
 
 ### Example: every LiDAR point in Manhattan
@@ -227,8 +258,8 @@ The canvas's first step copies the LAZ tiles to `raw` as they are. The partition
 ```python showLineNumbers {44-53}
 @fused.udf(engine="r5.2xlarge")
 def udf(
-    raw: str = "fd://h3/lidar_laz/",
-    out: str = "fd://h3/lidar_manhattan/",
+    raw: str = "fd://h3_examples/lidar_raw/manhattan_laz/",
+    out: str = "fd://h3_examples/lidar_manhattan_points/",
 ):
     import json
 
@@ -285,13 +316,13 @@ Index it, then query a box. For an exact edge, pad the box by about one cell and
 
 ```python showLineNumbers
 @fused.udf
-def udf(out: str = "fd://h3/lidar_manhattan/"):
+def udf(out: str = "fd://h3_examples/lidar_manhattan_points/"):
     fused.h3.index(out, overwrite=True, wait=False)
 ```
 
 ```python showLineNumbers
 @fused.udf
-def udf(out: str = "fd://h3/lidar_manhattan/"):
+def udf(out: str = "fd://h3_examples/lidar_manhattan_points/"):
     # Every point in a box around the Empire State Building, about 250 m x 210 m
     w, s, e, n = (-73.9872, 40.7475, -73.9842, 40.7494)
     pad = 0.0002  # about one res-12 cell, so edge points whose cell centre is outside are kept
@@ -300,41 +331,16 @@ def udf(out: str = "fd://h3/lidar_manhattan/"):
     return df[df["lon"].between(w, e) & df["lat"].between(s, n)]
 ```
 
-</details>
+The same padded box with `curl`. This dataset is not public, so the request needs your [access token](/rest-api/overview#authentication) and reads your own copy at `fd://`; cut the rows to the box as above:
 
-## Query over HTTP
-
-`fused.h3.query()` is a client of the REST endpoint [`GET /h3/query`](/rest-api/h3), so any language can query an indexed dataset, and a public one needs no credentials. The [AIS map above](#example-four-months-of-ais-ship-positions) calls it straight from the browser.
-
-<details>
-<summary>Code</summary>
-
-The request behind one map tile, following `X-Fused-Next-Cursor` through the pages:
-
-```js showLineNumbers
-const bbox = { west: -74.10, south: 40.55, east: -73.90, north: 40.72 };
-
-const q = new URLSearchParams({
-  path: "s3://fused-asset/data/ais/ais_week_h3_v2/",
-  min_lng: bbox.west, min_lat: bbox.south, max_lng: bbox.east, max_lat: bbox.north,
-  time_min: "2024-07-03T12:00:00", time_max: "2024-07-03T12:59:59",
-});
-for (const c of ["MMSI", "BaseDateTime", "LAT", "LON", "SOG", "VesselName", "VesselType"]) {
-  q.append("columns", c);
-}
-
-const pages = [];
-let cursor = null;
-do {
-  if (cursor) q.set("cursor", cursor);
-  const r = await fetch("https://www.fused.io/server/v1/h3/query?" + q);
-  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
-  pages.push(await r.arrayBuffer());
-  cursor = r.headers.get("X-Fused-Next-Cursor");
-} while (cursor);
+```bash
+curl -G "https://www.fused.io/server/v1/h3/query" \
+  -H "Authorization: Bearer $FUSED_ACCESS_TOKEN" \
+  --data-urlencode "path=fd://h3_examples/lidar_manhattan_points/" \
+  -d min_lng=-73.9874 -d min_lat=40.7473 -d max_lng=-73.9840 -d max_lat=40.7496 \
+  -d columns=lat -d columns=lon -d columns=Z -d columns=Classification -d columns=Intensity \
+  -o empire_state.parquet
 ```
-
-The map loads each page into [DuckDB-Wasm](https://duckdb.org/docs/api/wasm/overview) and draws the points with [deck.gl](https://deck.gl/). See [H3 datasets](/rest-api/h3) for every parameter.
 
 </details>
 
