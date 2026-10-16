@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import BrowserOnly from "@docusaurus/BrowserOnly";
 import styles from "./styles.module.css";
+import pageToMarkdown from "./pageToMarkdown";
 
 const PROMPT = (url: string) =>
   `Read from ${url} so I can ask questions about it.`;
@@ -67,9 +68,8 @@ function LLMShareButtonInner(): JSX.Element {
   }, []);
 
   function handleCopy() {
-    // Read URL at click time to avoid stale value on SPA navigation
-    const url = window.location.href;
-    navigator.clipboard.writeText(url).then(() => {
+    const markdown = pageToMarkdown() || window.location.href;
+    navigator.clipboard.writeText(markdown).then(() => {
       setCopied(true);
       setOpen(false);
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -102,7 +102,7 @@ function LLMShareButtonInner(): JSX.Element {
             <span className={styles.itemIcon}><CopyIcon /></span>
             <span className={styles.itemText}>
               <span className={styles.itemTitle}>Copy page</span>
-              <span className={styles.itemSubtitle}>Copy page URL for LLMs</span>
+              <span className={styles.itemSubtitle}>Copy page as Markdown for LLMs</span>
             </span>
           </button>
           <button className={styles.item} onClick={handleChatGPT}>
