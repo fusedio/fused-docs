@@ -1,10 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
 import BrowserOnly from "@docusaurus/BrowserOnly";
 import styles from "./styles.module.css";
-import pageToMarkdown from "./pageToMarkdown";
 
 const PROMPT = (url: string) =>
   `Read from ${url} so I can ask questions about it.`;
+
+function pageMarkdown(): Promise<string> {
+  const { origin, pathname, href } = window.location;
+  return fetch(`${origin}${pathname.replace(/\/$/, "")}.md`)
+    .then((res) => (res.ok ? res.text() : href))
+    .catch(() => href);
+}
 
 function CopyIcon() {
   return (
@@ -68,8 +74,14 @@ function LLMShareButtonInner(): JSX.Element {
   }, []);
 
   function handleCopy() {
-    const markdown = pageToMarkdown() || window.location.href;
-    navigator.clipboard.writeText(markdown).then(() => {
+    const text = pageMarkdown();
+    const copy =
+      typeof ClipboardItem === "undefined"
+        ? text.then((t) => navigator.clipboard.writeText(t))
+        : navigator.clipboard.write([
+            new ClipboardItem({ "text/plain": text.then((t) => new Blob([t], { type: "text/plain" })) }),
+          ]);
+    copy.then(() => {
       setCopied(true);
       setOpen(false);
       if (timerRef.current) clearTimeout(timerRef.current);
