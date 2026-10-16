@@ -1,0 +1,80 @@
+---
+slug: h3-geoparquet-pyramid-builder
+title: "H3 as a GeoParquet Pyramid Builder"
+description: "Guillaume Sueur proposes using H3 cells to build a pyramid of overviews for GeoParquet, so large vector datasets display quickly from remote storage."
+authors: [guillaume]
+tags: [h3, h3 conference, geoparquet, cloud-native, visualization]
+category: use_cases
+image: https://i.ytimg.com/vi/t4MzvtzRZBI/maxresdefault.jpg
+hide_table_of_contents: false
+keywords: [h3, geoparquet, overviews, vector data, pyramid, cloud-native geospatial]
+---
+
+[Guillaume Sueur](https://geomermaids.com) is the founder of Geomermaids, a Boston-based consultancy that designs cloud-native geospatial systems, with 25 years in GIS. At the [H3 Conference 2026](/blog/h3-conference-2026) in New York City, Guillaume showed how H3 can give GeoParquet something it lacks today: overviews, built as a self-discovering pyramid of files keyed by H3 cell.
+
+{/* truncate */}
+
+<iframe
+    style={{
+        width: "100%",
+        maxWidth: "800px",
+        aspectRatio: "16/9",
+        height: "auto",
+        margin: "0 auto 2rem auto",
+        display: "block"
+    }}
+    src="https://www.youtube.com/embed/t4MzvtzRZBI"
+    title="H3 as a GeoParquet Pyramid Builder"
+    frameBorder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    referrerPolicy="strict-origin-when-cross-origin"
+    allowFullScreen>
+</iframe>
+
+### Why vector data is hard to just look at
+
+Guillaume gave two reasons geospatial data is special. First, we want to see the map. GIS users routinely draw every feature, even at scales where the detail can't be seen, something nobody does with a 3 million row spreadsheet.
+
+Second, we don't know what's inside the box. A geometry column can hold a point, a four-vertex polygon, or a 300,000-vertex object weighing 5 MB, and there is no way to tell before opening it. The example was a single Corine Land Cover multipolygon near Paris with 138,352 vertices. There is no "small geometry" or "big geometry" type the way databases have small and big integers. Raster data avoids this: pixels are uniform, the resolution is in the metadata, and Cloud Optimized GeoTIFFs ship with overviews.
+
+### What GeoParquet gives you, and what it doesn't
+
+Parquet is columnar: it compresses well and keeps per-column min and max statistics so a query planner can skip data. GeoParquet adds a geometry column (usually well-known binary), a coordinate reference system and per-row-group bounding boxes, and it supports HTTP range requests, so readers fetch only the bytes they need from a remote file.
+
+The caveats: there is no real spatial index beyond row groups, so readers can fetch far more features than needed, nothing stops a too-big-to-draw geometry from loading, and there are no overviews.
+
+### Options for vector overviews
+
+Guillaume walked through the alternatives first:
+
+- **A second geometry column:** easy, but you may need three or four levels, and a generic reader won't know which column to use.
+- **A sidecar file:** two files to keep in sync, as with shapefiles.
+- **Bounding boxes:** Corine Land Cover's 2.5 million features display in a few seconds, but in-between zoom levels look strange.
+- **Grouping by feature area:** on Massachusetts parcels, big rural and parkland parcels show first while dense Boston and Cambridge lose detail.
+
+### The H3 pyramid
+
+Guillaume picks a base H3 resolution where every feature is kept at full detail, then builds coarser levels above it. For about 2.5 million Massachusetts parcels at resolution 6, that means 697 files, one per H3 cell. At resolution 4, the whole state comes down to seven objects.
+
+Each level up is built in one of three ways:
+
+- **Simplify:** remove vertices, a good fit for roads. The parcel count stays at 2.5 million.
+- **Prune:** drop features by a rule, a good fit for points. In the example, pruning cut the level to 78 MB.
+- **Dissolve:** merge polygons, then optionally simplify. In the example, dissolving produced 123 rows and only 10 MB.
+
+A 10 MB first level on S3 displays almost immediately, instead of waiting for a 500 MB file to download before anything draws. Analytic columns can be summed or averaged during aggregation, so coarse levels still carry meaningful values.
+
+H3 contributes three things. The cell ID becomes the file name. Each cell knows its parent, so a reader moves through the pyramid by changing which file it opens. And the cell ID is a ready-made group-by key for dissolving, with no spatial operations needed. The hexagons only organize the data; viewers never see them.
+
+In Q&A, Guillaume said the levels are baked into a GeoParquet dataset partitioned by resolution, then by cell. Ideally the pyramid would adapt like a quadtree, getting finer only where the data has more detail.
+
+### Not a replacement for vector tiles
+
+Vector tiles such as PMTiles remain more efficient for web mapping, Guillaume said, but tiles carry only the fields chosen for display, while the pyramid keeps the full dataset available for analytics. The approach is a convention, not a standard, with one reader so far: Guillaume's own. Open questions include whether overviews belong in the GeoParquet spec and whether grids such as A5 would work as well. Guillaume's open source GeoPQ Workbench app is on GitHub.
+
+### Learn more
+
+- [Watch the talk on YouTube](https://www.youtube.com/watch?v=t4MzvtzRZBI)
+- [GeoPQ Workbench](https://geomermaids.com/geopq-workbench)
+- [Ingest, Index & Query H3 Datasets](/guide/h3-analytics/hex-datasets)
+- [Visualization](/guide/h3-analytics/visualization)
