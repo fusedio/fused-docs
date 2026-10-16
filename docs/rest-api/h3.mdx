@@ -1,0 +1,173 @@
+---
+id: h3
+title: H3 datasets
+sidebar_label: H3 datasets
+sidebar_position: 6.5
+description: Query an indexed H3 dataset over HTTP by point, area, cell, time and partition.
+---
+
+# H3 datasets
+
+Once a dataset is [partitioned and indexed](/guide/h3-analytics/hex-datasets) with `fused.h3`, any HTTP client can read it with `GET /h3/query`: a point, a bounding box, an H3 cell or a time window comes back as a Parquet file, without running a UDF. [`fused.h3.query()`](/python-sdk/api-reference/h3#query) is a client of this endpoint.
+
+A public dataset needs no credentials, so a browser page can call the endpoint directly. The [AIS map](/guide/h3-analytics/hex-datasets#example-four-months-of-ais-ship-positions) loads every ship position report on screen this way, one `/h3/query` request per map tile.
+
+## Query a dataset
+
+```
+GET /h3/query
+```
+
+**Scope:** public or authorized. With no credentials, only a public dataset at a literal `s3://` path whose files are publicly readable can be read (`403` otherwise). With credentials, `path` resolves to your environment's own dataset, else to the public one.
+
+Returns the matching rows as a Parquet file (`application/vnd.apache.parquet`).
+
+```bash
+curl -G "https://www.fused.io/server/v1/h3/query" \
+  --data-urlencode "path=s3://fused-asset/data/ais/ais_week_h3_v2/" \
+  -d min_lng=-74.10 -d min_lat=40.55 -d max_lng=-73.90 -d max_lat=40.72 \
+  -d time_min=2024-07-03T12:00:00 -d time_max=2024-07-03T12:59:59 \
+  -d columns=MMSI -d columns=VesselName -d columns=BaseDateTime \
+  -d columns=LAT -d columns=LON -d columns=SOG \
+  -o harbor.parquet
+```
+
+This reads the 6,214 position reports in New York Harbor between 12:00 and 13:00 UTC on July 3, 2024, from the public [AIS dataset](/guide/h3-analytics/hex-datasets#example-four-months-of-ais-ship-positions).
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | Yes | The indexed dataset, as passed to [`fused.h3.index()`](/python-sdk/api-reference/h3#index) |
+| `min_lng`, `min_lat`, `max_lng`, `max_lat` | number | No | A bounding box. Give all four. |
+| `lat`, `lng` | number | No | A point. Give both. |
+| `cell` | string | No | An H3 cell id as a hex string. Returns every row in that cell, or in its descendants when `cell` is coarser than the dataset. |
+| `hex_min`, `hex_max` | string | No | An inclusive range of raw H3 cell ids, each as a hex string |
+| `time_min`, `time_max` | string | No | An inclusive ISO datetime window. Omitted, the whole time range is read. |
+| `partition` | string | No | JSON object mapping a partition column to a value, or a list of values that any may match. See [Filter by partition](#filter-by-partition). |
+| `partition_range` | string | No | JSON object mapping a partition column to an inclusive `[min, max]`, with `null` for an open end |
+| `columns` | string | No | A column to return. Repeat the parameter for several. Omitted, every column is returned. |
+| `format` | string | No | `parquet` (default) returns rows. `index` returns the matching row groups as JSON. See [Index format](#index-format). |
+| `max_row_groups` | integer | No | Row groups per page, from 1 to 4,096. Default 1,024. |
+| `cursor` | string | No | The cursor from the previous page. See [Page through large results](#page-through-large-results). |
+
+Pass at most one spatial selector: the bounding box, the point, `cell`, or `hex_min` and `hex_max`. With none, the query reads the whole dataset, narrowed only by time and partition.
+
+### Read from Python or DuckDB
+
+The response is a plain Parquet file, so any Parquet reader can load it.
+
+```python
+import io
+
+import pandas as pd
+import requests
+
+r = requests.get(
+    "https://www.fused.io/server/v1/h3/query",
+    params={
+        "path": "s3://fused-asset/data/ais/ais_week_h3_v2/",
+        "min_lng": -74.10, "min_lat": 40.55, "max_lng": -73.90, "max_lat": 40.72,
+        "time_min": "2024-07-03T12:00:00", "time_max": "2024-07-03T12:59:59",
+        "columns": ["MMSI", "VesselName", "LAT", "LON", "SOG", "BaseDateTime"],
+    },
+)
+r.raise_for_status()
+df = pd.read_parquet(io.BytesIO(r.content))
+```
+
+DuckDB reads the URL directly:
+
+```sql
+SELECT VesselName, count(*) AS reports
+FROM read_parquet('https://www.fused.io/server/v1/h3/query?path=s3://fused-asset/data/ais/ais_week_h3_v2/&columns=VesselName&min_lng=-74.10&min_lat=40.55&max_lng=-73.90&max_lat=40.72&time_min=2024-07-03T12:00:00&time_max=2024-07-03T12:59:59')
+GROUP BY VesselName
+ORDER BY reports DESC
+LIMIT 5
+```
+
+### Filter by partition
+
+`partition` and `partition_range` select folders written with `partition_by` in [`fused.h3.partition()`](/python-sdk/api-reference/h3#partition). A folder must match every column named. A column that is not a partition column returns `400`, with the dataset's partition columns in the message.
+
+```bash
+curl -G "https://www.fused.io/server/v1/h3/query" \
+  --data-urlencode "path=s3://fused-asset/data/ais/ais_week_h3_v2/" \
+  -d lat=40.6955 -d lng=-74.0172 \
+  --data-urlencode 'partition_range={"date": ["2024-07-01", "2024-07-07"]}' \
+  -d columns=MMSI -d columns=BaseDateTime \
+  -o first_week.parquet
+```
+
+`string` columns compare as text and `number` columns as numbers. A `date` column matches a folder whose period (`YYYY`, `YYYY-MM` or `YYYY-MM-DD`) overlaps the value or range, so `{"date": "2024-07"}` matches every day folder in July. A `partition_range` on the dataset's time column also acts as a `time_min`/`time_max` window. No matching folder returns an empty result with the dataset's columns.
+
+### Page through large results
+
+A large result comes back one page at a time, in a stable order. A page holds at most `max_row_groups` row groups and stops before its rows pass the server's response size limit. When more rows remain, the response carries an `X-Fused-Next-Cursor` header. Send it back as `cursor`, with the same query, until a response has no cursor:
+
+```python
+import io
+
+import pandas as pd
+import requests
+
+url = "https://www.fused.io/server/v1/h3/query"
+params = {
+    "path": "s3://fused-asset/data/ais/ais_week_h3_v2/",
+    "min_lng": -74.10, "min_lat": 40.55, "max_lng": -73.90, "max_lat": 40.72,
+    "partition": '{"date": "2024-07-03"}',
+    "columns": ["MMSI", "BaseDateTime", "LAT", "LON"],
+}
+
+session = requests.Session()
+pages = []
+while True:
+    r = session.get(url, params=params)
+    r.raise_for_status()
+    pages.append(pd.read_parquet(io.BytesIO(r.content)))
+    cursor = r.headers.get("X-Fused-Next-Cursor")
+    if not cursor:
+        break
+    params["cursor"] = cursor
+
+df = pd.concat(pages, ignore_index=True)
+```
+
+A cursor only continues the query it came from, and stops working once the dataset is re-indexed: start again without one.
+
+### Index format
+
+`format=index` returns JSON describing the matching row groups without reading any rows, for a client that reads the Parquet files itself.
+
+| Field | Type | Description |
+|---|---|---|
+| `path` | string | The dataset |
+| `ranges` | array | The cell-id ranges the selector resolved to, each `{"min": …, "max": …}` as hex strings |
+| `bbox` | array | The bounding box queried, if any |
+| `encoding` | string | How the bytes in `footers` and `row_groups` are encoded: `base64` |
+| `public` | boolean | Whether the dataset's files are readable without credentials. `null` when this could not be checked. |
+| `indexed_as_of` | string | When the index was taken. A file modified after this no longer matches the index. |
+| `hex_column` | string | The H3 cell-id column |
+| `time_column` | string | The column time filters apply to, or `null` |
+| `time_min`, `time_max` | string | The effective time window, or `null` when open |
+| `footers` | object | Parquet footer sections of the matching files, base64-encoded, keyed by content hash |
+| `row_groups` | array | One entry per matching row group: its file `path`, `row_group_index`, byte offsets and `footer` key |
+| `next_cursor` | string | The cursor for the next page, or `null` on the last |
+
+For a public dataset, an index response carries an `ETag` and `Cache-Control: public, max-age=60`. A request whose `If-None-Match` names the current `ETag` returns `304` with no body. Re-indexing changes the `ETag`.
+
+### Errors
+
+| Status | When |
+|---|---|
+| `400` | More than one spatial selector, an incomplete one (for example `lat` without `lng`), an invalid cell id, a `partition` naming a column that is not a partition column, or a `cursor` from a different query |
+| `403` | No credentials, and `path` is not a public `s3://` dataset |
+| `404` | You can read no dataset at `path` |
+| `409` | The dataset has never finished indexing, or the `cursor` predates a re-index |
+| `422` | A name in `columns` is missing from the indexed files, or `max_row_groups` is above its maximum |
+
+## See also
+
+- [Ingest, Index & Query H3 Datasets](/guide/h3-analytics/hex-datasets): partition and index a dataset so it can be queried
+- [Working with H3](/guide/working-with-udfs/udf-best-practices/working-with-h3): the H3 workflow end to end
+- [`fused.h3`](/python-sdk/api-reference/h3): the Python client for these endpoints

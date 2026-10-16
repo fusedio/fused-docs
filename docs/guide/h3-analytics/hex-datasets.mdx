@@ -13,7 +13,7 @@ toc_max_heading_level: 3
 
 1. **Partition**: [`fused.h3.partition()`](/python-sdk/api-reference/h3#partition) writes your rows as H3 Parquet files.
 2. **Index**: [`fused.h3.index()`](/python-sdk/api-reference/h3#index) registers the dataset with Fused.
-3. **Query**: [`fused.h3.query()`](/python-sdk/api-reference/h3#query) reads back only the rows you ask for.
+3. **Query**: [`fused.h3.query()`](/python-sdk/api-reference/h3#query) reads back only the rows you ask for, in a UDF or [over HTTP](#query-over-http).
 
 Use it for large datasets of any type: points, vectors, tables and multi-dimensional data such as weather. It partitions and indexes your data; any conversion or aggregation, such as averaging raster pixels per hex, is yours to do before partitioning. For rasters where you want aggregation and overviews built in, use the [raster ingestion pipeline](/guide/h3-analytics/raster-ingestion). See [Get your data into H3](/guide/h3-analytics/h3-overview#get-your-data-into-h3).
 
@@ -38,6 +38,7 @@ Pick a month to see every request. Zoom in to load only what is on screen.
   width="100%"
   height="600px"
   frameBorder="0"
+  loading="lazy"
   style={{borderRadius: '8px'}}
 ></iframe>
 
@@ -109,13 +110,14 @@ def udf(out: str = "s3://fused-asset/data/nyc311/"):
 
 Query **1.12 billion ship positions** from [NOAA's AIS data](https://hub.marinecadastre.gov/pages/vesseltraffic), covering July to October 2024. After ingestion, a one-hour New York Harbor query takes **0.2 seconds**.
 
-Pick a variable, a statistic and a UTC time window to map one value per hex. For windows longer than a day, zoom in to see the hexes.
+Pick a UTC time window and what to colour the reports by. The map reads every report in view straight from [`GET /h3/query`](#query-over-http), one request per map tile, so panning loads only the new tiles.
 
 <iframe
-  src="https://www.fused.io/share/fc_fused%2FH3_AIS_One_Month/ais_hex_map_by_variable_and_time"
+  src="https://www.fused.io/share/fc_fused%2FH3_AIS_One_Month/ais_points_map_by_variable_and_time"
   width="100%"
   height="700px"
   frameBorder="0"
+  loading="lazy"
   style={{borderRadius: '8px'}}
 ></iframe>
 
@@ -213,6 +215,7 @@ Draw a box to explore Manhattan in 3D. The app splits large areas into smaller q
   width="100%"
   height="600px"
   frameBorder="0"
+  loading="lazy"
   style={{borderRadius: '8px'}}
 ></iframe>
 
@@ -299,6 +302,42 @@ def udf(out: str = "fd://h3/lidar_manhattan/"):
 
 </details>
 
+## Query over HTTP
+
+`fused.h3.query()` is a client of the REST endpoint [`GET /h3/query`](/rest-api/h3), so any language can query an indexed dataset, and a public one needs no credentials. The [AIS map above](#example-four-months-of-ais-ship-positions) calls it straight from the browser.
+
+<details>
+<summary>Code</summary>
+
+The request behind one map tile, following `X-Fused-Next-Cursor` through the pages:
+
+```js showLineNumbers
+const bbox = { west: -74.10, south: 40.55, east: -73.90, north: 40.72 };
+
+const q = new URLSearchParams({
+  path: "s3://fused-asset/data/ais/ais_week_h3_v2/",
+  min_lng: bbox.west, min_lat: bbox.south, max_lng: bbox.east, max_lat: bbox.north,
+  time_min: "2024-07-03T12:00:00", time_max: "2024-07-03T12:59:59",
+});
+for (const c of ["MMSI", "BaseDateTime", "LAT", "LON", "SOG", "VesselName", "VesselType"]) {
+  q.append("columns", c);
+}
+
+const pages = [];
+let cursor = null;
+do {
+  if (cursor) q.set("cursor", cursor);
+  const r = await fetch("https://www.fused.io/server/v1/h3/query?" + q);
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+  pages.push(await r.arrayBuffer());
+  cursor = r.headers.get("X-Fused-Next-Cursor");
+} while (cursor);
+```
+
+The map loads each page into [DuckDB-Wasm](https://duckdb.org/docs/api/wasm/overview) and draws the points with [deck.gl](https://deck.gl/). See [H3 datasets](/rest-api/h3) for every parameter.
+
+</details>
+
 ## Tips for large datasets
 
 **Partition**
@@ -319,6 +358,7 @@ def udf(out: str = "fd://h3/lidar_manhattan/"):
 ## See also
 
 - [`fused.h3` API reference](/python-sdk/api-reference/h3): every parameter of `partition`, `index`, `query` and the `sources`
+- [H3 datasets REST API](/rest-api/h3): `GET /h3/query` over HTTP, with paging and the index format
 - [Convert to H3 on the fly](/guide/h3-analytics/converting): for small data
 - [Raster ingestion pipeline](/guide/h3-analytics/raster-ingestion): large rasters with built-in aggregation and overviews
 - [H3 resolution guide](/guide/h3-analytics/resolution-guide): choosing `h3_res`

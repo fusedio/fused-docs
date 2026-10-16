@@ -307,6 +307,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "rest-api/running-udfs", label: "Running UDFs" },
         { type: "doc", id: "rest-api/batch-jobs", label: "Batch jobs" },
         { type: "doc", id: "rest-api/files", label: "Files" },
+        { type: "doc", id: "rest-api/h3", label: "H3 datasets" },
         { type: "doc", id: "rest-api/environment", label: "Environment" },
         { type: "doc", id: "rest-api/scheduled-udfs", label: "Scheduled UDFs" },
         { type: "doc", id: "rest-api/secrets", label: "Secrets" },
