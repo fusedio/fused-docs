@@ -13,9 +13,7 @@ toc_max_heading_level: 3
 
 1. **Partition**: [`fused.h3.partition()`](/python-sdk/api-reference/h3#partition) writes your rows as H3 Parquet files.
 2. **Index**: [`fused.h3.index()`](/python-sdk/api-reference/h3#index) registers the dataset with Fused.
-3. **Query**: [`fused.h3.query()`](/python-sdk/api-reference/h3#query) reads back only the rows you ask for, in a UDF or over HTTP.
-
-   You can also send a query as a `curl` request to [`GET /h3/query`](/rest-api/h3); each example below shows one.
+3. **Query**: [`fused.h3.query()`](/python-sdk/api-reference/h3#query) reads back only the rows you ask for. The same query is also a REST endpoint, [`GET /h3/query`](/rest-api/h3), so you can send it with `curl` or from a web page; each example below shows the `curl` request.
 
 Use it for large datasets of any type: points, vectors, tables and multi-dimensional data such as weather. It partitions and indexes your data; any conversion or aggregation, such as averaging raster pixels per hex, is yours to do before partitioning. For rasters where you want aggregation and overviews built in, use the [raster ingestion pipeline](/guide/h3-analytics/raster-ingestion). See [Get your data into H3](/guide/h3-analytics/h3-overview#get-your-data-into-h3).
 
@@ -231,6 +229,49 @@ curl -G "https://www.fused.io/server/v1/h3/query" \
   -d min_lng=-74.10 -d min_lat=40.55 -d max_lng=-73.90 -d max_lat=40.72 \
   -d time_min=2024-07-03T12:00:00 -d time_max=2024-07-03T12:59:59 \
   -o harbor.parquet
+```
+
+The map above is the canvas's `ais_points_map_by_variable_and_time` widget, and it runs no UDF. Two dropdowns and two date inputs set its parameters, and an `html` element draws the points with [deck.gl](https://deck.gl/). For every map tile in view, deck.gl's `TileLayer` calls `loadTile`, which sends the tile's bounding box and the time window to `GET /h3/query` and follows `X-Fused-Next-Cursor` through the pages. This is that part of the widget's code, with the HTTP calls highlighted; [open the canvas](https://www.fused.io/canvas/fc_fused/H3_AIS_One_Month) for the full widget:
+
+```js showLineNumbers {1,7-15,23,34}
+const QUERY_URL = "https://www.fused.io/server/v1/h3/query";
+const PATH = "s3://fused-asset/data/ais/ais_week_h3_v2/";
+const COLUMNS = ["MMSI", "BaseDateTime", "LAT", "LON", "SOG", "COG", "VesselName", "VesselType", "Status", "Length"];
+const MAX_PAGES = 4;
+
+function tileUrl(bbox, s, cursor) {
+  const q = new URLSearchParams({
+    path: PATH,
+    min_lng: bbox.west.toFixed(6), min_lat: bbox.south.toFixed(6),
+    max_lng: bbox.east.toFixed(6), max_lat: bbox.north.toFixed(6),
+    time_min: s.timeMin, time_max: s.timeMax, format: "parquet"
+  });
+  COLUMNS.forEach(c => q.append("columns", c));
+  if (cursor) q.set("cursor", cursor);
+  return QUERY_URL + "?" + q.toString();
+}
+
+async function loadTile(tile, s, key) {
+  const bbox = tile.bbox;
+  let cursor = null;
+  let pages = 0;
+  do {
+    const r = await fetch(tileUrl(bbox, s, cursor), { signal: tile.signal });
+    if (r.status === 204) break;
+    if (!r.ok) {
+      const text = await r.text();
+      let detail = text;
+      try { detail = JSON.parse(text).detail || text; } catch (e) {}
+      throw new Error("HTTP " + r.status + ": " + String(detail).slice(0, 160));
+    }
+    const buf = await r.arrayBuffer();
+    if (tile.signal && tile.signal.aborted) break;
+    await insertParquet(key, buf, bbox);
+    cursor = r.headers.get("X-Fused-Next-Cursor");
+    pages += 1;
+  } while (cursor && pages < MAX_PAGES);
+  return { key, cut: cursor ? 1 : 0 };
+}
 ```
 
 </details>
