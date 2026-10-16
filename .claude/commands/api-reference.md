@@ -23,6 +23,8 @@ uv run utils/test_api_reference_coverage.py
 | `utils/generate_reference_docs.py` | Generator — parses fused-py with griffe, renders MDX via griffe2md |
 | `utils/test_api_reference_coverage.py` | Coverage gate — red/green test for the generator output |
 | `.github/workflows/update-api-reference.yml` | Automation — triggers on fused-py release, opens a PR with updated docs |
+| `utils/generate_rest_reference.py` | Generator for the `GET /h3/query` parameter table in `docs/rest-api/h3.mdx`, from the deployed server's OpenAPI spec. Fails on a parameter or `format` value that has no description in `ROWS` |
+| `.github/workflows/update-rest-reference.yml` | Automation: runs that generator daily and opens or updates a PR when the table changes |
 
 ---
 
@@ -73,4 +75,9 @@ Wire up automatic triggering from `fusedlabs/application` after a release:
 gh api repos/fusedio/fused-docs/dispatches \
   -f event_type=fused-py-release \
   -f 'client_payload[version]=2.8.0'
+```
+
+Run the REST reference sync on demand:
+```bash
+gh workflow run update-rest-reference.yml
 ```

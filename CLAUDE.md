@@ -52,6 +52,7 @@ For code that requires credentials or external services, note this in the doc wi
 ## Do not
 
 - Hand-edit any file under `docs/python-sdk/api-reference/`, `docs/python-sdk/top-level-functions.mdx`, or `docs/cli/` — these are generated from fused-py source (the CLI pages from the `fused` Click command tree). Edit the generator (`utils/generate_reference_docs.py`) or the CLI command definitions in fused-py instead.
+- Hand-edit the **Query parameters** table in `docs/rest-api/h3.mdx`. It is generated from the deployed server's OpenAPI spec: edit `ROWS` in `utils/generate_rest_reference.py`, then run `python3 utils/generate_rest_reference.py`.
 - Use `npm run serve` to validate — dev mode hides MDX rendering errors that only surface in the SSG production build. Always use `npm run build`.
 - Document code you haven't run yourself.
 - Use relative links between pages.
