@@ -141,9 +141,9 @@ Pick a UTC time window and what to colour the reports by. The map reads every re
 <details>
 <summary>Code</summary>
 
-The canvas's first step copies NOAA's daily zips to `raw` as they are. The partition step then reads one day at a time, skips a day whose zip cannot be read, and passes each day to `partition()` as one batch:
+The canvas's first step copies NOAA's daily zips to `raw` as they are. The partition step then reads one day at a time, skips and reports a day whose zip cannot be read, and passes each day to `partition()` as one batch:
 
-```python showLineNumbers {42-50}
+```python showLineNumbers {44-52}
 @fused.udf(engine="m5.xlarge")
 def udf(
     start_date: str = "2024-07-01",
@@ -169,6 +169,7 @@ def udf(
         "Draft": pa.float64(), "Cargo": pa.float64(), "TransceiverClass": pa.string(),
     }
     days = list(pd.date_range(start_date, end_date, freq="D").strftime("%Y-%m-%d"))
+    skipped = []
 
     # 1. Source: one batch per day, read from that day's zipped CSV (about 10 million rows)
     def one_batch_per_day():
@@ -179,6 +180,7 @@ def udf(
                 with fsspec.open(zip_path, "rb") as f, zipfile.ZipFile(f) as z, z.open(z.namelist()[0]) as csv:
                     table = pacsv.read_csv(csv, convert_options=pacsv.ConvertOptions(column_types=types))
             except (zipfile.BadZipFile, zlib.error, EOFError):
+                skipped.append(day)
                 continue
             table = table.filter(pc.and_(pc.is_valid(table["LAT"]), pc.is_valid(table["LON"])))
             date = pa.array(np.full(table.num_rows, np.datetime64(day, "D")), pa.date32())
@@ -194,7 +196,7 @@ def udf(
         partition_by="date",
         overwrite=True,
     )
-    return pd.DataFrame({"days": [len(days)]})
+    return pd.DataFrame({"days": [len(days) - len(skipped)], "days_skipped": [",".join(skipped)]})
 ```
 
 Index it with `BaseDateTime` as the time column:
