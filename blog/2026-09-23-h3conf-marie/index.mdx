@@ -1,0 +1,85 @@
+---
+slug: mapping-earth-observation-data-with-h3
+date: 2026-09-23T12:07:00Z
+title: "Lessons from Mapping Earth Observation Data with H3"
+description: "Marie Hoeger shares two case studies: a Brazil-scale reforestation suitability map built from many data layers on H3, and global methane plume detections aggregated to hexagons."
+authors: [marie]
+tags: [h3, h3 conference, earth observation, methane, reforestation]
+category: use_cases
+image: https://i.ytimg.com/vi/DOD_nGg9Omg/maxresdefault.jpg
+hide_table_of_contents: false
+keywords: [h3, earth observation, carbon credits, methane, duckdb, overviews]
+---
+
+[Marie Hoeger](https://carbonmapper.org) is a Staff Engineer at Carbon Mapper, where she works on the data systems behind a freely accessible catalog of global methane and CO2 emissions observations, and previously led a geospatial ML platform team at Pachama. At the [H3 Conference 2026](/blog/h3-conference-2026) in New York City, she shared lessons from two projects: combining many data layers on H3 to score land for reforestation across Brazil, and mapping sparse global methane detections.
+
+{/* truncate */}
+
+<iframe
+    style={{
+        width: "100%",
+        maxWidth: "800px",
+        aspectRatio: "16/9",
+        height: "auto",
+        margin: "0 auto 2rem auto",
+        display: "block"
+    }}
+    src="https://www.youtube.com/embed/DOD_nGg9Omg"
+    title="Lessons from Mapping Earth Observation Data with H3"
+    frameBorder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    referrerPolicy="strict-origin-when-cross-origin"
+    allowFullScreen>
+</iframe>
+
+### Many layers behind one question
+
+At Pachama, a carbon credit integrity startup, Marie's team looked for land promising for reforestation. That meant combining very different inputs:
+
+- biophysical characteristics of the land from satellite imagery, including existing canopy height and recent growth
+- whether the area is a natural wetland that shouldn't be forested
+- biodiversity impact for mammals or birds
+- properties with disputed land claims
+- reforestation and land purchase costs
+- distance to roads, which helps reforestation but works against avoided deforestation
+
+Their earlier parcel-level approach, overlapping layers at native resolutions, didn't scale to whole landscapes or to customers uploading an area for answers on demand. Scientific suitability also isn't buyer suitability: one customer whose brand was all about blue wanted "blue carbon" near waterways.
+
+### The Brazil eucalyptus map
+
+A customer working on sustainable aviation fuels, who was funding a research group in Brazil, asked where eucalyptus planting would make sense across the country. The constraints were:
+
+- data that works at country scale but still says something when you zoom in to a property
+- many datasets at different resolutions
+- algorithmic artifacts, such as swirly blobs from distance-to calculations and blocky lines from a convolution filter, that distracted viewers
+
+They landed on H3, DuckDB and Fused. All variables were normalized onto the same bad-to-good scale using easy-to-explain assumptions. Each layer was converted to Parquet at a consistent minimum H3 resolution (Marie recalled resolution 10). An H3 map tile server built with DuckDB and Fused then either served native-resolution hexes or aggregated to parent cells on the fly as users zoomed out.
+
+Viewers liked the look of the hex grid, the artifacts stopped prompting questions, and iteration was fast. Because the score was computed on request, factors could be weighted per customer (biodiversity first, or land price first), a planned feature that worked at small scale.
+
+### What was hard
+
+The partner research team ran GeoServer with fewer resources, so they ultimately received TIFF summaries instead of an H3 tile server. Computing overviews on the fly also caused latency on the large dataset. Caching kept it usable, but Marie concluded that precomputed H3 overviews were needed at country scale. She noted this work predated Fused's `run_ingest_raster_to_h3` helper, which now handles that step.
+
+In Q&A she clarified that only each layer's overview levels need precomputing, not every combination of user inputs, so dynamic weighting stays quick at any zoom.
+
+### Sparse methane detections on a hex grid
+
+Carbon Mapper processes satellite data to detect methane leaks and publishes the results as an open dataset. Today its [data portal](https://data.carbonmapper.org) marks each plume detection as a point. Marie has been showing internally an H3 version where detections are aggregated into hex bins. Empty hexes are informative too, and clusters in places like California and Turkmenistan stand out.
+
+The hex view also exposes observation bias. Carbon Mapper looks at California most often because of a partnership with the state government, so California appears to be doing very badly, while overall emissions tell a different story. Hexes make it easier to toggle between the two.
+
+The workflow was short: take the vector file of detected plume points, use DuckDB in Fused to aggregate them into hex bins, write a UDF to render the map, and share it.
+
+### Takeaways
+
+- H3 works well for combining multi-scale data, summarizing layers with distracting artifacts, and mapping sparse data.
+- Consider partner teams' legacy constraints early.
+- Mapping from user inputs is efficient on small datasets with H3, and on larger ones with precomputed overviews.
+- Iterating on visual outputs with real data makes collaboration faster.
+
+### Learn more
+
+- [Watch the talk on YouTube](https://www.youtube.com/watch?v=DOD_nGg9Omg)
+- [Raster Ingestion Pipeline](/guide/h3-analytics/raster-ingestion)
+- [Aggregations](/guide/h3-analytics/aggregations)
