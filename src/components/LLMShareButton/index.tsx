@@ -5,6 +5,13 @@ import styles from "./styles.module.css";
 const PROMPT = (url: string) =>
   `Read from ${url} so I can ask questions about it.`;
 
+function pageMarkdown(): Promise<string> {
+  const { origin, pathname, href } = window.location;
+  return fetch(`${origin}${pathname.replace(/\/$/, "")}.md`)
+    .then((res) => (res.ok ? res.text() : href))
+    .catch(() => href);
+}
+
 function CopyIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -67,9 +74,14 @@ function LLMShareButtonInner(): JSX.Element {
   }, []);
 
   function handleCopy() {
-    // Read URL at click time to avoid stale value on SPA navigation
-    const url = window.location.href;
-    navigator.clipboard.writeText(url).then(() => {
+    const text = pageMarkdown();
+    const copy =
+      typeof ClipboardItem === "undefined"
+        ? text.then((t) => navigator.clipboard.writeText(t))
+        : navigator.clipboard.write([
+            new ClipboardItem({ "text/plain": text.then((t) => new Blob([t], { type: "text/plain" })) }),
+          ]);
+    copy.then(() => {
       setCopied(true);
       setOpen(false);
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -102,7 +114,7 @@ function LLMShareButtonInner(): JSX.Element {
             <span className={styles.itemIcon}><CopyIcon /></span>
             <span className={styles.itemText}>
               <span className={styles.itemTitle}>Copy page</span>
-              <span className={styles.itemSubtitle}>Copy page URL for LLMs</span>
+              <span className={styles.itemSubtitle}>Copy page as Markdown for LLMs</span>
             </span>
           </button>
           <button className={styles.item} onClick={handleChatGPT}>

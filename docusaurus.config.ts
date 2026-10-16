@@ -238,6 +238,34 @@ const config: Config = {
     require.resolve("./docusaurus-plugin-widget-api"),
     require.resolve("./docusaurus-plugin-custom-webpack"),
     [
+      "docusaurus-plugin-llms",
+      {
+        docsDir: [{ path: "docs", routeBasePath: "/" }],
+        ignoreFiles: ["widget-api/**"],
+        llmsTxtFilename: "llms-pages.txt",
+        generateLLMsFullTxt: false,
+        generateMarkdownFiles: true,
+        includeBlog: true,
+        excludeImports: true,
+        rewriteImageUrls: true,
+      },
+    ],
+    [
+      "docusaurus-plugin-llms",
+      {
+        id: "shorts",
+        ignoreFiles: ["docs/**"],
+        llmsTxtFilename: "llms-shorts.txt",
+        generateLLMsFullTxt: false,
+        generateMarkdownFiles: true,
+        includeBlog: true,
+        blogDir: "shorts",
+        blogRouteBasePath: "shorts",
+        excludeImports: true,
+        rewriteImageUrls: true,
+      },
+    ],
+    [
       "@docusaurus/plugin-client-redirects",
       {
         redirects: [
