@@ -1,6 +1,6 @@
 # API reference pipeline — fused-docs
 
-Everything in `docs/python-sdk/api-reference/` and `docs/python-sdk/top-level-functions.mdx` is **generated**. Never edit these files directly.
+`docs/python-sdk/top-level-functions.mdx`, the `api`, `options`, `jobpool`, `udf` and `h3` pages in `docs/python-sdk/api-reference/`, every page in `docs/cli/`, and the **Query parameters** table in `docs/rest-api/h3.mdx` are **generated**. Never edit these directly.
 
 ---
 
@@ -14,6 +14,8 @@ uv run --reinstall-package fused utils/generate_reference_docs.py
 uv run utils/test_api_reference_coverage.py
 ```
 
+Regenerate the `GET /h3/query` parameter table from the deployed server's OpenAPI spec with `python3 utils/generate_rest_reference.py`.
+
 ---
 
 ## Files
@@ -22,7 +24,9 @@ uv run utils/test_api_reference_coverage.py
 |---|---|
 | `utils/generate_reference_docs.py` | Generator — parses fused-py with griffe, renders MDX via griffe2md |
 | `utils/test_api_reference_coverage.py` | Coverage gate — red/green test for the generator output |
-| `.github/workflows/update-api-reference.yml` | Automation — triggers on fused-py release, opens a PR with updated docs |
+| `utils/generate_rest_reference.py` | Generator for the `GET /h3/query` parameter table in `docs/rest-api/h3.mdx`, from https://www.fused.io/server/openapi.json. Descriptions live in `ROWS`; it fails on a parameter or `format` value that has none |
+| `update-api-docs.yaml` in `fusedlabs/application` | Automation: on every `fused-py-v*` tag, checks out fused-docs, runs both generators, and opens a PR on `api-docs/fused-py-v<version>` |
+| `.github/workflows/update-api-reference.yml` | Manual fallback for the Python reference only |
 
 ---
 
@@ -63,14 +67,14 @@ Use `npm run build` (SSG), not `npm run serve` — dev mode hides MDX errors tha
 
 ## Automation
 
-Trigger manually (no release needed):
+Releases are handled by `update-api-docs.yaml` in `fusedlabs/application`, which runs on every `fused-py-v*` tag. Its REST step has `continue-on-error`, so a new parameter with no description in `ROWS` shows as a failed step in that run without blocking the Python reference PR.
+
+Rerun it without a release:
 ```bash
-gh workflow run update-api-reference.yml -f version=2.8.0
+gh workflow run update-api-docs.yaml -R fusedlabs/application
 ```
 
-Wire up automatic triggering from `fusedlabs/application` after a release:
+Regenerate only the Python reference from this repo:
 ```bash
-gh api repos/fusedio/fused-docs/dispatches \
-  -f event_type=fused-py-release \
-  -f 'client_payload[version]=2.8.0'
+gh workflow run update-api-reference.yml -f version=2.8.0
 ```
