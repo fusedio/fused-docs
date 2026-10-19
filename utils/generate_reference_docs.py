@@ -888,11 +888,27 @@ sidebar_label: Overview
 
 # CLI Reference
 
-The `fused` CLI lets you manage Fused from your terminal — run UDFs, manage canvases and files, handle secrets, and connect integrations. Install it with the `fused` package:
+The `fused` CLI lets you manage Fused from your terminal — run UDFs, manage canvases and files, handle secrets, and connect integrations. It ships with the `fused` Python package and needs Python 3.10 or newer.
+
+## Install
+
+Install it with [uv](https://docs.astral.sh/uv/getting-started/installation/), which puts `fused` on your PATH and picks a compatible Python for you:
 
 ```bash
-pip install --upgrade fused
+uv tool install fused
 ```
+
+Or install it with pip in a Python 3.10+ environment:
+
+```bash
+pip install --upgrade "fused>=2"
+```
+
+Run `fused --help` to check the install. To upgrade later, run `uv tool upgrade fused` or rerun the pip command.
+
+:::warning
+On Python 3.9, `pip install fused` installs fused 1.x, which has no `fused` command, so your shell reports `command not found: fused`. The `"fused>=2"` pin makes pip fail with an error instead. Run `python3 --version` to check: the `python3` that ships with macOS is 3.9.
+:::
 
 ## Global flags
 
