@@ -7,11 +7,103 @@ sidebar_position: 5
 
 # H3 Visualization
 
-## In Workbench Map Viewer
+Three ways to see H3 data on a map, from simplest to most interactive:
 
-Quick styling options for H3 data in Workbench:
-- [Vector `H3HexagonLayer`](/workbench/udf-builder/styling#vector-h3hexagonlayer)
-- [Vector `H3HexagonLayer` with Tiles](/workbench/udf-builder/styling/#vector-h3hexagonlayer-with-tiles)
+- **[Fused Map widget](#fused-map-widget)**: render an H3 table straight onto a map, no tiling code.
+- **[Interactive visualizations in Canvas](#interactive-visualizations-in-canvas)**: link several UDFs together so a histogram or bar chart filters the map.
+- **[Workbench Map Viewer](#in-workbench-map-viewer)**: style the output of a single UDF in the Workbench map.
+
+---
+
+## Fused Map widget
+
+The [`fused-map`](/widget-api/fused-map) widget renders a table with a `hex` column as an H3 layer. Point the layer at a UDF that returns H3 cell IDs, set `h3Column` to the name of the column holding them, and Fused Map draws the hexagons and colors them by any numeric column.
+
+[See the full set of map examples in Canvas →](https://www.fused.io/canvas/fc_1ydkugGh3TAciPQUVYioir)
+
+![Census population as H3 hexagons: the hex_overview table rendered by the hex_overview_map widget, with the tiled version below](/img/tutorials/geospatial/h3/hex_overview_map.png)
+
+This is the `hex_overview` pair from the **map_widget_canvas** Canvas: one UDF that produces the H3 table, and one `fused-map` widget that visualizes it. The canvas also holds `hex_tiled_map`, which does the same for a large partitioned H3 dataset by loading only the hexes in view.
+
+### The UDF
+
+`hex_overview` aggregates the census H3 dataset to a coarser resolution and returns one row per hex. Lower `res` for a more zoomed-out overview.
+
+```python
+@fused.udf
+def udf(
+    res: int = 4,
+    path: str = "s3://us-west-2.opendata.source.coop/fused/hex/release_2025_04_beta/census/2020_partitioned_h7.parquet",
+):
+    import duckdb
+
+    con = duckdb.connect()
+    con.sql("INSTALL httpfs; LOAD httpfs; INSTALL h3 FROM community; LOAD h3;")
+    con.sql("SET s3_region='us-west-2'; SET s3_url_style='path';")
+    df = con.sql(f"""
+        SELECT
+            lower(printf('%x', h3_cell_to_parent(hex, {int(res)}))) AS hex,
+            sum(POP20)::BIGINT AS POP20,
+            sum(HOUSING20)::BIGINT AS HOUSING20,
+            count(*) AS cells
+        FROM read_parquet('{path}')
+        GROUP BY 1
+    """).df()
+    return df
+```
+
+### The widget
+
+The widget is plain JSON. `"{{hex_overview}}"` references the UDF above, which is named `hex_overview` in the Canvas, so the map re-renders whenever the UDF's output changes.
+
+```json
+{
+  "type": "fused-map",
+  "props": {
+    "layers": [
+      {
+        "id": "hex",
+        "name": "Census hex overview",
+        "type": "h3",
+        "visible": true,
+        "udf": "{{hex_overview}}",
+        "h3Column": "hex",
+        "tooltip": [
+          "hex",
+          "POP20",
+          "HOUSING20",
+          "cells"
+        ],
+        "legend": {
+          "title": "POP20"
+        },
+        "style": {
+          "fillColor": {
+            "type": "continuous",
+            "attr": "POP20",
+            "palette": "Sunset",
+            "domain": [
+              0,
+              500000
+            ]
+          },
+          "opacity": 0.8,
+          "coverage": 0.95
+        }
+      }
+    ],
+    "basemap": "mapbox://styles/mapbox/dark-v11",
+    "centerLng": -98,
+    "centerLat": 39.5,
+    "zoom": 3,
+    "autoFit": false
+  }
+}
+```
+
+:::tip
+Every key under `props` is documented in the [Fused Map widget reference](/widget-api/fused-map), including other layer types, color palettes and tooltips.
+:::
 
 ---
 
@@ -2278,5 +2370,15 @@ def udf(
   ```
 
 </details>
+
+---
+
+## In Workbench Map Viewer
+
+Quick styling options for H3 data in Workbench:
+- [Vector `H3HexagonLayer`](/workbench/udf-builder/styling#vector-h3hexagonlayer)
+- [Vector `H3HexagonLayer` with Tiles](/workbench/udf-builder/styling/#vector-h3hexagonlayer-with-tiles)
+
+---
 
 Feel free to directly reach out to us at `info@fused.io` if you have any questions on implementing this yourself
