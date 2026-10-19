@@ -10,12 +10,13 @@ Each section has a distinct purpose and writing voice. Put content in the right 
 |---|---|---|---|
 | **Guide** | `docs/guide/` | Explore all aspects of Fused — concepts, setup, workflows | Concept-first. Explain the why, then the how. Link to API Reference for method details. |
 | **Examples** | `docs/examples/` | Hands-on, concrete things you can build | Task-first. Show the code, explain what it does. Link back to Guide for concepts, API Reference for method signatures. |
-| **Python SDK** | `docs/python-sdk/` | Exhaustive reference for the `fused` Python API | Generated — do not hand-edit. Every method, every parameter. No prose beyond what the docstring provides. |
+| **Python SDK** | `docs/python-sdk/` | Exhaustive reference for the `fused` Python API | `top-level-functions.mdx` and the `api`, `options`, `jobpool`, `udf` and `h3` pages in `api-reference/` are generated, so do not hand-edit them: every method, every parameter, no prose beyond the docstring. The other pages are hand-written. |
 | **Widget API** | `docs/widget-api/` | Reference for all available Fused widgets and their configuration | Schema-driven. Exhaustive props list, show minimal and full examples. |
+| **REST API** | `docs/rest-api/` | Reference for the Fused HTTP API, one page per resource | Reference-style. Endpoint, scope, parameters table and one `curl` example per endpoint. Pages are hand-written, except the generated `GET /h3/query` parameter table. |
 | **CLI Reference** | `docs/cli/` | One page per `fused` CLI command — flags, subcommands, examples | Reference-style. One page per top-level command. Flags table + examples, no prose beyond what's needed to understand the flag. |
 | **Workbench Manual** | `docs/workbench/` | Reference for the Workbench UI | UI-first. Screenshot-heavy. Describe what each element does, not how to build with it. |
 
-Before adding a page, ask: is this a concept (Guide), a recipe (Examples), a reference entry (Python SDK / Widget API / CLI), or a UI element (Workbench)? Put it in the right section and write in that section's voice.
+Before adding a page, ask: is this a concept (Guide), a recipe (Examples), a reference entry (Python SDK / REST API / Widget API / CLI), or a UI element (Workbench)? Put it in the right section and write in that section's voice.
 
 ## Core rules
 
@@ -51,7 +52,8 @@ For code that requires credentials or external services, note this in the doc wi
 
 ## Do not
 
-- Hand-edit any file under `docs/python-sdk/api-reference/`, `docs/python-sdk/top-level-functions.mdx`, or `docs/cli/` — these are generated from fused-py source (the CLI pages from the `fused` Click command tree). Edit the generator (`utils/generate_reference_docs.py`) or the CLI command definitions in fused-py instead.
+- Hand-edit `docs/python-sdk/top-level-functions.mdx`, the `api`, `options`, `jobpool`, `udf` and `h3` pages in `docs/python-sdk/api-reference/`, or any file in `docs/cli/`. These are generated from fused-py source (the CLI pages from the `fused` Click command tree). Edit the generator (`utils/generate_reference_docs.py`) or the CLI command definitions in fused-py instead.
+- Hand-edit the **Query parameters** table in `docs/rest-api/h3.mdx`. `utils/generate_rest_reference.py` builds it from the deployed server's OpenAPI spec, and every fused-py release reruns it. Change a description in the generator's `ROWS`, then run `python3 utils/generate_rest_reference.py`.
 - Use `npm run serve` to validate — dev mode hides MDX rendering errors that only surface in the SSG production build. Always use `npm run build`.
 - Document code you haven't run yourself.
 - Use relative links between pages.
@@ -63,7 +65,7 @@ Detailed references for common tasks are in `.claude/commands/` — readable dir
 | File / Command | When to use |
 |---|---|
 | `mdx-components.md` / `/mdx-components` | Before adding or editing any MDX — every custom component, admonition type, and when to use each |
-| `api-reference.md` / `/api-reference` | Before touching `docs/python-sdk/` or `utils/` — generation pipeline, design decisions, automation |
+| `api-reference.md` / `/api-reference` | Before touching `docs/python-sdk/`, the generated REST table, or `utils/`: generation pipeline, design decisions, automation |
 
 ## Build & CI
 
@@ -74,7 +76,7 @@ uv run utils/test_api_reference_coverage.py   # API reference coverage gate
 uv run utils/test_doc_snippets.py          # syntax-check all Python blocks in docs
 ```
 
-Before pushing any branch touching `docs/python-sdk/` or `utils/generate_reference_docs.py`, run both the build and the coverage gate. Run `test_doc_snippets.py` after adding or editing any Python code block.
+Before pushing any branch touching `docs/python-sdk/` or `utils/generate_reference_docs.py`, run both the build and the coverage gate. Run `test_doc_snippets.py` after adding or editing any Python code block. Run `python3 utils/generate_rest_reference.py` after editing `docs/rest-api/h3.mdx` or the generator; it fails when the deployed spec has a parameter or value with no description.
 
 ## Broken links
 
@@ -89,7 +91,7 @@ Every `python` fence in the docs is syntax-checked automatically (pre-commit hoo
 
 - **Shell commands** (`pip install`, `fused run`, etc.) must use a `bash` fence, not `python`.
 - **Pseudocode blocks** (REPL output, type stubs, emoji annotations, partial signatures, HTML embedded in a python block, bare URLs or other non-Python illustrative content) must start with `# doctest: skip` as their first line. This suppresses both the syntax check and Tier 2 execution without hiding the block from readers.
-- **Generated files** (`docs/python-sdk/api-reference/` and `docs/python-sdk/top-level-functions.mdx`) are excluded from the check automatically — never add skip markers there.
+- **Reference files** (everything in `docs/python-sdk/api-reference/`, plus `docs/python-sdk/top-level-functions.mdx`) are excluded from the check automatically, so never add skip markers there.
 
 ### Tier 2 — execution (CI)
 
