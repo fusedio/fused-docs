@@ -7,11 +7,84 @@ sidebar_position: 5
 
 # H3 Visualization
 
-## In Workbench Map Viewer
+## Using Fused Map to visualize hexagons
 
-Quick styling options for H3 data in Workbench:
-- [Vector `H3HexagonLayer`](/workbench/udf-builder/styling#vector-h3hexagonlayer)
-- [Vector `H3HexagonLayer` with Tiles](/workbench/udf-builder/styling/#vector-h3hexagonlayer-with-tiles)
+The [`fused-map`](/widget-api/fused-map) widget renders a table with an H3 cell column as hexagons. Point a layer at a UDF that returns H3 cells, set `h3Column` to the column that holds them, and Fused Map draws the hexagons and colors them by any numeric column.
+
+[Try the examples in Canvas →](https://www.fused.io/canvas/fc_fused/H3_Converting_Examples)
+
+![The H3 Converting Examples canvas: each UDF returns a table of hexes and a fused-map widget renders it](/img/tutorials/geospatial/h3/h3_converting_examples_canvas.png)
+
+Each example in the H3 Converting Examples canvas is a pair: a UDF that returns an H3 table, and a `fused-map` widget connected to it. This is the point count example, which counts NYC 311 noise complaints per hex.
+
+### The UDF
+
+```python
+import fused
+
+
+@fused.udf
+def udf(
+    res: int = 9
+):
+    noise_311_link = "https://gist.githubusercontent.com/kashuk/670a350ea1f9fc543c3f6916ab392f62/raw/4c5ced45cc94d5b00e3699dd211ad7125ee6c4d3/NYC311_noise.csv"
+    common = fused.load("https://github.com/fusedio/udfs/tree/b6786d6/public/common/")
+    con = common.duckdb_connect()
+
+    df = con.execute(
+        """
+        SELECT
+          h3_latlng_to_cell(lat, lng, ?) AS hex,
+          COUNT(*) AS cnt
+        FROM read_csv_auto(?)
+        WHERE lat IS NOT NULL AND lng IS NOT NULL
+        GROUP BY 1
+        """,
+        [res, noise_311_link],
+    ).df()
+
+    return df
+```
+
+### The widget
+
+The widget is plain JSON. `"{{point_count_to_hex}}"` references the UDF above, which is named `point_count_to_hex` in the Canvas, so the map re-renders whenever the UDF's output changes.
+
+```json
+{
+  "type": "fused-map",
+  "props": {
+    "showSidebar": true,
+    "layers": [
+      {
+        "id": "point_count_to_hex",
+        "name": "311 Noise Complaints",
+        "udf": "{{point_count_to_hex}}",
+        "type": "h3",
+        "h3Column": "hex",
+        "tooltip": true,
+        "legend": true,
+        "style": {
+          "fillColor": {
+            "type": "continuous",
+            "attr": "cnt",
+            "palette": "OrYel",
+            "domain": [
+              0,
+              200
+            ]
+          },
+          "opacity": 0.7
+        }
+      }
+    ]
+  }
+}
+```
+
+:::tip
+Every key under `props` is documented in the [Fused Map widget reference](/widget-api/fused-map), including other layer types, color palettes and tooltips.
+:::
 
 ---
 
@@ -2278,5 +2351,15 @@ def udf(
   ```
 
 </details>
+
+---
+
+## In Workbench Map Viewer
+
+Quick styling options for H3 data in Workbench:
+- [Vector `H3HexagonLayer`](/workbench/udf-builder/styling#vector-h3hexagonlayer)
+- [Vector `H3HexagonLayer` with Tiles](/workbench/udf-builder/styling/#vector-h3hexagonlayer-with-tiles)
+
+---
 
 Feel free to directly reach out to us at `info@fused.io` if you have any questions on implementing this yourself

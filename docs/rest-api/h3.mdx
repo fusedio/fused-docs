@@ -47,8 +47,8 @@ This reads the 6,214 position reports in New York Harbor between 12:00 and 13:00
 | `partition` | string | No | JSON object mapping a partition column to a value, or a list of values that any may match. See [Filter by partition](#filter-by-partition). |
 | `partition_range` | string | No | JSON object mapping a partition column to an inclusive `[min, max]`, with `null` for an open end |
 | `columns` | string | No | A column to return. Repeat the parameter for several. Omitted, every column is returned. |
-| `format` | string | No | `parquet` (default) returns rows. `index` returns the matching row groups as JSON. See [Index format](#index-format). |
-| `max_row_groups` | integer | No | Row groups per page, from 1 to 4,096. Default 1,024. |
+| `format` | string | No | `parquet` (default) returns rows. `index` returns a binary read plan (Arrow IPC) for the Fused client libraries; it is not a stable format. See [Index format](#index-format). `stats` returns JSON with each matched row group's H3 range, partition, and min and max of each column in `columns` (required). `files` returns JSON listing the indexed files that overlap the query, by the H3 cell each file is named after. No file is opened. |
+| `max_row_groups` | integer | No | Row groups per page, from 1 to 16,384. At most 4,096 for `parquet` and `index`. Default 1,024. |
 | `cursor` | string | No | The cursor from the previous page. See [Page through large results](#page-through-large-results). |
 
 Pass at most one spatial selector: the bounding box, the point, `cell`, or `hex_min` and `hex_max`. With none, the query reads the whole dataset, narrowed only by time and partition.
@@ -59,21 +59,35 @@ Pass at most one spatial selector: the bounding box, the point, `cell`, or `hex_
 
 ### Page through large results
 
-A large result comes back one page at a time. When more remain, the response carries a cursor: the `X-Fused-Next-Cursor` header for `format=parquet`, or the `next_cursor` field of the body for `format=index`. Send it back as `cursor`, with the same query, until a response has none.
+A large result comes back one page at a time. When more remain, the response carries a cursor: the `X-Fused-Next-Cursor` header for `format=parquet`, or the `next_cursor` field of the body for `format=stats`. Send it back as `cursor`, with the same query, until a response has none. `format=files` always answers in one page.
 
 ### Index format
 
-`format=index` returns JSON describing the matching row groups without reading any rows, for a client that reads the Parquet files itself: each row group's file `path`, `row_group_index` and byte offsets, the files' base64-encoded Parquet `footers`, and `next_cursor` for the next page.
+`format=index` returns a binary read plan (Arrow IPC, `application/octet-stream`) for the Fused client libraries, without reading any rows. It is not a stable public format: use [`fused.h3.query()`](/python-sdk/api-reference/h3#query) instead of parsing it.
+
+### Stats format
+
+`format=stats` returns JSON with min and max values per row group, without reading any rows. `columns` is required, and each column must be a number, date, timestamp or string column of the matched files, other than the H3 column. The body has `h3_resolution`, `partitions` (the folders of this page's row groups), `next_cursor`, and `row_groups`: parallel arrays `h3_min` and `h3_max` (hex strings), `partition` (an index into `partitions`) and `stats` (`{column: {min: [...], max: [...]}}`), one entry per row group.
+
+### Files format
+
+`format=files` returns JSON with `files`, the H3 cells (lowercase hex) that name the indexed files overlapping the query, and `h3_resolution`, the resolution of the data cells. No file is opened. `columns`, `max_row_groups` and `cursor` are ignored. `time_min` and `time_max` narrow the answer only when the time column is a `date` partition column.
 
 ### Errors
 
 | Status | When |
 |---|---|
-| `400` | More than one spatial selector, an incomplete one (for example `lat` without `lng`), an invalid cell id, a `partition` naming a column that is not a partition column, or a `cursor` from a different query |
+| `400` | More than one spatial selector, an incomplete one (for example `lat` without `lng`), or an invalid cell id |
+| `400` | `time_min` or `time_max` on a dataset with no time column |
+| `400` | `partition` or `partition_range` that is not a JSON object, names a column that is not a partition column, or holds a value of the wrong type |
+| `400` | `max_row_groups` above 4,096 for `format=parquet` or `format=index` |
+| `400` | `format=stats` with no `columns`, with the H3 column, with a column that no matched file has, or with a column type it cannot summarize |
+| `400` | `format=files` selecting more than 2,048 folders |
+| `400` | A malformed `cursor`, or one from a different query |
 | `403` | No credentials, and `path` is not a public `s3://` dataset |
 | `404` | You can read no dataset at `path` |
 | `409` | The dataset has never finished indexing, or the `cursor` predates a re-index |
-| `422` | A name in `columns` is missing from the indexed files, or `max_row_groups` is above its maximum |
+| `422` | A name in `columns` is missing from the indexed files (`format=parquet`), `max_row_groups` is above 16,384, or (`format=files`) an indexed file is not named by an H3 cell |
 
 ## See also
 

@@ -20,9 +20,11 @@ ROWS = [
     (["columns"], "A column to return. Repeat the parameter for several. Omitted, every column is returned."),
     (["format"], {
         "parquet": "returns rows.",
-        "index": "returns the matching row groups as JSON. See [Index format](#index-format).",
+        "index": "returns a binary read plan (Arrow IPC) for the Fused client libraries; it is not a stable format. See [Index format](#index-format).",
+        "stats": "returns JSON with each matched row group's H3 range, partition, and min and max of each column in `columns` (required).",
+        "files": "returns JSON listing the indexed files that overlap the query, by the H3 cell each file is named after. No file is opened.",
     }),
-    (["max_row_groups"], "Row groups per page, from {minimum} to {maximum}. Default {default}."),
+    (["max_row_groups"], "Row groups per page, from {minimum} to {maximum}. At most 4,096 for `parquet` and `index`. Default {default}."),
     (["cursor"], "The cursor from the previous page. See [Page through large results](#page-through-large-results)."),
 ]
 

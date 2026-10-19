@@ -17,7 +17,7 @@ toc_max_heading_level: 3
 
 Use it for large datasets of any type: points, vectors, tables and multi-dimensional data such as weather. It partitions and indexes your data; any conversion or aggregation, such as averaging raster pixels per hex, is yours to do before partitioning. For rasters where you want aggregation and overviews built in, use the [raster ingestion pipeline](/guide/h3-analytics/raster-ingestion). See [Get your data into H3](/guide/h3-analytics/h3-overview#get-your-data-into-h3).
 
-A query reads only the part you ask for, so the benefit grows with the dataset. The examples below ingest [19.3 million NYC 311 requests](#example-six-years-of-nyc-311-requests), and over 300 million rows each of [AIS](#example-four-months-of-ais-ship-positions) and [LiDAR](#example-every-lidar-point-in-manhattan).
+A query reads only the part you ask for, so the benefit grows with the dataset. The examples below ingest [39.6 million NYC 311 requests](#example-16-years-of-nyc-311-requests), and over 300 million rows each of [AIS](#example-four-months-of-ais-ship-positions) and [LiDAR](#example-every-lidar-point-in-manhattan).
 
 :::note Don't use `partition_by` for location
 `partition()` already groups rows by location; use `file_res` to adjust file coverage. Use `partition_by` for nonspatial columns, such as `date`, `hour` or `scenario`.
@@ -25,16 +25,16 @@ A query reads only the part you ask for, so the benefit grows with the dataset. 
 
 ## Examples
 
-### Example: six years of NYC 311 requests
+### Example: 16 years of NYC 311 requests
 
 [Open this example in Canvas →](https://www.fused.io/canvas/fc_fused/H3_NYC_311)
 
-Query **19.3 million service requests** from [NYC 311](https://data.cityofnewyork.us/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9), January 2020 to December 2025. After ingestion, a one-month query of a few Midtown blocks takes **0.2 seconds**.
+Query **39.6 million service requests** from [NYC 311](https://data.cityofnewyork.us/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9), January 2010 to December 2025. After ingestion, a one-month query of a few Midtown blocks takes **0.2 seconds**.
 
-Pick a month to see every request. Zoom in to load only what is on screen.
+Pick a month to see every request. Each map tile is one call to the [`GET /h3/query`](/rest-api/h3) REST endpoint from the browser, with no UDF and no sign-in, so zooming in loads only what is on screen. **Copy curl** gives the last tile request as a terminal command.
 
 <iframe
-  src="https://www.fused.io/share/fc_fused%2FH3_NYC_311/nyc_month_map"
+  src="https://www.fused.io/share/fc_fused%2FH3_NYC_311/rest_query_map"
   width="100%"
   height="600px"
   frameBorder="0"
@@ -43,78 +43,26 @@ Pick a month to see every request. Zoom in to load only what is on screen.
 ></iframe>
 
 <details>
-<summary>Code</summary>
+<summary>Widget code</summary>
 
-The canvas's first step copies the NYC Open Data API to `raw`, one Parquet file per month. The partition step streams every month from `since` on into one `partition()` call:
+To get this map in your own workbench, add a widget and paste this JSON. It reads the public dataset at `s3://fused-asset/data/nyc311/` straight from the REST endpoint, so it needs no UDF.
 
-```python showLineNumbers {25-33}
-@fused.udf(engine="medium")
-def udf(
-    raw: str = "fd://h3_examples/nyc311_raw/",
-    out: str = "s3://fused-asset/data/nyc311/",
-    since: str = "2020-01",
-):
-    import pandas as pd
-    import pyarrow as pa
-    import pyarrow.compute as pc
-
-    files = sorted(
-        p for p in fused.api.list(raw)
-        if p.endswith(".parquet") and p.rsplit("/", 1)[-1] >= f"{since}.parquet"
-    )
-
-    # 1. Source: every month's file, in batches, tagged with its month
-    def batches():
-        for path in files:
-            month = path.rsplit("/", 1)[-1].removesuffix(".parquet")  # "2023-05"
-            for batch in fused.h3.sources.parquet(path):
-                batch = batch.filter(pc.and_(pc.is_valid(batch["latitude"]), pc.is_valid(batch["longitude"])))
-                yield batch.append_column("month", pa.array([month] * batch.num_rows, pa.string()))
-
-    # 2. Partition: one folder per month, one file per res-5 cell, each request as a res-11 hex
-    fused.h3.partition(
-        batches(),
-        out,
-        point_column=("latitude", "longitude"),
-        h3_res=11,
-        file_res=5,
-        partition_by="month",
-        overwrite=True,
-    )
-    return pd.DataFrame({"months": [len(files)]})
-```
-
-Index it with `created_date` as the time column:
-
-```python showLineNumbers
-@fused.udf
-def udf(out: str = "s3://fused-asset/data/nyc311/"):
-    fused.h3.index(out, time_column="created_date", overwrite=True, wait=False)
-```
-
-Then query any area and month:
-
-```python showLineNumbers
-@fused.udf
-def udf(out: str = "s3://fused-asset/data/nyc311/"):
-    # Every request in a few blocks of Midtown in May 2023
-    return fused.h3.query(
-        out,
-        bbox=(-73.990, 40.752, -73.980, 40.760),
-        partition={"month": "2023-05"},
-        columns=["latitude", "longitude", "complaint_type", "created_date"],
-    )
-```
-
-The same query with `curl`. The dataset is public, so no token is needed:
-
-```bash
-curl -G "https://www.fused.io/server/v1/h3/query" \
-  --data-urlencode "path=s3://fused-asset/data/nyc311/" \
-  -d min_lng=-73.990 -d min_lat=40.752 -d max_lng=-73.980 -d max_lat=40.760 \
-  --data-urlencode 'partition={"month": "2023-05"}' \
-  -d columns=latitude -d columns=longitude -d columns=complaint_type -d columns=created_date \
-  -o midtown.parquet
+```json
+{
+  "type": "div",
+  "props": {
+    "style": "position:relative;width:100%;height:100%;border-radius:6px;overflow:hidden"
+  },
+  "children": [
+    {
+      "type": "html",
+      "props": {
+        "style": "position:absolute;inset:0",
+        "value": "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<script src=\"https://unpkg.com/deck.gl@9.1.15/dist.min.js\"></script>\n<style>\n  html, body { margin: 0; height: 100%; background: #0e1117; font: 12px system-ui, -apple-system, sans-serif; color: #e6e6e6; }\n  #map { position: absolute; inset: 0; }\n  .card { position: absolute; z-index: 2; background: rgba(14, 17, 23, 0.9); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 8px 10px; box-sizing: border-box; }\n  #bar { left: 12px; top: 12px; display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }\n  #bar label { display: flex; flex-direction: column; gap: 3px; font-size: 10.5px; letter-spacing: 0.5px; text-transform: uppercase; color: #9aa4b2; }\n  #bar select { background: #1a1f2b; color: #e6e6e6; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 5px; padding: 5px 6px; font: inherit; font-size: 12.5px; }\n  #copy { height: 29px; padding: 0 10px; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 5px; background: #1a1f2b; color: #e6e6e6; font: inherit; font-size: 12px; cursor: pointer; }\n  #copy:hover { background: #262d3d; }\n  #copy:disabled { opacity: 0.5; cursor: default; }\n  #stats { left: 12px; bottom: 12px; max-width: calc(100% - 280px); line-height: 1.5; }\n  #stats b { color: #fff; font-variant-numeric: tabular-nums; }\n  #stats .dim { color: #9aa4b2; }\n  #stats .err { color: #ff8a80; }\n  #legend { right: 12px; bottom: 12px; width: 240px; max-height: calc(100% - 150px); overflow: auto; }\n  #legend .ttl { font-size: 10.5px; letter-spacing: 0.6px; text-transform: uppercase; color: #9aa4b2; margin-bottom: 6px; }\n  #legend .row { display: grid; grid-template-columns: 11px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 2px 0; }\n  #legend .sw { width: 10px; height: 10px; border-radius: 3px; }\n  #legend .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n  #legend .ct { color: #9aa4b2; font-variant-numeric: tabular-nums; }\n  #zoomcard { position: absolute; z-index: 3; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(320px, calc(100% - 40px)); padding: 14px 16px; border-radius: 10px; background: rgba(14, 17, 23, 0.94); border: 1px solid rgba(242, 193, 78, 0.55); text-align: center; }\n  #zoomcard .zt { font-size: 15px; font-weight: 700; color: #f2c14e; }\n  #zoomcard .zd { margin-top: 4px; color: #c3cad5; line-height: 1.45; }\n  #zoomcard button { margin-top: 10px; height: 30px; padding: 0 16px; border: 0; border-radius: 6px; background: #f2c14e; color: #14171f; font: 600 12.5px system-ui, sans-serif; cursor: pointer; }\n  #attr { position: absolute; z-index: 2; right: 8px; bottom: 0; padding: 1px 6px; font-size: 9.5px; color: #8a93a0; pointer-events: none; }\n  .hidden { display: none !important; }\n</style>\n</head>\n<body>\n<div id=\"map\"></div>\n<div id=\"bar\" class=\"card\">\n  <label>Month<select id=\"month\"></select></label>\n  <label>Colour by<select id=\"colour\"><option value=\"status\">Status</option><option value=\"agency\">Agency</option></select></label>\n  <button id=\"copy\" type=\"button\" title=\"Copy a curl command for the last map tile request\">Copy curl</button>\n</div>\n<div id=\"stats\" class=\"card\">Loading\u2026</div>\n<div id=\"legend\" class=\"card\"></div>\n<div id=\"zoomcard\" class=\"hidden\"><div class=\"zt\">Zoom in to load requests</div><div class=\"zd\">Each map tile is one call to the REST endpoint. Tiles load from zoom 12.</div><button id=\"zoomin\" type=\"button\">Zoom in</button></div>\n<div id=\"attr\">Esri, HERE, Garmin, \u00a9 OpenStreetMap</div>\n<script type=\"module\">\nimport { parquetReadObjects } from \"https://cdn.jsdelivr.net/npm/hyparquet@1.31.2/+esm\";\n\nconst QUERY_URL = \"https://www.fused.io/server/v1/h3/query\";\nconst PATH = \"s3://fused-asset/data/nyc311/\";\nconst COLUMNS = [\"latitude\", \"longitude\", \"created_date\", \"agency\", \"complaint_type\", \"descriptor\", \"status\", \"incident_address\"];\nconst FIRST_MONTH = \"2010-01\", LAST_MONTH = \"2025-12\";\nconst MIN_ZOOM = 12;\nconst MAX_PAGES = 6;\n\nconst PALETTE = [[76, 155, 232], [232, 87, 76], [242, 193, 78], [95, 201, 126], [176, 124, 232], [76, 211, 211], [240, 140, 200], [255, 159, 64], [235, 235, 235]];\nconst OTHER = [138, 147, 160];\nconst CATEGORIES = {\n  agency: [\"NYPD\", \"HPD\", \"DSNY\", \"DOT\", \"DEP\", \"DOB\", \"DPR\", \"DOHMH\", \"TLC\"],\n  status: [\"Closed\", \"Open\", \"In Progress\", \"Pending\", \"Assigned\", \"Started\"]\n};\n\nconst monthEl = document.getElementById(\"month\");\nconst colourEl = document.getElementById(\"colour\");\nconst statsEl = document.getElementById(\"stats\");\nconst legendEl = document.getElementById(\"legend\");\nconst zoomCard = document.getElementById(\"zoomcard\");\n\nconst months = [];\nfor (let y = Number(FIRST_MONTH.slice(0, 4)); y <= Number(LAST_MONTH.slice(0, 4)); y++) {\n  for (let m = 1; m <= 12; m++) {\n    const v = y + \"-\" + String(m).padStart(2, \"0\");\n    if (v >= FIRST_MONTH && v <= LAST_MONTH) months.push(v);\n  }\n}\nmonths.reverse().forEach(v => { const o = document.createElement(\"option\"); o.value = v; o.textContent = v; monthEl.appendChild(o); });\n\nconst params = window.fused && window.fused.params;\nfunction savedParam(name, fallback, valid) {\n  try { const v = params && params.getAll()[name]; if (typeof v === \"string\" && valid(v)) return v; } catch (e) {}\n  return fallback;\n}\nfunction saveParam(name, value) { try { if (params) params.set(name, value); } catch (e) {} }\n\nlet month = savedParam(\"rest_month\", LAST_MONTH, v => months.includes(v));\nlet colourBy = savedParam(\"rest_colour\", \"status\", v => v in CATEGORIES);\nmonthEl.value = month;\ncolourEl.value = colourBy;\n\nlet zoom = 14.5;\nlet viewState = { longitude: -73.985, latitude: 40.755, zoom: 14.5, pitch: 0, bearing: 0 };\nlet loading = 0;\nlet lastUrl = \"\";\nlet lastError = \"\";\nlet visible = [];\n\nfunction requestUrl(bbox, cursor) {\n  const q = new URLSearchParams({\n    path: PATH,\n    min_lng: bbox.west.toFixed(6), min_lat: bbox.south.toFixed(6),\n    max_lng: bbox.east.toFixed(6), max_lat: bbox.north.toFixed(6),\n    partition: JSON.stringify({ month: month }),\n    format: \"parquet\"\n  });\n  COLUMNS.forEach(c => q.append(\"columns\", c));\n  if (cursor) q.set(\"cursor\", cursor);\n  return QUERY_URL + \"?\" + q.toString();\n}\n\nfunction toText(v) {\n  if (v == null) return \"\";\n  if (v instanceof Date) return v.toISOString().slice(0, 19).replace(\"T\", \" \");\n  if (typeof v === \"bigint\") return new Date(Number(v)).toISOString().slice(0, 19).replace(\"T\", \" \");\n  return String(v);\n}\n\nasync function loadTile(tile, forMonth) {\n  const bbox = tile.bbox;\n  const t0 = performance.now();\n  let cursor = null, pages = 0, bytes = 0;\n  const rows = [];\n  do {\n    const url = requestUrl(bbox, cursor);\n    lastUrl = url;\n    showUrl();\n    const r = await fetch(url, { signal: tile.signal });\n    if (r.status === 204) break;\n    if (!r.ok) {\n      const text = await r.text();\n      let detail = text;\n      try { detail = JSON.parse(text).detail || text; } catch (e) {}\n      throw new Error(\"HTTP \" + r.status + \": \" + String(detail).slice(0, 200));\n    }\n    const buf = await r.arrayBuffer();\n    bytes += buf.byteLength;\n    if (tile.signal && tile.signal.aborted) break;\n    const objs = await parquetReadObjects({ file: buf, columns: COLUMNS });\n    for (const o of objs) {\n      const lat = o.latitude, lng = o.longitude;\n      if (lng >= bbox.west && lng < bbox.east && lat >= bbox.south && lat < bbox.north) rows.push(o);\n    }\n    cursor = r.headers.get(\"X-Fused-Next-Cursor\");\n    pages += 1;\n  } while (cursor && pages < MAX_PAGES);\n  return { month: forMonth, rows, bytes, pages, cut: !!cursor, ms: performance.now() - t0 };\n}\n\nfunction colourOf(row) {\n  const cats = CATEGORIES[colourBy];\n  const i = cats.indexOf(row[colourBy]);\n  return i >= 0 ? PALETTE[i % PALETTE.length] : OTHER;\n}\n\nfunction esriLayer(name) {\n  return new deck.TileLayer({\n    id: \"esri-\" + name,\n    data: \"https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_\" + name + \"/MapServer/tile/{z}/{y}/{x}\",\n    minZoom: 0, maxZoom: 16, tileSize: 256,\n    renderSubLayers: props => {\n      const b = props.tile.boundingBox;\n      return new deck.BitmapLayer(props, { data: null, image: props.data, bounds: [b[0][0], b[0][1], b[1][0], b[1][1]] });\n    }\n  });\n}\nconst basemap = esriLayer(\"Base\");\nconst labels = esriLayer(\"Reference\");\n\nfunction requestsLayer() {\n  const forMonth = month;\n  return new deck.TileLayer({\n    id: \"nyc311-rest-\" + forMonth,\n    data: forMonth,\n    minZoom: MIN_ZOOM,\n    maxZoom: 16,\n    tileSize: 512,\n    maxRequests: 6,\n    refinementStrategy: \"no-overlap\",\n    getTileData: tile => {\n      loading += 1;\n      showStats();\n      return loadTile(tile, forMonth).finally(() => { loading -= 1; showStats(); });\n    },\n    onViewportLoad: tiles => {\n      visible = tiles.filter(t => t.content).map(t => t.content);\n      lastError = \"\";\n      showStats();\n      showLegend();\n    },\n    onTileError: e => { lastError = e && e.message ? e.message : String(e); showStats(); },\n    updateTriggers: { renderSubLayers: [colourBy] },\n    renderSubLayers: props => {\n      const c = props.data;\n      if (!c || !c.rows.length) return null;\n      return new deck.ScatterplotLayer({\n        id: props.id + \"-pts\",\n        data: c.rows,\n        getPosition: d => [d.longitude, d.latitude],\n        getFillColor: colourOf,\n        updateTriggers: { getFillColor: [colourBy] },\n        radiusUnits: \"pixels\",\n        getRadius: 3,\n        radiusMinPixels: 2,\n        opacity: 0.85,\n        pickable: true\n      });\n    }\n  });\n}\n\nlet layer = requestsLayer();\n\nfunction render() {\n  const ok = zoom >= MIN_ZOOM;\n  map.setProps({ layers: ok ? [basemap, layer, labels] : [basemap, labels] });\n  zoomCard.classList.toggle(\"hidden\", ok);\n  showStats();\n}\n\nfunction fmtBytes(n) {\n  if (n >= 1e6) return (n / 1e6).toFixed(2) + \" MB\";\n  return Math.round(n / 1e3) + \" KB\";\n}\n\nfunction showStats() {\n  statsEl.innerHTML = \"\";\n  const add = (html, cls) => { const d = document.createElement(\"div\"); if (cls) d.className = cls; d.innerHTML = html; statsEl.appendChild(d); };\n  if (zoom < MIN_ZOOM) { add(\"Zoom in to zoom \" + MIN_ZOOM + \" to load requests.\", \"dim\"); return; }\n  const cur = visible.filter(c => c.month === month);\n  const rows = cur.reduce((n, c) => n + c.rows.length, 0);\n  const bytes = cur.reduce((n, c) => n + c.bytes, 0);\n  const slow = cur.reduce((m, c) => Math.max(m, c.ms), 0);\n  const cut = cur.some(c => c.cut);\n  if (loading > 0) add(\"Loading\u2026 \" + loading + \" request\" + (loading > 1 ? \"s\" : \"\") + \" in flight\", \"dim\");\n  add(\"<b>\" + rows.toLocaleString(\"en-US\") + \"</b> requests in view \u00b7 \" + month + (cut ? \" \u00b7 zoom in to see all\" : \"\"));\n  add(\"<span class='dim'>\" + cur.length + \" tile calls \u00b7 \" + fmtBytes(bytes) + \" Parquet \u00b7 slowest call \" + (slow / 1000).toFixed(2) + \" s</span>\");\n  if (lastError) add(\"Request failed: \" + lastError.replace(/</g, \"&lt;\"), \"err\");\n}\n\nfunction showLegend() {\n  const counts = {};\n  visible.filter(c => c.month === month).forEach(c => c.rows.forEach(r => { const k = CATEGORIES[colourBy].includes(r[colourBy]) ? r[colourBy] : \"Other\"; counts[k] = (counts[k] || 0) + 1; }));\n  legendEl.innerHTML = \"\";\n  const t = document.createElement(\"div\");\n  t.className = \"ttl\";\n  t.textContent = colourBy === \"agency\" ? \"Agency\" : \"Status\";\n  legendEl.appendChild(t);\n  const items = CATEGORIES[colourBy].map((name, i) => [name, PALETTE[i % PALETTE.length]]).concat([[\"Other\", OTHER]]);\n  items.forEach(([name, c]) => {\n    const row = document.createElement(\"div\");\n    row.className = \"row\";\n    const col = \"rgb(\" + c.join(\",\") + \")\";\n    row.innerHTML = \"<span class='sw' style='background:\" + col + \"'></span><span class='nm'>\" + name + \"</span><span class='ct'>\" + (counts[name] || 0).toLocaleString(\"en-US\") + \"</span>\";\n    legendEl.appendChild(row);\n  });\n}\n\nfunction showUrl() {\n  document.getElementById(\"copy\").disabled = !lastUrl;\n}\n\ndocument.getElementById(\"copy\").onclick = async () => {\n  if (!lastUrl) return;\n  const cmd = \"curl -o nyc311.parquet '\" + lastUrl.split(\"&cursor=\")[0] + \"'\";\n  const btn = document.getElementById(\"copy\");\n  try { await navigator.clipboard.writeText(cmd); btn.textContent = \"Copied\"; }\n  catch (e) {\n    const ta = document.createElement(\"textarea\"); ta.value = cmd; document.body.appendChild(ta); ta.select();\n    try { document.execCommand(\"copy\"); btn.textContent = \"Copied\"; } catch (e2) { btn.textContent = \"Copy failed\"; }\n    ta.remove();\n  }\n  setTimeout(() => { btn.textContent = \"Copy curl\"; }, 1500);\n};\n\nfunction tooltip(info) {\n  if (!info || !info.object || info.index < 0) return null;\n  const d = info.object;\n  return {\n    text: (d.complaint_type || \"Request\") + (d.descriptor ? \"\\n\" + d.descriptor : \"\") + \"\\n\" + toText(d.created_date) +\n      \"\\n\" + (d.agency || \"\") + \" \u00b7 \" + (d.status || \"\") + (d.incident_address ? \"\\n\" + d.incident_address : \"\"),\n    style: { background: \"rgba(14,17,23,0.95)\", color: \"#e6e6e6\", fontSize: \"12px\", borderRadius: \"6px\", border: \"1px solid rgba(255,255,255,0.15)\" }\n  };\n}\n\nconst map = new deck.Deck({\n  parent: document.getElementById(\"map\"),\n  initialViewState: Object.assign({}, viewState, { minZoom: 9, maxZoom: 17 }),\n  controller: true,\n  getTooltip: tooltip,\n  onViewStateChange: ({ viewState: vs }) => {\n    viewState = vs;\n    const before = zoom >= MIN_ZOOM;\n    zoom = vs.zoom;\n    if (before !== (zoom >= MIN_ZOOM)) render();\n  },\n  layers: [basemap, labels]\n});\n\ndocument.getElementById(\"zoomin\").onclick = () => {\n  const z = MIN_ZOOM + 1.5;\n  map.setProps({ initialViewState: Object.assign({}, viewState, { zoom: z, minZoom: 9, maxZoom: 17, transitionDuration: 800, transitionInterpolator: new deck.FlyToInterpolator() }) });\n  zoom = z;\n  render();\n};\n\nmonthEl.onchange = () => {\n  month = monthEl.value;\n  saveParam(\"rest_month\", month);\n  visible = [];\n  layer = requestsLayer();\n  render();\n  showLegend();\n};\ncolourEl.onchange = () => {\n  colourBy = colourEl.value;\n  saveParam(\"rest_colour\", colourBy);\n  layer = layer.clone({ updateTriggers: { renderSubLayers: [colourBy] } });\n  render();\n  showLegend();\n};\n\nshowUrl();\nshowLegend();\nrender();\n</script>\n</body>\n</html>\n"
+      }
+    }
+  ]
+}
 ```
 
 </details>
