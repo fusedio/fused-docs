@@ -100,9 +100,11 @@ See the [{relevant docs page}]({path}) to get started.
 1. Create a branch named `changelog_{version_underscored}` (e.g. `changelog_2_6_0`)
 2. Commit with message: `docs: add v{VERSION} changelog entry`
 3. Open a draft PR with title `docs: add v{VERSION} changelog entry`
-4. PR description should include: version, date, list of PRs included, and a note to add screenshots/videos before merging if they are missing
+4. PR description should include: version, date, a plain-language list of the changes included, and a note to add screenshots/videos before merging if they are missing
 
 **Do not include Notion links in the PR description.**
+
+**This is a public repo.** Do not mention internal repos, PR numbers, PR titles/descriptions, or other internal references anywhere: not in the changelog entry, the commit message, or the PR title or description.
 
 ## Reference: recent entry format
 
