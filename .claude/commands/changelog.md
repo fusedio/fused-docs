@@ -51,7 +51,7 @@ Read through all the provided changes and sort them into three buckets:
 - Canvas → [Canvas](/workbench/udf-builder/canvas)
 - H3 analytics → [H3 analytics](/guide/h3-analytics/h3-overview)
 - Shared tokens / API endpoints → [tokens & endpoints](/guide/data-input-outputs/export-api/tokens-endpoints)
-- Slack integration → [Slack integration](/guide/data-input-outputs/export-api/slack)
+- Slack integration → [Slack integration](/workbench/integrations/slack)
 
 Use Docusaurus-style relative paths for all internal links. Link to relevant docs pages wherever it makes sense.
 
