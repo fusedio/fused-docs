@@ -1,14 +1,14 @@
 ---
 id: data-retrieval-end-to-end
 title: "Data Retrieval: End-to-End Example"
-sidebar_label: End-to-End Example
+sidebar_label: "Partition, Index & Query"
 sidebar_position: 2.45
-description: Partition, index and query one day of NYC 311 requests with four UDFs, then scale to more days by changing one parameter.
+description: Partition, index and query NYC 311 requests with fused.h3, with the code and output of each step.
 ---
 
 # Data Retrieval: End-to-End Example
 
-Partition, index and query one day of NYC 311 requests with four UDFs. To scale to more days, change `end_date`.
+We use NYC 311 requests to partition, index and query. Each step shows its code and output.
 
 [Open the H3_End_to_End_Ingestion canvas →](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion)
 
@@ -20,7 +20,7 @@ Paste each UDF into a canvas in [Workbench](https://www.fused.io/workbench) with
 
 ## 1. Source
 
-A UDF that returns one day of rows. `partition` takes a source like this one, not a DataFrame.
+A UDF that returns the rows. `partition` takes a source like this one, not a DataFrame.
 
 <details>
 <summary>`nyc311_source`</summary>
@@ -135,6 +135,9 @@ def udf(
 
 ## 5. Query over HTTP
 
+<details>
+<summary>`curl`</summary>
+
 ```bash
 curl -G "https://www.fused.io/server/v1/h3/query" \
   -H "Authorization: Bearer $FUSED_ACCESS_TOKEN" \
@@ -144,10 +147,46 @@ curl -G "https://www.fused.io/server/v1/h3/query" \
   -o nyc311.parquet
 ```
 
+</details>
+
 **Returns:** HTTP 200, a Parquet file with 1,312 rows: the source columns plus `hex`. Get the token with [`fused.api.access_token()`](/rest-api/overview#authentication).
 
-## Next
+## 6. Query an indexed dataset
 
-- [Large dataset examples](/guide/h3-analytics/hex-datasets): 39.6 million NYC 311 requests, 1.12 billion AIS positions, 367.8 million LiDAR points
+[NYC 311 from 2010 to 2025](/guide/h3-analytics/hex-datasets#example-16-years-of-nyc-311-requests) is already partitioned by month and indexed, and it is public.
+
+<details>
+<summary>Python</summary>
+
+```python
+import fused
+
+path = "s3://fused-asset/data/nyc311/"
+status = fused.h3.index_status(path)
+df = fused.h3.query(path, bbox=(-73.990, 40.750, -73.980, 40.758), partition={"month": "2025-12"})
+```
+
+</details>
+
+**Returns:** `status` is a dict with `status` `'ready'`, `files` 1923, `resolution` 11, `partition_columns` `month` (192 values, `2010-01` to `2025-12`), `time_min` `2010-01-01T00:00:00`, `time_max` `2025-12-31T23:59:28`. `df` has 752 rows and 47 columns: every request in a few Midtown blocks in December 2025, most often `Illegal Parking`.
+
+<details>
+<summary>`curl`, no token needed</summary>
+
+```bash
+curl -G "https://www.fused.io/server/v1/h3/query" \
+  --data-urlencode "path=s3://fused-asset/data/nyc311/" \
+  -d min_lng=-73.990 -d min_lat=40.750 -d max_lng=-73.980 -d max_lat=40.758 \
+  --data-urlencode 'partition={"month": "2025-12"}' \
+  -o midtown.parquet
+```
+
+</details>
+
+**Returns:** HTTP 200 in under 2 seconds, a Parquet file with the same 752 rows.
+
+## Reference
+
 - [`GET /h3/query`](/rest-api/h3): every parameter
-- [`fused.h3`](/python-sdk/api-reference/h3): Python reference
+- [`fused.h3`](/python-sdk/api-reference/h3): the Python API
+- [Large dataset examples](/guide/h3-analytics/hex-datasets)
