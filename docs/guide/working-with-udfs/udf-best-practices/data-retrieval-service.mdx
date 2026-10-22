@@ -1,0 +1,55 @@
+---
+id: data-retrieval-service
+title: Data Retrieval Service
+sidebar_label: Data Retrieval Service
+description: Ingest a large geospatial dataset once on the H3 grid, then retrieve any area or time window from Python, an HTTP API or a web page.
+---
+
+# Data Retrieval Service
+
+The Data Retrieval Service turns a large geospatial dataset into one you can query by area, point, H3 cell or time window and get back in seconds. You ingest it once on the [H3](/guide/working-with-udfs/udf-best-practices/working-with-h3) grid, and every query after that reads only the cells and time window it asks for, so retrieval stays fast as the archive grows.
+
+- **One grid for every type of data.** Points, tracks, LiDAR, tables and multi-dimensional data such as weather share the same index. Large rasters have their own [raster pipeline](/guide/h3-analytics/raster-ingestion).
+- **Open Parquet.** Your data is stored as Parquet files that any modern data stack can read.
+- **Incremental updates.** Add new data without rewriting what is already indexed.
+- **One query, three ways to call it.** Python, HTTP, or straight from a web page with no backend to build or host.
+
+## Workflow
+
+| Step | What it does | Reference |
+|---|---|---|
+| **Source** | Read the raw data and clean it with Python and SQL, and inspect it on a map | [Converting to H3](/guide/h3-analytics/converting) |
+| **Partition** | Write rows as H3 Parquet files, one file per parent cell, optionally split by day or another column | [`fused.h3.partition()`](/python-sdk/api-reference/h3#partition) |
+| **Index** | Record which cells and times each file covers | [`fused.h3.index()`](/python-sdk/api-reference/h3#index) |
+| **Query** | Retrieve rows by area, point, cell or time window | [`fused.h3.query()`](/python-sdk/api-reference/h3#query) |
+| **Serve** | Call the same query over HTTP from any language or web page | [`GET /h3/query`](/rest-api/h3) |
+
+Each step runs live in a UDF or as a [batch job](/guide/working-with-udfs/udf-best-practices/scaling-out). The code for partition, index and query, with an example for each type of data, is in [Ingest, Index & Query H3 Datasets](/guide/h3-analytics/hex-datasets).
+
+## End to end in one canvas
+
+[H3_End_to_End_Ingestion](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion) walks through source, partition, index and query for three types of data, with a read-me node on how to scale each one up. Open it to run each step, then swap in your own data.
+
+| Data | Example | Partitioned by |
+|---|---|---|
+| Points | One week of NYC 311 noise complaints | Day |
+| Raster | Copernicus DEM elevation for New York, as mean elevation per hex | Location |
+| Gridded | One day of ERA5 weather around New York | Day |
+
+## Query it from anywhere
+
+Once a dataset is indexed, `GET /h3/query` returns the matching rows as a Parquet file. Every filter is a URL parameter, so the same call works from `curl`, a script or a browser:
+
+```bash
+curl -G "https://www.fused.io/server/v1/h3/query" \
+  --data-urlencode "path=s3://fused-asset/data/ais/ais_week_h3_v2/" \
+  -d min_lng=-74.10 -d min_lat=40.55 -d max_lng=-73.90 -d max_lat=40.72 \
+  -d time_min=2024-07-03T12:00:00 -d time_max=2024-07-03T12:59:59 \
+  -o harbor.parquet
+```
+
+This returns the 6,214 ship position reports in New York Harbor for one hour. A public dataset needs no credentials. For your own dataset, add an [`Authorization` header](/rest-api/overview#authentication).
+
+Parameters, paging and errors are in the [`GET /h3/query` reference](/rest-api/h3). You can also try the endpoint in the [interactive API documentation](https://www.fused.io/server/docs).
+
+Working with a very large dataset? Contact **info@fused.io**.
