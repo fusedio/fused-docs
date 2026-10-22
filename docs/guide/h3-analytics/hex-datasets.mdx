@@ -1,15 +1,15 @@
 ---
 id: hex-datasets
-title: H3 Data Retrieval Examples
-sidebar_label: Data Retrieval Examples
+title: "Data Retrieval: Large Dataset Examples"
+sidebar_label: Large Dataset Examples
 sidebar_position: 2.5
 toc_min_heading_level: 2
 toc_max_heading_level: 3
 ---
 
-# H3 Data Retrieval Examples
+# Data Retrieval: Large Dataset Examples
 
-Each dataset below is partitioned and indexed once with the [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service), then queried live from the map. For the workflow and copy-paste snippets, start on that page.
+Each dataset is partitioned and indexed once with the [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service), then queried live. To learn the steps on a small dataset first, see the [end-to-end example](/guide/h3-analytics/data-retrieval-end-to-end).
 
 ## Example: 16 years of NYC 311 requests
 
@@ -239,63 +239,59 @@ Draw a box to explore Manhattan in 3D. The app splits large areas into smaller q
 <details>
 <summary>Code</summary>
 
-The canvas's first step copies the LAZ tiles to `raw` as they are. The partition step reads one tile at a time with [PDAL](https://pdal.io/), which also reprojects it to lat/lng:
+The canvas's first step copies the LAZ tiles to `raw` as they are. The source UDF reads one tile with [PDAL](https://pdal.io/), reprojects it to lat/lng and cuts it to Manhattan. It returns `tile` as a column because each part key must be an output column:
 
-```python showLineNumbers {44-53}
-@fused.udf(engine="r5.2xlarge")
-def udf(
-    raw: str = "fd://h3_examples/lidar_raw/manhattan_laz/",
-    out: str = "fd://h3_examples/lidar_manhattan_points/",
-):
+```python showLineNumbers
+@fused.udf
+def udf(tile: str = "18TWL790045", raw: str = "fd://h3_examples/lidar_raw/manhattan_laz/"):
     import json
 
     import fsspec
     import geopandas as gpd
     import pandas as pd
     import pdal
-    import pyarrow as pa
     import shapely
 
-    fs = fsspec.filesystem("s3")
-    tiles = sorted(fs.glob(f"{fused.api.resolve(raw)}*.laz"))
+    fsspec.filesystem("s3").get(f"{fused.api.resolve(raw)}USGS_LPC_NY_New_York_CMGP_SANDY_LiDAR_15_{tile}.laz", "/tmp/tile.laz")
+    pipeline = pdal.Pipeline(json.dumps([
+        {"type": "readers.las", "filename": "/tmp/tile.laz"},
+        {"type": "filters.reprojection", "out_srs": "EPSG:4326"},
+    ]))
+    pipeline.execute()
+    a = pipeline.arrays[0]
     nyc = gpd.read_file("https://data.cityofnewyork.us/resource/gthc-hcne.geojson")
-    shape = nyc[nyc["boroname"] == "Manhattan"].union_all()
-    shapely.prepare(shape)
+    a = a[shapely.contains_xy(nyc[nyc["boroname"] == "Manhattan"].union_all(), a["X"], a["Y"])]
+    return pd.DataFrame({
+        "lat": a["Y"], "lon": a["X"], "Z": a["Z"].astype("float32"),
+        "Classification": a["Classification"], "Intensity": a["Intensity"],
+        "ReturnNumber": a["ReturnNumber"], "NumberOfReturns": a["NumberOfReturns"],
+        "time": pd.to_datetime(a["GpsTime"] + 1e9 - 16, unit="s", origin="1980-01-06"),
+        "PointSourceId": a["PointSourceId"],
+        "tile": tile,
+    })
+```
 
-    # 1. Source: one batch per LAZ tile, moved to lat/lng and cut to Manhattan
-    def one_batch_per_tile():
-        for path in tiles:
-            fs.get(path, "/tmp/tile.laz")
-            pipeline = pdal.Pipeline(json.dumps([
-                {"type": "readers.las", "filename": "/tmp/tile.laz"},
-                {"type": "filters.reprojection", "out_srs": "EPSG:4326"},
-            ]))
-            pipeline.execute()
-            a = pipeline.arrays[0]
-            a = a[shapely.contains_xy(shape, a["X"], a["Y"])]
-            if len(a):
-                yield pa.record_batch({
-                    "lat": a["Y"], "lon": a["X"], "Z": a["Z"].astype("float32"),
-                    "Classification": a["Classification"], "Intensity": a["Intensity"],
-                    "ReturnNumber": a["ReturnNumber"], "NumberOfReturns": a["NumberOfReturns"],
-                    "time": pd.to_datetime(a["GpsTime"] + 1e9 - 16, unit="s", origin="1980-01-06"),
-                    "PointSourceId": a["PointSourceId"],
-                })
+Save it as `lidar_source`. The partition step runs it once per tile, as parallel parts, and writes one file per res-7 cell with each point tagged with its res-12 cell:
 
-    # 2. Partition: one file per res-7 cell, each point tagged with its res-12 cell.
-    # All of Manhattan (about 18 GB) fits under memory_budget, so nothing spills;
-    # each writer holds a whole file (up to 460 MB) in memory, so keep workers low.
-    fused.h3.partition(
-        one_batch_per_tile(),
+```python showLineNumbers
+@fused.udf(cache_max_age="0s")
+def udf(
+    raw: str = "fd://h3_examples/lidar_raw/manhattan_laz/",
+    out: str = "fd://h3_examples/lidar_manhattan_points/",
+):
+    import pandas as pd
+
+    tiles = sorted(f.split("_")[-1][:-4] for f in fused.api.list(raw) if f.endswith(".laz"))
+    run = fused.h3.partition(
+        fused.h3.sources.udf(fused.load("lidar_source")),
         out,
         point_column=("lat", "lon"),
         h3_res=12,
         file_res=7,
-        memory_budget=32 << 30,
-        workers=2,
-        overwrite=True,
+        parts=[{"tile": t} for t in tiles],
+        read_engine="large",
     )
-    return pd.DataFrame({"tiles": [len(tiles)]})
+    return pd.DataFrame({"run": [run.id], "tiles": [len(tiles)]})
 ```
 
 Index it, then query a box. For an exact edge, pad the box by about one cell and cut the rows to it:
@@ -332,6 +328,7 @@ curl -G "https://www.fused.io/server/v1/h3/query" \
 
 ## See also
 
-- [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service): partition, index and query, with copy-paste snippets
+- [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service): how partition, index and query work
+- [End-to-end example](/guide/h3-analytics/data-retrieval-end-to-end): one day of NYC 311 in four UDFs
 - [`fused.h3` API reference](/python-sdk/api-reference/h3): every parameter of `partition`, `index`, `query` and the `sources`
 - [H3 datasets REST API](/rest-api/h3): `GET /h3/query` over HTTP, with paging and the index format
