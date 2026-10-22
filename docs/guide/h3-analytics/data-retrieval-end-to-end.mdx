@@ -1,0 +1,192 @@
+---
+id: data-retrieval-end-to-end
+title: "Data Retrieval: End-to-End Example"
+sidebar_label: "Partition, Index & Query"
+sidebar_position: 2.45
+description: Partition, index and query NYC 311 requests with fused.h3, with the code and output of each step.
+---
+
+# Data Retrieval: End-to-End Example
+
+We use NYC 311 requests to partition, index and query. Each step shows its code and output.
+
+[Open the H3_End_to_End_Ingestion canvas →](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion)
+
+![H3_End_to_End_Ingestion canvas with source, partition, index and query steps for NYC 311 points, a Copernicus DEM raster and ERA5 weather](/img/tutorials/geospatial/h3/h3_end_to_end_ingestion.png)
+
+:::note
+Paste each UDF into a canvas in [Workbench](https://www.fused.io/workbench) with the name shown. Step 2 loads step 1 by name. Data is written to your own `fd://` storage.
+:::
+
+## 1. Source
+
+A UDF that returns the rows. `partition` takes a source like this one, not a DataFrame.
+
+<details>
+<summary>`nyc311_source`</summary>
+
+```python
+@fused.udf
+def udf(date: str = "2024-07-04"):
+    import pandas as pd
+    from urllib.parse import urlencode
+
+    query = urlencode({
+        "$select": "unique_key, created_date, complaint_type, borough, latitude, longitude",
+        "$where": f"created_date between '{date}T00:00:00' and '{date}T23:59:59' AND latitude IS NOT NULL",
+        "$limit": 100000,
+    })
+    df = pd.read_csv(f"https://data.cityofnewyork.us/resource/erm2-nwe9.csv?{query}")
+    df["date"] = date
+    return df
+```
+
+</details>
+
+**Returns:** a DataFrame, 10,492 rows, columns `unique_key`, `created_date`, `complaint_type`, `borough`, `latitude`, `longitude`, `date`.
+
+## 2. Partition
+
+One part per day. Each part runs the source UDF on a batch job and writes H3 Parquet files.
+
+<details>
+<summary>`nyc311_partition`</summary>
+
+```python
+@fused.udf(cache_max_age="0s")
+def udf(start_date: str = "2024-07-04", end_date: str = "2024-07-04", output: str = "fd://h3_examples/nyc311_daily/"):
+    import pandas as pd
+
+    days = pd.date_range(start_date, end_date).strftime("%Y-%m-%d")
+    run = fused.h3.partition(
+        fused.h3.sources.udf(fused.load("nyc311_source")),
+        output,
+        point_column=("latitude", "longitude"),
+        h3_res=11,
+        partition_by="date",
+        parts=[{"date": d} for d in days],
+    )
+    return pd.DataFrame({"run": [run.id], "days": [len(days)]})
+```
+
+</details>
+
+**Returns:** at once, one row with `run` (`grp:...`) and `days` (1). The batch job takes about 2 minutes. `fused.h3.get_run(run_id).status()` returns `'succeeded'` when it is done.
+
+- **Scale:** set `end_date="2024-07-10"` for 7 parts, run in parallel. Two days also took about 2 minutes.
+- **Part keys** must be columns the source returns, as `date` is here.
+- **Rerun:** `overwrite` is not allowed with `parts`. Pass `force=True` to redo parts.
+
+## 3. Index
+
+<details>
+<summary>`nyc311_index`</summary>
+
+```python
+@fused.udf(cache_max_age="0s")
+def udf(path: str = "fd://h3_examples/nyc311_daily/"):
+    import pandas as pd
+
+    fused.h3.index(path, overwrite=True).wait()
+    status = fused.h3.index_status(path)
+    return pd.DataFrame([{k: str(status[k]) for k in ("status", "files", "resolution", "partition_columns")}])
+```
+
+</details>
+
+**Returns:** one row: `status` `ready`, `files` 1, `resolution` 11, `partition_columns` with `date` (1 distinct value). Takes a few seconds.
+
+## 4. Query and map
+
+<details>
+<summary>`nyc311_query`</summary>
+
+```python
+@fused.udf(cache_max_age="0s")
+def udf(
+    bounds: fused.types.Bounds = [-74.05, 40.55, -73.70, 40.92],
+    date: str = "2024-07-04",
+    res: int = 9,
+    path: str = "fd://h3_examples/nyc311_daily/",
+):
+    import h3
+
+    df = fused.h3.query(path, bbox=tuple(bounds), partition={"date": date}, columns=["hex", "complaint_type"])
+    df["hex"] = [h3.cell_to_parent(h3.int_to_str(int(h)), res) for h in df["hex"]]
+    counts = df.groupby("hex").size().reset_index(name="cnt")
+    print(f"{len(df):,} requests on {date} in {len(counts):,} res-{res} hexes")
+
+    map_utils = fused.load("https://github.com/fusedio/udfs/tree/3ada22d/community/milind/map_utils")
+    layers = [{
+        "type": "hex",
+        "data": counts,
+        "name": f"311 requests, {date}",
+        "config": {"style": {
+            "fillColor": {"type": "continuous", "attr": "cnt", "domain": [0, 20], "steps": 20, "palette": "OrYel"},
+            "filled": True, "extruded": False, "stroked": False, "opacity": 0.7,
+        }},
+    }]
+    return map_utils.deckgl_layers(layers=layers, basemap="dark")
+```
+
+</details>
+
+**Returns:** an HTML map of requests per res-9 hex. Prints `9,850 requests on 2024-07-04 in 2,882 res-9 hexes`.
+
+## 5. Query over HTTP
+
+<details>
+<summary>`curl`</summary>
+
+```bash
+curl -G "https://www.fused.io/server/v1/h3/query" \
+  -H "Authorization: Bearer $FUSED_ACCESS_TOKEN" \
+  --data-urlencode "path=fd://h3_examples/nyc311_daily/" \
+  -d min_lng=-74.02 -d min_lat=40.70 -d max_lng=-73.93 -d max_lat=40.80 \
+  --data-urlencode 'partition={"date": "2024-07-04"}' \
+  -o nyc311.parquet
+```
+
+</details>
+
+**Returns:** HTTP 200, a Parquet file with 1,312 rows: the source columns plus `hex`. Get the token with [`fused.api.access_token()`](/rest-api/overview#authentication).
+
+## 6. Query an indexed dataset
+
+[NYC 311 from 2010 to 2025](/guide/h3-analytics/hex-datasets#example-16-years-of-nyc-311-requests) is already partitioned by month and indexed, and it is public.
+
+<details>
+<summary>Python</summary>
+
+```python
+import fused
+
+path = "s3://fused-asset/data/nyc311/"
+status = fused.h3.index_status(path)
+df = fused.h3.query(path, bbox=(-73.990, 40.750, -73.980, 40.758), partition={"month": "2025-12"})
+```
+
+</details>
+
+**Returns:** `status` is a dict with `status` `'ready'`, `files` 1923, `resolution` 11, `partition_columns` `month` (192 values, `2010-01` to `2025-12`), `time_min` `2010-01-01T00:00:00`, `time_max` `2025-12-31T23:59:28`. `df` has 752 rows and 47 columns: every request in a few Midtown blocks in December 2025, most often `Illegal Parking`.
+
+<details>
+<summary>`curl`, no token needed</summary>
+
+```bash
+curl -G "https://www.fused.io/server/v1/h3/query" \
+  --data-urlencode "path=s3://fused-asset/data/nyc311/" \
+  -d min_lng=-73.990 -d min_lat=40.750 -d max_lng=-73.980 -d max_lat=40.758 \
+  --data-urlencode 'partition={"month": "2025-12"}' \
+  -o midtown.parquet
+```
+
+</details>
+
+**Returns:** HTTP 200 in under 2 seconds, a Parquet file with the same 752 rows.
+
+## Reference
+
+- [`GET /h3/query`](/rest-api/h3): every parameter
+- [`fused.h3`](/python-sdk/api-reference/h3): the Python API
+- [Large dataset examples](/guide/h3-analytics/hex-datasets)

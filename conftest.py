@@ -39,7 +39,7 @@ _DATA_DEPENDENT = re.compile(
     | \bfused\.api\.               # account/server calls (whoami, log, ...)
     | \brun_remote\b
     | access_token|NotebookCredentials|fused\._auth|AUTHORIZATION  # live session/creds
-    | s3://|gs://|gcs://|az://|abfs://|ftp://|https?://
+    | s3://|gs://|gcs://|az://|abfs://|fd://|ftp://|https?://
     | read_parquet|read_csv|read_json|read_feather|read_excel|read_file
     | (gpd|geopandas|pd|pandas|xr|xarray)\.(read_|open)
     | rioxarray|rasterio\.open|open_dataset

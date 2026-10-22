@@ -212,6 +212,8 @@ const sidebars: SidebarsConfig = {
         "guide/h3-analytics/h3-overview",
         "guide/h3-analytics/resolution-guide",
         "guide/h3-analytics/converting",
+        "guide/h3-analytics/data-retrieval-service",
+        "guide/h3-analytics/data-retrieval-end-to-end",
         "guide/h3-analytics/hex-datasets",
         "guide/h3-analytics/raster-ingestion",
         "guide/h3-analytics/aggregations",
