@@ -1,0 +1,153 @@
+---
+id: data-retrieval-service
+title: H3 Data Retrieval Service
+sidebar_label: Data Retrieval Service
+sidebar_position: 2.4
+description: Partition and index a large dataset on the H3 grid with fused.h3, then query any area or time window in seconds from Python or the GET /h3/query API.
+---
+
+# H3 Data Retrieval Service
+
+:::tip Using an AI agent?
+Copy [this file](https://docs.fused.io/skills/H3.md) and pass it to your AI agent with a prompt like:
+
+```text
+Read https://docs.fused.io/skills/H3.md. Partition my data in <path or URL> into H3 on fd://, index it, then query <area> for <date range> and show me the rows.
+```
+:::
+
+Fused gets any area and time window of a large dataset back to you within 2 seconds. New to H3? Start with [Working with H3](/guide/working-with-udfs/udf-best-practices/working-with-h3).
+
+<iframe
+  src="https://www.fused.io/share/fc_fused%2FH3_AIS_One_Month/ais_points_map_by_variable_and_time"
+  width="100%"
+  height="700px"
+  frameBorder="0"
+  loading="lazy"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+This map queries 1.12 billion ship positions as you pan, in a fraction of a second per view.
+
+## How it works
+
+- **Partition**: [`fused.h3.partition()`](/python-sdk/api-reference/h3#partition) writes your rows as H3 Parquet files.
+- **Index**: [`fused.h3.index()`](/python-sdk/api-reference/h3#index) records which cells each file covers, plus its partition values and time range.
+- **Query**: [`fused.h3.query()`](/python-sdk/api-reference/h3#query) reads back only the rows you ask for, by area, point, cell, time window or partition value.
+- **H3 query API**: [`GET /h3/query`](/rest-api/h3) runs the same query over HTTP, from any language or web page.
+
+## Copy-paste: one day of NYC 311
+
+:::note
+Needs `fused` 2.9.3 or later (`pip install "fused[vector]>=2.9.3" h3`) and a signed-in account (`fused login`). Data is written to your own `fd://` storage.
+:::
+
+**1. Partition.** `partition` takes a source, so return your data from a UDF. The work runs on a Fused batch job, about 2 minutes here.
+
+```python
+import fused
+
+
+@fused.udf
+def nyc311_day(date: str = "2024-07-04"):
+    import pandas as pd
+    from urllib.parse import urlencode
+
+    query = urlencode({
+        "$select": "unique_key, created_date, complaint_type, borough, latitude, longitude",
+        "$where": f"created_date between '{date}T00:00:00' and '{date}T23:59:59' AND latitude IS NOT NULL",
+        "$limit": 100000,
+    })
+    df = pd.read_csv(f"https://data.cityofnewyork.us/resource/erm2-nwe9.csv?{query}")
+    df["date"] = date
+    return df
+
+
+fused.h3.partition(
+    fused.h3.sources.udf(nyc311_day),
+    "fd://h3_examples/nyc311_one_day/",
+    point_column=("latitude", "longitude"),
+    h3_res=11,
+    partition_by="date",
+    overwrite=True,
+).wait()
+```
+
+**2. Index.** A few seconds. The `date` folder becomes a filter you can query by.
+
+```python
+import fused
+
+fused.h3.index("fd://h3_examples/nyc311_one_day/", overwrite=True).wait()
+```
+
+**3. Query.** Every request in a box over Lower and Midtown Manhattan on July 4, 2024: 1,312 rows.
+
+```python
+import fused
+
+df = fused.h3.query(
+    "fd://h3_examples/nyc311_one_day/",
+    bbox=(-74.02, 40.70, -73.93, 40.80),
+    partition={"date": "2024-07-04"},
+)
+```
+
+**4. Query over HTTP.** The same query from the terminal, with a token from [`fused.api.access_token()`](/rest-api/overview#authentication):
+
+```bash
+curl -G "https://www.fused.io/server/v1/h3/query" \
+  -H "Authorization: Bearer $FUSED_ACCESS_TOKEN" \
+  --data-urlencode "path=fd://h3_examples/nyc311_one_day/" \
+  -d min_lng=-74.02 -d min_lat=40.70 -d max_lng=-73.93 -d max_lat=40.80 \
+  --data-urlencode 'partition={"date": "2024-07-04"}' \
+  -o nyc311.parquet
+```
+
+To change the data, keep the three calls and swap the partition arguments:
+
+| Your data | Partition with |
+|---|---|
+| Points | `point_column=("lat", "lon")`, in EPSG:4326 |
+| Rows with an H3 cell column | `hex_column="hex"` |
+| ERA5 weather | `fused.h3.sources.era5(...)` as the source, with `fill="nearest"` |
+| Parquet on `fd://`, `s3://` or `gs://` | The folder path as the source |
+
+## Query a public dataset now
+
+No account needed. This returns the 6,214 ship positions in New York Harbor for one hour from the AIS dataset in the map above:
+
+```bash
+curl -G "https://www.fused.io/server/v1/h3/query" \
+  --data-urlencode "path=s3://fused-asset/data/ais/ais_week_h3_v2/" \
+  -d min_lng=-74.10 -d min_lat=40.55 -d max_lng=-73.90 -d max_lat=40.72 \
+  -d time_min=2024-07-03T12:00:00 -d time_max=2024-07-03T12:59:59 \
+  -o harbor.parquet
+```
+
+Every parameter is in the [`GET /h3/query` reference](/rest-api/h3). Try the endpoint in the [interactive API documentation](https://www.fused.io/server/docs).
+
+## Try it end to end
+
+[H3_End_to_End_Ingestion](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion) runs partition, index and query for points, a raster and ERA5 weather, with a read-me node on how to scale each one up.
+
+![H3_End_to_End_Ingestion canvas with source, partition, index and query steps for NYC 311 points, a Copernicus DEM raster and ERA5 weather](/img/tutorials/geospatial/h3/h3_end_to_end_ingestion.png)
+
+## Examples
+
+Each one is ingested once and queried live, with the code to reproduce it:
+
+| Example | Data | Canvas |
+|---|---|---|
+| [NYC 311](/guide/h3-analytics/hex-datasets#example-16-years-of-nyc-311-requests) | 39.6 million service requests, 2010 to 2025 | [H3_NYC_311](https://www.fused.io/canvas/fc_fused/H3_NYC_311) |
+| [AIS ship positions](/guide/h3-analytics/hex-datasets#example-four-months-of-ais-ship-positions) | 1.12 billion positions, July to October 2024 | [H3_AIS_One_Month](https://www.fused.io/canvas/fc_fused/H3_AIS_One_Month) |
+| [Manhattan LiDAR](/guide/h3-analytics/hex-datasets#example-every-lidar-point-in-manhattan) | 367.8 million points | [H3_LiDAR_Manhattan](https://www.fused.io/canvas/fc_fused/H3_LiDAR_Manhattan) |
+
+## Tips
+
+- **Many days or months:** give the source UDF a parameter and pass `parts=[{"date": ...}, ...]` to `partition`. Each part is a separate read job.
+- **Adding data:** partition only the new data with `append=True` in place of `overwrite=True`, then index again without `overwrite`.
+- **`partition_by`:** use it for nonspatial columns such as `date` or `scenario`, never for location. Rows are already grouped by cell, and `file_res` sets how much area one file covers.
+- **Exact edges:** a query matches whole cells, so pad the box by about one cell and filter by latitude and longitude afterward.
+- **Large results:** a result too large for one read fails with HTTP 413. Split the area or time window.
+- **Very large datasets:** hundreds of GB or tens of thousands of files? Contact **info@fused.io**.
