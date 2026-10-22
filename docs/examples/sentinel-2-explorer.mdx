@@ -1,0 +1,95 @@
+---
+id: sentinel-2-explorer
+title: Sentinel-2 Explorer for Indices and Time Series
+sidebar_label: Sentinel-2 Explorer
+sidebar_position: 23
+---
+
+The [Sentinel-2 Composite](/examples/sentinel-2-composite) canvas builds one clear image of a place. The Explorer goes further. Pick a place and dates, then map a vegetation or water index, build a composite, or follow an index through time on a grid of H3 hexagons. Images, hexagons and series can be downloaded, and one API call returns the same data.
+
+<ClickZoomImage src="/img/examples/sentinel-2-explorer.png" alt="Sentinel-2 Explorer canvas: the Explorer widget with an NDVI map of Iowa farm fields, next to the README and above the sentinel_core, sentinel_products and Sentinel API nodes" />
+
+## Try it out
+
+[**Open the Canvas →**](https://www.fused.io/canvas/fc_fused/Sentinel2_Explorer)
+
+:::tip
+No keys or account are needed to call the API on this page.
+:::
+
+## 1 · Explorer
+
+The Explorer widget has three tabs:
+
+- **Index map**: an image of an index such as NDVI, NDWI or NBR. It uses the least cloudy pixels in the date range and shows statistics for the area.
+- **Time series**: the area as H3 hexagons, with a chart of the area average. Click a hexagon to chart its own series, and click a day in the chart to map that day.
+- **Composite**: a cloud-free median, mean, min or max of every clear pixel. Show it as true colour, false colour, SWIR and other presets, as an index, or as any three bands you choose.
+
+Index map can show the result as an **Image** or as **H3 hexagons**. Composite can too, when it shows an index or one band. The download button at the bottom left saves what the map or chart shows. An image downloads as a GeoTIFF (an index keeps its values, bands are reflectance from 0 to 100) or as a PNG exactly as drawn. Hexagons download as CSV or Parquet.
+
+The area can be at most 0.5° wide and 0.5° tall.
+
+## 2 · One API for every product
+
+`sentinel_api` is the single entry point. Send it a JSON config with a `product` and its `params`:
+
+```json
+{"product": "index_map", "params": {"bounds": [-93.25, 41.95, -93.15, 42.02], "date_range": "2024-07-01/2024-07-31", "index": "NDVI"}}
+```
+
+| Product | Returns |
+|---|---|
+| `index_map` | An index image and area statistics |
+| `composite` | A cloud-free composite of a preset, an index or chosen bands |
+| `index_timeseries` | Mean, min, max and standard deviation of an index per interval |
+| `scene_search` | The Sentinel-2 scenes over the area |
+| `hex_map` | H3 hexagons of an index for one day or all days |
+| `hex_series` | The series of one hexagon, or of the whole area |
+| `series_export` | `hex_series` as a CSV or Parquet file |
+| `hex_cells` | The table behind the three hex products |
+
+Supported indices are `NDVI`, `NDWI`, `MNDWI`, `NDMI`, `NBR`, `NDSI`, `NDRE`, `EVI`, `SAVI` and `BSI`. Send `{"product": "list"}` to see every product with its parameters and defaults.
+
+Find the scenes over a farm field in Iowa in July 2024:
+
+```bash
+curl -G "https://udf.ai/fc_fused/Sentinel2_Explorer/sentinel_api/run/file" \
+  --data-urlencode "format=json" \
+  --data-urlencode 'config={"product":"scene_search","params":{"bounds":[-93.25,41.95,-93.15,42.02],"date_range":"2024-07-01/2024-07-31","max_cloud":20}}'
+```
+
+Get the area-average NDVI every 10 days in summer 2024:
+
+```bash
+curl -G "https://udf.ai/fc_fused/Sentinel2_Explorer/sentinel_api/run/file" \
+  --data-urlencode "format=json" \
+  --data-urlencode 'config={"product":"hex_series","params":{"bounds":[-93.25,41.95,-93.15,42.02],"date_range":"2024-06-01/2024-08-31","index":"NDVI","interval":"P10D"}}'
+```
+
+Add `"fmt"` to an `index_map` or `composite` config to get only its file, as a row with a signed `download_url` valid for one hour. Use `"geotiff"` or `"png"` for an image, and `"csv"` or `"parquet"` for hexagons. `series_export` takes `fmt` inside `params` instead, and `scene_search` and the other products have no file:
+
+```bash
+curl -G "https://udf.ai/fc_fused/Sentinel2_Explorer/sentinel_api/run/file" \
+  --data-urlencode "format=json" \
+  --data-urlencode 'config={"product":"index_map","params":{"bounds":[-93.25,41.95,-93.15,42.02],"date_range":"2024-07-01/2024-07-31","index":"NDVI","max_cloud":60},"fmt":"geotiff"}'
+```
+
+## 3 · How the hexagons are built
+
+The first time you ask for a place and dates, `sentinel_core` reads the Sentinel-2 scenes in parallel, one job per 10 days with `.map()`. It keeps, for each clear day and each small H3 cell, the clear-pixel count and the mean band values. `hex_map`, `hex_series` and `series_export` then read this table, so changing the index, the statistic (`mean`, `median`, `min`, `max`, `std`, `p10`, `p90`) or the hexagon size is quick.
+
+## About the data
+
+| Property | Value |
+|---|---|
+| Imagery | Sentinel-2 L2A, AWS Open Data |
+| Output | GeoTIFF or PNG for images, CSV or Parquet for hexagons and series |
+| Contains | Modified Copernicus Sentinel data |
+
+## See also
+
+- [**Working with Sentinel-2**](/guide/working-with-udfs/udf-best-practices/working-with-sentinel-2): every Sentinel-2 example, canvas and utility in one place.
+- [**Sentinel-2 Composite**](/examples/sentinel-2-composite): a cloud-free composite of any map view, as one GeoTIFF.
+- [**Monthly Median Composite**](/examples/monthly-median-composite): one composite per calendar month, each on its own machine.
+- [**NDVI Time Series for Farm Fields**](/examples/temporal-pixel-analysis): Sentinel-2 sampled per field as time series.
+- [**H3 overview**](/guide/h3-analytics/h3-overview): how Fused works with H3 hexagons.
