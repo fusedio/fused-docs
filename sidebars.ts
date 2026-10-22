@@ -59,6 +59,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/version-control", label: "Working as a Team" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/working-with-h3", label: "Working with H3" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/data-retrieval-service", label: "Data Retrieval Service" },
+        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/working-with-sentinel-2", label: "Working with Sentinel-2" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", label: "Geospatial processing" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/agents", label: "Building for Agents" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/ai-coding-tools", label: "AI Coding Tools" },
@@ -197,6 +198,7 @@ const sidebars: SidebarsConfig = {
       collapsible: false,
       items: [
         "examples/sentinel-2-composite",
+        "examples/sentinel-2-explorer",
         "examples/monthly-median-composite",
         "examples/temporal-pixel-analysis",
       ],
