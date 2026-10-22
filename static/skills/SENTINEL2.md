@@ -93,3 +93,18 @@ result = month_ndvi.map([{"start": "2024-06-01", "end": "2024-06-30"}, {"start":
 ```
 
 See [`udf.map`](https://docs.fused.io/python-sdk/api-reference/udf#map) for `max_workers` and caching.
+
+## Pull the example canvases and check the pull worked
+
+The public canvases `Sentinel2_Toolkit` (the library and twelve examples) and `Sentinel2_Explorer` (indices, composites, H3 hexagon time series and downloads built on `sentinel_utils`) are worth reading.
+
+```bash
+fused canvas pull --team Sentinel2_Toolkit -o Sentinel2_Toolkit    # a canvas in your team
+fused canvas pull Sentinel2_Toolkit -o Sentinel2_Toolkit           # a canvas in your own account
+ls Sentinel2_Toolkit
+fused canvas validate Sentinel2_Toolkit
+```
+
+The pull worked when `ls` shows `canvas.toml`, `README.md`, `su_search.py`, `su_read.py`, `su_analysis.py` and the `ex_*.py` examples, and `validate` prints `Canvas is valid.` For `Sentinel2_Explorer` expect `sentinel_api.py`, `sentinel_core.py`, `sentinel_products.py` and `sentinel_explorer.json`. Read `README.md` first, then the `ex_*.py` files (search, time series, timelapse, classification, change detection, embeddings).
+
+If the pull fails with `Could not resolve canvas by name`, the canvas is not in your account or team. Do not guess a name. Tell the user, and ask them to open https://www.fused.io/canvas/fc_fused/Sentinel2_Toolkit, export the canvas as a zip from Workbench and unzip it: the zip has the same layout as a pull.
