@@ -5,7 +5,7 @@ Use `sentinel_utils` for Sentinel-2 L2A: scene search, cloud-free composites, in
 ## Set up
 
 ```bash
-pip install fused h3 nest_asyncio
+pip install "fused[raster,vector]" odc-stac h3 nest_asyncio
 fused login          # opens the browser; check with `fused whoami`
 ```
 
