@@ -55,6 +55,8 @@ def udf(bounds):
 | `true` | No | Every tile gets the same result. |
 | `false` | Either | The UDF runs once and `bounds` is ignored. |
 
+To make a layer dynamic, pass parameters to the UDF in `udf`, for example `{{my_udf?band=$band}}`. An input with `param` set to `band` then re-runs the UDF when its value changes.
+
 ## Example
 
 This map shows San Francisco Airbnb listings as points on top of a Bay Area seismic hazard raster.
@@ -156,111 +158,6 @@ def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
 </details>
 
 The [Fused Map example canvas](https://www.fused.io/canvas/fc_fused/map_widget_canvas) has working UDF and widget examples. For the style, tooltip, legend, and filter props, see the [Fused Map API reference](/widget-api/fused-map).
-
-## Change tile UDF parameters from inputs
-
-To let viewers change a tile UDF's parameters, put inputs and the map in one widget. In the layer's `udf`, reference each input's `param` as `$` plus that name, for example `{{my_udf?band=$band}}`. When an input changes, the map runs the UDF again with the new value and reloads its tiles. It works like [passing parameters to a UDF in SQL](/guide/data-input-outputs/import-connection/widgets#passing-parameters-to-a-udf-in-sql).
-
-- Connect the UDF to the widget with one edge, from the UDF node to the widget node. You don't need an edge back from the widget to the UDF.
-- Give each input a `defaultValue`, so the parameter has a value the first time the map loads.
-- The input's `param` and the UDF argument can have different names, for example `red_band=$r`.
-
-The following widget shows three bands of the [OlmoEarth v1.3 embeddings](https://source.coop/olmoearth/olmoearth-v1-3-embeddings) as red, green, and blue. Type a band number from 0 to 127 in `r`, `g`, or `b` to change the colors.
-
-<details>
-<summary>Show the widget JSON</summary>
-
-```json
-{
-  "type": "div",
-  "props": {
-    "style": "display:flex;flex-direction:column;gap:8px;height:100%;padding:8px;box-sizing:border-box"
-  },
-  "children": [
-    {
-      "type": "div",
-      "props": { "style": "display:flex;gap:16px" },
-      "children": [
-        { "type": "number-input", "props": { "label": "r =", "param": "r", "min": 0, "max": 127, "step": 1, "defaultValue": 10, "style": "flex:1" } },
-        { "type": "number-input", "props": { "label": "g =", "param": "g", "min": 0, "max": 127, "step": 1, "defaultValue": 41, "style": "flex:1" } },
-        { "type": "number-input", "props": { "label": "b =", "param": "b", "min": 0, "max": 127, "step": 1, "defaultValue": 55, "style": "flex:1" } }
-      ]
-    },
-    {
-      "type": "fused-map",
-      "props": {
-        "centerLng": -119.8,
-        "centerLat": 36.72,
-        "zoom": 13,
-        "style": "flex:1;min-height:0",
-        "layers": [
-          {
-            "id": "olmoearth-embeddings-rgb",
-            "name": "OlmoEarth v1.3 embeddings",
-            "type": "raster",
-            "udf": "{{olmoearth_embeddings_tile?red_band=$r&green_band=$g&blue_band=$b}}",
-            "tile": true,
-            "minZoom": 12
-          }
-        ]
-      }
-    }
-  ]
-}
-```
-
-</details>
-
-<details>
-<summary>Show the <code>olmoearth_embeddings_tile</code> UDF</summary>
-
-The UDF reads the embeddings from a public Zarr store, reprojects them to the tile, and returns the three bands as an RGBA image.
-
-```python
-@fused.udf
-def udf(
-    bounds: fused.types.Bounds = [-119.86, 36.70, -119.80, 36.75],
-    year: int = 2025,
-    red_band: int = 0,
-    green_band: int = 1,
-    blue_band: int = 2,
-):
-    import numpy as np
-    import zarr
-    from obstore.store import S3Store
-    from pyproj import Transformer
-
-    zarr.config.set({"array.sharding_coalesce_max_gap_bytes": 0})
-    s3 = S3Store.from_url(
-        "s3://olmoearth/olmoearth-v1-3-embeddings/embeddings.zarr",
-        endpoint="https://data.source.coop",
-        skip_signature=True,
-    )
-    root = zarr.open_group(zarr.storage.ObjectStore(s3, read_only=True), mode="r")
-
-    west, south, east, north = bounds
-    zone = root[f"utm{int(((west + east) / 2 + 180) // 6) + 1:02d}"]
-    t = int(np.where(zone["time"][:] == year)[0][0])
-
-    (x0, x1), (y0, y1) = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True).transform(
-        [west, east], [north, south]
-    )
-    mx, my = np.meshgrid(np.linspace(x0, x1, 256), np.linspace(y0, y1, 256))
-    ux, uy = Transformer.from_crs("EPSG:3857", zone.attrs["proj:code"], always_xy=True).transform(mx, my)
-    a, _, c, _, e, f = zone.attrs["spatial:transform"]
-    rows = ((uy - f) / e).astype(int)
-    cols = ((ux - c) / a).astype(int)
-
-    r0, c0 = rows.min(), cols.min()
-    window = zone["embeddings"].oindex[t, [red_band, green_band, blue_band], r0 : rows.max() + 1, c0 : cols.max() + 1]
-    q = window[:, rows - r0, cols - c0]
-
-    rgb = (q.astype("int16") + 128).astype("uint8")
-    alpha = np.where((q == -128).any(axis=0), 0, 255).astype("uint8")
-    return np.concatenate([rgb, alpha[None]])
-```
-
-</details>
 
 ## The sidebar
 
