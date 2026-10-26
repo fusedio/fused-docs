@@ -7,6 +7,14 @@ sidebar_position: 8
 
 # Fused Map
 
+:::tip Using an AI agent?
+Give your agent the [Fused Map skill](https://docs.fused.io/skills/FUSED_MAP.md) so it can inspect UDF outputs, choose the right layer types, and wire map parameters. For canvas and widget work in general, install the Workbench skills from [fusedio/skills](https://github.com/fusedio/skills). Or paste this prompt and fill in the brackets:
+
+```text
+Read https://docs.fused.io/skills/FUSED_MAP.md. In my Fused canvas, build a Fused Map for [describe the data and map]. Inspect the source UDFs and their output columns first, choose suitable layer types, and connect any requested controls or map interactions through canvas parameters. Validate the widget configuration and show me the result.
+```
+:::
+
 Fused Map is a map widget in Fused. It draws geospatial data from a UDF, a SQL query, or a tile URL: points, polygons, H3 hexagons, and raster tiles, with many layers on one map.
 
 Its type is `fused-map`. It works like any other [widget](/guide/data-input-outputs/import-connection/widgets): configure it in JSON, connect UDFs with edges, and share it as a URL. To see working examples, open the [Fused Map example canvas](https://www.fused.io/canvas/fc_fused/map_widget_canvas). For the props, see the [Fused Map API reference](/widget-api/fused-map).
@@ -28,7 +36,9 @@ The UDF must be on the same canvas. The name in `{{ }}` must match the UDF name 
 
 ## Layer types and data sources
 
-Set the `type` of each layer to `geojson`, `h3`, `raster`, `mvt`, `heatmap`, `scatterplot`, `arc`, or `deck-geojson`. Each layer reads its data in one of four ways:
+The current layer types are `mvt`, `raster`, `geojson`, `h3`, `heatmap`, `arc`, `scatterplot`, `deck-geojson`, and `fused-hex`. You can omit `type` for data that supports detection; Fused Map detects images as raster, H3 columns as H3, start/end coordinate pairs as arcs, point coordinates as scatterplots, and geometry columns as GeoJSON. `fused-hex` must be set explicitly. `deck-geojson` is an alias of `geojson`; prefer `geojson`.
+
+Each layer reads its data in one of these ways:
 
 | Property | What the map does |
 |---|---|
@@ -36,8 +46,9 @@ Set the `type` of each layer to `geojson`, `h3`, `raster`, `mvt`, `heatmap`, `sc
 | `udf` and `tile: true` | Runs the UDF for each map tile. The UDF gets the tile `bounds`. |
 | `sql` | Runs a DuckDB query on a UDF result, then draws the rows. |
 | `tileUrl` | Reads tiles from a URL with `{z}`, `{x}`, and `{y}` placeholders. |
+| `source` (`fused-hex` only) | Queries an [indexed H3 dataset](/guide/h3-analytics/data-retrieval-service) through [`GET /h3/query`](/rest-api/h3) for each map tile. |
 
-The UDF returns a GeoDataFrame for `geojson` layers, a DataFrame with an H3 column for `h3` layers, and an image array for `raster` layers. A DataFrame with latitude and longitude columns also works for `geojson` layers: set `latColumn` and `lngColumn`. Every other column is a property of the feature. The tooltip, the filters, and the data-driven colors use these properties.
+`geojson` layers use a GeoDataFrame, or rows with latitude and longitude columns. `h3` layers use a DataFrame with an H3 column; `raster` layers use an image array. The remaining types draw point density (`heatmap`), directional arcs (`arc`), point circles (`scatterplot`), vector tiles (`mvt`), or H3 cells read straight from an indexed dataset (`fused-hex`). For latitude/longitude rows, set `latColumn` and `lngColumn` when the names are not `lat` and `lng`. Other columns become feature properties for tooltips, filters, and data-driven colors.
 
 :::important Name the first argument `bounds` to load data per tile
 With `tile: true`, the map passes each tile's area as `[west, south, east, north]` in `EPSG:4326`. Return only the rows inside `bounds`. The type doesn't matter, only the name.
@@ -56,6 +67,18 @@ def udf(bounds):
 | `false` | Either | The UDF runs once and `bounds` is ignored. |
 
 To make a layer dynamic, pass a widget input's value to the UDF from the layer's `udf` in the Fused Map widget JSON. Write `{{my_udf?<udf_argument>=$<param>}}`, where `<param>` is the input's `param` name. For example, with an input whose `param` is `band`, `"udf": "{{my_udf?band_index=$band}}"` passes its value to the UDF's `band_index` argument and re-runs the UDF when it changes.
+
+## Sync map bounds, clicks, and state
+
+Fused Map can publish values through canvas parameters so other widgets and UDFs can use them:
+
+| Prop | Value published | Behavior |
+|---|---|---|
+| `param` | Viewport bounds as `[west, south, east, north]` in longitude/latitude. | Set `autoSend: true` to publish after pan or zoom; `autoSendDebounceMs` sets the delay in milliseconds (default `600`, `0` sends each move). |
+| `clickParam` | Properties of the last clicked feature as an object. | When a layer's `tooltip` is a list of property names, only those properties are published. Otherwise all feature properties are published. |
+| `stateParam` | Runtime map state, including camera, layer types, style, filters, and SQL overrides. | Saved with the canvas and restored on reload. On your own canvas, sidebar edits are written to the widget config too, so this parameter mainly carries the camera state. |
+
+Give each prop a parameter name. For example, set the map's `clickParam` to `selected_feature`, and another widget or UDF reads the clicked feature as `$selected_feature`. Maps that share one `stateParam` move together.
 
 ## Example
 
