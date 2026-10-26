@@ -24,6 +24,39 @@ function titleCase(slug: string): string {
 const CODE_FENCE_RE = /(```[\w]*\n[\s\S]*?```)/g;
 const CODE_FENCE_MATCH_RE = /^```([\w]*)\n([\s\S]*?)```$/;
 
+const INLINE_RE = /(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)\s]+\))/g;
+const LINK_RE = /^\[([^\]]+)\]\(([^)\s]+)\)$/;
+const BULLET_RE = /^\s*[-*]\s+(.*)$/;
+const NUMBERED_RE = /^\s*\d+\.\s+(.*)$/;
+
+function renderInline(text: string): React.ReactNode[] {
+  return text.split(INLINE_RE).map((part, i) => {
+    if (part.startsWith("`") && part.endsWith("`") && part.length > 1) {
+      return <code key={i}>{part.slice(1, -1)}</code>;
+    }
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 3) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    }
+    const link = part.match(LINK_RE);
+    if (link) {
+      return (
+        <a key={i} href={link[2]}>
+          {link[1]}
+        </a>
+      );
+    }
+    return part;
+  });
+}
+
+function InlineDescription({
+  description,
+}: {
+  description: string;
+}): React.ReactElement {
+  return <>{renderInline(description)}</>;
+}
+
 function MarkdownDescription({ text }: { text: string }): React.ReactElement {
   const segments = text.split(CODE_FENCE_RE);
   const elements: React.ReactElement[] = [];
@@ -42,25 +75,52 @@ function MarkdownDescription({ text }: { text: string }): React.ReactElement {
       continue;
     }
     let paraBuf: string[] = [];
+    let listItems: string[] = [];
+    let listOrdered = false;
     const flushPara = () => {
       const t = paraBuf.join(" ").trim();
-      if (t) elements.push(<p key={key++}>{t}</p>);
+      if (t) elements.push(<p key={key++}>{renderInline(t)}</p>);
       paraBuf = [];
     };
+    const flushList = () => {
+      if (listItems.length) {
+        const items = listItems.map((item, i) => (
+          <li key={i}>{renderInline(item)}</li>
+        ));
+        elements.push(
+          listOrdered ? <ol key={key++}>{items}</ol> : <ul key={key++}>{items}</ul>,
+        );
+      }
+      listItems = [];
+    };
+    const flushAll = () => {
+      flushPara();
+      flushList();
+    };
     for (const line of segment.split("\n")) {
+      const bullet = line.match(BULLET_RE);
+      const numbered = line.match(NUMBERED_RE);
       if (line.startsWith("## ")) {
-        flushPara();
-        elements.push(<h3 key={key++}>{line.slice(3)}</h3>);
+        flushAll();
+        elements.push(<h3 key={key++}>{renderInline(line.slice(3))}</h3>);
       } else if (line.startsWith("# ")) {
+        flushAll();
+        elements.push(<h2 key={key++}>{renderInline(line.slice(2))}</h2>);
+      } else if (bullet || numbered) {
         flushPara();
-        elements.push(<h2 key={key++}>{line.slice(2)}</h2>);
+        const ordered = Boolean(numbered);
+        if (listItems.length && ordered !== listOrdered) flushList();
+        listOrdered = ordered;
+        listItems.push((bullet ?? numbered)![1].trim());
       } else if (line.trim() === "") {
-        flushPara();
+        flushAll();
+      } else if (listItems.length) {
+        listItems[listItems.length - 1] += ` ${line.trim()}`;
       } else {
         paraBuf.push(line.trim());
       }
     }
-    flushPara();
+    flushAll();
   }
 
   return <>{elements}</>;
@@ -101,6 +161,7 @@ export default function WidgetSchemaDocs({
         viewerOptions={{
           defaultExpandDepth: 1,
           showExamples: true,
+          DescriptionComponent: InlineDescription,
         }}
       />
       <h2>Raw schema</h2>
