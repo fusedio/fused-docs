@@ -7,14 +7,6 @@ description: Build or edit a `fused-map` widget in a Fused Workbench canvas, wit
 
 A `fused-map` is a JSON-UI widget node in a canvas. Each entry in `props.layers` draws one dataset. A layer that reads a canvas UDF needs an edge from the UDF to the widget in `canvas.toml`, for example `["sf_listings", "listings_map"]`. Every layer type and prop: https://docs.fused.io/widget-api/fused-map.
 
-## Workflow
-
-1. Pull the canvas: `fused canvas pull <canvas> -o <dir>`.
-2. Run each source UDF and read its columns: `fused run "" <dir>/<udf>.py`. Never guess column or argument names.
-3. Start from the closest example below.
-4. Validate the widget: `fused json-ui validate <dir>/<widget>.json` prints `{"valid": true, "errors": []}`.
-5. Push: `fused canvas push <dir>`, then open the canvas and check every layer draws.
-
 For `canvas.toml`, edges and other widgets, install the Workbench skills: `claude plugin marketplace add fusedio/skills` then `claude plugin install workbench@fused-marketplace`.
 
 ## Examples
@@ -99,7 +91,7 @@ def udf(bounds: fused.types.Bounds = [-122.45, 37.75, -122.40, 37.80]):
 }
 ```
 
-Expect the UDF to return 4,405 rows with its default `bounds` (`fused run "" listings_tile.py`), and the map to draw points across central San Francisco, loading more as you pan.
+Expect the map to draw points across central San Francisco, loading more as you pan.
 
 ### H3 cells from a UDF
 
