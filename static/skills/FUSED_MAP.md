@@ -30,8 +30,6 @@ For `canvas.toml`, edges and other widgets, install the Workbench skills: `claud
 | Vector tiles | `mvt` | `tileUrl`, or `udf` with `tile: true`; `sourceLayer` |
 | Indexed H3 dataset, no UDF | `fused-hex` | `source`, `h3Column` |
 
-Omit `type` and the map detects it from the data. `fused-hex` is never detected: always set it. `deck-geojson` is an alias of `geojson`; prefer `geojson`.
-
 ## Data sources
 
 | Layer prop | What runs |
@@ -54,7 +52,7 @@ Map props, next to `layers`:
 - `style`: CSS string, for example `"flex:1;min-height:0"`.
 - `param`: canvas parameter that gets the viewport `[west, south, east, north]`. Add `autoSend: true` to send on every pan or zoom, debounced by `autoSendDebounceMs` (default 600).
 - `clickParam`: canvas parameter that gets the clicked feature's properties. With a `tooltip` list, only those properties.
-- `stateParam`: canvas parameter that holds the camera, styles and filters. Maps that share one move together.
+- `stateParam`: canvas parameter that holds the camera, styles and filters, saved with the canvas.
 
 Layer props:
 
@@ -91,7 +89,7 @@ The UDF returns a GeoDataFrame of points with `name`, `room_type` and `price_in_
 }
 ```
 
-Polygons use the same layer; add `"lineColor": "rgba(255, 255, 255, 0.3)"` and `"lineWidth": 1` to `style`.
+Expect about 5,800 points over San Francisco, colored by price, with a `Price ($)` legend from 50 to 400. Polygons use the same layer; add `"lineColor": "rgba(255, 255, 255, 0.3)"` and `"lineWidth": 1` to `style`.
 
 ### Two layers: a tiled raster under latitude and longitude rows
 
@@ -116,6 +114,8 @@ The first layer runs `bay_area_seismic_raster(bounds)` per tile and draws the im
   }
 }
 ```
+
+Expect the seismic hazard raster over the Bay Area, with listings over San Francisco colored by `room_type` and a four-category legend.
 
 ### Tiled vector data
 
@@ -146,6 +146,8 @@ def udf(bounds: fused.types.Bounds = [-122.45, 37.75, -122.40, 37.80]):
 }
 ```
 
+Expect the UDF to return 4,405 rows with its default `bounds` (`fused run "" listings_tile.py`), and the map to draw points across central San Francisco, loading more as you pan.
+
 ### H3 cells from a UDF
 
 The UDF returns one row per cell, with the cell in `hex`. Add `"tile": true` and a `bounds` argument to load cells per tile.
@@ -163,6 +165,8 @@ The UDF returns one row per cell, with the cell in `hex`. Add `"tile": true` and
 }
 ```
 
+Expect hexagons over the United States colored by population, with a legend from 0 to 500,000.
+
 ### Raster tiles from a URL
 
 ```json
@@ -178,6 +182,8 @@ The UDF returns one row per cell, with the cell in `hex`. Add `"tile": true` and
 }
 ```
 
+Expect satellite imagery of San Francisco.
+
 ### An input that changes a tile layer
 
 Put the input and the map in one widget. Give the input a `defaultValue` so the first load has a value. Only the UDF → widget edge is needed.
@@ -192,6 +198,7 @@ Put the input and the map in one widget. Give the input a `defaultValue` so the 
       "type": "fused-map",
       "props": {
         "style": "flex:1;min-height:0",
+        "centerLng": -122.3, "centerLat": 37.8, "zoom": 12,
         "layers": [{"id": "bands", "type": "raster", "udf": "{{aef_bands?b1=$band}}", "tile": true, "minZoom": 6}]
       }
     }
@@ -199,20 +206,7 @@ Put the input and the map in one widget. Give the input a `defaultValue` so the 
 }
 ```
 
-### Side-by-side maps that move together
-
-Give every map the same `stateParam`, and a different fixed argument.
-
-```json
-{
-  "type": "div",
-  "props": {"style": "display:flex;gap:12px;height:100%"},
-  "children": [
-    {"type": "fused-map", "props": {"stateParam": "nl_view", "style": "flex:1;min-width:0", "centerLng": 79, "centerLat": 22, "zoom": 4.2, "layers": [{"id": "nl_2010", "type": "raster", "udf": "{{nightlights?year=2010}}", "tile": true}]}},
-    {"type": "fused-map", "props": {"stateParam": "nl_view", "style": "flex:1;min-width:0", "centerLng": 79, "centerLat": 22, "zoom": 4.2, "layers": [{"id": "nl_2018", "type": "raster", "udf": "{{nightlights?year=2018}}", "tile": true}]}}
-  ]
-}
-```
+Expect a `Band` box set to 1 above a false-color image of Oakland. Typing another band, such as 30, reruns the tiles and changes the colors.
 
 ### Send the viewport and clicks to other UDFs
 
@@ -229,6 +223,8 @@ The map writes `map_bounds` and `selected_site`. Another layer or widget reads t
 }
 ```
 
+Expect `$map_bounds` to be like `[-122.69, 37.69, -122.21, 37.83]` after a pan, and a click on a point to set `$selected_site` to that point's `{"name": ..., "score": ...}`: only the `tooltip` fields.
+
 ## Indexed H3 datasets: `fused-hex`
 
 A `fused-hex` layer draws an H3 dataset straight from the Fused H3 query endpoint, with no UDF. The map sends one request per tile.
@@ -240,7 +236,7 @@ A `fused-hex` layer draws an H3 dataset straight from the Fused H3 query endpoin
    fused.h3.index(path, overwrite=True).wait()
    ```
 
-   `fused.h3.index_status(path)["status"]` is `'ready'` once indexed. Note its `hex_column` (usually `hex`).
+   Expect `fused.h3.index_status(path)["status"]` to be `'ready'` once indexed. Note its `hex_column` (usually `hex`).
 
 2. **The URL.** An indexed dataset is served at `https://www.fused.io/server/v1/h3/query?path=<path>`. Check it returns rows for a small box:
 
@@ -248,10 +244,11 @@ A `fused-hex` layer draws an H3 dataset straight from the Fused H3 query endpoin
    curl -G "https://www.fused.io/server/v1/h3/query" \
      --data-urlencode "path=s3://fused-asset/data/nyc311/" \
      -d min_lng=-73.990 -d min_lat=40.750 -d max_lng=-73.980 -d max_lat=40.758 \
+     --data-urlencode 'partition={"month": "2025-12"}' \
      -d columns=hex -o out.parquet
    ```
 
-   HTTP 200 returns Parquet. A private dataset needs `-H "Authorization: Bearer $TOKEN"`.
+   Expect HTTP 200 and a Parquet file of 752 rows with a `hex` column. A private dataset needs `-H "Authorization: Bearer $TOKEN"`.
 
 3. **Put it in the layer.** Split the URL into the layer's `source`:
 
@@ -262,6 +259,7 @@ A `fused-hex` layer draws an H3 dataset straight from the Fused H3 query endpoin
    | `min_lng`, `min_lat`, `max_lng`, `max_lat` | Leave out. The map sends each tile's box. |
    | `columns=` | `source.variables`. Defaults to the columns the style, tooltip and filters use, or every column when they name none. |
    | `time_min`, `time_max` | `source.dateMin`, `source.dateMax`, with `source.timeColumn` |
+   | `partition`, `partition_range` | No `source` field. Narrow by time instead, or query in a UDF and use an `h3` layer. |
    | the index's `hex_column` | the layer's `h3Column` |
 
    `source.reduce` collapses each cell's rows in the time window to one: `latest` (default) or `first` need `timeColumn`; `mean`, `min`, `max` and `sum` also add `count` (and `date_min`, `date_max` when `timeColumn` is set).
@@ -286,4 +284,4 @@ A `fused-hex` layer draws an H3 dataset straight from the Fused H3 query endpoin
 }
 ```
 
-The map shows hexagons over Midtown colored by request count. The style only names `count`, which the server adds, so `variables` asks for one small column; without it every column is fetched. `fused-hex` never auto-fits, so set the center and zoom on the data. To filter or join the rows first, query them in a UDF with `fused.h3.query(path, bbox=bounds, ...)` and draw it as an `h3` layer with `"tile": true`.
+Expect hexagons over Midtown colored by request count, with a legend from 0 to 40. Tiles can take 30 seconds or more on the first load. The style only names `count`, which the server adds, so `variables` asks for one small column; without it every column is fetched. `fused-hex` never auto-fits, so set the center and zoom on the data. To filter or join the rows first, query them in a UDF with `fused.h3.query(path, bbox=bounds, ...)` and draw it as an `h3` layer with `"tile": true`.
