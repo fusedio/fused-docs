@@ -63,6 +63,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/agents", label: "Building for Agents" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/ai-coding-tools", label: "AI Coding Tools" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/github-copilot", label: "GitHub Copilot" },
+        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/fused-render", label: "Fused Render" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/debugging-playbook", label: "Debugging playbook" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/unpythonic", label: "Un-pythonic aspects" },
       ],
