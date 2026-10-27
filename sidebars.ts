@@ -347,6 +347,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "workbench/udf-builder/code-editor", label: "Code Editor" },
         { type: "doc", id: "workbench/udf-explorer", label: "UDF Explorer" },
         { type: "doc", id: "workbench/ai-chat", label: "AI Chat" },
+        { type: "doc", id: "workbench/fused-render", label: "Fused Render" },
         { type: "doc", id: "workbench/udf-builder/runtime", label: "Runtime" },
         { type: "doc", id: "workbench/file-explorer", label: "File Explorer" },
         { type: "doc", id: "workbench/canvas-checkpoints", label: "Canvas Checkpoints" },
