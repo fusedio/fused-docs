@@ -1,6 +1,9 @@
 import { themes as prismThemes } from "prism-react-renderer";
 import type { Config } from "@docusaurus/types";
 import type * as Preset from "@docusaurus/preset-classic";
+import iframeScrollGuard from "./src/remark/iframe-scroll-guard";
+
+const remarkPlugins = [iframeScrollGuard];
 
 const config: Config = {
   title: "Fused",
@@ -53,6 +56,7 @@ const config: Config = {
           editUrl: "https://github.com/fusedio/fused-docs/edit/main/",
           sidebarPath: "./sidebars.ts",
           breadcrumbs: false,
+          remarkPlugins,
           include: ["**/*.md", "**/*.mdx", "reference/fused/**"],
           exclude: [
             // '**/_*.{js,jsx,ts,tsx,md,mdx}',
@@ -66,6 +70,7 @@ const config: Config = {
         // blog: false,
         blog: {
           blogTitle: "Fused blog",
+          remarkPlugins,
           blogDescription: "Latest blog posts from Fused.",
           postsPerPage: 999999,
           blogSidebarTitle: "All posts",
@@ -372,6 +377,7 @@ const config: Config = {
       "@docusaurus/plugin-content-blog",
       {
         id: "shorts",
+        remarkPlugins,
         routeBasePath: "shorts",
         path: "./shorts",
         blogTitle: "Road to Zero Coding — Shorts",
