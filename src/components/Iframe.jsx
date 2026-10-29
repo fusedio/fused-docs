@@ -3,6 +3,7 @@ import { DEFAULT_APP_REQUIREMENTS } from "../app-iframe/requirements";
 import { gzip } from "pako";
 import { u8aToBase64 } from "../../utils/buffer";
 import { useMemo } from 'react';
+import { ClickToInteract } from "./ScrollGuardIframe";
 
 
 const URL_PREFIX = "https://www.fused.io/workbench/apps#app/s/a";
@@ -172,11 +173,13 @@ export default function Iframe({
       display={visible ? "block" : "none"}
       ref={containerRef}
       style={{
+        position: "relative",
         width: "100%",
         height,
       }}
     >
       {defaultIframe}
+      <ClickToInteract onActivate={() => containerRef.current?.querySelector("iframe")?.focus()} />
     </div>
   );
 }
