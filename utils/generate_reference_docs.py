@@ -605,12 +605,14 @@ with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w", encod
 
 api_listing = sorted([
     "delete_index",
+    "get_run",
     "index",
     "index_status",
     "indexed_files",
     "partition",
     "query",
     "run_ingest_raster_to_h3",
+    "set_visibility",
 ])
 
 result = """\
@@ -633,7 +635,7 @@ config_h3["show_root_full_path"] = False
 # `fused/_h3/__init__.py`, and `index` is also a submodule name, so static
 # analysis resolves them to the alias line or the submodule. Render the
 # function defined in `catalog` instead.
-h3_catalog_names = {"delete_index", "index", "index_status", "indexed_files", "query"}
+h3_catalog_names = {"delete_index", "index", "index_status", "indexed_files", "query", "set_visibility"}
 
 for obj in api_listing:
     target = mod_api
@@ -649,9 +651,26 @@ for obj in api_listing:
     docstring = render_object_docs(member, config_h3)
     result += docstring + "\n---\n\n"
 
+# `fused.h3.Run`: what `partition` and `index` return; one `###` per public method, as on the JobPool page
+if "_task_run" in mod_api.members and "Run" in mod_api["_task_run"].members:
+    run_cls = mod_api["_task_run"]["Run"]
+    result += "## Run\n\n" + run_cls.docstring.value.strip() + "\n\n"
+    config_run = dict(default_config)
+    config_run["heading_level"] = default_config["heading_level"] + 1
+    config_run["show_root_full_path"] = False
+    run_methods = sorted(
+        name for name, member in run_cls.members.items()
+        if not name.startswith("_") and name != "start"
+        and member.docstring and member.docstring.value.strip()
+    )
+    for meth in run_methods:
+        result += render_object_docs(run_cls[meth], config_run) + "\n---\n\n"
+else:
+    print("Warning: Run not found in fused.h3 module, skipping")
+
 # `fused.h3.sources.*`: data sources for `partition`, headed `sources.<name>`
 if "sources" in mod_api.members:
-    for obj in ["era5", "parquet", "table"]:
+    for obj in ["era5", "parquet", "table", "udf"]:
         if obj not in mod_api["sources"].members:
             print(f"Warning: sources.{obj} not found in fused.h3 module, skipping")
             continue

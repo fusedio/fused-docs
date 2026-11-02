@@ -1,192 +1,186 @@
 ---
 id: data-retrieval-end-to-end
-title: "Data Retrieval: End-to-End Example"
+title: "Partition, Index and Query"
 sidebar_label: "Partition, Index & Query"
 sidebar_position: 2.45
-description: Partition, index and query NYC 311 requests with fused.h3, with the code and output of each step.
+description: Best practices for partition, index and query, with a worked example that indexes Overture buildings for data retrieval.
 ---
 
-# Data Retrieval: End-to-End Example
+# Partition, Index and Query
 
-We use NYC 311 requests to partition, index and query. Each step shows its code and output.
+Fused's [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service) turns your data into an H3 dataset that returns the rows you ask for in seconds. It takes three steps: partition, index and query. This page gives the best practices for each step, then a worked example on Overture buildings.
 
-[Open the H3_End_to_End_Ingestion canvas →](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion)
+```mermaid
+%%{init: {"flowchart": {"htmlLabels": false}}}%%
+flowchart LR
+    A["`**Your data**
+    lat/lng, geometry
+    or an H3 cell`"]
+    B["`**Partition**
+    fused.h3.partition
+    H3 Parquet files`"]
+    C["`**Index**
+    fused.h3.index
+    What each file covers`"]
+    D["`**Query**
+    fused.h3.query
+    GET /h3/query`"]
+    A --> B --> C --> D
+```
 
-![H3_End_to_End_Ingestion canvas with source, partition, index and query steps for NYC 311 points, a Copernicus DEM raster and ERA5 weather](/img/tutorials/geospatial/h3/h3_end_to_end_ingestion.png)
+## Concepts
 
-:::note
-Paste each UDF into a canvas in [Workbench](https://www.fused.io/workbench) with the name shown. Step 2 loads step 1 by name. Data is written to your own `fd://` storage.
+- **[Partition](/python-sdk/api-reference/h3#partition)** writes your data as H3 Parquet files, grouped into folders and files so a query can skip most of them.
+- **[Index](/python-sdk/api-reference/h3#index)** records the cells, partition values and time range each file covers. Query needs it.
+- **Query** uses the index to read only the files a request needs, from Python with [`fused.h3.query`](/python-sdk/api-reference/h3#query) or over HTTP with [`GET /h3/query`](/rest-api/h3).
+- **Resolution:** H3 cells come in 16 sizes, and a higher resolution means smaller cells. Choose one from the size of your features with the [Resolution Guide](/guide/h3-analytics/resolution-guide). New to H3? See [Working with H3](/guide/working-with-udfs/udf-best-practices/working-with-h3).
+
+## Prepare your data
+
+Every row needs a location. [`fused.h3.partition`](/python-sdk/api-reference/h3#partition) reads it from one of two parameters, `point_column` or `hex_column`, set to the names of your columns:
+
+- **Latitude and longitude:** `point_column=("lat", "lng")`.
+- **A geometry, such as polygons:** `point_column="geometry"`, a WKB column. Each row gets the cell of its centroid.
+- **An H3 cell:** `hex_column="hex"`. The cells are kept as they are.
+
+Pass only one. If you have both a cell column and a geometry, use `hex_column`. Coordinates must be longitude and latitude in degrees (EPSG:4326). Partition reads Parquet from a path or [`fused.h3.sources.parquet`](/python-sdk/api-reference/h3#sourcesparquet), or a UDF's output with [`fused.h3.sources.udf`](/python-sdk/api-reference/h3#sourcesudf), not a DataFrame.
+
+## Partition
+
+[`fused.h3.partition`](/python-sdk/api-reference/h3#partition) runs as a background job and returns a run at once. [`fused.h3.get_run(run_id)`](/python-sdk/api-reference/h3#get_run) gives its status, and [`.tail()`](/python-sdk/api-reference/h3#tail) its logs.
+
+- **`h3_res` and `file_res`:** `h3_res` sets each row's cell, and `file_res` the larger cell each file covers. Set both: the defaults, 7 and 1, suit few datasets. A higher `file_res` makes more, smaller files, so a query reads less.
+- **`partition_by`:** one folder per value of the column your queries filter on. Values cannot be null or empty, contain a `/`, or start with `_`. Avoid a column where one value holds most rows.
+- **`engine`:** `"small"` (the default), `"medium"` and `"large"` run as [batch jobs](/guide/working-with-udfs/udf-best-practices/scaling-out#instance-types) with no time limit. `"realtime"` stops after 2 minutes, so it suits only small sources.
+
+:::warning
+`overwrite=True` replaces everything in the output folder. In a UDF that starts a job, guard the call so it runs only when you ask: otherwise every re-run of the UDF starts the job again.
 :::
 
-## 1. Source
+## Index
 
-A UDF that returns the rows. `partition` takes a source like this one, not a DataFrame.
+[`fused.h3.index`](/python-sdk/api-reference/h3#index) registers the files with the query service. Re-runs are incremental; `overwrite=True` indexes everything again.
 
-<details>
-<summary>`nyc311_source`</summary>
+- **Re-run index after every partition or append,** and wait until `fused.h3.index_status` reports `ready`. A new partition run makes the index stale even when the data is the same, for example with `overwrite=True`, and queries fail with an "index is stale" error until you index again.
+- **New data: run index again without `overwrite`.** It indexes only new, changed and removed files and skips the rest. On a large dataset, also pass the new folders as `prefix=`, such as `prefix="<partition column>=<value>"`, so index lists only those folders instead of the whole dataset.
+- **Use a [batch engine](/guide/working-with-udfs/udf-best-practices/scaling-out#dedicated-instances) for large datasets:** `"small"`, `"medium"` or `"large"`. The default, `"realtime"`, stops after 2 minutes.
 
-```python
-@fused.udf
-def udf(date: str = "2024-07-04"):
-    import pandas as pd
-    from urllib.parse import urlencode
+## Query
 
-    query = urlencode({
-        "$select": "unique_key, created_date, complaint_type, borough, latitude, longitude",
-        "$where": f"created_date between '{date}T00:00:00' and '{date}T23:59:59' AND latitude IS NOT NULL",
-        "$limit": 100000,
-    })
-    df = pd.read_csv(f"https://data.cityofnewyork.us/resource/erm2-nwe9.csv?{query}")
-    df["date"] = date
-    return df
-```
+[`fused.h3.query`](/python-sdk/api-reference/h3#query) returns the matching rows as a DataFrame.
 
-</details>
+- **Always give a place:** `bbox=`, `cell=`, or `lat=` and `lng=`. Without one, it returns the whole dataset.
+- **Filter by partition values:** one value or a list, such as `partition={"<partition column>": ["<value>", "<value>"]}`. Only place, time and partition values are filtered; filter other columns on the returned DataFrame.
+- **Request only the columns you use** with `columns=`.
+- **Split a result too large for one read,** which fails with HTTP 413, into smaller areas or time windows.
 
-**Returns:** a DataFrame, 10,492 rows, columns `unique_key`, `created_date`, `complaint_type`, `borough`, `latitude`, `longitude`, `date`.
-
-## 2. Partition
-
-One part per day. Each part runs the source UDF on a batch job and writes H3 Parquet files.
-
-<details>
-<summary>`nyc311_partition`</summary>
-
-```python
-@fused.udf(cache_max_age="0s")
-def udf(start_date: str = "2024-07-04", end_date: str = "2024-07-04", output: str = "fd://h3_examples/nyc311_daily/"):
-    import pandas as pd
-
-    days = pd.date_range(start_date, end_date).strftime("%Y-%m-%d")
-    run = fused.h3.partition(
-        fused.h3.sources.udf(fused.load("nyc311_source")),
-        output,
-        point_column=("latitude", "longitude"),
-        h3_res=11,
-        partition_by="date",
-        parts=[{"date": d} for d in days],
-    )
-    return pd.DataFrame({"run": [run.id], "days": [len(days)]})
-```
-
-</details>
-
-**Returns:** at once, one row with `run` (`grp:...`) and `days` (1). The batch job takes about 2 minutes. `fused.h3.get_run(run_id).status()` returns `'succeeded'` when it is done.
-
-- **Scale:** set `end_date="2024-07-10"` for 7 parts, run in parallel. Two days also took about 2 minutes.
-- **Part keys** must be columns the source returns, as `date` is here.
-- **Rerun:** `overwrite` is not allowed with `parts`. Pass `force=True` to redo parts.
-
-## 3. Index
-
-<details>
-<summary>`nyc311_index`</summary>
-
-```python
-@fused.udf(cache_max_age="0s")
-def udf(path: str = "fd://h3_examples/nyc311_daily/"):
-    import pandas as pd
-
-    fused.h3.index(path, overwrite=True).wait()
-    status = fused.h3.index_status(path)
-    return pd.DataFrame([{k: str(status[k]) for k in ("status", "files", "resolution", "partition_columns")}])
-```
-
-</details>
-
-**Returns:** one row: `status` `ready`, `files` 1, `resolution` 11, `partition_columns` with `date` (1 distinct value). Takes a few seconds.
-
-## 4. Query and map
-
-<details>
-<summary>`nyc311_query`</summary>
-
-```python
-@fused.udf(cache_max_age="0s")
-def udf(
-    bounds: fused.types.Bounds = [-74.05, 40.55, -73.70, 40.92],
-    date: str = "2024-07-04",
-    res: int = 9,
-    path: str = "fd://h3_examples/nyc311_daily/",
-):
-    import h3
-
-    df = fused.h3.query(path, bbox=tuple(bounds), partition={"date": date}, columns=["hex", "complaint_type"])
-    df["hex"] = [h3.cell_to_parent(h3.int_to_str(int(h)), res) for h in df["hex"]]
-    counts = df.groupby("hex").size().reset_index(name="cnt")
-    print(f"{len(df):,} requests on {date} in {len(counts):,} res-{res} hexes")
-
-    map_utils = fused.load("https://github.com/fusedio/udfs/tree/3ada22d/community/milind/map_utils")
-    layers = [{
-        "type": "hex",
-        "data": counts,
-        "name": f"311 requests, {date}",
-        "config": {"style": {
-            "fillColor": {"type": "continuous", "attr": "cnt", "domain": [0, 20], "steps": 20, "palette": "OrYel"},
-            "filled": True, "extruded": False, "stroked": False, "opacity": 0.7,
-        }},
-    }]
-    return map_utils.deckgl_layers(layers=layers, basemap="dark")
-```
-
-</details>
-
-**Returns:** an HTML map of requests per res-9 hex. Prints `9,850 requests on 2024-07-04 in 2,882 res-9 hexes`.
-
-## 5. Query over HTTP
-
-<details>
-<summary>`curl`</summary>
+To query over HTTP, use [`GET /h3/query`](/rest-api/h3). It takes the same place and partition filters as query parameters, with an [access token](/rest-api/overview#authentication), and returns a Parquet file:
 
 ```bash
 curl -G "https://www.fused.io/server/v1/h3/query" \
   -H "Authorization: Bearer $FUSED_ACCESS_TOKEN" \
-  --data-urlencode "path=fd://h3_examples/nyc311_daily/" \
-  -d min_lng=-74.02 -d min_lat=40.70 -d max_lng=-73.93 -d max_lat=40.80 \
-  --data-urlencode 'partition={"date": "2024-07-04"}' \
-  -o nyc311.parquet
+  --data-urlencode "path=fd://overture_us_buildings/v1/h3/" \
+  -d min_lng=-76.62 -d min_lat=39.285 -d max_lng=-76.6 -d max_lat=39.3 \
+  --data-urlencode 'partition={"building_type": ["residential", "commercial"]}' \
+  -o buildings.parquet
 ```
 
-</details>
+## Example: Overture buildings
 
-**Returns:** HTTP 200, a Parquet file with 1,312 rows: the source columns plus `hex`. Get the token with [`fused.api.access_token()`](/rest-api/overview#authentication).
+![H3_End_to_End_Ingestion canvas: NYC 311 points, a Copernicus DEM raster, ERA5 weather and Overture buildings, each partitioned, indexed and queried into H3](/img/tutorials/geospatial/h3/h3_end_to_end_ingestion_canvas.png)
 
-## 6. Query an indexed dataset
+The **Polygons: Overture buildings → H3** group in the [H3_End_to_End_Ingestion canvas](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion) holds this example. In it, we download 955,857 Overture building footprints around Baltimore, Maryland, once, partition them into H3 files by building type, index them, then query them from a map: once through a UDF and once straight from [`GET /h3/query`](/rest-api/h3). The [UDFs](/python-sdk/api-reference/fused-udf) that start partition and index jobs are guarded by a `run` parameter, so they only start a job when it is turned on.
 
-[NYC 311 from 2010 to 2025](/guide/h3-analytics/hex-datasets#example-16-years-of-nyc-311-requests) is already partitioned by month and indexed, and it is public.
+- **Source:** [Overture](https://overturemaps.org/) buildings, release `2026-04-15-0`, [Fused's copy on Source Cooperative](https://source.coop/fused/overture)
+- **Area:** 60 km × 60 km around Baltimore, `(-76.96, 39.02, -76.26, 39.56)` (west, south, east, north), passed as [`bounds`](/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile#bounds)
+- **Settings:** `h3_res=11`, `file_res=4`, `partition_by="building_type"`; see [`fused.h3.partition`](/python-sdk/api-reference/h3#partition)
 
-<details>
-<summary>Python</summary>
+### 1. Download: `download_buildings`
+
+Overture has no query API, so the UDF reads each part's `_metadata`, downloads only the chunks that overlap the box, and keeps the buildings whose centre is inside it. Most Overture buildings have no type, and partition values cannot be null, so a missing type becomes `building_type="unknown"`. The buildings are saved to [Fused storage](/python-sdk/api-reference/api#upload) as GeoParquet, one file per res-3 cell, together with the box and release they came from: running the UDF again with the same values skips the download.
+
+**Returns:** 3 files with 862,670, 65,109 and 28,078 buildings, in about 30 seconds.
+
+### 2. Partition: `partition_buildings`
+
+The rows have a geometry and no cell column, so partition reads them with [`fused.h3.sources.parquet`](/python-sdk/api-reference/h3#sourcesparquet) and gives each building the cell of its centroid at res 11, about 25 m across (see the [Resolution Guide](/guide/h3-analytics/resolution-guide)). Res 4 groups the files.
 
 ```python
-import fused
+job = fused.h3.partition(
+    fused.h3.sources.parquet("fd://overture_us_buildings/v1/raw/"),
+    "fd://overture_us_buildings/v1/h3/",
+    point_column="geometry",
+    h3_res=11,
+    file_res=4,
+    partition_by="building_type",
+    engine="realtime",
+)
+```
 
-path = "s3://fused-asset/data/nyc311/"
+The source is small, so the job runs on `"realtime"` with no machine to start. [`fused.h3.get_run(job.id)`](/python-sdk/api-reference/h3#get_run) gives its status, and [`.tail()`](/python-sdk/api-reference/h3#tail) its logs. `overwrite` stays `False`, so a second run cannot replace the output by accident.
+
+**Writes:** one folder per `building_type` and one file per res-4 cell. Every row has `hex` at res 11 and the source columns.
+
+```text
+h3/
+├── _manifest.json                 h3_res, file_res, partition_by, rows per folder
+├── building_type=residential/
+│   ├── 842aa81ffffffff.parquet    one file per res-4 cell
+│   └── ...
+├── building_type=unknown/
+│   └── ...
+└── ...                            14 building_type folders, 85 files
+```
+
+### 3. Index: `index_buildings`
+
+The UDF runs [`fused.h3.index`](/python-sdk/api-reference/h3#index) with `overwrite=True`, so every run indexes all files again, and shows [`fused.h3.index_status`](/python-sdk/api-reference/h3#index_status).
+
+```python
+path = "fd://overture_us_buildings/v1/h3/"
+fused.h3.index(path, overwrite=True)
 status = fused.h3.index_status(path)
-df = fused.h3.query(path, bbox=(-73.990, 40.750, -73.980, 40.758), partition={"month": "2025-12"})
 ```
 
-</details>
+**Returns:** indexing takes about 4 seconds. Then `status` is a dict with `status` `'ready'`, `files` 85, `resolution` 11 and `partition_columns` `building_type` (14 values).
 
-**Returns:** `status` is a dict with `status` `'ready'`, `files` 1923, `resolution` 11, `partition_columns` `month` (192 values, `2010-01` to `2025-12`), `time_min` `2010-01-01T00:00:00`, `time_max` `2025-12-31T23:59:28`. `df` has 752 rows and 47 columns: every request in a few Midtown blocks in December 2025, most often `Illegal Parking`.
+### 4. Query: `query_buildings`
 
-<details>
-<summary>`curl`, no token needed</summary>
+The UDF calls [`fused.h3.query`](/python-sdk/api-reference/h3#query) and returns the buildings inside [`bounds`](/python-sdk/api-reference/fused-types#bounds) for the types in `building_type` (comma-separated; empty means all), as a DataFrame with the geometry as WKB. It refuses boxes wider than 0.05 degrees, so a map never asks for all 1M buildings.
 
-```bash
-curl -G "https://www.fused.io/server/v1/h3/query" \
-  --data-urlencode "path=s3://fused-asset/data/nyc311/" \
-  -d min_lng=-73.990 -d min_lat=40.750 -d max_lng=-73.980 -d max_lat=40.758 \
-  --data-urlencode 'partition={"month": "2025-12"}' \
-  -o midtown.parquet
+```python
+df = fused.h3.query(
+    "fd://overture_us_buildings/v1/h3/",
+    bbox=(-76.62, 39.285, -76.6, 39.3),
+    partition={"building_type": ["residential", "commercial"]},
+    columns=["building_type", "class", "height", "geometry"],
+)
 ```
 
-</details>
+**Returns:** 301 rows, 163 `commercial` and 138 `residential`. With every type, the same box returns 2,470 rows in about 1 second.
 
-**Returns:** HTTP 200 in under 2 seconds, a Parquet file with the same 752 rows.
+Two maps show the result:
+
+- **4a. Map from the UDF:** a [`fused-map`](/guide/data-input-outputs/import-connection/fused-map) layer runs `query_buildings` once per [map tile](/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile#tile-udf) from zoom 15, so panning queries the new area, and colours footprints by `building_type`.
+- **4b. Map from `/h3/query`:** a [`fused-hex` layer](/guide/h3-analytics/visualization#from-an-indexed-dataset) calls [`GET /h3/query`](/rest-api/h3) per tile with no UDF, from zoom 13, and colours each res-11 cell by its number of buildings. It cannot filter by `building_type`.
+
+```json
+{
+  "type": "fused-hex",
+  "h3Column": "hex",
+  "minZoom": 13,
+  "source": {"path": "fd://overture_us_buildings/v1/h3/", "variables": ["height"], "reduce": "sum"}
+}
+```
+
+To use another area, change `bounds` in step 1, run partition again with `overwrite=True`, then index again.
 
 ## Reference
 
-- [`GET /h3/query`](/rest-api/h3): every parameter
-- [`fused.h3`](/python-sdk/api-reference/h3): the Python API
+- [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service): the workflow at a glance
 - [Large dataset examples](/guide/h3-analytics/hex-datasets)
+- [`fused.h3`](/python-sdk/api-reference/h3): the Python API
+- [`GET /h3/query`](/rest-api/h3): every parameter
+- [Resolution Guide](/guide/h3-analytics/resolution-guide)
+- [Raster ingestion pipeline](/guide/h3-analytics/raster-ingestion)
+- [H3_End_to_End_Ingestion canvas](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion)
