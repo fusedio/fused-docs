@@ -15,7 +15,7 @@ flowchart LR
     A["<b>Your data</b><br/><code>Parquet · UDF · ERA5</code><br/>Rows with an H3 cell column,<br/>lat/lng or a geometry"]
     B["<b>Partition</b><br/><code>fused.h3.partition</code><br/>Folders by partition_by,<br/>files by file_res,<br/>hex at h3_res"]
     C["<b>Index</b><br/><code>fused.h3.index</code><br/>Records what each file covers.<br/>Wait for ready."]
-    D["<b>Query</b><br/><code>fused.h3.query</code><br/>Place, partition values, columns.<br/>Returns only the matching rows."]
+    D["<b>Query</b><br/><code>fused.h3.query · GET /h3/query</code><br/>Returns only the matching rows."]
     A --> B --> C --> D
 ```
 
@@ -37,24 +37,24 @@ Pass only one. Data with both a cell column and a geometry needs only `hex_colum
 
 ## Partition
 
-[`fused.h3.partition`](/python-sdk/api-reference/h3#partition) writes the data as H3 Parquet. It runs as a background job on the machine set by `engine` and returns a run at once. Follow its logs with `run.tail()`, or later with `fused.h3.get_run(run.id).tail()`.
+[`fused.h3.partition`](/python-sdk/api-reference/h3#partition) writes the data as H3 Parquet. It runs as a background job on the machine set by `engine` and returns a run at once. Keep its id: `fused.h3.get_run(run_id)` gives the run's status, and `.tail()` its logs.
 
 - **Partition by the column your queries filter on.** If queries rarely filter by a category, leave `partition_by` unset.
-- **Partition values** must not be null or empty, contain `/` or start with `_`: they become folder names.
+- **Partition values** become folder names, so they cannot be null or empty, contain a `/`, or start with `_`.
 - **Avoid skewed columns.** If one value holds most rows, a query for it still reads almost every file.
 - **Set `h3_res` and `file_res` yourself.** The defaults, 7 and 1, suit few datasets. Pick `h3_res` from the size of your features, and raise `file_res` for more, smaller files so a query reads less. The example below uses 11 and 4.
 - **Choose the engine by data size:** `"small"` (the default), `"medium"` or `"large"` run as [batch jobs](/guide/working-with-udfs/udf-best-practices/scaling-out#dedicated-instances) with no time limit; see [instance types](/guide/working-with-udfs/udf-best-practices/scaling-out#instance-types) for their sizes. `"realtime"` needs no machine to start but stops after 2 minutes, so it suits only small Parquet sources.
 
 :::warning
-`overwrite=True` on partition replaces everything in the output folder. Leave it off unless you mean to rebuild, and write to your own folder. In a UDF that starts jobs, default to reporting status, for example with a `run=False` parameter.
+`overwrite=True` on partition replaces everything in the output folder. Leave it off unless you mean to rebuild, and write to your own folder. In a UDF that starts a job, guard the call so it runs only when you ask: otherwise every re-run of the UDF starts the job again.
 :::
 
 ## Index
 
 [`fused.h3.index`](/python-sdk/api-reference/h3#index) registers the files with the query service. Re-runs are incremental; `overwrite=True` indexes everything again.
 
-- **Re-run index after every partition or append,** and wait until `status` is `ready`. Otherwise queries fail with an "index is stale" error.
-- **New data: run index again without `overwrite`.** It indexes only new, changed and removed files and skips the rest. On a large dataset, also pass the new folders as `prefix=`, such as `prefix="building_type=civic"`, so index lists only those folders instead of the whole dataset.
+- **Re-run index after every partition or append,** and wait until `fused.h3.index_status` reports `ready`. A new partition run makes the index stale even when the data is the same, for example with `overwrite=True`, and queries fail with an "index is stale" error until you index again.
+- **New data: run index again without `overwrite`.** It indexes only new, changed and removed files and skips the rest. On a large dataset, also pass the new folders as `prefix=`, such as `prefix="<partition column>=<value>"`, so index lists only those folders instead of the whole dataset.
 - **Use a [batch engine](/guide/working-with-udfs/udf-best-practices/scaling-out#dedicated-instances) for large datasets:** `"small"`, `"medium"` or `"large"`. The default, `"realtime"`, stops after 2 minutes.
 
 ## Query
@@ -62,7 +62,7 @@ Pass only one. Data with both a cell column and a geometry needs only `hex_colum
 [`fused.h3.query`](/python-sdk/api-reference/h3#query) returns the matching rows as a DataFrame.
 
 - **Always give a place:** `bbox=`, `cell=`, or `lat=` and `lng=`. Without one, it returns the whole dataset.
-- **Filter by partition values:** one value or a list, such as `partition={"building_type": ["religious", "commercial"]}`. Only place, time and partition values are filtered; filter other columns on the returned DataFrame.
+- **Filter by partition values:** one value or a list, such as `partition={"<partition column>": ["<value>", "<value>"]}`. Only place, time and partition values are filtered; filter other columns on the returned DataFrame.
 - **Request only the columns you use** with `columns=`.
 - **Split a result too large for one read,** which fails with HTTP 413, into smaller areas or time windows.
 
@@ -79,19 +79,15 @@ curl -G "https://www.fused.io/server/v1/h3/query" \
 
 ## Example: Overture buildings
 
-In this example, we download 955,857 Overture building footprints in a 60 km × 60 km box around Baltimore, Maryland, once, partition them into H3 files by building type, index them, then query them from a map: once through a UDF and once straight from `/h3/query`.
+In this example, we download 955,857 Overture building footprints around Baltimore, Maryland, once, partition them into H3 files by building type, index them, then query them from a map: once through a UDF and once straight from `/h3/query`. The UDFs that start partition and index jobs are guarded by a `run` parameter, so they only start a job when it is turned on.
 
-| Item | Value |
-|---|---|
-| Source | [Overture](https://overturemaps.org/) buildings, release `2026-04-15-0`, Fused's copy on Source Cooperative |
-| Area | 60 km × 60 km around Baltimore: `(-76.96, 39.02, -76.26, 39.56)` (west, south, east, north) |
-| Raw data | `fd://overture_us_buildings/v1/raw/`, 3 GeoParquet files |
-| Output | `fd://overture_us_buildings/v1/h3/`, 85 files |
-| Settings | `h3_res=11`, `file_res=4`, `partition_by="building_type"` |
+- **Source:** [Overture](https://overturemaps.org/) buildings, release `2026-04-15-0`, Fused's copy on Source Cooperative
+- **Area:** 60 km × 60 km around Baltimore, `(-76.96, 39.02, -76.26, 39.56)` (west, south, east, north)
+- **Settings:** `h3_res=11`, `file_res=4`, `partition_by="building_type"`
 
 ### 1. Download: `download_buildings`
 
-Overture has no query API, so the UDF reads each part's `_metadata`, downloads only the chunks that overlap the box, and keeps the buildings whose centre is inside it. Most Overture buildings have no type, and partition values cannot be null, so a missing type becomes `building_type="unknown"`. The buildings are saved as GeoParquet in `v1/raw/`, one file per res-3 cell, together with the box and release they came from: running the UDF again with the same values skips the download.
+Overture has no query API, so the UDF reads each part's `_metadata`, downloads only the chunks that overlap the box, and keeps the buildings whose centre is inside it. Most Overture buildings have no type, and partition values cannot be null, so a missing type becomes `building_type="unknown"`. The buildings are saved as GeoParquet, one file per res-3 cell, together with the box and release they came from: running the UDF again with the same values skips the download.
 
 **Returns:** 3 files with 862,670, 65,109 and 28,078 buildings, in about 30 seconds.
 
@@ -110,21 +106,12 @@ job = fused.h3.partition(
 )
 ```
 
-With `run=True`, the UDF starts this job on a `"small"` batch machine and returns `job.id`. `overwrite` stays `False`, so a second run cannot replace the output by accident. With `run=False`, the default, it shows the rows per `building_type` from `_manifest.json`:
-
-| `building_type` | Rows | Share |
-|---|---|---|
-| `unknown` | 605,157 | 63% |
-| `residential` | 322,662 | 34% |
-| `commercial` | 12,197 | 1% |
-| 11 other types | 15,841 | 2% |
-
-`unknown` holds most rows, so a query for it still reads most of the files: the skew to look for before you choose `partition_by`.
+The job runs on a `"small"` batch machine and takes about 20 seconds. `fused.h3.get_run(job.id)` gives its status, and `.tail()` its logs. `overwrite` stays `False`, so a second run cannot replace the output by accident.
 
 **Writes:** one folder per `building_type` and one file per res-4 cell. Every row has `hex` at res 11 and the source columns.
 
 ```text
-fd://overture_us_buildings/v1/h3/
+h3/
 ├── _manifest.json                 h3_res, file_res, partition_by, rows per folder
 ├── building_type=residential/
 │   ├── 842aa81ffffffff.parquet    one file per res-4 cell
@@ -134,13 +121,9 @@ fd://overture_us_buildings/v1/h3/
 └── ...                            14 building_type folders, 85 files
 ```
 
-### 2b. Logs: `partition_logs`
-
-The job takes about 20 seconds. Paste its `run_id` into `partition_logs`, which calls `fused.h3.get_run(run_id).tail()` and shows the job's status and log lines. Run it again for new lines.
-
 ### 3. Index: `index_buildings`
 
-With `run=True`, the UDF indexes `v1/h3/` again and shows the status. Re-runs only index what changed.
+The UDF indexes the partitioned files again and shows the status. Re-runs only index what changed.
 
 ```python
 path = "fd://overture_us_buildings/v1/h3/"
@@ -179,7 +162,7 @@ Two maps show the result:
 }
 ```
 
-To use another area, change `bounds` in step 1, run partition with `run=True, overwrite=True`, then index with `run=True`.
+To use another area, change `bounds` in step 1, run partition again with `overwrite=True`, then index again.
 
 ## Canvas
 
