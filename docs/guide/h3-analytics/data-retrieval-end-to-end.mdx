@@ -12,7 +12,7 @@ description: Best practices for partition, index and query, with a worked exampl
 
 ```mermaid
 flowchart LR
-    A["<b>Your data</b><br/><code>Parquet · UDF · ERA5</code><br/>Rows with a hex column,<br/>lat/lng or a geometry"]
+    A["<b>Your data</b><br/><code>Parquet · UDF · ERA5</code><br/>Rows with an H3 cell column,<br/>lat/lng or a geometry"]
     B["<b>Partition</b><br/><code>fused.h3.partition</code><br/>Folders by partition_by,<br/>files by file_res,<br/>hex at h3_res"]
     C["<b>Index</b><br/><code>fused.h3.index</code><br/>Records what each file covers.<br/>Wait for ready."]
     D["<b>Query</b><br/><code>fused.h3.query</code><br/>Place, partition values, columns.<br/>Returns only the matching rows."]
@@ -42,8 +42,8 @@ Pass only one. Data with both a cell column and a geometry needs only `hex_colum
 - **Partition by the column your queries filter on.** If queries rarely filter by a category, leave `partition_by` unset.
 - **Partition values** must not be null or empty, contain `/` or start with `_`: they become folder names.
 - **Avoid skewed columns.** If one value holds most rows, a query for it still reads almost every file.
-- **Set `h3_res` and `file_res` yourself.** The defaults, 7 and 1, suit few datasets.
-- **Choose the engine by data size:** `"small"` (the default), `"medium"` or `"large"`; see [instance types](/guide/working-with-udfs/udf-best-practices/batch-jobs#instance-types). `"realtime"` needs no machine to start but stops after 2 minutes, so it suits only small Parquet sources.
+- **Set `h3_res` and `file_res` yourself.** The defaults, 7 and 1, suit few datasets. Pick `h3_res` from the size of your features, and raise `file_res` for more, smaller files so a query reads less. The example below uses 11 and 5.
+- **Choose the engine by data size:** `"small"` (the default), `"medium"` or `"large"` run as [batch jobs](/guide/working-with-udfs/udf-best-practices/batch-jobs#dedicated-instances) with no time limit; see [instance types](/guide/working-with-udfs/udf-best-practices/batch-jobs#instance-types) for their sizes. `"realtime"` needs no machine to start but stops after 2 minutes, so it suits only small Parquet sources.
 
 :::warning
 `overwrite=True` on partition replaces everything in the output folder. Leave it off unless you mean to rebuild, and write to your own folder. In a UDF that starts jobs, default to reporting status, for example with a `run=False` parameter.
@@ -53,9 +53,9 @@ Pass only one. Data with both a cell column and a geometry needs only `hex_colum
 
 [`fused.h3.index`](/python-sdk/api-reference/h3#index) registers the files with the query service. Re-runs are incremental; `overwrite=True` indexes everything again.
 
-- **Index after every partition or append,** and wait until `status` is `ready`. A query against a file that changed after it was indexed fails.
-- **Index only what changed.** Re-runs already skip unchanged folders. After adding one folder to a large dataset with `append=True`, such as `building_type=civic`, pass `prefix="building_type=civic"` so index reads only that folder.
-- **Use a batch engine for large datasets.** The default, `"realtime"`, stops after 2 minutes.
+- **Index after every partition or append,** and wait until `status` is `ready`. A query that reaches a file changed after indexing fails with HTTP 409 until you index again.
+- **New data: run index again without `overwrite`.** It indexes only new, changed and removed files and skips the rest. On a large dataset, also pass the new folders as `prefix=`, such as `prefix="building_type=civic"`, so index lists only those folders instead of the whole dataset.
+- **Use a [batch engine](/guide/working-with-udfs/udf-best-practices/batch-jobs#dedicated-instances) for large datasets:** `"small"`, `"medium"` or `"large"`. The default, `"realtime"`, stops after 2 minutes.
 
 ## Query
 
@@ -63,7 +63,8 @@ Pass only one. Data with both a cell column and a geometry needs only `hex_colum
 
 - **Always give a place:** `bbox=`, `cell=`, or `lat=` and `lng=`. Without one, it returns the whole dataset.
 - **Filter by partition values:** one value or a list, such as `partition={"building_type": ["religious", "commercial"]}`. Only place, time and partition values are filtered; filter other columns on the returned DataFrame.
-- **Request only the columns you use** with `columns=`, and split very large areas into smaller queries.
+- **Request only the columns you use** with `columns=`.
+- **Split a result too large for one read,** which fails with HTTP 413, into smaller areas or time windows.
 
 To query over HTTP, use [`GET /h3/query`](/rest-api/h3). It takes the same place and partition filters as query parameters, with an [access token](/rest-api/overview#authentication), and returns a Parquet file:
 
