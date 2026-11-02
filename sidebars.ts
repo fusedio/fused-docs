@@ -407,18 +407,6 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "workbench/udf-builder/styling", label: "Map Layer Styling" },
       ],
     },
-
-    // App Builder
-    {
-      type: "category",
-      label: "Fused Apps (Legacy)",
-      collapsible: false,
-      items: [
-        { type: "doc", id: "workbench/app-builder/app-builder", label: "App Builder" },
-        { type: "doc", id: "workbench/app-builder/app-overview", label: "App Overview" },
-        { type: "doc", id: "workbench/app-builder/app-map", label: "App Map" },
-      ],
-    },
   ],
 };
 
