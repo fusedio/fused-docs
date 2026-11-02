@@ -769,6 +769,206 @@ run_ingest_raster_to_h3(..., engine="local")
 
 ---
 
+## set_visibility
+
+```python
+set_visibility(
+    path: str, visibility: str, *, base_url: str | None = None
+) -> dict[str, Any]
+```
+
+Make your team's H3 index at `path` `"team"` (readable by your team
+only) or `"public"` (readable by every Fused user; still re-indexed and
+deleted only by your team).
+
+**Parameters:**
+
+- **path** (`str`) – The indexed location.
+- **visibility** (`str`) – `"team"` or `"public"`.
+- **base_url** (`str | None`) – Base URL for the API. If None, uses the current environment.
+
+**Returns:**
+
+- `dict[str, Any]` – The index summary, as `fused.h3.index_status`.
+
+**Raises:**
+
+- `HTTPError` – 404 if your team has no index at `path`; 403 when
+  making it public as anyone but a Fused admin.
+
+---
+
+## Run
+
+A run of a task over several parts, such as `fused.h3.partition`.
+
+The server launches one job per part in a single call and keeps a record of
+the group under `id` (it starts with `grp:`), so `fused.h3.get_run(id)`
+brings the run back in a new session. `id`, `task`, `engine` and `info`
+never change and are plain attributes.
+
+The rest is read live: `parts()` (part to status), `status()` (one answer
+for the run: `"failed"` if any part failed, else `"succeeded"` if all
+succeeded, else `"running"` if any is running, else `"pending"`), `done()`
+(every part has finished, some may have failed), `errors()` (part to error
+for the failed parts) and the part lists `failed()`, `succeeded()`,
+`skipped()` and `pending()`. A part is pending while it waits to start, for
+instance because the team has no quota left; the job starts by itself once
+it fits. A part of a `fused.h3.partition` run over a `udf` or `era5` source
+is first read by a job of its own and then partitioned: `tail()` and `repr`
+show which. Reads made within a second of each other share one request, and a
+finished run is final and needs none. `repr` makes no request.
+
+### done
+
+```python
+done() -> bool
+```
+
+Whether every part has finished, successfully or not.
+
+---
+
+### errors
+
+```python
+errors() -> dict[str, str | None]
+```
+
+The error of each failed part, by part name.
+
+---
+
+### failed
+
+```python
+failed() -> list[str]
+```
+
+Names of the parts that failed.
+
+---
+
+### parts
+
+```python
+parts() -> dict[str, str | None]
+```
+
+Each part's status: `"pending"`, `"running"`, `"succeeded"` or
+`"failed"`.
+
+---
+
+### pending
+
+```python
+pending() -> list[str]
+```
+
+Names of the parts waiting to start.
+
+---
+
+### result
+
+```python
+result() -> Any
+```
+
+The run's outcome once it succeeded: its `info` (the `output` of a
+`fused.h3.partition` run) with the part names as `parts`.
+`None` while it is still going.
+
+**Raises:**
+
+- `RuntimeError` – A part failed (the message lists them).
+
+---
+
+### retry
+
+```python
+retry(parts: list[str] | None = None) -> Run
+```
+
+Run the failed parts again (or only `parts`, which must have failed)
+and return the run. Parts that succeeded are not touched.
+
+A part that failed while reading is read again; one that failed
+while partitioning is partitioned again from what was read.
+
+**Raises:**
+
+- `HTTPError` – The server refused: a part is unknown or did
+  not fail, or none failed.
+
+---
+
+### skipped
+
+```python
+skipped() -> list[str]
+```
+
+Names of the parts that were already done and left alone
+(`force=False`); only `fused.h3.partition` skips parts.
+
+---
+
+### status
+
+```python
+status() -> str
+```
+
+`"failed"` if any part failed, else `"succeeded"` if all did, else
+`"running"` if any is running, else `"pending"`.
+
+---
+
+### succeeded
+
+```python
+succeeded() -> list[str]
+```
+
+Names of the parts that ran to the end and wrote files (not the
+skipped ones).
+
+---
+
+### tail
+
+```python
+tail(refresh_seconds: float = 2.0, timeout: float | None = None) -> Run
+```
+
+Print every part's new log lines as `[part] message` until all
+parts have finished, a line saying why a part is waiting, and a
+one-line summary whenever the counts change. Failed parts' errors come
+last.
+
+Logs are best effort: a failed log fetch warns once and polling goes
+on.
+
+**Raises:**
+
+- `TimeoutError` – Parts were still going after `timeout` seconds. They
+  keep running on the server.
+
+---
+
+### wait
+
+```python
+wait(refresh_seconds: float = 2.0, timeout: float | None = None) -> Run
+```
+
+`tail()` without printing anything.
+
+---
+
 ## sources.era5
 
 ```python
@@ -951,6 +1151,60 @@ split them or pass lat/lng columns as `point_column=` for those rows.
 **Raises:**
 
 - `TypeError` – `data` is none of those.
+
+---
+
+## sources.udf
+
+```python
+udf(udf: Any) -> Source
+```
+
+A source that runs your UDF on the engine, once per part.
+
+The UDF is the reader you would have written: it takes one part's inputs
+(its parameters) and **returns** the part's rows. `fused.h3.partition`
+runs it in a batch job of its own and writes the rows as parquet for the
+partition job, so nothing is read from this machine::
+
+```
+@fused.udf
+def read_month(month: int):
+    return load_ais(month)  # a DataFrame, GeoDataFrame, Table or RecordBatch
+
+fused.h3.partition(
+    fused.h3.sources.udf(read_month),
+    "fd://me/ais/",
+    parts=[{"month": m} for m in range(1, 13)],
+    partition_by=["month"],
+    point_column="geometry",
+)
+```
+
+**Parameters:**
+
+- **udf** (`Any`) – A UDF made with `@fused.udf`. Its code is serialized and run on
+  the engine, so it must be self-contained: import what it needs
+  inside the body, and do not rely on files or variables that exist
+  only on this machine. The UDF's parameters are the source's
+  inputs: a parameter with no default is required. Pass them to
+  `Source.bind` or as one dict per part in `parts=`. With
+  `parts`, each dict's keys are output columns and become the
+  partition columns: the UDF must return those columns, with those
+  values, in every row. Without `parts` the UDF runs once, with
+  its defaults and any inputs given as `Source.bind`.
+
+The UDF must return a pandas `DataFrame`, a `GeoDataFrame`, a pyarrow
+`Table` or a `RecordBatch`. Anything else, a generator included,
+raises `TypeError` in the run.
+
+Iterating a `udf` source here runs the UDF in this process, which
+`fused.h3.partition` never does.
+
+**Raises:**
+
+- `TypeError` – `udf` is not a `fused.models.udf.Udf` (a plain function
+  or a string is not accepted).
 
 ---
 
