@@ -30,24 +30,24 @@ flowchart LR
 
 ## Concepts
 
-- **Partition** writes your data as H3 Parquet files, grouped into folders and files so a query can skip most of them.
-- **Index** records the cells, partition values and time range each file covers. Query needs it.
-- **Query** uses the index to read only the files a request needs, from Python or over HTTP.
+- **[Partition](/python-sdk/api-reference/h3#partition)** writes your data as H3 Parquet files, grouped into folders and files so a query can skip most of them.
+- **[Index](/python-sdk/api-reference/h3#index)** records the cells, partition values and time range each file covers. Query needs it.
+- **Query** uses the index to read only the files a request needs, from Python with [`fused.h3.query`](/python-sdk/api-reference/h3#query) or over HTTP with [`GET /h3/query`](/rest-api/h3).
 - **Resolution:** H3 cells come in 16 sizes, and a higher resolution means smaller cells. Choose one from the size of your features with the [Resolution Guide](/guide/h3-analytics/resolution-guide). New to H3? See [Working with H3](/guide/working-with-udfs/udf-best-practices/working-with-h3).
 
 ## Prepare your data
 
-Every row needs a location in one of three forms. The column can have any name: pass it to partition.
+Every row needs a location. [`fused.h3.partition`](/python-sdk/api-reference/h3#partition) reads it from one of two parameters, `point_column` or `hex_column`, set to the names of your columns:
 
 - **Latitude and longitude:** `point_column=("lat", "lng")`.
 - **A geometry, such as polygons:** `point_column="geometry"`, a WKB column. Each row gets the cell of its centroid.
-- **An H3 cell:** `hex_column="<name>"`. The cells are kept as they are.
+- **An H3 cell:** `hex_column="hex"`. The cells are kept as they are.
 
 Pass only one. If you have both a cell column and a geometry, use `hex_column`. Coordinates must be longitude and latitude in degrees (EPSG:4326). Partition reads Parquet from a path or [`fused.h3.sources.parquet`](/python-sdk/api-reference/h3#sourcesparquet), or a UDF's output with `fused.h3.sources.udf`, not a DataFrame.
 
 ## Partition
 
-[`fused.h3.partition`](/python-sdk/api-reference/h3#partition) runs as a background job and returns a run at once. `fused.h3.get_run(run_id)` gives its status, and `.tail()` its logs.
+[`fused.h3.partition`](/python-sdk/api-reference/h3#partition) runs as a background job and returns a run at once. [`fused.h3.get_run(run_id)`](/python-sdk/api-reference/h3#get_run) gives its status, and `.tail()` its logs.
 
 - **`h3_res` and `file_res`:** `h3_res` sets each row's cell, and `file_res` the larger cell each file covers. Set both: the defaults, 7 and 1, suit few datasets. A higher `file_res` makes more, smaller files, so a query reads less.
 - **`partition_by`:** one folder per value of the column your queries filter on. Values cannot be null or empty, contain a `/`, or start with `_`. Avoid a column where one value holds most rows.
@@ -89,7 +89,7 @@ curl -G "https://www.fused.io/server/v1/h3/query" \
 
 ![H3_End_to_End_Ingestion canvas: NYC 311 points, a Copernicus DEM raster, ERA5 weather and Overture buildings, each partitioned, indexed and queried into H3](/img/tutorials/geospatial/h3/h3_end_to_end_ingestion_canvas.png)
 
-The **Polygons: Overture buildings → H3** group in the [H3_End_to_End_Ingestion canvas](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion) holds this example. In it, we download 955,857 Overture building footprints around Baltimore, Maryland, once, partition them into H3 files by building type, index them, then query them from a map: once through a UDF and once straight from `/h3/query`. The [UDFs](/python-sdk/api-reference/fused-udf) that start partition and index jobs are guarded by a `run` parameter, so they only start a job when it is turned on.
+The **Polygons: Overture buildings → H3** group in the [H3_End_to_End_Ingestion canvas](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion) holds this example. In it, we download 955,857 Overture building footprints around Baltimore, Maryland, once, partition them into H3 files by building type, index them, then query them from a map: once through a UDF and once straight from [`GET /h3/query`](/rest-api/h3). The [UDFs](/python-sdk/api-reference/fused-udf) that start partition and index jobs are guarded by a `run` parameter, so they only start a job when it is turned on.
 
 - **Source:** [Overture](https://overturemaps.org/) buildings, release `2026-04-15-0`, [Fused's copy on Source Cooperative](https://source.coop/fused/overture)
 - **Area:** 60 km × 60 km around Baltimore, `(-76.96, 39.02, -76.26, 39.56)` (west, south, east, north), passed as [`bounds`](/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile#bounds)
@@ -117,7 +117,7 @@ job = fused.h3.partition(
 )
 ```
 
-The source is small, so the job runs on `"realtime"` with no machine to start. [`fused.h3.get_run(job.id)`](/python-sdk/api-reference/h3#partition) gives its status, and `.tail()` its logs. `overwrite` stays `False`, so a second run cannot replace the output by accident.
+The source is small, so the job runs on `"realtime"` with no machine to start. [`fused.h3.get_run(job.id)`](/python-sdk/api-reference/h3#get_run) gives its status, and `.tail()` its logs. `overwrite` stays `False`, so a second run cannot replace the output by accident.
 
 **Writes:** one folder per `building_type` and one file per res-4 cell. Every row has `hex` at res 11 and the source columns.
 

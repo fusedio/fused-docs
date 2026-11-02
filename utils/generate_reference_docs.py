@@ -605,6 +605,7 @@ with open(ROOT / "docs" / "python-sdk" / "api-reference" / "udf.mdx", "w", encod
 
 api_listing = sorted([
     "delete_index",
+    "get_run",
     "index",
     "index_status",
     "indexed_files",
