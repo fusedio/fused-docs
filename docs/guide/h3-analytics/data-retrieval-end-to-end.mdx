@@ -3,12 +3,12 @@ id: data-retrieval-end-to-end
 title: "Partition, Index and Query"
 sidebar_label: "Partition, Index & Query"
 sidebar_position: 2.45
-description: Best practices for fused.h3.partition, index and query, then a worked example that turns Overture buildings into an H3 dataset a map queries by area and building type.
+description: Best practices for partition, index and query, with a worked example that indexes Overture buildings for data retrieval.
 ---
 
 # Partition, Index and Query
 
-[`fused.h3.partition`](/python-sdk/api-reference/h3#partition) writes your data as H3 Parquet files, [`fused.h3.index`](/python-sdk/api-reference/h3#index) registers them so they can be searched, and [`fused.h3.query`](/python-sdk/api-reference/h3#query) returns only the rows a request needs. This page gives the best practices for each step, then applies them to Overture buildings.
+[`fused.h3.partition`](/python-sdk/api-reference/h3#partition) writes your data as H3 Parquet files, [`fused.h3.index`](/python-sdk/api-reference/h3#index) registers them so they can be searched, and [`fused.h3.query`](/python-sdk/api-reference/h3#query) or the [`GET /h3/query`](/rest-api/h3) endpoint returns only the rows a request needs. This page gives the best practices for each step, then a worked example on Overture buildings.
 
 ```mermaid
 flowchart LR
@@ -21,50 +21,29 @@ flowchart LR
 
 ## Concepts
 
-- **Hex column:** every row carries the H3 cell it falls in, in a column named `hex`. `h3_res` sets the cell size: higher means smaller. Queries select rows by this column. New to H3? See [Working with H3](/guide/working-with-udfs/udf-best-practices/working-with-h3).
+- **Hex column:** every row needs the H3 cell it falls in. Partition computes it from latitude and longitude or a geometry, or uses a cell column you already have, whatever its name. `h3_res` sets the cell size: higher means smaller. New to H3? See [Working with H3](/guide/working-with-udfs/udf-best-practices/working-with-h3).
 - **Folders and files:** partition writes one folder per value of the `partition_by` column and, inside each folder, one file per larger parent cell, whose size `file_res` sets.
 - **Index:** records the cells, partition values and time range each file covers, so a query skips every file it does not need.
 
-What partition wrote for the [example below](#example-overture-buildings). Every row has `hex` at res 11 and the source columns.
-
-```text
-fd://overture_us_buildings/v5/h3/
-├── _manifest.json                 h3_res, file_res, partition_by
-├── building_type=commercial/      one folder per partition_by value
-│   └── 852aa803fffffff.parquet    one file per res-5 parent cell (file_res)
-├── building_type=religious/
-│   └── 852aa803fffffff.parquet
-└── ...                            10 building_type folders
-```
-
 ## Source data
 
-Partition reads a source, such as `fused.h3.sources.parquet` or `fused.h3.sources.udf`, or a path on `s3://`, `gs://` or `fd://`. It does not take a DataFrame: return one from a UDF instead.
+Partition reads a source, such as `fused.h3.sources.parquet` or `fused.h3.sources.udf`, or a path on `s3://`, `gs://` or `fd://`. It does not take a DataFrame: return one from a UDF instead. Tell it where each row is with one of:
 
-| Your data has | Pass |
-|---|---|
-| An H3 cell column | `hex_column="hex"`. The cells are kept as they are and `h3_res` is not applied. If the files already have an integer `hex` at one resolution, skip partition and [index](#index) them directly. |
-| Latitude and longitude | `point_column=("lat", "lng")` |
-| A geometry column (WKB) | `point_column="geometry"`. Each row gets the cell of its centroid. To use another point, compute `hex` yourself and pass `hex_column`. |
+- **Latitude and longitude:** `point_column=("lat", "lng")`.
+- **A geometry, such as polygons:** `point_column="geometry"`, a WKB column. Each row gets the cell of its centroid.
+- **A cell column already:** `hex_column="<name>"`. The cells are kept as they are and `h3_res` does not change them.
 
-Pass exactly one of `hex_column` and `point_column`. Data that has both a `hex` column and a geometry column needs only `hex_column`, and the geometry stays in the files either way. Coordinates must be longitude and latitude in degrees (EPSG:4326). Choose `h3_res` from the size of your features with the [Resolution Guide](/guide/h3-analytics/resolution-guide).
+Pass only one. Data with both a cell column and a geometry needs only `hex_column`; the geometry stays in the files. Coordinates must be longitude and latitude in degrees (EPSG:4326). Choose `h3_res` from the size of your features with the [Resolution Guide](/guide/h3-analytics/resolution-guide).
 
 ## Partition
 
-[`fused.h3.partition`](/python-sdk/api-reference/h3#partition) writes the data as H3 Parquet. It runs as a background job and returns a run at once.
+[`fused.h3.partition`](/python-sdk/api-reference/h3#partition) writes the data as H3 Parquet. It runs as a background job on the machine set by `engine` and returns a run at once; `run.tail()` follows it.
 
 - **Partition by the column your queries filter on.** If queries rarely filter by a category, leave `partition_by` unset.
 - **Partition values** must not be null or empty, contain `/` or start with `_`: they become folder names.
 - **Avoid skewed columns.** If one value holds most rows, a query for it still reads almost every file.
 - **Set `h3_res` and `file_res` yourself.** The defaults, 7 and 1, suit few datasets.
-- **Choose the engine by data size:**
-
-| `engine` | Machine | Time limit | Use for |
-|---|---|---|---|
-| `"realtime"` | – | a few minutes | small Parquet sources; a UDF source raises |
-| `"small"` (default) | 2 vCPUs, 2 GB | none | most datasets |
-| `"medium"` | 16 vCPUs, 64 GB | none | large inputs |
-| `"large"` | 64 vCPUs, 512 GB | none | very large inputs |
+- **Choose the engine by data size:** `"small"` (the default), `"medium"` or `"large"`; see [instance types](/guide/working-with-udfs/udf-best-practices/batch-jobs#instance-types). `"realtime"` needs no machine to start but stops after 2 minutes, so it suits only small Parquet sources.
 
 :::warning
 `overwrite=True` on partition replaces everything in the output folder. Leave it off unless you mean to rebuild, and write to your own folder. In a UDF that starts jobs, default to reporting status, for example with a `run=False` parameter.
@@ -75,8 +54,8 @@ Pass exactly one of `hex_column` and `point_column`. Data that has both a `hex` 
 [`fused.h3.index`](/python-sdk/api-reference/h3#index) registers the files with the query service. Re-runs are incremental; `overwrite=True` indexes everything again.
 
 - **Index after every partition or append,** and wait until `status` is `ready`. A query against a file that changed after it was indexed fails.
-- **After an append, index only the new folders** with `prefix=`, such as `prefix="building_type=civic"`, instead of walking the whole tree.
-- **Use a batch engine for large datasets.** The default, `"realtime"`, is limited to a few minutes.
+- **Index only what changed.** Re-runs already skip unchanged folders. After adding one folder to a large dataset with `append=True`, such as `building_type=civic`, pass `prefix="building_type=civic"` so index reads only that folder.
+- **Use a batch engine for large datasets.** The default, `"realtime"`, stops after 2 minutes.
 
 ## Query
 
@@ -86,11 +65,20 @@ Pass exactly one of `hex_column` and `point_column`. Data that has both a `hex` 
 - **Filter by partition values:** one value or a list, such as `partition={"building_type": ["religious", "commercial"]}`. Only place, time and partition values are filtered; filter other columns on the returned DataFrame.
 - **Request only the columns you use** with `columns=`, and split very large areas into smaller queries.
 
-To query over HTTP, use [`GET /h3/query`](/rest-api/h3).
+To query over HTTP, use [`GET /h3/query`](/rest-api/h3). It takes the same place and partition filters as query parameters, with an [access token](/rest-api/overview#authentication), and returns a Parquet file:
+
+```bash
+curl -G "https://www.fused.io/server/v1/h3/query" \
+  -H "Authorization: Bearer $FUSED_ACCESS_TOKEN" \
+  --data-urlencode "path=fd://overture_us_buildings/v5/h3/" \
+  -d min_lng=-76.5628 -d min_lat=38.9501 -d max_lng=-76.4472 -d max_lat=39.0399 \
+  --data-urlencode 'partition={"building_type": ["religious", "commercial"]}' \
+  -o buildings.parquet
+```
 
 ## Example: Overture buildings
 
-Overture building footprints in central Annapolis, Maryland, become an H3 dataset that a map queries by its bounding box and by building type.
+In this example, we turn Overture building footprints for central Annapolis, Maryland, into an H3 dataset: save them once, partition them by building type, index them, then query the buildings in a map's view.
 
 | Item | Value |
 |---|---|
@@ -121,6 +109,18 @@ fused.h3.partition(
 ```
 
 The UDF only starts the job with `run=True`. With `run=False`, the default, it shows the rows per `building_type` value, which is where to check for skew.
+
+**Writes:** one folder per `building_type` and one file per res-5 cell. Every row has `hex` at res 11 and the source columns.
+
+```text
+fd://overture_us_buildings/v5/h3/
+├── _manifest.json                 h3_res, file_res, partition_by
+├── building_type=commercial/
+│   └── 852aa803fffffff.parquet
+├── building_type=religious/
+│   └── 852aa803fffffff.parquet
+└── ...                            10 building_type folders
+```
 
 ### 3. Index: `index_buildings`
 
