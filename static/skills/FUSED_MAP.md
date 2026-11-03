@@ -112,6 +112,28 @@ The UDF returns one row per cell, with the cell in `hex`. Add `"tile": true` and
 
 Expect hexagons over the United States colored by population, with a legend from 0 to 500,000.
 
+### Query a tiled layer
+
+A tiled layer (`udf` with `"tile": true`, or `fused-hex`) takes a `sql` too. It runs on each tile as it loads, over that tile's rows as `{{source}}` (a udf layer may also write its own `{{udf}}`). Use it for `WHERE`, computed columns and `GROUP BY` the cell column. The result must keep the cell column (`h3`, `fused-hex`) or the geometry (vector layers). `LIMIT`, `ORDER BY`, `USING SAMPLE` and other UDFs are not available per tile; `raster`, `mvt` and `tileUrl` layers take no `sql`.
+
+```json
+{
+  "type": "fused-map",
+  "props": {
+    "centerLng": -122.4, "centerLat": 37.75, "zoom": 8,
+    "layers": [{
+      "id": "hot", "type": "fused-hex",
+      "source": {"endpoint": "/retrieve/era5/daily/bbox", "dateMin": "2024-07-01", "dateMax": "2024-07-31", "variables": ["t2m_mean"]},
+      "sql": "SELECT hex, date, t2m_mean - 273.15 AS t2m_c FROM {{source}} WHERE t2m_mean > 300",
+      "tooltip": ["hex", "t2m_c"],
+      "style": {"fillColor": {"type": "continuous", "attr": "t2m_c", "palette": "Sunset", "domain": [27, 40]}}
+    }]
+  }
+}
+```
+
+Expect only the hexagons whose July 2024 daily mean passed 300 K, colored in Celsius. The sidebar's Filters tab shows the same query under "Query" with a "Runs per tile" hint; editing it reloads the layer's tiles.
+
 ### Raster tiles from a URL
 
 ```json
