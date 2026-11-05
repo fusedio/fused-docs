@@ -49,7 +49,7 @@ get_run(run_id: str, *, base_url: str | None = None) -> TaskRun | Run
 
 The run with id `run_id`, in a new session or process.
 
-A `Run` for the id of a run of several parts (`grp:...`), as
+A `Run` for the id of a run of several jobs (`grp:...`), as
 `fused.h3.partition` returns, otherwise the
 `TaskRun` of that single run.
 
@@ -68,25 +68,28 @@ index(
     time_column: str | None = None,
     *,
     partition_columns: str | list[str] | None = None,
+    subset: dict[str, Any] | None = None,
+    redo: bool = False,
     engine: InstanceType | Literal["realtime"] = "realtime",
-    overwrite: bool = False,
-    prefix: str | list[str] | None = None,
-    workers: int | None = None,
-    force: bool = False,
     visibility: str | None = None,
-    base_url: str | None = None
+    options: dict[str, Any] | None = None,
+    base_url: str | None = None,
+    **deprecated: Any
 ) -> TaskRun
 ```
 
 Register a hive-partitioned parquet tree as a queryable H3 location.
 
-Asks the server to walk `path` and build its row-group index. By default
-the run is a realtime run, which starts at once and is limited to a few
-minutes; pass a batch `engine` for a large tree. Returns as soon as the
-run has started; follow it with `run.tail()` or `index_status`. The index
-belongs to your team, which alone can re-index it; each team holds its
-own index of a path. See `visibility` and `fused.h3.set_visibility` for
-sharing it.
+For a tree written by `fused.h3.partition`, `fused.h3.index(output)` needs
+no other arguments. It starts a server-side run that walks `path` and
+builds the row-group index, and returns as soon as the run has started;
+follow it with `run.tail()` or `index_status`. The index belongs to your
+team; see `visibility` and `fused.h3.set_visibility` for sharing it.
+
+Running it again is incremental: folders unchanged since the last run
+are skipped, and only new, changed and removed files are indexed or
+dropped. A run that was stopped or partly failed resumes where it left
+off.
 
 **Parameters:**
 
@@ -98,83 +101,61 @@ sharing it.
 - **time_column** (`str | None`) – Optional. Names either an in-file timestamp/date column,
   or a folder level written `key=value` whose value is a `YYYY`,
   `YYYY-MM`, or `YYYY-MM-DD` period covering every row under that
-  folder, or an ISO timestamp (an instant). If None, the only `date` partition column filters by time,
-  and a location without one is timeless.
+  folder, or an ISO timestamp (an instant). If None, the only `date`
+  partition column filters by time, and a location without one is
+  timeless.
 - **partition_columns** (`str | list[str] | None`) – The `key=value` folder levels (e.g.
   `scenario=ssp245/date=2050-01/`) whose values `query` can filter
   by, as a column name or a list of names in folder order. Defaults
-  to the `partition_by` columns in the tree's `_manifest.json`
-  (written by `fused.h3.partition`), else none. Each column is typed
-  `"string"`, `"number"` or `"date"` from the manifest, else from
-  its values (all numbers: number; all `YYYY`, `YYYY-MM`,
-  `YYYY-MM-DD` periods or ISO instants: date; otherwise string). Each
-  leaf folder must have exactly one folder per column, in that
-  order; a folder that does not fails the run.
-- **engine** (`InstanceType | Literal['realtime']`) – Where the run happens. `"realtime"` (the default) runs
-  on the realtime tier: no instance to wait for, but limited to a
+  to the `partition_by` columns in the tree's `_manifest.json`, else
+  none. Each leaf folder must have exactly one folder per column, in
+  that order.
+- **subset** (`dict[str, Any] | None`) – Limit the run to some folders, as `{column: value or list of values}`. Unlike `query(partition=...)`, the keys must be the
+  leading partition columns of the tree (a column cannot be skipped),
+  in any order. Values are strings, numbers or booleans. Only those
+  folders are listed and indexed, so adding one month to a large
+  archive costs that month.
+- **redo** (`bool`) – Read files again. With `subset`, every file in those folders
+  is read again and replaces what was indexed from it; nothing
+  else is touched. Without it, the whole tree is indexed from
+  scratch, which is also how to change the location's columns.
+- **engine** (`InstanceType | Literal['realtime']`) – `"realtime"` (the default) starts at once but is limited to a
   few minutes. A batch instance type or alias (`"small"`,
-  `"medium"`, `"large"`, ...) runs as a batch job with no time
-  limit. Never falls back from one to the other.
-- **overwrite** (`bool`) – If False (the default), re-running is incremental: folders
-  unchanged since the last run are skipped, and only new, changed
-  and removed files are indexed or dropped. A run that was stopped
-  or partly failed resumes where it left off. If True, the whole
-  tree is indexed again from scratch, replacing the previous index.
-- **prefix** (`str | list[str] | None`) – Optional. A folder under `path` (relative to it, such as
-  `"month=2026-10"`, or spelled in full), or a list of such
-  folders, that limits the run to those folders: only they are
-  listed and indexed, and only files and folders under them can be
-  dropped as gone. The rest of the location is neither read nor
-  touched, so adding one partition to a large archive costs that
-  partition rather than a walk of the whole tree, and a list of
-  partitions (a year's months, say) costs those in one run. The
-  location is still the whole tree at `path`, served from every
-  folder any run has indexed, and a scoped run may be its first.
-  Cannot be combined with `overwrite`.
-- **force** (`bool`) – Optional. Read every file under the scope again, unchanged
-  folders included: each folder's old rows are dropped and
-  replaced within the same generation, so the location keeps
-  serving throughout and nothing outside the scope is touched.
-  This is how to redo part of a large location when the files on
-  disk are fine but what was indexed from them is not (an
-  extractor bug, say) -- `overwrite` would redo the whole tree.
-  It does not change the location's columns; that still needs
-  `overwrite`. Default False.
-- **workers** (`int | None`) – Optional. How many files the job reads at once; defaults
-  to 32. Reading is bound by object-store round trips, so a larger
-  instance can take more -- 128 measured at roughly twice the
-  throughput of 32.
+  `"medium"`, `"large"`, ...) has no time limit; use it for a large
+  tree.
 - **visibility** (`str | None`) – `"team"` or `"public"` (Fused admins only); None keeps
-  the location's current visibility (`"team"` for a new one).
+  the location's current visibility (`"team"` for a new one). A
+  public location's files must be publicly readable on S3.
+- **options** (`dict[str, Any] | None`) – Tuning, as a dict. `"workers"`: how many files are read at
+  once (default 32; a larger instance can take more).
 - **base_url** (`str | None`) – Base URL for the API. If None, uses the current environment.
 
 **Returns:**
 
-- `TaskRun` – The `TaskRun` of the indexing run, returned as soon as it has started.
-  `run.tail()` prints its log lines until it finishes (and its error if
-  it failed), `run.status()`, `run.done()` and `run.logs()` poll it, and
-  `index_status(path)` reports the index once the run has succeeded. If
-  only some files fail to index, everything else is indexed and
-  queryable; the run's error names the failed paths, and re-running
-  retries them. A realtime run that runs out of time fails; retry with a
-  batch `engine`.
+- `TaskRun` – The `TaskRun` of the indexing run. `run.tail()` prints its log lines
+  until it finishes, `run.status()` and `run.done()` poll it, and
+  `index_status(path)` reports the index once it has succeeded. If only
+  some files fail, everything else is indexed and queryable; the run's
+  error names the failed paths, and running again retries them.
 
 **Example:**
 
 ```python
+run = fused.h3.index("s3://my-bucket/era5_h3/")
+run.tail()
+```
+
+Add a month, then redo it:
+
+```py
+fused.h3.index("s3://my-bucket/era5_h3/", subset={"month": "2026-11"})
 fused.h3.index(
-    path="s3://my-bucket/era5_h3/",
-    hex_column="hex",
-    partition_columns=["scenario", "date"],
-)
-# Later, after writing one more month:
-fused.h3.index("s3://my-bucket/era5_h3/", prefix="date=2050-02")
-# Or a year's worth of months in one run:
-fused.h3.index(
-    "s3://my-bucket/era5_h3/",
-    prefix=[f"date=2051-{m:02d}" for m in range(1, 13)],
+    "s3://my-bucket/era5_h3/", subset={"month": "2026-11"}, redo=True
 )
 ```
+
+Deprecated: `prefix=` (use `subset=`), `overwrite=True` and `force=True`
+(use `redo=True`) and `workers=` (use `options`) still work and warn.
 
 ---
 
@@ -245,249 +226,147 @@ partition(
     h3_res: int = 7,
     file_res: int = 1,
     fill: str | None = None,
-    partition_by: str | list[str] | None = None,
+    partition_by: (
+        str | list[str] | dict[str, Any] | list[dict[str, Any]] | None
+    ) = None,
     sort_by: str | list[str] | None = None,
-    overwrite: bool = False,
-    append: bool = False,
-    row_group_size: int = 65536,
-    compression: str = "zstd",
-    compression_level: int = 5,
-    key_columns: list[str] | None = None,
-    memory_budget: int = 2 << 30,
-    workers: int | None = None,
-    parts: list[dict[str, Any]] | None = None,
-    only: list[str] | None = None,
-    force: bool = False,
-    refresh: bool = False,
+    redo: bool = False,
+    chunk_res_offset: int | None = None,
     read_engine: InstanceType = "small",
     engine: InstanceType | Literal["realtime"] = "small",
-    base_url: str | None = None
+    options: dict[str, Any] | None = None,
+    base_url: str | None = None,
+    **deprecated: Any
 ) -> Run
 ```
 
 Write data as hex-sorted H3 parquet files with a `_manifest.json`.
 
-The work runs on the Fused server. A `udf` or `era5` source is first
-read by an `h3.read` batch job per part on `read_engine`, which caches
-the rows as parquet inside `output`; the `h3.partition` task then
-writes the files, on the batch instance by default (no time limit) or on
-the realtime tier (a few minutes at most) when `engine="realtime"` (not
-for a `udf` or `era5` source). Returns as soon as the run has started.
+The work runs on the Fused server and this returns a `Run` as soon as it
+has started: `run.tail()` follows it. A `udf` or `era5` source is
+read first, then partitioned; a `parquet` source is partitioned directly.
 
 **Example:**
 
 ```python
-An ERA5 year, one part per month, read on a large instance::
+An ERA5 year, one job per month::
 
-    fused.h3.partition(
+    run = fused.h3.partition(
         fused.h3.sources.era5(outputs=["t2m_mean"]),
         "fd://me/era5_2024/",
-        parts=[{"month": f"2024-{m:02d}"} for m in range(1, 13)],
-        partition_by=["month"],
+        partition_by={"month": [f"2024-{m:02d}" for m in range(1, 13)]},
         point_column=("lat", "lng"), fill="nearest",
         read_engine="large",
     )
-
-A UDF that returns your data, in one pass::
-
-    @fused.udf
-    def load():
-        import pandas as pd
-        return pd.read_csv("https://example.com/points.csv")
-
-    fused.h3.partition(
-        fused.h3.sources.udf(load), "fd://me/points/",
-        point_column=("lat", "lng"),
-    )
+    run.tail()
 ```
+
+<details class="recipes" open>
+<summary>Recipes</summary>
+Add a month: run it again with the new value in ``partition_by``. The
+new folders are written and the output is merged; jobs already done
+are skipped.
+
+Redo a month: pass `redo=True` with just that month. It is read
+again from the source and rewritten.
+
+Retry failures: `run.retry()` runs the failed jobs again.
+
+Change settings (`h3_res`, `file_res`, `fill`, `sort_by`,
+`partition_by` columns): write to a new `output`, or delete the
+existing output folder. A run whose settings differ from the existing
+output raises and says so.
+
+</details>
 
 **Parameters:**
 
-- **data** (`Any`) – What to partition: a `fused.h3.sources` source or a `str` or
-  path-like on `s3://`, `gs://`, `gcs://` or `fd://`, which is
-  read like `fused.h3.sources.parquet(path)`. It is sent to the
-  server as a description; nothing is read or uploaded from this
-  machine. A `sources.udf` source runs your UDF on the engine,
-  which must return the part's rows (see `fused.h3.sources.udf`);
-  to partition data you have in Python, return it from a UDF. A
-  DataFrame, Table, RecordBatch, local, `memory://` or `az://`
-  path or any other type raises `TypeError`.
-- **output** (`str | Path`) – Output folder on `fd://` or a cloud URL (`s3://`,
-  `gs://`); a local path or an Azure URL (`az://`) is not
-  supported because the task runs on the server, which writes
-  only to storage it has access rules for. Files are written as
-  `<output>/<col>=<value>/.../<H3 parent cell hex>.parquet`, one
-  `col=value` folder per `partition_by` column in that order
-  (for example `scenario=ssp245/date=2050-01-01/`), or
-  `<output>/<H3 parent cell hex>.parquet` when there is no `partition_by`.
+- **data** (`Any`) – A `fused.h3.sources` source (`udf`, `era5`, `parquet`)
+  or a path on `s3://`, `gs://`, `fd://` or `/mount/<folder>`,
+  read like `sources.parquet(path)`. To partition data you have in
+  Python, return it from a UDF. Nothing is read from this machine.
+- **output** (`str | Path`) – Output folder on `fd://`, `s3://`, `gs://` or the team's
+  `/mount/<folder>`. Files are `<output>/<col>=<value>/.../<H3 parent cell>.parquet`. Local paths and `az://` are not
+  supported. Leftover files without a `_manifest.json` raise.
 - **hex_column** (`str | None`) – Name of an existing H3 cell column (uint64). Give exactly
   one of `hex_column` and `point_column`.
-- **point_column** (`str | tuple[str, str] | None`) – Where each row is, so the cell at `h3_res` can be computed.
-  Either `("lat_column", "lng_column")`, two numeric columns (lat
-  first), or the name of one geometry column holding WKB (`binary`),
-  such as `point_column="geometry"`. A Point geometry hexes itself; any
-  other geometry gets the cell covering its centroid. Nothing is
-  polyfilled: one row in, one row out. Null and empty geometries
-  raise. The centroid is planar, taken on the coordinates as stored,
-  which must be lon/lat degrees (EPSG:4326); a centroid outside lon
-  -180..180 / lat -90..90 (for example projected coordinates)
-  raises. Geometries that cross the antimeridian or wrap a pole get
-  a centroid on the wrong side, so split them or pass lat/lng
-  columns for those rows. Two lat/lng columns must be degrees too:
-  nothing is reprojected, and projected values (UTM metres, say)
-  raise. The point columns stay in the files. A
-  `geopandas.GeoDataFrame` returned by a `sources.udf` UDF arrives
-  with its geometry as WKB, and GeoParquet read with
-  `fused.h3.sources.parquet` is already WKB.
-- **h3_res** (`int`) – Resolution of the cell each row gets; this is the `hex`
-  column, the key queries select rows by. With `point_column` the
-  coordinate columns stay in the files, so every row keeps its exact
-  position whatever `h3_res` is.
-- **file_res** (`int`) – Resolution of the H3 parent cell that groups rows into
-  files: each row's cell is walked up to its ancestor at this
-  resolution and all rows under one ancestor are written to one
-  file named after it (default 1, about 117k res-7 cells per file;
-  raise it for more, smaller files).
-- **fill** (`str | None`) – `"nearest"` fills every cell at `h3_res` from the nearest point
-  of a regular lat/lng raster, instead of hexing each row as it is
-  (the default). Each input batch must then hold a complete raster
-  per key tuple, one row per raster point, as
-  `fused.h3.sources.era5` yields. Key columns are `key_columns`,
-  `partition_by` and every column that is not floating point (such
-  as `date` or `hour`); the floating point columns are the values
-  to fill, and none is an error. Needs `point_column=("lat", "lng")`. One
-  filled batch becomes one batch per H3 parent cell.
-- **partition_by** (`str | list[str] | None`) – Column, or list of columns, whose values become nested
-  `col=value` folders. The default, None, is no folders without
-  `parts`, and the columns the parts are split by with it (it
-  must then be exactly those; see Parts below). Values
-  are written by type: dates as `YYYY-MM-DD`, timestamps as ISO 8601
-  (`2050-01-01T06:00:00`), integers as plain digits, floats and
-  strings as they print. The type of each column is recorded in
-  `_manifest.json`. Values may not be null, empty, start with `_` or
-  contain `/`. The columns stay in the files.
+- **point_column** (`str | tuple[str, str] | None`) – `("lat_column", "lng_column")` in degrees, or the name
+  of one WKB geometry column (a non-point gets its centroid's cell).
+  One row in, one row out; nothing is polyfilled.
+- **h3_res** (`int`) – Resolution of each row's cell, the `hex` column queries
+  select by.
+- **file_res** (`int`) – Resolution of the parent cell that groups rows into one
+  file (default 1; raise it for more, smaller files).
+- **fill** (`str | None`) – `"nearest"` fills every cell at `h3_res` from the nearest
+  point of a regular lat/lng raster (as `sources.era5` yields)
+  instead of hexing each row. Needs `point_column=("lat", "lng")`.
+- **partition_by** (`str | list[str] | dict[str, Any] | list[dict[str, Any]] | None`) – What becomes `col=value` folders, and how the run is
+  split into jobs. A column name or a list of names: folders from
+  the data, one job. A dict `{column: value or list of values}`:
+  one job per combination (the product, in key order), each bound
+  on `data` (any iterable, a `range` too, is a list of values; a
+  `date` is sent as ISO text) like `sources.era5(month=...)`, a UDF's parameters or
+  a `sources.parquet` hive folder. A list of dicts is an explicit
+  job list, all with the same keys. The dict keys are the folder
+  columns. A job is named by its folder, such as
+  `scenario=ssp245/month=2024-01`.
 - **sort_by** (`str | list[str] | None`) – Extra column(s) to sort by after `hex`.
-- **overwrite** (`bool`) – Replace existing output. Without it, an any existing
-  file in `output` (a dataset, or leftovers of an aborted run
-  that has no `_manifest.json`) raises.
-- **append** (`bool`) – Add to an existing partitioned dataset instead of failing on it.
-  Every leaf partition folder this run writes replaces that folder
-  in `output` (so re-running a day is idempotent) and the other
-  folders are left alone; `_manifest.json` is updated to match.
-  Needs `partition_by` and an existing `_manifest.json` whose
-  `h3_res`, `file_res`, `fill`, `partition_by`, `sort_by`
-  and partition column types match this call, checked before
-  anything is written. Cannot be combined with `overwrite`. A run
-  that dies midway leaves the folders it already replaced rewritten
-  only in part, and the manifest unchanged, until it is run again.
-- **row_group_size** (`int`) – Rows per parquet row group.
-- **compression** (`str`) – Parquet compression codec.
-- **compression_level** (`int`) – Compression level (zstd only).
-- **key_columns** (`list[str] | None`) – Columns that get dictionary encoding (`hex` never
-  does). Defaults to the `partition_by` columns when set, else none; name
-  other low-cardinality columns here. With `fill="nearest"` the
-  non-floating columns are added automatically.
-- **memory_budget** (`int`) – Bytes of input rows held in memory while waiting for
-  their file to be complete (default 2 GiB). Past it the buffered
-  rows of every file are spilled to a hidden folder inside `output`.
-  It counts buffered rows only: the source batch being processed, the
-  fill cube and the per-file split of a batch are on top of it, so do
-  not set it to the worker's RAM. Reading the input pauses while a
-  spill is written, so on a machine with memory to spare, raise it
-  until nothing spills.
-- **workers** (`int | None`) – Threads that write the files once the input has ended.
-  Defaults to 32 for object-store output and
-  `min(32, os.cpu_count())` for local output. Each one holds a
-  whole output file in memory while it writes it, so with large
-  files (around 1 GB or more) use fewer, such as 2 to 4, or a
-  machine with more memory.
-- **parts** (`list[dict[str, Any]] | None`) – One dict of inputs per part, bound on `data` (see Parts
-  below): `[{"month": "2024-01"}, {"month": "2024-02"}]` for
-  `sources.era5`, a UDF's parameters for `sources.udf`, hive
-  keys for `sources.parquet` (`{"state": "TX"}` reads
-  `<path>/state=TX/`). Every dict has the same keys, which become
-  the partition columns. Each part is its own read job and
-  partition job, launched together in one call; jobs over your batch
-  quota wait as `pending` instead of failing. Without `parts` the
-  source runs as one part, with the inputs it was made with.
-- **only** (`list[str] | None`) – Names of the parts (their ids, each input joined as
-  `key=value`, such as `month=2024-01`) to run; the others are
-  left alone. An unknown name raises, listing the available ones.
-  Needs `parts`.
-- **force** (`bool`) – Redo parts that are already marked done. Without it a part
-  whose done marker (`_parts/<name>.json` in `output`) exists is
-  skipped. Needs `parts`.
-- **refresh** (`bool`) – Read a `udf` or `era5` part again. Without it a part whose
-  rows are already cached in `<output>/.fused-h3-source/` (same
-  source, inputs and code) is not read again. The cache is never
-  deleted. Not for a `parquet` source, which has no read step.
-- **read_engine** (`InstanceType`) – The batch instance type of the read jobs of a `udf` or
-  `era5` source, `"small"` by default; `"medium"`,
-  `"large"`, ... for a UDF or a month of ERA5 that needs more
-  memory. Reading is always a batch job, so `"realtime"` raises.
-  Unused for a `parquet` source.
-- **engine** (`InstanceType | Literal['realtime']`) – `"small"` (the default) runs the partition job as a batch
-  job with no time limit. `"realtime"` runs on the realtime tier
-  and is limited to a few minutes, so it suits small parquet inputs;
-  a `udf` or `era5` source raises with it. Other batch aliases or
-  instance types (`"medium"`, `"large"`, ...) run as a batch
-  job on a bigger instance.
+- **redo** (`bool`) – Redo what this call covers. With `partition_by` jobs (a dict
+  or list of dicts), the jobs are read again from the source and
+  rewritten even if done; the default skips a job that is already
+  done. A single job with `partition_by` columns is read again
+  and merged into the output: the folders it writes are replaced,
+  all other folders stay, and a folder the source no longer
+  produces stays too (it is never wiped; to start over, write to a
+  new `output` path or delete the output folder). It refuses an
+  output written one job per value. A single job without
+  `partition_by` replaces the output, since it covers all of it.
+  Without `redo`, a single job with columns adds to the output in
+  the same way, and one without columns raises if the output exists.
+  Do not run a single job (with or without columns, or with
+  `redo=True`) into an output while per-job runs (a dict
+  `partition_by`) are writing to it.
+- **chunk_res_offset** (`int | None`) – Align the row groups to H3 parent cells: every row
+  group holds whole cells of resolution `file_res + chunk_res_offset`
+  (the chunk resolution, recorded in the manifest and in each file's
+  footer as `fused:chunk_res`), and `row_group_size` is ignored.
+  Each file gets about `7**chunk_res_offset` row groups (an offset
+  of 3 is about 343). Needs `0 <= chunk_res_offset` and
+  `file_res + chunk_res_offset <= h3_res`. It trades cost for
+  reach: coarse chunks make a small query decode big row groups,
+  fine chunks make many row groups (a bigger footer and more
+  requests). `None` (the default) writes row groups of
+  `row_group_size` rows and records no chunk resolution.
+- **read_engine** (`InstanceType`) – Batch instance type of the read jobs of a `udf` or
+  `era5` source (default `"small"`). `"realtime"` raises.
+- **engine** (`InstanceType | Literal['realtime']`) – `"small"` (default) runs the partition job as a batch job
+  with no time limit; larger batch types give it more memory.
+  `"realtime"` runs on the realtime tier for a few minutes at
+  most, for small `parquet` inputs only.
+- **options** (`dict[str, Any] | None`) – Tuning, as a dict. `row_group_size` (65536; not with
+  `chunk_res_offset`),
+  `compression` ("zstd"), `compression_level` (5),
+  `key_columns` (columns to dictionary-encode), `memory_budget`
+  and `workers` (both sized from the instance by default). An
+  unknown key raises.
 - **base_url** (`str | None`) – Fused API base URL; defaults to the configured one.
 
 **Returns:**
 
-- `Run` – A `Run`, returned as soon as the jobs have started. `run.tail()`
-  follows it, printing each part's log lines as `[part] ...` and the
-  error of a part that failed; `run.status()` is `"failed"` if any
-  part failed, else `"succeeded"` if all did, else `"running"` or
-  `"pending"`; `run.parts()`, `run.errors()`, `run.failed()`,
-  `run.succeeded()` and `run.skipped()` say how each part went;
-  `run.retry()` runs the failed parts again, and
-  `fused.h3.get_run(run.id)` brings the run back in a new session.
+- `Run` – A `Run`. `run.tail()` prints each job's logs as `[job] ...`;
+  `run.status()`, `run.jobs()`, `run.errors()`, `run.failed()`,
+  `run.succeeded()` and `run.skipped()` say how it went;
+  `fused.h3.get_run(run.id)` brings it back in a new session.
 
-Parts: with `parts=` the run appends to `output` (`append` is
-implied, `overwrite` is refused: delete the output first, or pass
-`force=True` to redo parts), writes the same `<hex>.parquet` files as
-one run would, and, last, a done marker `_parts/<part>.json`. A part is
-only a unit of work: every `partition_by` folder belongs to exactly one
-part, so the output has one file per folder and parent cell however the
-input was split. Each part therefore covers the columns named by its
-inputs (`month` for an ERA5 month, `state` for a `state=TX`
-subfolder, a UDF's parameters, which the UDF must return as columns with
-those values). An empty `partition_by` becomes those columns, and a
-`partition_by` that is not exactly them raises before anything starts,
-as does an input still missing, a name the source does not accept, dicts
-with different keys, two parts with one id, or a hive subfolder that does
-not exist. A part that finds a folder already claimed by another part
-fails without writing. Parts of one output run side by side; one part cannot
-run twice at once. A part that died midway has no marker and is cleaned up
-and redone by the next run; one with a marker is skipped unless
-`force=True`. Without `parts` the source is one plain pass.
-
-**Raises:**
-
-- `TypeError` – `data` is not a source or a path the server can read: a
-  DataFrame, Table or RecordBatch, a local, `memory://` or `az://`
-  path (as a `str` or inside `sources.parquet`), an iterator of
-  record batches or another unsupported type. Return the data from a
-  UDF and pass `fused.h3.sources.udf(it)` instead.
-- `ValueError` – An inconsistent argument or a local or Azure `output`.
-  The task checks the rest on the server and fails the run (see
-  `run.tail()`) for a named column missing from the source, an
-  existing output without `overwrite` or `append`, `append`
-  without an existing manifest or with settings that differ from it,
-  or a problem found while bucketing (null or NaN coordinates, lat/lng
-  outside lat -90..90 / lon -180..180 such as projected coordinates,
-  null hex, null or folder-unsafe partition values).
-
-Rows are buffered per output file in memory, up to `memory_budget`; past
-it they are spilled to a hidden temporary folder inside `output`, removed
-when the run ends. `overwrite=True` also removes such folders left behind
-by a killed run. Readers may yield any mix of parent cells in any order.
-Large batches are cheaper than many small ones.
-
-A failed run never wipes a good dataset: existing output is only replaced
-once the whole input has been read without error.
+<details class="deprecated" open>
+<summary>Deprecated</summary>
+``parts=`` (use ``partition_by``), ``only=`` (pass only those values),
+``force=`` and ``refresh=`` (use ``redo=True``), ``append=`` (a rerun
+merges anyway), ``overwrite=`` (use a new output path) and the
+one-by-one ``row_group_size``, ``compression``, ``compression_level``,
+``key_columns``, ``memory_budget`` and ``workers`` (use ``options``)
+still work for one release and warn.
+</details>
 
 ---
 
@@ -507,19 +386,18 @@ query(
     partition: dict[str, Any] | None = None,
     partition_range: dict[str, Any] | None = None,
     columns: list[str] | None = None,
-    format: str = "parquet",
     max_row_groups: int | None = None,
     base_url: str | None = None,
-    engine: str = "auto"
+    **kwargs: Any
 ) -> pd.DataFrame | Any
 ```
 
 Read the rows of a previously indexed H3 location: your team's own
 index of `path`, else the public one.
 
-The server returns a large result a page at a time; `query` follows the
-pages and joins them, so the whole result is held in this process's
-memory. To keep memory down, narrow the selector or time window (and fan
+Only available inside UDFs running on Fused (a realtime or batch
+instance). The rows are read in the calling process, so the whole result
+is held in its memory. To keep memory down, narrow the selector or time window (and fan
 out across narrower queries with `fused.submit` if more than one is
 needed).
 
@@ -533,7 +411,7 @@ every row at the location.
 
 Only space, time and partition values are filtered. Filter other columns
 (a vessel type, a LiDAR class) on the returned DataFrame. A result too
-large for one read raises (see Raises); split a larger area or time window
+large to hold in memory fails the job; split a larger area or time window
 into smaller queries.
 
 **Parameters:**
@@ -563,30 +441,20 @@ into smaller queries.
   string, number and date columns. A range on the location's time
   column also narrows the time window.
 - **columns** (`list[str] | None`) – Which columns to read. Defaults to all columns.
-- **format** (`str`) – `"parquet"` (the default) returns the matching rows as a
-  DataFrame. `"index"` returns a read plan for Fused's own readers
-  instead of rows (see Returns); it needs job2 (available inside
-  Fused UDFs).
 - **max_row_groups** (`int | None`) – How much of the dataset one page of the result may
   read. It sets the page size, not a limit on the result: the
   query follows the pages until every row is read. If None (the
   default), a default page size applies.
 - **base_url** (`str | None`) – Base URL for the API. If None, uses the current environment.
-- **engine** (`str`) – Where the rows are read and filtered. `"server"` reads them
-  on Fused's servers. `"auto"` (the default) reads them in this
-  process when it can, and otherwise on the server. Both return
-  the same rows, though row order is not defined.
 
 **Returns:**
 
-- `DataFrame | Any` – A pandas DataFrame with the matching rows. With `format="index"`, a
-  read plan object instead, for Fused's own readers (needs job2; not a
-  stable interface), with the attributes `num_row_groups` and
-  `public`.
+- `DataFrame | Any` – A pandas DataFrame with the matching rows.
 
 **Raises:**
 
-- `ValueError` – If `engine` is unknown.
+- `RuntimeError` – If called outside a UDF running on a Fused realtime or
+  batch instance.
 - `HTTPError` – If the API request fails (404 if `path` has not
   been indexed, 409 if it is not yet `"ready"`, if a data file changed
   after it was indexed (re-run `fused.h3.index`), or if it was
@@ -769,7 +637,8 @@ set_visibility(
 
 Make your team's H3 index at `path` `"team"` (readable by your team
 only) or `"public"` (readable by every Fused user; still re-indexed and
-deleted only by your team).
+deleted only by your team). A public location's files must be publicly
+readable on S3, so any UDF can read them.
 
 **Parameters:**
 
@@ -784,27 +653,28 @@ deleted only by your team).
 **Raises:**
 
 - `HTTPError` – 404 if your team has no index at `path`; 403 when
-  making it public as anyone but a Fused admin.
+  making it public as anyone but a Fused admin; 400 when making it
+  public while its files are not publicly readable on S3.
 
 ---
 
 ## Run
 
-A run of a task over several parts, such as `fused.h3.partition`.
+A run of a task over several jobs, such as `fused.h3.partition`.
 
-The server launches one job per part in a single call and keeps a record of
+The server launches one job per job id in a single call and keeps a record of
 the group under `id` (it starts with `grp:`), so `fused.h3.get_run(id)`
 brings the run back in a new session. `id`, `task`, `engine` and `info`
 never change and are plain attributes.
 
-The rest is read live: `parts()` (part to status), `status()` (one answer
-for the run: `"failed"` if any part failed, else `"succeeded"` if all
+The rest is read live: `jobs()` (job id to status), `status()` (one answer
+for the run: `"failed"` if any job failed, else `"succeeded"` if all
 succeeded, else `"running"` if any is running, else `"pending"`), `done()`
-(every part has finished, some may have failed), `errors()` (part to error
-for the failed parts) and the part lists `failed()`, `succeeded()`,
-`skipped()` and `pending()`. A part is pending while it waits to start, for
+(every job has finished, some may have failed), `errors()` (job id to error
+for the failed jobs) and the job lists `failed()`, `succeeded()`,
+`skipped()` and `pending()`. A job is pending while it waits to start, for
 instance because the team has no quota left; the job starts by itself once
-it fits. A part of a `fused.h3.partition` run over a `udf` or `era5` source
+it fits. A job of a `fused.h3.partition` run over a `udf` or `era5` source
 is first read by a job of its own and then partitioned: `tail()` and `repr`
 show which. Reads made within a second of each other share one request, and a
 finished run is final and needs none. `repr` makes no request.
@@ -815,7 +685,7 @@ finished run is final and needs none. `repr` makes no request.
 done() -> bool
 ```
 
-Whether every part has finished, successfully or not.
+Whether every job has finished, successfully or not.
 
 ---
 
@@ -825,7 +695,7 @@ Whether every part has finished, successfully or not.
 errors() -> dict[str, str | None]
 ```
 
-The error of each failed part, by part name.
+The error of each failed job, by job id.
 
 ---
 
@@ -835,7 +705,18 @@ The error of each failed part, by part name.
 failed() -> list[str]
 ```
 
-Names of the parts that failed.
+Ids of the jobs that failed.
+
+---
+
+### jobs
+
+```python
+jobs() -> dict[str, str | None]
+```
+
+Each job's status by job id: `"pending"`, `"running"`,
+`"succeeded"` or `"failed"`.
 
 ---
 
@@ -845,8 +726,7 @@ Names of the parts that failed.
 parts() -> dict[str, str | None]
 ```
 
-Each part's status: `"pending"`, `"running"`, `"succeeded"` or
-`"failed"`.
+Deprecated: use `jobs()`.
 
 ---
 
@@ -856,7 +736,7 @@ Each part's status: `"pending"`, `"running"`, `"succeeded"` or
 pending() -> list[str]
 ```
 
-Names of the parts waiting to start.
+Ids of the jobs waiting to start.
 
 ---
 
@@ -867,30 +747,30 @@ result() -> Any
 ```
 
 The run's outcome once it succeeded: its `info` (the `output` of a
-`fused.h3.partition` run) with the part names as `parts`.
+`fused.h3.partition` run) with the job ids as `parts`.
 `None` while it is still going.
 
 **Raises:**
 
-- `RuntimeError` – A part failed (the message lists them).
+- `RuntimeError` – A job failed (the message lists them).
 
 ---
 
 ### retry
 
 ```python
-retry(parts: list[str] | None = None) -> Run
+retry(jobs: list[str] | None = None, **deprecated: Any) -> Run
 ```
 
-Run the failed parts again (or only `parts`, which must have failed)
-and return the run. Parts that succeeded are not touched.
+Run the failed jobs again (or only `jobs`, which must have failed)
+and return the run. Jobs that succeeded are not touched.
 
-A part that failed while reading is read again; one that failed
+A job that failed while reading is read again; one that failed
 while partitioning is partitioned again from what was read.
 
 **Raises:**
 
-- `HTTPError` – The server refused: a part is unknown or did
+- `HTTPError` – The server refused: a job is unknown or did
   not fail, or none failed.
 
 ---
@@ -901,8 +781,8 @@ while partitioning is partitioned again from what was read.
 skipped() -> list[str]
 ```
 
-Names of the parts that were already done and left alone
-(`force=False`); only `fused.h3.partition` skips parts.
+Ids of the jobs that were already done and left alone
+(`redo=False`); only `fused.h3.partition` skips jobs.
 
 ---
 
@@ -912,7 +792,7 @@ Names of the parts that were already done and left alone
 status() -> str
 ```
 
-`"failed"` if any part failed, else `"succeeded"` if all did, else
+`"failed"` if any job failed, else `"succeeded"` if all did, else
 `"running"` if any is running, else `"pending"`.
 
 ---
@@ -923,7 +803,7 @@ status() -> str
 succeeded() -> list[str]
 ```
 
-Names of the parts that ran to the end and wrote files (not the
+Ids of the jobs that ran to the end and wrote files (not the
 skipped ones).
 
 ---
@@ -934,9 +814,9 @@ skipped ones).
 tail(refresh_seconds: float = 2.0, timeout: float | None = None) -> Run
 ```
 
-Print every part's new log lines as `[part] message` until all
-parts have finished, a line saying why a part is waiting, and a
-one-line summary whenever the counts change. Failed parts' errors come
+Print every part's new log lines as `[job] message` until all
+jobs have finished, a line saying why a job is waiting, and a
+one-line summary whenever the counts change. Failed jobs' errors come
 last.
 
 Logs are best effort: a failed log fetch warns once and polling goes
@@ -944,7 +824,7 @@ on.
 
 **Raises:**
 
-- `TimeoutError` – Parts were still going after `timeout` seconds. They
+- `TimeoutError` – Jobs were still going after `timeout` seconds. They
   keep running on the server.
 
 ---
@@ -983,7 +863,7 @@ anywhere else, install it yourself.
 
 The time range is the source's **input**: exactly one of `month` and
 `date`. Give it here to read that range in one pass, or leave it out and
-give one per part to `fused.h3.partition(..., parts=[{"month": "2024-01"}, {"month": "2024-02"}], partition_by=["month"])`.
+give one per part to `fused.h3.partition(..., partition_by=[{"month": "2024-01"}, {"month": "2024-02"}])`.
 
 Yields record batches with columns `lat`, `lng`, `month` (a string such
 as `"2024-01"`), `date` (`date32`), `hour` (`uint8`, hourly only) and one float32 column per output, in the
@@ -1054,8 +934,7 @@ from fused import h3
 h3.partition(
     h3.sources.era5(outputs=["t2m_mean", "tp"]),
     "fd://me/era5/",
-    parts=[{"month": "2024-01"}, {"month": "2024-02"}],
-    partition_by=["month"],
+    partition_by=[{"month": "2024-01"}, {"month": "2024-02"}],
     point_column=("lat", "lng"), fill="nearest", h3_res=7,
     file_res=1, read_engine="large",
 )  # doctest: +SKIP
@@ -1066,8 +945,7 @@ h3.partition(
 h3.partition(
     h3.sources.era5(outputs=["t2m"], cadence="hourly"),
     "fd://me/era5_hourly/",
-    parts=[{"date": "2024-01-01"}, {"date": "2024-01-02"}],
-    partition_by=["date"],
+    partition_by=[{"date": "2024-01-01"}, {"date": "2024-01-02"}],
     point_column=("lat", "lng"), fill="nearest", h3_res=7,
     file_res=1,
 )  # doctest: +SKIP
@@ -1104,7 +982,7 @@ Remote schemes need their fsspec backend installed (s3fs, gcsfs, adlfs).
   (`year=2020, month=1` reads `<path>/year=2020/month=1/`). Each
   key is added to every batch as a constant string column when the
   files lack it (hive writers leave it out of the files). With
-  `fused.h3.partition(..., parts=[{"year": 2020}, ...])` each
+  `fused.h3.partition(..., partition_by=[{"year": 2020}, ...])` each
   dict is one part. `path`, `columns` and `batch_size` cannot
   be hive keys.
 
@@ -1165,8 +1043,7 @@ def read_month(month: int):
 fused.h3.partition(
     fused.h3.sources.udf(read_month),
     "fd://me/ais/",
-    parts=[{"month": m} for m in range(1, 13)],
-    partition_by=["month"],
+    partition_by={"month": range(1, 13)},
     point_column="geometry",
 )
 ```
