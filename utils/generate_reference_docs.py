@@ -85,7 +85,12 @@ def _strip_doctest(code: str) -> str:
     """Strip doctest >>> / ... prefixes and mark output lines as comments.
 
     If the content has no >>> lines it's plain Python — return as-is.
+    A docstring example that already carries its own ``` fence is unwrapped,
+    since the template adds the fence.
     """
+    m = re.fullmatch(r'\s*```[\w-]*\n(.*?)\n?```\s*', code, re.S)
+    if m:
+        code = m.group(1)
     if '>>> ' not in code and not code.strip().startswith('>>>'):
         return code
     lines = []
@@ -126,7 +131,13 @@ ROOT = Path(__file__).parent / ".."
 
 # We assume `fused` is installed in the env where we run this script (when running 
 # with `uv run`, this will be the latest released fused which uv installs in an isolated env)
-mod = griffe.load("fused", docstring_parser="google")
+# Returns/Yields descriptions here span several lines at one indent; griffe's
+# default (one item per line) cut them into one bullet per line.
+mod = griffe.load(
+    "fused",
+    docstring_parser="google",
+    docstring_options={"returns_multiple_items": False},
+)
 
 # updated options
 default_config["show_signature_annotations"] = True
