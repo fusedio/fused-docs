@@ -32,7 +32,7 @@ flowchart LR
 
 - **[Partition](/python-sdk/api-reference/h3#partition)** writes your data as H3 Parquet files, grouped into folders and files so a query can skip most of them.
 - **[Index](/python-sdk/api-reference/h3#index)** records the cells, partition values and time range each file covers. Query needs it.
-- **Query** uses the index to read only the files a request needs, from Python with [`fused.h3.query`](/python-sdk/api-reference/h3#query) or over HTTP with [`GET /h3/query`](/rest-api/h3).
+- **Query** uses the index to read only the files a request needs, from a UDF running on Fused with [`fused.h3.query`](/python-sdk/api-reference/h3#query) or over HTTP with [`GET /h3/query`](/rest-api/h3).
 - **Resolution:** H3 cells come in 16 sizes, and a higher resolution means smaller cells. Choose one from the size of your features with the [Resolution Guide](/guide/h3-analytics/resolution-guide). New to H3? See [Working with H3](/guide/working-with-udfs/udf-best-practices/working-with-h3).
 
 ## Prepare your data
@@ -47,34 +47,35 @@ Pass only one. If you have both a cell column and a geometry, use `hex_column`. 
 
 ## Partition
 
-[`fused.h3.partition`](/python-sdk/api-reference/h3#partition) runs as a background job and returns a run at once. [`fused.h3.get_run(run_id)`](/python-sdk/api-reference/h3#get_run) gives its status, and [`.tail()`](/python-sdk/api-reference/h3#tail) its logs.
+[`fused.h3.partition`](/python-sdk/api-reference/h3#partition) runs as background jobs and returns a run at once. [`fused.h3.get_run(run_id)`](/python-sdk/api-reference/h3#get_run) gives its status, [`.tail()`](/python-sdk/api-reference/h3#tail) its logs, and [`.retry()`](/python-sdk/api-reference/h3#retry) runs the failed jobs again.
 
 - **`h3_res` and `file_res`:** `h3_res` sets each row's cell, and `file_res` the larger cell each file covers. Set both: the defaults, 7 and 1, suit few datasets. A higher `file_res` makes more, smaller files, so a query reads less.
-- **`partition_by`:** one folder per value of the column your queries filter on. Values cannot be null or empty, contain a `/`, or start with `_`. Avoid a column where one value holds most rows.
-- **`engine`:** `"small"` (the default), `"medium"` and `"large"` run as [batch jobs](/guide/working-with-udfs/udf-best-practices/scaling-out#instance-types) with no time limit. `"realtime"` stops after 2 minutes, so it suits only small sources.
+- **`partition_by`:** one folder per value of the column your queries filter on. Values cannot be null or empty, contain a `/`, or start with `_`. Avoid a column where one value holds most rows. A column name takes the values from the data in one job. A dict such as `{"date": ["2024-07-04", "2024-07-05"]}` runs one job per combination of values, each bound to the source's input of that name: a UDF parameter, or a hive folder for `sources.parquet`.
+- **`engine`:** `"small"` (the default), `"medium"` and `"large"` run as [batch jobs](/guide/working-with-udfs/udf-best-practices/scaling-out#instance-types) with no time limit. `"realtime"` stops after 2 minutes, so it suits only small Parquet sources; a UDF source raises with it.
+- **Running again:** with column names, every run reads the source again and replaces the folders it writes; all other folders stay. With a dict, jobs already done are skipped and `redo=True` runs them again. Without `partition_by`, a run into an existing output raises. To change `h3_res`, `file_res`, `fill`, `sort_by` or the partition columns, write to a new output path.
 
 :::warning
-`overwrite=True` replaces everything in the output folder. In a UDF that starts a job, guard the call so it runs only when you ask: otherwise every re-run of the UDF starts the job again.
+In a UDF that starts a job, guard the call so it runs only when you ask: otherwise every re-run of the UDF starts the job again.
 :::
 
 ## Index
 
-[`fused.h3.index`](/python-sdk/api-reference/h3#index) registers the files with the query service. Re-runs are incremental; `overwrite=True` indexes everything again.
+[`fused.h3.index`](/python-sdk/api-reference/h3#index) registers the files with the query service. It returns a run at once; `.tail()` prints its logs until it finishes. Re-runs are incremental; `redo=True` indexes everything again.
 
-- **Re-run index after every partition or append,** and wait until `fused.h3.index_status` reports `ready`. A new partition run makes the index stale even when the data is the same, for example with `overwrite=True`, and queries fail with an "index is stale" error until you index again.
-- **New data: run index again without `overwrite`.** It indexes only new, changed and removed files and skips the rest. On a large dataset, also pass the new folders as `prefix=`, such as `prefix="<partition column>=<value>"`, so index lists only those folders instead of the whole dataset.
+- **Re-run index after every partition,** and wait until `fused.h3.index_status` reports `ready`. A partition run that rewrites files makes the index stale even when the data is the same, and queries fail with an "index is stale" error until you index again.
+- **New data: run index again.** It indexes only new, changed and removed files and skips unchanged folders. On a large dataset, also pass the new folders as `subset=`, such as `subset={"<partition column>": "<value>"}`, so index lists only those folders instead of the whole dataset. The keys must be the leading partition columns.
 - **Use a [batch engine](/guide/working-with-udfs/udf-best-practices/scaling-out#dedicated-instances) for large datasets:** `"small"`, `"medium"` or `"large"`. The default, `"realtime"`, stops after 2 minutes.
 
 ## Query
 
-[`fused.h3.query`](/python-sdk/api-reference/h3#query) returns the matching rows as a DataFrame.
+[`fused.h3.query`](/python-sdk/api-reference/h3#query) returns the matching rows as a DataFrame. It runs only inside a UDF on Fused; anywhere else it raises a `RuntimeError`.
 
 - **Always give a place:** `bbox=`, `cell=`, or `lat=` and `lng=`. Without one, it returns the whole dataset.
 - **Filter by partition values:** one value or a list, such as `partition={"<partition column>": ["<value>", "<value>"]}`. Only place, time and partition values are filtered; filter other columns on the returned DataFrame.
 - **Request only the columns you use** with `columns=`.
-- **Split a result too large for one read,** which fails with HTTP 413, into smaller areas or time windows.
+- **Split a large result** into smaller areas or time windows. The whole result is held in the UDF's memory, so one too large fails the job.
 
-To query over HTTP, use [`GET /h3/query`](/rest-api/h3). It takes the same place and partition filters as query parameters, with an [access token](/rest-api/overview#authentication), and returns a Parquet file:
+To query from outside a UDF, use [`GET /h3/query`](/rest-api/h3). It takes the same place and partition filters as query parameters, with an [access token](/rest-api/overview#authentication), and returns a Parquet file:
 
 ```bash
 curl -G "https://www.fused.io/server/v1/h3/query" \
@@ -117,7 +118,7 @@ job = fused.h3.partition(
 )
 ```
 
-The source is small, so the job runs on `"realtime"` with no machine to start. [`fused.h3.get_run(job.id)`](/python-sdk/api-reference/h3#get_run) gives its status, and [`.tail()`](/python-sdk/api-reference/h3#tail) its logs. `overwrite` stays `False`, so a second run cannot replace the output by accident.
+The source is small, so the job runs on `"realtime"` with no machine to start. [`fused.h3.get_run(job.id)`](/python-sdk/api-reference/h3#get_run) gives its status, and [`.tail()`](/python-sdk/api-reference/h3#tail) its logs. A second run reads the source again and replaces only the `building_type` folders it writes.
 
 **Writes:** one folder per `building_type` and one file per res-4 cell. Every row has `hex` at res 11 and the source columns.
 
@@ -134,11 +135,11 @@ h3/
 
 ### 3. Index: `index_buildings`
 
-The UDF runs [`fused.h3.index`](/python-sdk/api-reference/h3#index) with `overwrite=True`, so every run indexes all files again, and shows [`fused.h3.index_status`](/python-sdk/api-reference/h3#index_status).
+The UDF runs [`fused.h3.index`](/python-sdk/api-reference/h3#index) with `redo=True`, so every run indexes all files again. It follows the run to the end, then shows [`fused.h3.index_status`](/python-sdk/api-reference/h3#index_status).
 
 ```python
 path = "fd://overture_us_buildings/v1/h3/"
-fused.h3.index(path, overwrite=True)
+fused.h3.index(path, redo=True).tail()
 status = fused.h3.index_status(path)
 ```
 
@@ -149,12 +150,14 @@ status = fused.h3.index_status(path)
 The UDF calls [`fused.h3.query`](/python-sdk/api-reference/h3#query) and returns the buildings inside [`bounds`](/python-sdk/api-reference/fused-types#bounds) for the types in `building_type` (comma-separated; empty means all), as a DataFrame with the geometry as WKB. It refuses boxes wider than 0.05 degrees, so a map never asks for all 1M buildings.
 
 ```python
-df = fused.h3.query(
-    "fd://overture_us_buildings/v1/h3/",
-    bbox=(-76.62, 39.285, -76.6, 39.3),
-    partition={"building_type": ["residential", "commercial"]},
-    columns=["building_type", "class", "height", "geometry"],
-)
+@fused.udf
+def udf():
+    return fused.h3.query(
+        "fd://overture_us_buildings/v1/h3/",
+        bbox=(-76.62, 39.285, -76.6, 39.3),
+        partition={"building_type": ["residential", "commercial"]},
+        columns=["building_type", "class", "height", "geometry"],
+    )
 ```
 
 **Returns:** 301 rows, 163 `commercial` and 138 `residential`. With every type, the same box returns 2,470 rows in about 1 second.
@@ -173,7 +176,7 @@ Two maps show the result:
 }
 ```
 
-To use another area, change `bounds` in step 1, run partition again with `overwrite=True`, then index again.
+To use another area, change `bounds` in step 1, partition into a new output path, index that path, and point the query UDF and the `fused-hex` layer at it. A re-run into the same path would keep any `building_type` folder the new area does not write.
 
 ## Reference
 
