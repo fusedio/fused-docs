@@ -239,7 +239,7 @@ Draw a box to explore Manhattan in 3D. The app splits large areas into smaller q
 <details>
 <summary>Code</summary>
 
-The canvas's first step copies the LAZ tiles to `raw` as they are. The source UDF reads one tile with [PDAL](https://pdal.io/), reprojects it to lat/lng and cuts it to Manhattan. It returns `tile` as a column because each part key must be an output column:
+The canvas's first step copies the LAZ tiles to `raw` as they are. The source UDF reads one tile with [PDAL](https://pdal.io/), reprojects it to lat/lng and cuts it to Manhattan. It returns `tile` as a column because each partition key must be an output column:
 
 ```python showLineNumbers
 @fused.udf
@@ -271,7 +271,7 @@ def udf(tile: str = "18TWL790045", raw: str = "fd://h3_examples/lidar_raw/manhat
     })
 ```
 
-Save it as `lidar_source`. The partition step runs it once per tile, as parallel parts, and writes one file per res-7 cell with each point tagged with its res-12 cell:
+Save it as `lidar_source`. The partition step runs it once per tile, as parallel jobs, and writes one file per res-7 cell with each point tagged with its res-12 cell:
 
 ```python showLineNumbers
 @fused.udf(cache_max_age="0s")
@@ -288,18 +288,18 @@ def udf(
         point_column=("lat", "lon"),
         h3_res=12,
         file_res=7,
-        parts=[{"tile": t} for t in tiles],
+        partition_by={"tile": tiles},
         read_engine="large",
     )
     return pd.DataFrame({"run": [run.id], "tiles": [len(tiles)]})
 ```
 
-Index it, then query a box. For an exact edge, pad the box by about one cell and cut the rows to it:
+Index it and wait until [`fused.h3.index_status`](/python-sdk/api-reference/h3#index_status) reports `ready`, then query a box. For an exact edge, pad the box by about one cell and cut the rows to it:
 
 ```python showLineNumbers
 @fused.udf
 def udf(out: str = "fd://h3_examples/lidar_manhattan_points/"):
-    fused.h3.index(out, overwrite=True, wait=False)
+    fused.h3.index(out).tail()
 ```
 
 ```python showLineNumbers
