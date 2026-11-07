@@ -209,30 +209,6 @@ The map writes `map_bounds` and `selected_site`. Another layer or widget reads t
 
 Expect `$map_bounds` to be like `[-122.69, 37.69, -122.21, 37.83]` after a pan, and a click on a point to set `$selected_site` to that point's `{"name": ..., "score": ...}`: only the `tooltip` fields.
 
-- `param` receives the view's `[west, south, east, north]`: the map sends its real bounds once when it is ready, then with `autoSend` on pans (each `moveend` after `autoSendDebounceMs`, default 600, or at most once per animation frame while the map moves when that is `0`). The ready send overwrites a value already on the canvas. A zero-area box (map hidden) is never sent, and a map that cannot load (no WebGL, bad token) never sets it.
-- `clickParam`: 64-bit integers arrive as numbers, or as strings when they are outside JavaScript's safe integer range, dates as ISO strings and typed arrays as plain arrays.
-- `hoverParam` receives the same object as `clickParam` for the feature under the cursor: at most once per animation frame, only when it changes. A new feature is not sent while the map is dragged. When the cursor leaves every feature the param is removed. After a wheel zoom or a data reload it keeps the last value until the pointer moves. Not saved with the canvas.
-- `selectParam` receives the selection, `{layer, key, ids, count, bbox, mode, truncated}`: shift+drag draws a box (`mode: "box"`), shift+click toggles one feature (`mode: "click"`, `bbox: null`). A page or wired widget can write it: `null`, `{"mode": "none"}` or `{"ids": [], "bbox": null}` clears the outline and dimming, and `{"bbox": [west, south, east, north]}` (west < east, south < north) draws and dims to that box without picking ids. A box written by another node is published to the map's own param with `"ids": []`. The map hears only the page it is embedded in and nodes wired to it by an edge in either direction, while it is mounted. Not saved with the canvas.
-- `stateParam` receives the map's camera and layer state, saved with the canvas and restored on reload. Its `view` is the camera, `{centerLng, centerLat, zoom, bearing, pitch, width, height}`: `zoom` in Web Mercator with 512 px tiles, to 6 decimals, `bearing` and `pitch` in degrees, `width` and `height` the map canvas in CSS pixels. `view` is written only when a pan, zoom, rotate or tilt gesture ends (and after Reset view), not during the gesture, not after a programmatic move such as fit to data, and not on a resize. It is absent until the viewer first moves the map. Restoring the camera applies the centre, zoom, bearing and pitch and ignores `width` and `height`.
-- `sourceParam` receives `{ [layerId]: { version, loading, rows, error } }` for the layers this map publishes as SQL sources. Re-run `fused.query` when a layer's `version` changes; compare with `!==`, not `>`. `version` is 0 while the layer has no rows. Session state: not saved with the canvas.
-
-To draw a page's own overlay on the map, convert with these, `x`/`y` in CSS pixels from the map canvas's top-left corner and `v` the param's `view`. They are exact at `bearing` 0 and `pitch` 0, and right once the map has settled: they lag while it moves.
-
-```js
-const R = Math.PI / 180;
-const worldX = (lng) => (lng + 180) / 360;
-const worldY = (lat) => 0.5 - Math.log(Math.tan(Math.PI / 4 + (lat * R) / 2)) / (2 * Math.PI);
-function project(lng, lat, v) {
-  const size = 512 * 2 ** v.zoom;
-  return [(worldX(lng) - worldX(v.centerLng)) * size + v.width / 2, (worldY(lat) - worldY(v.centerLat)) * size + v.height / 2];
-}
-function unproject(x, y, v) {
-  const size = 512 * 2 ** v.zoom;
-  const wx = worldX(v.centerLng) + (x - v.width / 2) / size, wy = worldY(v.centerLat) + (y - v.height / 2) / size;
-  return [wx * 360 - 180, (2 * Math.atan(Math.exp((0.5 - wy) * 2 * Math.PI)) - Math.PI / 2) / R];
-}
-```
-
 ## Indexed H3 datasets: `fused-hex`
 
 A `fused-hex` layer draws a dataset partitioned and indexed with `fused.h3` straight from the H3 query endpoint (`GET /h3/query`), with no UDF. The map requests each tile's box itself.
