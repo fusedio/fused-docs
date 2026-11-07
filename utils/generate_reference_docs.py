@@ -946,6 +946,8 @@ These flags apply to every command:
 
 {chr(10).join(_global_rows)}
 
+When `--env` targets the `base_url` that `~/.fused/settings.toml` sets explicitly, that file's `[auth]` is kept. Any other target uses the default Fused sign-in.
+
 ## Commands
 
 {chr(10).join(_command_rows)}
