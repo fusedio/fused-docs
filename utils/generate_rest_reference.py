@@ -18,15 +18,22 @@ ROWS = [
     (["partition"], "JSON object mapping a partition column to a value, or a list of values that any may match. See [Filter by partition](#filter-by-partition)."),
     (["partition_range"], "JSON object mapping a partition column to an inclusive `[min, max]`, with `null` for an open end"),
     (["columns"], "A column to return. Repeat the parameter for several. Omitted, every column is returned."),
+    # A value set to None is served but left out of the docs: rows are the default, and
+    # `index` is an internal read plan for the Fused client libraries.
     (["format"], {
-        "parquet": "returns rows.",
-        "index": "returns a binary read plan (Arrow IPC) for the Fused client libraries; it is not a stable format. See [Index format](#index-format).",
-        "stats": "returns JSON with each matched row group's H3 range, partition, and min and max of each column in `columns` (required).",
-        "files": "returns JSON listing the indexed files that overlap the query, by the H3 cell each file is named after. No file is opened.",
+        "parquet": None,
+        "index": None,
+        "stats": "returns JSON with the min and max of each column listed in `columns` (required with `stats`), for each row group (block of rows in a file) the query matches. See [Stats format](#stats-format).",
+        "files": "returns JSON listing the files the query would read, with their row counts. See [Files format](#files-format).",
     }),
-    (["max_row_groups"], "Row groups per page, from {minimum} to {maximum}. At most 4,096 for `parquet` and `index`. Default {default}."),
+    (["max_row_groups"], "Row groups per page, from {minimum} to {maximum}. At most 4,096 when returning rows. Default {default}."),
     (["cursor"], "The cursor from the previous page. See [Page through large results](#page-through-large-results)."),
 ]
+
+# Text before the per-value descriptions of an enum parameter.
+LEADS = {
+    "format": "What to return. Leave it out to get the matching rows. Use `stats` or `files` to inspect a query without downloading any rows:",
+}
 
 TABLE = re.compile(r"(\*\*Query parameters\*\*\n\n)(?:\|.*\n)+")
 
@@ -36,10 +43,12 @@ def schema_type(schema):
     return kind["items"]["type"] if kind["type"] == "array" else kind["type"]
 
 
-def describe(text, schema):
+def describe(name, text, schema):
     if isinstance(text, dict):
         default = schema.get("default")
-        return " ".join(f"`{v}`{' (default)' if v == default else ''} {text[v]}" for v in schema["enum"])
+        parts = [LEADS[name]] if name in LEADS else []
+        parts += [f"`{v}`{' (default)' if v == default else ''} {text[v]}" for v in schema["enum"] if text[v] is not None]
+        return " ".join(parts)
     values = {k: schema[k] for k in ("minimum", "maximum", "default") if k in schema}
     return text.format(**{k: f"{v:,}" if type(v) in (int, float) else v for k, v in values.items()})
 
@@ -66,7 +75,7 @@ def render_table(spec):
         if len(kinds) > 1 or len(required) > 1:
             raise SystemExit(f"{', '.join(names)}: grouped parameters differ in type or required")
         label = ", ".join(f"`{name}`" for name in names)
-        lines.append(f"| {label} | {kinds.pop()} | {'Yes' if required.pop() else 'No'} | {describe(text, group[0]['schema'])} |")
+        lines.append(f"| {label} | {kinds.pop()} | {'Yes' if required.pop() else 'No'} | {describe(names[0], text, group[0]['schema'])} |")
     return "\n".join(lines) + "\n"
 
 
