@@ -32,7 +32,7 @@ fused.params.onChange(splitBounds);
 splitBounds(fused.params.getAll());
 ```
 
-Each move runs the query again, aborting the one in flight, and the layer redraws. Expect about 3,700 rows at zoom 14 over Midtown. Give the map `"minZoom": 12` so a zoomed-out view does not fetch the whole city. Full canvas (map, `h3-query`, a histogram that cross-filters the map): https://github.com/fusedio/skills/tree/ab/workbench-fused-map-params-docs/workbench/skills/html-template-nodes/examples/crossfilter
+Each move runs the query again, aborting the one in flight, and the layer redraws. Expect about 3,700 rows at zoom 14 over Midtown. Give the map `"minZoom": 12` so a zoomed-out view does not fetch the whole city. Full canvas (map, `h3-query`, a histogram that cross-filters the map): https://github.com/fusedio/skills/tree/main/workbench/skills/html-template-nodes/examples/crossfilter
 
 - `name` is what readers reference (`{{nyc311}}`), not the node name.
 - `path` is required: the indexed dataset, sent as `path=`. `endpoint` is optional and defaults to `/h3/query` on the current server; a full URL on another server gets no token.
