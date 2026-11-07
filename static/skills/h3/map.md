@@ -53,6 +53,8 @@ Expect the UDF to return 167 rows with columns `hex`, `count`, and the map to fl
 
 A `fused-hex` layer draws a dataset indexed with `fused.h3` with no UDF: the map sends one `GET /h3/query` per tile. Set `"type": "fused-hex"`; it is never detected.
 
+The layer needs a dataset built with `fused.h3.partition` (https://docs.fused.io/skills/h3/partition.md) and `fused.h3.index` (https://docs.fused.io/skills/h3/index.md).
+
 - `source.path`: the indexed dataset, the `path=` of the `/h3/query` URL.
 - `h3Column`: the index's `hex_column` (usually `hex`).
 - `source.variables`: the columns to fetch. Name one small column when the style only uses `count`, or every column is fetched.
