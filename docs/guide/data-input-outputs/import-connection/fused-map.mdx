@@ -15,7 +15,7 @@ Read https://docs.fused.io/skills/FUSED_MAP.md. Create a Fused canvas named sf_l
 ```
 :::
 
-Fused Map is a map widget in Fused. It draws geospatial data from a UDF, an `h3-query` widget or the H3 Data Retrieval REST API: points, polygons, H3 hexagons and raster tiles, with many layers on one map.
+Fused Map is a map widget in Fused. It draws geospatial data from a UDF, an [`h3-query`](/widget-api/h3-query) widget or the [H3 Data Retrieval](/guide/h3-analytics/data-retrieval-service) REST API: points, polygons, H3 hexagons and raster tiles, with many layers on one map.
 
 Its type is `fused-map`. It works like any other [widget](/guide/data-input-outputs/import-connection/widgets): configure it in JSON, connect UDFs with edges, and share it as a URL. To see working examples, open the [Fused Map example canvas](https://www.fused.io/canvas/fc_fused/map_widget_canvas). For the props, see the [Fused Map API reference](/widget-api/fused-map).
 
@@ -172,82 +172,96 @@ The [Fused Map example canvas](https://www.fused.io/canvas/fc_fused/map_widget_c
 
 A map can send its viewport bounds (`param`), the clicked feature (`clickParam`), the hovered feature (`hoverParam`), its box selection (`selectParam`), its camera (`stateParam`) and a per-layer row version (`sourceParam`) to canvas parameters. Other widgets and UDFs read them as `$<name>`. See the [Fused Map API reference](/widget-api/fused-map) for each one.
 
-These three maps share `"stateParam": "nl_view"`. A pan or zoom on one map writes its camera to `nl_view`, and the other two read it, so the maps move together. Each runs the same `nightlights` UDF with a different `year`, which reads a cloud-optimized GeoTIFF of night lights one tile at a time.
+In this widget the map sends its bounds to `$map_bounds` with `"param"` and `"autoSend": true`. The bar chart below it reads `$map_bounds[1]` to `$map_bounds[4]` in its SQL and counts the San Francisco Airbnb listings in view by room type, so the chart follows the map as you pan and zoom.
 
 <iframe
-  src="https://www.fused.io/share/fc_fused%2Fmap_widget_canvas/nightlights_compare"
+  src="https://www.fused.io/share/fc_fused%2FWidget_Showcase/map_send_bounds"
   width="100%"
-  height="500px"
+  height="600px"
   loading="lazy"
   style={{border: 'none', borderRadius: '8px'}}
-  title="Three Fused Maps that move together through stateParam"
+  title="A Fused Map that sends its bounds to a bar chart"
 />
 
 <details>
-<summary>Show one of the three maps</summary>
+<summary>Show the widget JSON</summary>
 
 ```json
 {
-  "type": "fused-map",
+  "type": "div",
   "props": {
-    "basemap": "mapbox://styles/mapbox/dark-v11",
-    "centerLng": 79,
-    "centerLat": 22,
-    "zoom": 4.2,
-    "autoFit": false,
-    "stateParam": "nl_view",
-    "layers": [
-      {
-        "id": "nl_2010",
-        "name": "Night lights 2010",
-        "type": "raster",
-        "udf": "{{nightlights?year=2010}}",
-        "tile": true,
-        "minZoom": 2,
-        "maxZoom": 12
+    "style": "display:flex;flex-direction:column;gap:8px;height:100%"
+  },
+  "children": [
+    {
+      "type": "fused-map",
+      "props": {
+        "style": "flex:1;min-height:0",
+        "basemap": "mapbox://styles/mapbox/dark-v11",
+        "centerLng": -122.43,
+        "centerLat": 37.76,
+        "zoom": 12,
+        "param": "map_bounds",
+        "autoSend": true,
+        "layers": [
+          {
+            "id": "listings",
+            "name": "SF Airbnb listings",
+            "type": "geojson",
+            "udf": "{{showcase_data}}",
+            "tooltip": ["name", "room_type", "price_in_dollar"],
+            "style": {
+              "fillColor": { "type": "categorical", "attr": "room_type", "palette": "Bold" },
+              "pointRadius": 3
+            }
+          }
+        ]
       }
-    ]
-  }
+    },
+    {
+      "type": "bar-chart",
+      "props": {
+        "title": "Listings in view by room type",
+        "sql": "SELECT room_type AS label, COUNT(*) AS value FROM {{showcase_data}} WHERE longitude BETWEEN $map_bounds[1] AND $map_bounds[3] AND latitude BETWEEN $map_bounds[2] AND $map_bounds[4] GROUP BY 1 ORDER BY 2 DESC",
+        "style": "height:180px"
+      }
+    }
+  ]
 }
 ```
 
 </details>
 
 <details>
-<summary>Show the <code>nightlights</code> UDF</summary>
+<summary>Show the <code>showcase_data</code> UDF</summary>
 
 ```python
-@fused.udf(cache_max_age="30d")
-def udf(
-    bounds: fused.types.Bounds = [67.5, 8.0, 90.0, 33.0],
-    year: int = 2021,
-    floor: float = 4.0,
-    vmax: float = 200.0,
-):
-    import numpy as np
-    import rasterio
-    from rasterio.enums import Resampling
-    from rasterio.vrt import WarpedVRT
-    from rasterio.warp import transform_bounds
-    from rasterio.transform import from_bounds
+@fused.udf
+def udf(room_type: str = "All", max_price: str = "1000"):
+    import pandas as pd
 
-    url = (
-        "https://s3.openlandmap.org/arco/"
-        f"nightlights.average_viirs.v21_m_500m_s_{year}0101_{year}1231_go_epsg.4326_v20230823.tif"
+    try:
+        max_price_val = float(max_price) if max_price else 1000.0
+    except (ValueError, TypeError):
+        max_price_val = 1000.0
+
+    @fused.cache
+    def load():
+        return pd.read_parquet("s3://fused-sample/demo_data/airbnb_listings_sf.parquet")
+
+    df = load()
+    if room_type and room_type != "All":
+        df = df[df["room_type"] == room_type]
+    df = df[df["price_in_dollar"] <= max_price_val]
+    import geopandas as gpd
+
+    gdf = gpd.GeoDataFrame(
+        df,
+        geometry=gpd.points_from_xy(df["longitude"], df["latitude"]),
+        crs="EPSG:4326"
     )
-    west, south, east, north = transform_bounds("EPSG:4326", "EPSG:3857", *bounds)
-    tile = from_bounds(west, south, east, north, 256, 256)
-    with rasterio.open(url) as src:
-        with WarpedVRT(src, crs="EPSG:3857", transform=tile, width=256, height=256, resampling=Resampling.bilinear, nodata=0) as vrt:
-            v = vrt.read(1).astype("float32")
-
-    t = np.clip((v - floor) / (vmax - floor), 0, 1) ** 0.5
-    stops = np.array([[20, 20, 40], [110, 60, 20], [255, 170, 60], [255, 225, 150], [255, 250, 235]], np.float32)
-    pos = t * (len(stops) - 1)
-    i0 = np.clip(pos.astype(int), 0, len(stops) - 2)
-    rgb = stops[i0] * (1 - (pos - i0)[..., None]) + stops[i0 + 1] * (pos - i0)[..., None]
-    alpha = np.where(v > floor, 40 + 215 * t, 0)
-    return np.dstack([rgb, alpha]).astype(np.uint8).transpose(2, 0, 1)
+    return gdf
+    
 ```
 
 </details>
