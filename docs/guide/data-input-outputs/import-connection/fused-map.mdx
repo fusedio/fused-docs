@@ -15,7 +15,7 @@ Read https://docs.fused.io/skills/FUSED_MAP.md. Create a Fused canvas named sf_l
 ```
 :::
 
-Fused Map is a map widget in Fused. It draws geospatial data from a UDF, a SQL query, or a tile URL: points, polygons, H3 hexagons, and raster tiles, with many layers on one map.
+Fused Map is a map widget in Fused. It draws geospatial data from a UDF, an `h3-query` widget or the H3 Data Retrieval REST API: points, polygons, H3 hexagons and raster tiles, with many layers on one map.
 
 Its type is `fused-map`. It works like any other [widget](/guide/data-input-outputs/import-connection/widgets): configure it in JSON, connect UDFs with edges, and share it as a URL. To see working examples, open the [Fused Map example canvas](https://www.fused.io/canvas/fc_fused/map_widget_canvas). For the props, see the [Fused Map API reference](/widget-api/fused-map).
 
@@ -34,30 +34,21 @@ For a faster way, drag an edge from the output handle of a UDF node to an empty 
 The UDF must be on the same canvas. The name in `{{ }}` must match the UDF name exactly, with the same case.
 :::
 
-## Layer types and data sources
+## Get data onto the map
 
-Fused Map has several layer types, set with each layer's `type`. Some common ones:
+Each layer reads its rows from one of three sources:
 
-| `type` | Data |
-|---|---|
-| `geojson` | A GeoDataFrame, or rows with `lat` and `lng` columns (set `latColumn` and `lngColumn` for other names). |
-| `h3` | A DataFrame with an H3 cell column. |
-| `raster` | An image array. |
-| `fused-hex` | A dataset [indexed with `fused.h3`](/guide/h3-analytics/data-retrieval-end-to-end), read with no UDF. |
+| Source | Set on the layer | Use it for |
+|---|---|---|
+| A UDF | `"udf": "{{my_udf}}"` | Anything a UDF returns: points, polygons, H3 cells or a raster image. |
+| An [`h3-query`](/widget-api/h3-query) widget | `"data": "{{name}}"`, with an edge from the `h3-query` node to the map | The rows of one query on an [indexed H3 dataset](/guide/h3-analytics/data-retrieval-service), loaded in the browser. |
+| The [H3 Data Retrieval](/guide/h3-analytics/data-retrieval-service) REST API | `"type": "fused-hex"` and `"source": {"path": "<dataset>"}` | A whole indexed dataset, read through [`GET /h3/query`](/rest-api/h3) one tile at a time, with no UDF. |
 
-For every layer type, see the [Fused Map API reference](/widget-api/fused-map). Other columns in the data become feature properties for tooltips, filters, and data-driven colors.
+Leave out `type` and the map picks one from the data: an image becomes a raster, an H3 cell column becomes hexagons, and `lat` and `lng` columns become points. Set `"type": "fused-hex"` yourself. [H3 Visualization](/guide/h3-analytics/visualization) has working examples of the `h3-query` and `fused-hex` sources, and the [Fused Map API reference](/widget-api/fused-map) lists every layer type and prop.
 
-Each layer reads its data in one of these ways:
+To pass a widget input's value to a UDF, write `{{my_udf?<udf_argument>=$<param>}}`, where `<param>` is the input's `param` name. For example, `"udf": "{{my_udf?band_index=$band}}"` passes the value of an input whose `param` is `band` to the UDF's `band_index` argument, and runs the UDF again when it changes.
 
-| Property | What the map does |
-|---|---|
-| `udf` | Runs the UDF one time and draws the whole result. |
-| `udf` and `tile: true` | Runs the UDF for each map tile. The UDF gets the tile `bounds`. |
-| `sql` | Runs a DuckDB query on a UDF result, then draws the rows. |
-| `data: "{{name}}"` | Draws the rows a canvas SQL source publishes (an [`h3-query`](/widget-api/h3-query) or [`sql-runner`](/widget-api/sql-runner) widget's `name`, or another map's layer id), with no UDF run. Needs the source in reach: the map is a child of that node, an edge runs from that node to the map, or both sit in one HTML page. A `sql` on the layer reads the rows as `{{source}}`. Not with `tile`, `udf` or `tileUrl`. |
-| `tileUrl` | Reads tiles from a URL with `{z}`, `{x}`, and `{y}` placeholders. |
-| `source` (`fused-hex` only) | Queries the indexed dataset through [`GET /h3/query`](/rest-api/h3) for each map tile. |
-| `sql` with `tile: true` or `fused-hex` | Runs the DuckDB query once over the rows of the tiles in view as `{{source}}`, then draws the rows, and again when the view settles on new tiles. Other UDFs do not apply. |
+### Load a UDF per tile
 
 :::important Name the first argument `bounds` to load data per tile
 With `tile: true`, the map passes each tile's area as `[west, south, east, north]` in `EPSG:4326`. Return only the rows inside `bounds`. The type doesn't matter, only the name.
@@ -75,15 +66,9 @@ def udf(bounds):
 | `true` | No | Every tile gets the same result. |
 | `false` | Either | The UDF runs once and `bounds` is ignored. |
 
-To make a layer dynamic, pass a widget input's value to the UDF from the layer's `udf` in the Fused Map widget JSON. Write `{{my_udf?<udf_argument>=$<param>}}`, where `<param>` is the input's `param` name. For example, with an input whose `param` is `band`, `"udf": "{{my_udf?band_index=$band}}"` passes its value to the UDF's `band_index` argument and re-runs the UDF when it changes.
+## Example: a raster and points
 
-## Send map values to other widgets
-
-A map can send its viewport bounds (`param`), the clicked feature (`clickParam`), the hovered feature (`hoverParam`), its box selection (`selectParam`), its camera (`stateParam`) and a per-layer row version (`sourceParam`) to canvas parameters. Other widgets and UDFs read them as `$<name>`. See the [Fused Map API reference](/widget-api/fused-map) for each one.
-
-## Example
-
-This map shows San Francisco Airbnb listings as points on top of a Bay Area seismic hazard raster.
+This map shows San Francisco Airbnb listings as points on top of a Bay Area seismic hazard raster. A raster layer draws the image a UDF returns. With `tile: true` and a `bounds` argument, each tile reads only its window of the GeoTIFF.
 
 <iframe
   src="https://www.fused.io/share/fc_fused%2Fmap_widget_canvas/combined_layers_map"
@@ -183,9 +168,95 @@ def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
 
 The [Fused Map example canvas](https://www.fused.io/canvas/fc_fused/map_widget_canvas) has working UDF and widget examples. For the style, tooltip, legend, and filter props, see the [Fused Map API reference](/widget-api/fused-map).
 
+## Send map values to other widgets
+
+A map can send its viewport bounds (`param`), the clicked feature (`clickParam`), the hovered feature (`hoverParam`), its box selection (`selectParam`), its camera (`stateParam`) and a per-layer row version (`sourceParam`) to canvas parameters. Other widgets and UDFs read them as `$<name>`. See the [Fused Map API reference](/widget-api/fused-map) for each one.
+
+These three maps share `"stateParam": "nl_view"`. A pan or zoom on one map writes its camera to `nl_view`, and the other two read it, so the maps move together. Each runs the same `nightlights` UDF with a different `year`, which reads a cloud-optimized GeoTIFF of night lights one tile at a time.
+
+<iframe
+  src="https://www.fused.io/share/fc_fused%2Fmap_widget_canvas/nightlights_compare"
+  width="100%"
+  height="500px"
+  loading="lazy"
+  style={{border: 'none', borderRadius: '8px'}}
+  title="Three Fused Maps that move together through stateParam"
+/>
+
+<details>
+<summary>Show one of the three maps</summary>
+
+```json
+{
+  "type": "fused-map",
+  "props": {
+    "basemap": "mapbox://styles/mapbox/dark-v11",
+    "centerLng": 79,
+    "centerLat": 22,
+    "zoom": 4.2,
+    "autoFit": false,
+    "stateParam": "nl_view",
+    "layers": [
+      {
+        "id": "nl_2010",
+        "name": "Night lights 2010",
+        "type": "raster",
+        "udf": "{{nightlights?year=2010}}",
+        "tile": true,
+        "minZoom": 2,
+        "maxZoom": 12
+      }
+    ]
+  }
+}
+```
+
+</details>
+
+<details>
+<summary>Show the <code>nightlights</code> UDF</summary>
+
+```python
+@fused.udf(cache_max_age="30d")
+def udf(
+    bounds: fused.types.Bounds = [67.5, 8.0, 90.0, 33.0],
+    year: int = 2021,
+    floor: float = 4.0,
+    vmax: float = 200.0,
+):
+    import numpy as np
+    import rasterio
+    from rasterio.enums import Resampling
+    from rasterio.vrt import WarpedVRT
+    from rasterio.warp import transform_bounds
+    from rasterio.transform import from_bounds
+
+    url = (
+        "https://s3.openlandmap.org/arco/"
+        f"nightlights.average_viirs.v21_m_500m_s_{year}0101_{year}1231_go_epsg.4326_v20230823.tif"
+    )
+    west, south, east, north = transform_bounds("EPSG:4326", "EPSG:3857", *bounds)
+    tile = from_bounds(west, south, east, north, 256, 256)
+    with rasterio.open(url) as src:
+        with WarpedVRT(src, crs="EPSG:3857", transform=tile, width=256, height=256, resampling=Resampling.bilinear, nodata=0) as vrt:
+            v = vrt.read(1).astype("float32")
+
+    t = np.clip((v - floor) / (vmax - floor), 0, 1) ** 0.5
+    stops = np.array([[20, 20, 40], [110, 60, 20], [255, 170, 60], [255, 225, 150], [255, 250, 235]], np.float32)
+    pos = t * (len(stops) - 1)
+    i0 = np.clip(pos.astype(int), 0, len(stops) - 2)
+    rgb = stops[i0] * (1 - (pos - i0)[..., None]) + stops[i0 + 1] * (pos - i0)[..., None]
+    alpha = np.where(v > floor, 40 + 215 * t, 0)
+    return np.dstack([rgb, alpha]).astype(np.uint8).transpose(2, 0, 1)
+```
+
+</details>
+
+For maps that send their view and selections to charts, see [cross-filtering](/guide/h3-analytics/visualization#cross-filtering).
+
 ## The sidebar
 
-The sidebar lets the viewer change the style, the filters, and the SQL of each layer in the browser. Each layer has a **Style** tab and a **Filters** tab. In **Style**, set the layer type, the fill mode (for example **By value** with a property, a palette, steps, and a domain), the stroke, and the opacity.
+The sidebar lists the map's layers. For each one, the viewer can change the type, the style, the filters and the SQL in the browser. Each layer has a **Style** tab and a **Filters** tab. In **Style**, set the layer type, the fill mode (for example **By value** with a property, a palette, steps, and a domain), the stroke, and the opacity.
 
 ![The Fused Map sidebar next to the map and the widget configuration](/img/widgets/fused-map-sidebar.jpg)
 
