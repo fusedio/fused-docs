@@ -150,18 +150,13 @@ The points layer runs once and has no `bounds` argument.
 
 ```python
 @fused.udf
-def udf(path: str = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"):
-    import geopandas as gpd
+def udf():
     import pandas as pd
 
+    path = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"
     df = pd.read_parquet(path)
     df = df.dropna(subset=["latitude", "longitude", "price_in_dollar"])
-    gdf = gpd.GeoDataFrame(
-        df[["name", "neighbourhood_cleansed", "room_type", "price_in_dollar"]],
-        geometry=gpd.points_from_xy(df["longitude"], df["latitude"]),
-        crs="EPSG:4326",
-    )
-    return gdf
+    return df[["name", "latitude", "longitude", "price_in_dollar", "room_type"]]
 ```
 
 </details>
@@ -172,10 +167,10 @@ The [Fused Map example canvas](https://www.fused.io/canvas/fc_fused/map_widget_c
 
 A map can send its viewport bounds (`param`), the clicked feature (`clickParam`), the hovered feature (`hoverParam`), its box selection (`selectParam`), its camera (`stateParam`) and a per-layer row version (`sourceParam`) to canvas parameters. Other widgets and UDFs read them as `$<name>`. See the [Fused Map API reference](/widget-api/fused-map) for each one.
 
-In this widget the map sends its bounds to `$map_bounds` with `"param"` and `"autoSend": true`. The bar chart below it reads `$map_bounds[1]` to `$map_bounds[4]` in its SQL and counts the San Francisco Airbnb listings in view by room type, so the chart follows the map as you pan and zoom.
+In this widget the map sends its bounds to `$map_bounds` with `"param"` and `"autoSend": true`. The bar chart below it reads `$map_bounds[1]` to `$map_bounds[4]` in its SQL and counts the San Francisco Airbnb listings in view by room type, so the chart follows the map as you pan and zoom. Both read the `sf_listings` UDF from the example above.
 
 <iframe
-  src="https://www.fused.io/share/fc_fused%2FWidget_Showcase/map_send_bounds"
+  src="https://www.fused.io/share/fc_fused%2Fmap_widget_canvas/map_bounds_chart"
   width="100%"
   height="600px"
   loading="lazy"
@@ -208,7 +203,9 @@ In this widget the map sends its bounds to `$map_bounds` with `"param"` and `"au
             "id": "listings",
             "name": "SF Airbnb listings",
             "type": "geojson",
-            "udf": "{{showcase_data}}",
+            "udf": "{{sf_listings}}",
+            "latColumn": "latitude",
+            "lngColumn": "longitude",
             "tooltip": ["name", "room_type", "price_in_dollar"],
             "style": {
               "fillColor": { "type": "categorical", "attr": "room_type", "palette": "Bold" },
@@ -222,46 +219,12 @@ In this widget the map sends its bounds to `$map_bounds` with `"param"` and `"au
       "type": "bar-chart",
       "props": {
         "title": "Listings in view by room type",
-        "sql": "SELECT room_type AS label, COUNT(*) AS value FROM {{showcase_data}} WHERE longitude BETWEEN $map_bounds[1] AND $map_bounds[3] AND latitude BETWEEN $map_bounds[2] AND $map_bounds[4] GROUP BY 1 ORDER BY 2 DESC",
-        "style": "height:180px"
+        "sql": "SELECT room_type AS label, COUNT(*) AS value FROM {{sf_listings}} WHERE longitude BETWEEN $map_bounds[1] AND $map_bounds[3] AND latitude BETWEEN $map_bounds[2] AND $map_bounds[4] GROUP BY 1 ORDER BY 2 DESC",
+        "style": "height:200px"
       }
     }
   ]
 }
-```
-
-</details>
-
-<details>
-<summary>Show the <code>showcase_data</code> UDF</summary>
-
-```python
-@fused.udf
-def udf(room_type: str = "All", max_price: str = "1000"):
-    import pandas as pd
-
-    try:
-        max_price_val = float(max_price) if max_price else 1000.0
-    except (ValueError, TypeError):
-        max_price_val = 1000.0
-
-    @fused.cache
-    def load():
-        return pd.read_parquet("s3://fused-sample/demo_data/airbnb_listings_sf.parquet")
-
-    df = load()
-    if room_type and room_type != "All":
-        df = df[df["room_type"] == room_type]
-    df = df[df["price_in_dollar"] <= max_price_val]
-    import geopandas as gpd
-
-    gdf = gpd.GeoDataFrame(
-        df,
-        geometry=gpd.points_from_xy(df["longitude"], df["latitude"]),
-        crs="EPSG:4326"
-    )
-    return gdf
-    
 ```
 
 </details>
