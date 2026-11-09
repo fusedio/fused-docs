@@ -82,6 +82,9 @@ const config: Config = {
           // Ensure consistent canonical URLs
           routeBasePath: "blog",
         },
+        sitemap: {
+          ignorePatterns: ["/search", "/search/**"],
+        },
         theme: {
           customCss: "./src/css/custom.css",
         },
