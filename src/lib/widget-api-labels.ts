@@ -67,5 +67,5 @@ export const WIDGET_CATEGORIES: Record<string, string[]> = {
     "pdf-gallery-viewer",
     "widget-builder",
   ],
-  Utility: ["div", "sql-runner", "ai-chat", "transformer"],
+  Utility: ["div", "sql-runner", "h3-query", "ai-chat", "transformer"],
 };
