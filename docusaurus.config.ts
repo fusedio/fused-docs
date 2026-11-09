@@ -83,7 +83,7 @@ const config: Config = {
           routeBasePath: "blog",
         },
         sitemap: {
-          ignorePatterns: ["/search", "/search/**"],
+          ignorePatterns: ["**/search", "**/search/**"],
         },
         theme: {
           customCss: "./src/css/custom.css",
