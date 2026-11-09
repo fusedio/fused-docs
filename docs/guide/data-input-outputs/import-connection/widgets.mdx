@@ -340,24 +340,59 @@ When the base URL includes a specific widget path (for example, `/orders_widget`
 *When you share a widget URL, Fused automatically appends all canvas parameters as query parameters so the shared view can be reproduced exactly.* [Try it out →](https://www.fused.io/share/fc_fused%2FOrders_Widget_Example/orders_widget?selected_option=orders)
 
 
-## Maps
+## Map Widgets
+
+### Fused Map
 
 To show geospatial data, use the map widget, [Fused Map](/guide/data-input-outputs/import-connection/fused-map) (`fused-map`). It draws points, polygons, H3 hexagons, and raster tiles from your UDFs.
 
-## Query an indexed H3 dataset
+This UDF, `sf_listings_points`, returns San Francisco Airbnb listings as points:
 
-Have a dataset indexed with the [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service) and want a slice of it, such as one area and time window, on the canvas? Use the [`h3-query`](/widget-api/h3-query) widget. It fetches the rows with no UDF and acts as a data engine: other widgets read them with SQL as `{{name}}`. Here a table counts one day of NYC 311 requests in Midtown Manhattan by complaint type.
+```python
+@fused.udf
+def udf():
+    import geopandas as gpd
+    import pandas as pd
 
-<iframe
-  src="https://www.fused.io/share/fc_fused%2FWidget_Showcase/input_h3_query"
-  width="100%"
-  height="500px"
-  frameBorder="0"
-  style={{borderRadius: '8px'}}
-></iframe>
+    path = "s3://fused-sample/demo_data/airbnb_listings_sf.parquet"
+    df = pd.read_parquet(path)
+    df = df.dropna(subset=["latitude", "longitude", "price_in_dollar"])
+    gdf = gpd.GeoDataFrame(
+        df[["name", "neighbourhood_cleansed", "room_type", "price_in_dollar"]],
+        geometry=gpd.points_from_xy(df["longitude"], df["latitude"]),
+        crs="EPSG:4326",
+    )
+    return gdf
+```
 
-<details>
-<summary>Code</summary>
+The Fused Map widget, with an edge from the UDF, colors the 5,765 listings by price:
+
+```json
+{
+  "type": "fused-map",
+  "props": {
+    "basemap": "mapbox://styles/mapbox/dark-v11",
+    "layers": [
+      {
+        "id": "listings",
+        "name": "SF Airbnb listings by price",
+        "type": "geojson",
+        "udf": "{{sf_listings_points}}",
+        "tooltip": ["name", "neighbourhood_cleansed", "room_type", "price_in_dollar"],
+        "legend": { "title": "Price ($)" },
+        "style": {
+          "fillColor": { "type": "continuous", "attr": "price_in_dollar", "domain": [50, 400], "palette": "Sunset" },
+          "pointRadius": 3
+        }
+      }
+    ]
+  }
+}
+```
+
+## Query Indexed H3
+
+Have a dataset indexed with the [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service) and want a slice of it, such as one area and time window, on the canvas? Use the [`h3-query`](/widget-api/h3-query) widget. It fetches the rows with no UDF and acts as a data engine: other widgets read them with SQL as `{{name}}`. This one counts one day of NYC 311 requests in Midtown Manhattan by complaint type:
 
 ```json
 {
@@ -380,8 +415,6 @@ Have a dataset indexed with the [H3 Data Retrieval Service](/guide/h3-analytics/
   ]
 }
 ```
-
-</details>
 
 To draw the rows on a map or cross-filter them with charts, see [H3 Visualization](/guide/h3-analytics/visualization#h3-query-widget).
 
