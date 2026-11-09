@@ -15,7 +15,7 @@ const config: Config = {
     fusedPyVersion: '1.20.1',
   },
 
-  trailingSlash: undefined,
+  trailingSlash: true,
 
   // Production URL configuration
   url: process.env.DEPLOYMENT_URL || "https://docs.fused.io",
