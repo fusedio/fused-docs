@@ -1,19 +1,26 @@
 ---
 id: visualization
-title: Visualization
+title: H3 Visualization
 sidebar_label: Visualization
 sidebar_position: 5
+description: Draw H3 cells on a Fused Map from a UDF or straight from an indexed dataset, and cross-filter the map with charts.
 ---
 
 # H3 Visualization
 
-## Using Fused Map to visualize hexagons
+A [Fused Map](/guide/data-input-outputs/import-connection/fused-map) draws H3 cells as hexagons. The map only needs rows with a cell column, so where those rows come from decides the method:
 
-The [`fused-map`](/widget-api/fused-map) widget draws H3 cells as hexagons, from a UDF or from an indexed dataset.
+- [From a UDF](#from-a-udf): a UDF returns the cells and an `h3` layer draws them.
+- [From an indexed dataset](#from-an-indexed-dataset): a [`fused-hex` layer](#fused-hex-layer) draws a dataset indexed with `fused.h3`, with no UDF. Or an [`h3-query` widget](#h3-query-widget) fetches rows from it and a map draws them.
+- [Cross-filtering](#cross-filtering): a histogram and a category list filter the map, and the map's view filters the charts.
+
+The `fused-hex` layer is the easiest way to map an indexed dataset: one layer, no code.
+
+## From a UDF {#from-a-udf}
+
+Use a UDF when the cells need work in Python first, such as a join, an aggregation or a filter. The map runs the UDF and draws the table it returns.
 
 [Try the examples in Canvas →](https://www.fused.io/canvas/fc_fused/H3_Converting_Examples)
-
-### From a UDF
 
 ![The H3 Converting Examples canvas: each UDF returns a table of hexes and a fused-map widget renders it](/img/tutorials/geospatial/h3/h3_converting_examples_canvas.png)
 
@@ -87,9 +94,20 @@ def udf(
 
 </details>
 
-### From an indexed dataset
+To map an indexed dataset from a UDF, call [`fused.h3.query`](/python-sdk/api-reference/h3#query) in it and return the rows. [Step 4 of the end-to-end example](/guide/h3-analytics/data-retrieval-end-to-end#4-query-query_buildings) does this for Overture buildings.
 
-A `fused-hex` layer reads an [indexed dataset](/guide/h3-analytics/hex-datasets#example-16-years-of-nyc-311-requests) from [`GET /h3/query`](/rest-api/h3), one request per map tile, with no UDF.
+## From an indexed dataset {#from-an-indexed-dataset}
+
+A dataset indexed with the [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service) goes on a map with no UDF, in one of two ways:
+
+| Way | What you add | Use it for |
+|---|---|---|
+| [`fused-hex` layer](#fused-hex-layer) | One map layer that draws the dataset. | Browsing a whole dataset at any zoom. |
+| [`h3-query` widget and a map](#h3-query-widget) | An `h3-query` widget that fetches the rows of one query, and a map that draws them. | Running SQL, tables and charts on those rows as well as mapping them. |
+
+### Draw a dataset with a `fused-hex` layer {#fused-hex-layer}
+
+A `fused-hex` layer draws an [indexed dataset](/guide/h3-analytics/hex-datasets#example-16-years-of-nyc-311-requests) straight on the map. The browser fetches the cells in view as you pan and zoom, so you don't need a UDF or a server of your own.
 
 <iframe
   src="https://www.fused.io/share/fc_fused%2FH3_Converting_Examples/indexed_dataset_map"
@@ -115,7 +133,6 @@ A `fused-hex` layer reads an [indexed dataset](/guide/h3-analytics/hex-datasets#
         "type": "fused-hex",
         "h3Column": "hex",
         "source": {
-          "endpoint": "https://www.fused.io/server/v1/h3/query",
           "path": "s3://fused-asset/data/nyc311/",
           "timeColumn": "created_date",
           "dateMin": "2024-01-01",
@@ -159,2275 +176,411 @@ A `fused-hex` layer reads an [indexed dataset](/guide/h3-analytics/hex-datasets#
 
 </details>
 
-:::tip
-Every key under `props` is documented in the [Fused Map widget reference](/widget-api/fused-map).
-:::
+The layer needs only three settings:
 
----
+- `h3Column`: the cell column, `hex` for a dataset written by `fused.h3.partition`.
+- `source.path`: the indexed dataset.
+- `source.overview: {}`: draws an overview of the dataset when you zoom out.
 
-## Interactive Visualizations in Canvas
+Everything else is optional, such as the time window in the example. The layer doesn't move the map to its data, so set `centerLng`, `centerLat` and `zoom`. For the other keys, see the [Fused Map widget reference](/widget-api/fused-map).
 
-In Fused Canvas you can create interactive visualizations by combining UDFs together. 
+The [H3 Data Retrieval Visualization canvas](https://www.fused.io/canvas/fc_fused/H3_Data_Retrieval_Visualization) has this map in `nyc311_hex_map`, and `ais_hex_map` maps one day of AIS ship positions in New York Harbor.
 
-We can create a more advanced version of these visualizations using by creating UDFs that leverage postMessages to talk to each other. 
+### Map the rows of an `h3-query` widget {#h3-query-widget}
 
-### Connecting Histogram & Map
+An [`h3-query`](/widget-api/h3-query) widget doesn't draw anything. It fetches the rows of one query on an indexed dataset and shares them as a SQL source, `{{name}}`, for tables, charts and maps. To map the rows, add a `fused-map` with an edge from the `h3-query` node and a layer with `"data": "{{name}}"`.
 
+In this example, `nyc311_query` fetches one day of NYC 311 calls in Lower Manhattan and lists them by complaint type in a table. `nyc311_query_map` draws the same rows. List `hex` in `columns` so the map has the cells. The layer's `sql` counts the calls in each cell, so each cell is drawn once.
 
-<div style={{ position: 'relative', display: 'flex', justifyContent: 'center', marginBottom: '1em' }}>
-  <div 
-    style={{ position: 'relative', maxWidth: '100%', cursor: 'pointer' }}
-    onMouseEnter={e => {
-      const link = e.currentTarget.querySelector('a');
-      if (link) {
-        link.style.background = 'rgba(0, 0, 0, 0.9)';
-        link.style.textDecoration = 'underline';
-        link.style.color = '#E8FF59';
-      }
-    }}
-    onMouseLeave={e => {
-      const link = e.currentTarget.querySelector('a');
-      if (link) {
-        link.style.background = 'rgba(0, 0, 0, 0.7)';
-        link.style.textDecoration = 'none';
-        link.style.color = 'white';
-      }
-    }}
-    onClick={e => {
-      if (e.target.tagName !== 'A' && e.target.tagName !== 'VIDEO') {
-        window.open('https://www.fused.io/canvas/fc_fused/CDL_Variables_Dashboard', '_blank');
-      }
-    }}
-  >
-    <video
-      src="https://fused-magic.s3.us-west-2.amazonaws.com/workbench-walkthrough-videos/docs_rewrite/tutorials/canvas_deep_dive/cdl_dynamic_map_canvas_compressed.mp4"
-      style={{ maxWidth: '100%', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'block' }}
-      title="Crop Exploration Dashboard Video Walkthrough"
-      muted
-      playsInline
-      loop
-      autoPlay
-      controls
-    />
-    <a
-      href="https://www.fused.io/canvas/fc_fused/CDL_Variables_Dashboard"
-      target="_blank"
-      style={{
-        position: 'absolute',
-        top: '10px',
-        left: '10px',
-        background: 'rgba(0, 0, 0, 0.7)',
-        color: 'white',
-        padding: '5px 10px',
-        borderRadius: '4px',
-        textDecoration: 'none',
-        fontSize: '11px',
-        fontWeight: '600',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-        transition: 'all 0.2s',
-        zIndex: 10,
-        whiteSpace: 'nowrap',
-        display: 'inline-block',
-        lineHeight: '1.4',
-        pointerEvents: 'auto'
-      }}
-    >Canvas →</a>
-  </div>
-</div>
-
-
-[**Launch the interactive Crop Exploration Dashboard →**](https://www.fused.io/canvas/fc_fused/CDL_Variables_Dashboard)
-
-We provide these UDFs for now as-is. You can duplicate them and modify them to work with your own data:
-
-:::note Why the data is embedded, not fetched
-Canvas node iframes run with an opaque origin, so a client-side `fetch()` from one node's HTML back to another node's URL is blocked by CORS. Each UDF below instead computes its data server-side with [`fused.load()`](/python-sdk/api-reference/udf#udf) and embeds the result directly in the page as JSON. Cross-component sync (the histogram brush filtering the map, the map's viewport filtering the histograms) still works over `postMessage`/`BroadcastChannel`, which isn't subject to CORS.
-:::
+<iframe
+  src="https://www.fused.io/share/fc_fused%2FH3_Data_Retrieval_Visualization/nyc311_query_map"
+  width="100%"
+  height="500px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
 
 <details>
-  <summary>Range Histogram UDF</summary>
-
-  The Range Histogram UDF allows you to visualize the distribution of a continuous variable (like elevation or temperature) as an interactive histogram. You can select a range to filter the data on the map.
-
-  ```python
-  # doctest: skip
-
-# Pairs with join_era5_cdl_elevation.py -- bump this note if that UDF's schema changes,
-# so this UDF's own cached result gets invalidated and re-executed too.
-@fused.udf
-def udf(
-    bounds: list = [-125.0, 32.0, -114.0, 42.0],
-    res: int = 5,
-    year: int = 2024,
-    month: str = "2024-05",
-
-    theme: str = "workbench",
-    dataset: str = "all",              # IMPORTANT: match the map’s DATASET or use "all"
-    num_bins: int = 50,
-    value_field: str = "elevation",
-    title: str = "Elevation",
-    channel: str = "fused-elevation-temp"         # IMPORTANT: match the map’s CHANNEL
-):
-    common = fused.load("https://github.com/fusedio/udfs/tree/b6786d6/public/common/")
-
-    # Compute the joined dataset server-side and embed it directly in the page as
-    # plain JSON -- canvas node iframes run with an opaque origin, so a client-side
-    # fetch() back to another node's URL is blocked by CORS with no way to allow it
-    # from here. The dataset is small (a few thousand rows), so there's no need for
-    # a client-side SQL engine either -- plain JS array filtering is enough and has
-    # far fewer moving parts (no WASM, no Worker, no CORS, no Parquet compatibility
-    # surface) to fail silently inside a sandboxed iframe.
-    join_era5_cdl_elevation = fused.load("join_era5_cdl_elevation")
-    df = join_era5_cdl_elevation(bounds=bounds, res=res, year=year, month=month)
-    df = df.copy()
-    df["hex"] = df["hex"].astype(str)  # preserve full 64-bit H3 id precision through JSON (JS numbers only hold 53 bits)
-    records_json = df.to_json(orient="records")
-
-    themes = {
-        'workbench': {
-            'background': '#1a1a1a',
-            'text': '#ffffff',
-            'accent': '#E8FF59',
-            'chart_bg': '#2a2a2a'
-        }
-    }
-    selected = themes.get(theme, themes['workbench'])
-
-    safe_title = (
-        title.replace("&", "&amp;")
-             .replace("<", "&lt;")
-             .replace(">", "&gt;")
-             .replace('"', "&quot;")
-             .replace("'", "&#39;")
-    )
-
-    html_content = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8" />
-        <title>""" + safe_title + """</title>
-        <script src="https://d3js.org/d3.v7.min.js"></script>
-        <style>
-            * { margin: 0; padding: 0; border: none; outline: none; box-sizing: border-box; }
-            body {
-                padding: 15px;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                background: """ + selected['background'] + """;
-                color: """ + selected['text'] + """;
-                height: 100vh; display: flex; flex-direction: column;
-            }
-            .header { text-align: center; margin-bottom: 10px; flex-shrink: 0; }
-            .title { font-size: 16px; color: """ + selected['accent'] + """; margin-bottom: 6px; font-weight: 600; }
-            .chart-container { flex: 1; position: relative; background: """ + selected['chart_bg'] + """; border-radius: 6px; padding: 10px; margin-bottom: 10px; min-height: 200px; }
-            .selection-info { text-align: center; font-size: 11px; color: """ + selected['accent'] + """; margin-bottom: 8px; min-height: 14px; flex-shrink: 0; }
-            .controls { text-align: center; flex-shrink: 0; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
-            .controls-row { display: flex; justify-content: center; align-items: center; gap: 10px; }
-            .btn { background: """ + selected['accent'] + """; color: """ + selected['background'] + """; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; margin: 0 4px; transition: opacity 0.2s; }
-            .btn:hover { opacity: 0.8; }
-            .status { text-align: center; font-size: 10px; opacity: 0.7; flex-shrink: 0; }
-            .loading-state { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; opacity: 0.6; }
-            .bar { fill: """ + selected['accent'] + """; transition: fill 0.2s, opacity 0.2s; cursor: pointer; }
-            .bar.selected { fill: """ + selected['accent'] + """; opacity: 1; }
-            .bar.unselected { fill: rgba(232, 255, 89, 0.2); stroke: none; opacity: 1; }
-            .bar:hover { opacity: 0.8; }
-            .tooltip { position: absolute; background: rgba(0, 0, 0, 0.9); color: white; padding: 8px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 1000; display: none; border: 1px solid #444; }
-        </style>
-    </head>
-    <body>
-        <div class="tooltip" id="tooltip"></div>
-        <div class="header">
-            <div class="title">""" + safe_title + """</div>
-        </div>
-        <div class="chart-container" id="chartContainer">
-            <div id="loadingState" class="loading-state">
-                <div style="font-size: 24px;">📊</div>
-                <div style="margin-top: 8px; font-weight: 500;">Loading dataset</div>
-            </div>
-            <svg id="histogram" style="display: none; width: 100%; height: 100%;"></svg>
-        </div>
-        <div class="histogram-minmax" id="histogramMinMax" style="display: flex; justify-content: space-between; font-size: 11px; color: """ + selected['accent'] + """; margin-bottom: 8px; min-height: 14px;">
-            <span id="histMin"></span><span id="histMax"></span>
-        </div>
-        <div class="selection-info" id="selectionInfo"></div>
-        <div class="controls">
-            <div class="controls-row">
-                <button class="btn" onclick="clearSelection()">Clear Selection</button>
-            </div>
-        </div>
-        <div class="status" id="status">Loading…</div>
-
-        <script>
-            // --- config ---
-            const componentId = 'histogram-v4-' + Math.random().toString(36).substr(2, 9);
-            const RECORDS = """ + records_json + """;
-            const DATASET   = """ + repr(dataset) + """;
-            const NUM_BINS  = """ + str(num_bins) + """;
-            const VALUE_FIELD = """ + repr(value_field) + """;
-            const CHANNEL   = """ + repr(channel) + """;   // must match map
-
-            // --- tiny bus: BroadcastChannel + postMessage fanout ---
-            let bc = null;
-            try { if ('BroadcastChannel' in window) bc = new BroadcastChannel(CHANNEL); } catch (e) {}
-            function busSend(obj) {
-                const s = JSON.stringify(obj);
-                try { if (bc) bc.postMessage(obj); } catch(e) {}
-                try { window.parent.postMessage(s, '*'); } catch(e) {}
-                try { if (window.top && window.top !== window.parent) window.top.postMessage(s, '*'); } catch(e) {}
-                try {
-                    if (window.top && window.top.frames) {
-                        for (let i=0; i<window.top.frames.length; i++) {
-                            const f = window.top.frames[i];
-                            if (f !== window) try { f.postMessage(s, '*'); } catch(e) {}
-                        }
-                    }
-                } catch(e) {}
-            }
-
-            function getFeatureValue(feature, fieldName = VALUE_FIELD) {
-                if (!feature) return 0;
-                if (feature[fieldName] !== undefined) {
-                    const direct = Number(feature[fieldName]);
-                    if (Number.isFinite(direct)) return direct;
-                }
-                if (feature.properties && feature.properties[fieldName] !== undefined) {
-                    const propVal = Number(feature.properties[fieldName]);
-                    if (Number.isFinite(propVal)) return propVal;
-                }
-                return 0;
-            }
-
-            // --- state ---
-            let fullDataset = [];
-            let filteredDataset = [];
-            let activeFilters = new Map();
-            let dynamicBins = [];
-            let svg = null, chartGroup = null, barsGroup = null, xScale = null, yScale = null, brush = null;
-            let selectedBins = [];
-            let chartWidth = 0, chartHeight = 0;
-            const RANGE_DEBOUNCE_MS = 50;
-            let rangeDebounceTimer = null;
-            let pendingRangeSelection = null;
-            let currentMinValue = null;
-            let currentMaxValue = null;
-
-            // UI handles
-            const loadingState = document.getElementById('loadingState');
-            const histogramSvg = document.getElementById('histogram');
-            const statusElement = document.getElementById('status');
-
-            // --- utils ---
-            function formatValue(val) { return (val >= 1000) ? `${(val/1000).toFixed(1)}k  ` : `${val.toFixed(1)}  `; }
-
-            // --- bins ---
-            function calculateDynamicBins(data) {
-                if (!data || data.length === 0) return [];
-                const areas = data.map(f => getFeatureValue(f)).filter(a => a > 0).sort((a,b)=>a-b);
-                if (!areas.length) return [];
-                const min = areas[0], max = areas[areas.length - 1];
-                const logMin = Math.log10(min), logMax = Math.log10(max), logStep = (logMax - logMin) / NUM_BINS;
-                const bins = [];
-                for (let i=0;i<NUM_BINS;i++){
-                    const binMin = Math.pow(10, logMin + i*logStep);
-                    const binMax = Math.pow(10, logMin + (i+1)*logStep);
-                    const label = binMax >= 1000 ? `${(binMin/1000).toFixed(1)}-${(binMax/1000).toFixed(1)}  `
-                                                 : `${binMin.toFixed(1)}-${binMax.toFixed(1)}  `;
-                    bins.push({ label, min:binMin, max:binMax, count:0 });
-                }
-                return bins;
-            }
-
-            function processRawData(raw) {
-                if (raw?.features && Array.isArray(raw.features)) {
-                    return raw.features.map(f => {
-                        const areaMeters = f.properties?.area_meters || 0;
-                        const areaKm = areaMeters / 1_000_000;
-                        let valueCandidate;
-                        if (f.properties && Object.prototype.hasOwnProperty.call(f.properties, VALUE_FIELD)) {
-                            valueCandidate = f.properties[VALUE_FIELD];
-                        } else if (VALUE_FIELD === 'count_mmsi') {
-                            valueCandidate = areaKm;
-                        } else {
-                            valueCandidate = f.properties?.value ?? f.properties?.cnt ?? areaKm;
-                        }
-                        const numericValue = Number(valueCandidate);
-                        const resolvedValue = Number.isFinite(numericValue) ? numericValue : 0;
-                        const props = Object.assign({}, f.properties, { count_mmsi: areaKm, [VALUE_FIELD]: resolvedValue });
-                        return {
-                            id: f.properties?.id || Math.random().toString(36),
-                            geometry: f.geometry,
-                            lng: f.geometry?.coordinates?.[0],
-                            lat: f.geometry?.coordinates?.[1],
-                            properties: props,
-                            count_mmsi: areaKm,
-                            area_meters: areaMeters,
-                            cnt: f.properties?.cnt || 0,
-                            [VALUE_FIELD]: resolvedValue
-                        };
-                    });
-                } else if (Array.isArray(raw)) {
-                    return raw.map(item => {
-                        const valueCandidate = item[VALUE_FIELD] ?? item.value ?? item.count ?? item.count_mmsi ?? 0;
-                        const numericValue = Number(valueCandidate);
-                        const resolvedValue = Number.isFinite(numericValue) ? numericValue : 0;
-                        const copy = Object.assign({}, item);
-                        copy[VALUE_FIELD] = resolvedValue;
-                        return copy;
-                    });
-                }
-                return [];
-            }
-
-            // --- external filters application (so histogram reflects spatial from map) ---
-            function applyAllFilters() {
-                let filtered = [...fullDataset];
-                for (let [,f] of activeFilters.entries()) {
-                    const next = applyFilter(filtered, f);
-                    // The map's viewport is broadcast as a spatial filter on every pan/zoom,
-                    // but this dataset is a fixed snapshot, not a live re-fetch -- zooming
-                    // into any sub-area with no matching points would otherwise blank the
-                    // chart with no way back except re-running the UDF. Ignore a spatial
-                    // filter specifically when it would wipe out everything.
-                    if (f.type === 'spatial' && next.length === 0 && filtered.length > 0) continue;
-                    filtered = next;
-                }
-                filteredDataset = filtered;
-                updateHistogram(false);
-                const summary = `${filtered.length}/${fullDataset.length} features (${activeFilters.size} filters)`;
-                statusElement.textContent = summary;
-            }
-
-            function applyFilter(data, filter) {
-                switch (filter.type) {
-                    case 'spatial': return applySpatialFilter(data, filter);
-                    case 'range':
-                    case 'multi-range': return applyRangeFilter(data, filter);
-                    case 'categorical': return applyCategoricalFilter(data, filter);
-                    default: return data;
-                }
-            }
-
-            function applySpatialFilter(data, filter) {
-                const b = filter.bounds; if (!b) return data;
-                return data.filter(f => f.lng>=b.sw.lng && f.lng<=b.ne.lng && f.lat>=b.sw.lat && f.lat<=b.ne.lat);
-            }
-
-            function applyRangeFilter(data, filter) {
-                const field = filter.field || VALUE_FIELD;
-                const [min,max] = filter.values || [0, Number.POSITIVE_INFINITY];
-                return data.filter(f => {
-                    const val = getFeatureValue(f, field);
-                    return val >= min && val <= max;
-                });
-            }
-
-            function applyCategoricalFilter(data, filter) {
-                const field = filter.field || 'category';
-                const values = filter.values || [];
-                return data.filter(f => values.includes(f[field]));
-            }
-
-            function clearAllFilters() {
-                activeFilters.clear();
-                filteredDataset = [...fullDataset];
-                updateHistogram();
-                statusElement.textContent = `${fullDataset.length} features (no filters)`;
-                // unified clear + legacy clear
-                busSend({ type:'filter', fromComponent:componentId, timestamp:Date.now(), dataset:DATASET, filter:{ type:'clear', clearAll:true } });
-                busSend({ type:'filter_cleared', source:componentId, timestamp:Date.now() });
-            }
-
-            // --- UI state ---
-            function setUIState(state) {
-                loadingState.style.display = state === 'loading' ? 'flex' : 'none';
-                histogramSvg.style.display = state === 'chart' ? 'block' : 'none';
-            }
-
-            // --- chart ---
-            function initializeChart() {
-                d3.select('#histogram').selectAll('*').remove();
-                const container = document.getElementById('chartContainer');
-                chartWidth = container.clientWidth - 20;
-                chartHeight = container.clientHeight - 20;
-
-                svg = d3.select('#histogram').attr('width', chartWidth).attr('height', chartHeight);
-                chartGroup = svg.append('g').attr('class', 'chart-group');
-                barsGroup = svg.append('g').attr('class', 'bars-group');
-
-                xScale = d3.scaleBand().domain(dynamicBins.map((_,i)=>i)).range([0, chartWidth]).padding(0.1);
-                yScale = d3.scaleLinear().domain([0, d3.max(dynamicBins, d => d.count)]).range([chartHeight, 0]).nice();
-
-                setupBrush();
-                createBars();
-            }
-
-            function createBars() {
-                barsGroup.selectAll('.bar')
-                    .data(dynamicBins).enter().append('rect').attr('class','bar')
-                    .attr('x', (d,i)=>xScale(i))
-                    .attr('y', d=>yScale(d.count))
-                    .attr('width', xScale.bandwidth())
-                    .attr('height', d=>chartHeight - yScale(d.count))
-                    .on('mouseover', function(evt,d){
-                        d3.select(this).style('opacity',0.8);
-                        const t = document.getElementById('tooltip');
-                        t.innerHTML = `<div><strong>Range:</strong> ${formatValue(d.min)} - ${formatValue(d.max)}</div><div><strong>Count:</strong> ${d.count} areas</div>`;
-                        t.style.display = 'block'; t.style.left = (evt.pageX+15)+'px'; t.style.top = (evt.pageY-10)+'px';
-                    })
-                    .on('mousemove', function(evt){ const t=document.getElementById('tooltip'); t.style.left=(evt.pageX+15)+'px'; t.style.top=(evt.pageY-10)+'px'; })
-                    .on('mouseout', function(){ d3.select(this).style('opacity',1); document.getElementById('tooltip').style.display='none'; });
-            }
-
-            function setupBrush() {
-                brush = d3.brushX().extent([[0,0],[chartWidth,chartHeight]]).on('start brush end', brushed);
-                const brushGroup = chartGroup.append('g').attr('class','brush').call(brush);
-                brushGroup.select('.selection').style('fill','rgba(128,128,128,0.25)').style('stroke','#999').style('stroke-width','0.5px').style('rx','3px');
-                brushGroup.select('.overlay').style('cursor','crosshair').style('fill','none');
-            }
-
-            function brushed(event) {
-                const sel = event.selection;
-                if (!sel) {
-                    selectedBins = [];
-                    updateBarSelection(); updateSelectionInfo();
-                    pendingRangeSelection = null;
-                    if (rangeDebounceTimer) {
-                        clearTimeout(rangeDebounceTimer);
-                        rangeDebounceTimer = null;
-                    }
-                    if (event.type === 'end') clearRangeFilter();
-                    return;
-                }
-                const [x0,x1] = sel;
-                selectedBins = [];
-                dynamicBins.forEach((bin, idx) => {
-                    const left = xScale(idx), right = left + xScale.bandwidth();
-                    if (right > x0 && left < x1) selectedBins.push(idx);
-                });
-                updateBarSelection();
-                updateSelectionInfo();
-                if ((event.type === 'brush' || event.type === 'end') && selectedBins.length > 0) {
-                    const minArea = Math.min(...selectedBins.map(i => dynamicBins[i]?.min ?? Infinity));
-                    const maxArea = Math.max(...selectedBins.map(i => dynamicBins[i]?.max ?? -Infinity));
-                    if (Number.isFinite(minArea) && Number.isFinite(maxArea)) {
-                        scheduleRangeFilter(minArea, maxArea);
-                    }
-                }
-            }
-
-            function updateBarSelection() {
-                if (!barsGroup) return;
-                barsGroup.selectAll('.bar')
-                    .attr('class', (d,i) => selectedBins.length===0 ? 'bar' : (selectedBins.includes(i) ? 'bar selected' : 'bar unselected'));
-            }
-
-            function updateHistogram(animate=false) {
-                const data = filteredDataset;
-                if (!data.length) {
-                    currentMinValue = null;
-                    currentMaxValue = null;
-                    updateMinMaxLabels();
-                    setUIState('loading');
-                    statusElement.textContent = 'No data matches current filters';
-                    return;
-                }
-
-                let minVal = Infinity;
-                let maxVal = -Infinity;
-                dynamicBins.forEach(b => b.count = 0);
-                data.forEach(f => {
-                    const value = getFeatureValue(f);
-                    if (Number.isFinite(value)) {
-                        if (value < minVal) minVal = value;
-                        if (value > maxVal) maxVal = value;
-                    }
-                    for (let b of dynamicBins) {
-                        if (value >= b.min && (value < b.max || b === dynamicBins[dynamicBins.length - 1])) { b.count++; break; }
-                    }
-                });
-
-                currentMinValue = Number.isFinite(minVal) ? minVal : null;
-                currentMaxValue = Number.isFinite(maxVal) ? maxVal : null;
-                updateMinMaxLabels();
-
-                if (!svg) {
-                    initializeChart();
-                    setUIState('chart');
-                    return;
-                }
-
-                yScale.domain([0, d3.max(dynamicBins, d => d.count)]).nice();
-                const bars = barsGroup.selectAll('.bar').data(dynamicBins);
-                if (animate) {
-                    bars.transition().duration(200).attr('y', d=>yScale(d.count)).attr('height', d=>chartHeight - yScale(d.count));
-                } else {
-                    bars.attr('y', d=>yScale(d.count)).attr('height', d=>chartHeight - yScale(d.count));
-                }
-                updateBarSelection();
-                setUIState('chart');
-            }
-
-            function updateSelectionInfo() {
-                const el = document.getElementById('selectionInfo');
-                if (!selectedBins.length) { el.textContent=''; return; }
-                const total = selectedBins.reduce((s,i)=>s+dynamicBins[i].count,0);
-                const minArea = Math.min(...selectedBins.map(i=>dynamicBins[i].min));
-                const maxArea = Math.max(...selectedBins.map(i=>dynamicBins[i].max));
-                const rangeLabel = maxArea >= 1000 ? `${(minArea/1000).toFixed(1)}-${(maxArea/1000).toFixed(1)}  ` : `${minArea.toFixed(1)}-${maxArea.toFixed(1)}  `;
-                el.textContent = selectedBins.length===1
-                  ? `Selected: ${dynamicBins[selectedBins[0]].label} (${total} areas)`
-                  : `Selected: ${selectedBins.length} ranges (${rangeLabel}, ${total} areas)`;
-            }
-
-            // --- selection actions -> send filters to others ---
-            function scheduleRangeFilter(minArea, maxArea) {
-                pendingRangeSelection = { min: minArea, max: maxArea };
-                if (rangeDebounceTimer) clearTimeout(rangeDebounceTimer);
-                rangeDebounceTimer = setTimeout(() => {
-                    rangeDebounceTimer = null;
-                    const payload = pendingRangeSelection;
-                    pendingRangeSelection = null;
-                    if (!payload) return;
-                    sendRangeFilter(payload.min, payload.max);
-                }, RANGE_DEBOUNCE_MS);
-            }
-
-            function sendRangeFilter(minArea, maxArea) {
-                if (!Number.isFinite(minArea) || !Number.isFinite(maxArea)) return;
-                const lower = Math.min(minArea, maxArea);
-                const upper = Math.max(minArea, maxArea);
-
-                statusElement.textContent = `Selected ${formatValue(lower)} – ${formatValue(upper)}`;
-
-                // unified
-                busSend({
-                    type:'filter',
-                    fromComponent:componentId,
-                    timestamp:Date.now(),
-                    dataset:DATASET,
-                    filter:{ type:'range', field:VALUE_FIELD, values:[lower, upper] }
-                });
-
-                // legacy
-                busSend({
-                    type:'range_filter',
-                    field:VALUE_FIELD,
-                    min:lower,
-                    max:upper,
-                    source:componentId,
-                    timestamp:Date.now()
-                });
-            }
-
-            function clearSelection() {
-                selectedBins = [];
-                if (chartGroup && brush) chartGroup.select('.brush').call(brush.clear);
-                updateBarSelection(); updateSelectionInfo(); clearRangeFilter();
-            }
-
-            function clearRangeFilter() {
-                if (rangeDebounceTimer) {
-                    clearTimeout(rangeDebounceTimer);
-                    rangeDebounceTimer = null;
-                }
-                pendingRangeSelection = null;
-                statusElement.textContent = 'Range cleared';
-
-                // unified
-                busSend({
-                    type:'filter',
-                    fromComponent:componentId,
-                    timestamp:Date.now(),
-                    dataset:DATASET,
-                    filter:{ type:'clear', field:VALUE_FIELD }
-                });
-
-                // legacy
-                busSend({ type:'filter_cleared', source:componentId, field:VALUE_FIELD, timestamp:Date.now() });
-            }
-
-            // --- incoming messages (so histogram reacts to map spatial) ---
-            function onMessage(message) {
-                try {
-                    if (typeof message === 'string') { try { message = JSON.parse(message); } catch (_) {} }
-                    if (!message) return;
-
-                    // ignore our own
-                    if (message.fromComponent && message.fromComponent === componentId) return;
-                    if (message.source && message.source === componentId) return;
-
-                    // unified
-                    if (message.type === 'filter' && message.filter) {
-                        // dataset scoping
-                        if (message.dataset && DATASET !== 'all' && message.dataset !== DATASET) return;
-                        const f = message.filter;
-
-                        if (f.type === 'clear') {
-                            if (f.clearAll) activeFilters.clear();
-                            else if (f.field) {
-                                for (const k of Array.from(activeFilters.keys())) if (k.includes(`_${f.field}`)) activeFilters.delete(k);
-                            } else if (f.filterId) activeFilters.delete(f.filterId);
-                            applyAllFilters(); return;
-                        }
-
-                        if (f.type === 'spatial' && Array.isArray(f.values)) {
-                            const [w,s,e,n] = f.values;
-                            activeFilters.set(`spatial_${message.fromComponent||'unknown'}`, { type:'spatial', bounds:{ sw:{lng:w,lat:s}, ne:{lng:e,lat:n} } });
-                            applyAllFilters(); return;
-                        }
-
-                        if (f.type === 'range' && Array.isArray(f.values)) {
-                            const field = f.field || VALUE_FIELD;
-                            activeFilters.set(`range_${message.fromComponent||'unknown'}_${field}`, { type:'range', field, values:f.values });
-                            applyAllFilters(); return;
-                        }
-                    }
-
-                    // legacy
-                    if (message.type === 'spatial_filter' && message.bounds) {
-                        activeFilters.set(`spatial_legacy_${message.source||'unknown'}`, { type:'spatial', bounds: message.bounds });
-                        applyAllFilters(); return;
-                    }
-                    if (message.type === 'range_filter' && typeof message.min !== 'undefined' && typeof message.max !== 'undefined') {
-                        const field = message.field || VALUE_FIELD;
-                        activeFilters.set(`range_legacy_${message.source||'unknown'}_${field}`, { type:'range', field, values:[+message.min, +message.max] });
-                        applyAllFilters(); return;
-                    }
-                    if (message.type === 'filter_cleared') {
-                        if (message.field) {
-                            for (const k of Array.from(activeFilters.keys())) if (k.includes(`_${message.field}`)) activeFilters.delete(k);
-                        } else if (message.source) {
-                            for (const k of Array.from(activeFilters.keys())) if (k.includes(`_${message.source}`)) activeFilters.delete(k);
-                        } else activeFilters.clear();
-                        applyAllFilters(); return;
-                    }
-                } catch (e) { /* swallow */ }
-            }
-
-            if (bc) bc.onmessage = (ev) => onMessage(ev.data);
-            window.addEventListener('message', (ev) => onMessage(ev.data));
-
-            // --- init: data is embedded, so this is synchronous, no network/WASM involved ---
-            try {
-                fullDataset = processRawData(RECORDS);
-                dynamicBins = calculateDynamicBins(fullDataset);
-                applyAllFilters();
-            } catch (e) {
-                console.error(e);
-                statusElement.textContent = `Init failed: ${e && e.message ? e.message : e}`;
-            }
-
-            setTimeout(() => {
-                busSend({
-                    type: 'component_ready',
-                    componentType: 'histogram',
-                    componentId: componentId,
-                    capabilities: ['filter'],
-                    dataSource: 'independent',
-                    protocol: 'unified'
-                });
-            }, 300);
-
-            function updateMinMaxLabels() {
-                const minEl = document.getElementById('histMin');
-                const maxEl = document.getElementById('histMax');
-                if (!minEl || !maxEl) return;
-                if (!Number.isFinite(currentMinValue) || !Number.isFinite(currentMaxValue)) {
-                    minEl.textContent = '';
-                    maxEl.textContent = '';
-                    return;
-                }
-                minEl.textContent = formatValue(currentMinValue);
-                maxEl.textContent = formatValue(currentMaxValue);
-            }
-        </script>
-    </body>
-    </html>
-    """
-
-    return common.html_to_obj(html_content)
-  ```
-
-</details>
-
-<details>
-  <summary>Categorical Bar Chart UDF</summary>
-
-  The Categorical Bar Chart UDF is used to visualize counts of each category (such as crop types). Clicking a bar will filter the map to display only the selected category.
-
-  ```python
-  # doctest: skip
-# Pairs with join_era5_cdl_elevation.py -- bump this note if that UDF's schema changes,
-# so this UDF's own cached result gets invalidated and re-executed too.
-@fused.udf
-def udf(
-    bounds: list = [-125.0, 32.0, -114.0, 42.0],
-    res: int = 5,
-    year: int = 2024,
-    month: str = "2024-05",
-
-    theme: str = "workbench",
-    dataset: str = "all",
-    value_field: str = "crop_rank_1",
-    title: str = "Top 10 Crop Types",
-    channel: str = "fused-elevation-temp"
-):
-    common = fused.load("https://github.com/fusedio/udfs/tree/b6786d6/public/common/")
-
-    # Compute the joined dataset server-side and embed it directly in the page as
-    # plain JSON -- canvas node iframes run with an opaque origin, so a client-side
-    # fetch() back to another node's URL is blocked by CORS with no way to allow it
-    # from here. The dataset is small (a few thousand rows), so there's no need for
-    # a client-side SQL engine either -- plain JS array filtering is enough and has
-    # far fewer moving parts (no WASM, no Worker, no CORS, no Parquet compatibility
-    # surface) to fail silently inside a sandboxed iframe.
-    join_era5_cdl_elevation = fused.load("join_era5_cdl_elevation")
-    df = join_era5_cdl_elevation(bounds=bounds, res=res, year=year, month=month)
-    df = df.copy()
-    df["hex"] = df["hex"].astype(str)  # preserve full 64-bit H3 id precision through JSON (JS numbers only hold 53 bits)
-    records_json = df.to_json(orient="records")
-
-    # USDA CDL classification codes -> crop name.
-    crop_mapping = {
-        1: "Corn", 2: "Cotton", 3: "Rice", 4: "Sorghum", 5: "Soybeans", 6: "Sunflower",
-        10: "Peanuts", 11: "Tobacco", 12: "Sweet Corn", 13: "Pop or Orn Corn", 14: "Mint",
-        21: "Barley", 22: "Durum Wheat", 23: "Spring Wheat", 24: "Winter Wheat",
-        25: "Other Small Grains", 26: "Dbl Crop WinWht/Soybeans", 27: "Rye", 28: "Oats",
-        29: "Millet", 30: "Speltz", 31: "Canola", 32: "Flaxseed", 33: "Safflower",
-        34: "Rape Seed", 35: "Mustard", 36: "Alfalfa", 37: "Other Hay/Non Alfalfa",
-        38: "Camelina", 39: "Buckwheat", 41: "Sugarbeets", 42: "Dry Beans", 43: "Potatoes",
-        44: "Other Crops", 45: "Sugarcane", 46: "Sweet Potatoes", 47: "Misc Vegs & Fruits",
-        48: "Watermelons", 49: "Onions", 50: "Cucumbers", 51: "Chick Peas", 52: "Lentils",
-        53: "Peas", 54: "Tomatoes", 55: "Caneberries", 56: "Hops", 57: "Herbs",
-        58: "Clover/Wildflowers", 59: "Sod/Grass Seed", 60: "Switchgrass",
-        61: "Fallow/Idle Cropland", 63: "Forest", 64: "Shrubland", 65: "Barren",
-        66: "Cherries", 67: "Peaches", 68: "Apples", 69: "Grapes", 70: "Christmas Trees",
-        71: "Other Tree Crops", 72: "Citrus", 74: "Pecans", 75: "Almonds", 76: "Walnuts",
-        77: "Pears", 81: "Clouds/No Data", 82: "Developed", 83: "Water", 87: "Wetlands",
-        88: "Nonag/Undefined", 92: "Aquaculture", 111: "Open Water",
-        112: "Perennial Ice/Snow", 121: "Developed/Open Space",
-        122: "Developed/Low Intensity", 123: "Developed/Med Intensity",
-        124: "Developed/High Intensity", 131: "Barren", 141: "Deciduous Forest",
-        142: "Evergreen Forest", 143: "Mixed Forest", 152: "Shrubland",
-        176: "Grass/Pasture", 190: "Woody Wetlands", 195: "Herbaceous Wetlands",
-        204: "Pistachios", 205: "Triticale", 206: "Carrots", 207: "Asparagus",
-        208: "Garlic", 209: "Cantaloupes", 210: "Prunes", 211: "Olives", 212: "Oranges",
-        213: "Honeydew Melons", 214: "Broccoli", 216: "Peppers", 217: "Pomegranates",
-        218: "Nectarines", 219: "Greens", 220: "Plums", 221: "Strawberries",
-        222: "Squash", 223: "Apricots", 224: "Vetch", 225: "Dbl Crop WinWht/Corn",
-        226: "Dbl Crop Oats/Corn", 227: "Lettuce", 229: "Pumpkins",
-        230: "Dbl Crop Lettuce/Durum Wht", 231: "Dbl Crop Lettuce/Cantaloupe",
-        232: "Dbl Crop Lettuce/Cotton", 233: "Dbl Crop Lettuce/Barley",
-        234: "Dbl Crop Durum Wht/Sorghum", 235: "Dbl Crop Barley/Sorghum",
-        236: "Dbl Crop WinWht/Sorghum", 237: "Dbl Crop Barley/Corn",
-        238: "Dbl Crop WinWht/Cotton", 239: "Dbl Crop Soybeans/Cotton",
-        240: "Dbl Crop Soybeans/Oats", 241: "Dbl Crop Corn/Soybeans",
-        242: "Blueberries", 243: "Cabbage", 244: "Cauliflower", 245: "Celery",
-        246: "Radishes", 247: "Turnips", 248: "Eggplants", 249: "Gourds",
-        250: "Cranberries", 254: "Dbl Crop Barley/Soybeans",
-    }
-
-    # Convert to JavaScript object string
-    crop_mapping_js = "{\n"
-    for crop_id, crop_name in crop_mapping.items():
-        # Escape single quotes in crop names
-        safe_name = str(crop_name).replace("'", "\\'")
-        crop_mapping_js += f"                {crop_id}: '{safe_name}',\n"
-    crop_mapping_js += "            }"
-
-    themes = {
-        'workbench': {
-            'background': '#1a1a1a',
-            'text': '#ffffff',
-            'accent': '#E8FF59',
-            'chart_bg': '#2a2a2a'
-        }
-    }
-    selected = themes.get(theme, themes['workbench'])
-
-    safe_title = (
-        title.replace("&", "&amp;")
-             .replace("<", "&lt;")
-             .replace(">", "&gt;")
-             .replace('"', "&quot;")
-             .replace("'", "&#39;")
-    )
-
-    html_content = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8" />
-        <title>""" + safe_title + """</title>
-        <script src="https://d3js.org/d3.v7.min.js"></script>
-        <style>
-            * { margin: 0; padding: 0; border: none; outline: none; box-sizing: border-box; }
-            body {
-                padding: 15px;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                background: """ + selected['background'] + """;
-                color: """ + selected['text'] + """;
-                height: 100vh; display: flex; flex-direction: column;
-            }
-            .header { text-align: center; margin-bottom: 10px; flex-shrink: 0; }
-            .title { font-size: 16px; color: """ + selected['accent'] + """; margin-bottom: 6px; font-weight: 600; }
-            .most-common-crop {
-                text-align: center;
-                font-size: 18px;
-                color: """ + selected['accent'] + """;
-                margin-bottom: 10px;
-                padding: 10px;
-                background: """ + selected['chart_bg'] + """;
-                border-radius: 6px;
-                font-weight: 700;
-                min-height: 45px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            .chart-container { flex: 1; position: relative; background: """ + selected['chart_bg'] + """; border-radius: 6px; padding: 20px 10px 40px 10px; margin-bottom: 10px; min-height: 200px; overflow: hidden; }
-            .selection-info { text-align: center; font-size: 11px; color: """ + selected['accent'] + """; margin-bottom: 8px; min-height: 14px; flex-shrink: 0; }
-            .controls { text-align: center; flex-shrink: 0; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
-            .controls-row { display: flex; justify-content: center; align-items: center; gap: 10px; }
-            .btn { background: """ + selected['accent'] + """; color: """ + selected['background'] + """; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; margin: 0 4px; transition: opacity 0.2s; }
-            .btn:hover { opacity: 0.8; }
-            .status { text-align: center; font-size: 10px; opacity: 0.7; flex-shrink: 0; }
-            .loading-state { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; opacity: 0.6; }
-            .bar { fill: """ + selected['accent'] + """; transition: fill 0.2s, opacity 0.2s; cursor: pointer; }
-            .bar.selected { fill: """ + selected['accent'] + """; opacity: 1; stroke: #fff; stroke-width: 2px; }
-            .bar.unselected { fill: rgba(232, 255, 89, 0.3); stroke: none; opacity: 1; }
-            .bar:hover { opacity: 0.8; }
-            .axis text { fill: """ + selected['text'] + """; font-size: 12px; font-weight: 500; }
-            .axis line, .axis path { stroke: """ + selected['text'] + """; opacity: 0.3; }
-            .tooltip { position: absolute; background: rgba(0, 0, 0, 0.9); color: white; padding: 8px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 1000; display: none; border: 1px solid #444; }
-        </style>
-    </head>
-    <body>
-        <div class="tooltip" id="tooltip"></div>
-        <div class="header">
-            <div class="title">""" + safe_title + """</div>
-        </div>
-        <div class="most-common-crop" id="mostCommonCrop">Loading...</div>
-        <div class="chart-container" id="chartContainer">
-            <div id="loadingState" class="loading-state">
-                <div style="font-size: 24px;">📊</div>
-                <div style="margin-top: 8px; font-weight: 500;">Loading dataset</div>
-            </div>
-            <svg id="histogram" style="display: none; width: 100%; height: 100%;"></svg>
-        </div>
-        <div class="selection-info" id="selectionInfo"></div>
-        <div class="controls">
-            <div class="controls-row">
-                <button class="btn" onclick="clearSelection()">Clear Selection</button>
-            </div>
-        </div>
-        <div class="status" id="status">Loading…</div>
-
-        <script>
-            // --- config ---
-            const componentId = 'histogram-v4-' + Math.random().toString(36).substr(2, 9);
-            const RECORDS = """ + records_json + """;
-            const DATASET   = """ + repr(dataset) + """;
-            const VALUE_FIELD = """ + repr(value_field) + """;
-            const CHANNEL   = """ + repr(channel) + """;
-
-            // Crop ID to Name mapping
-            const CROP_NAMES = """ + crop_mapping_js + """;
-
-            // --- tiny bus: BroadcastChannel + postMessage fanout ---
-            let bc = null;
-            try { if ('BroadcastChannel' in window) bc = new BroadcastChannel(CHANNEL); } catch (e) {}
-            function busSend(obj) {
-                const s = JSON.stringify(obj);
-                try { if (bc) bc.postMessage(obj); } catch(e) {}
-                try { window.parent.postMessage(s, '*'); } catch(e) {}
-                try { if (window.top && window.top !== window.parent) window.top.postMessage(s, '*'); } catch(e) {}
-                try {
-                    if (window.top && window.top.frames) {
-                        for (let i=0; i<window.top.frames.length; i++) {
-                            const f = window.top.frames[i];
-                            if (f !== window) try { f.postMessage(s, '*'); } catch(e) {}
-                        }
-                    }
-                } catch(e) {}
-            }
-
-            function getFeatureValue(feature, fieldName = VALUE_FIELD) {
-                if (!feature) return 0;
-                if (feature[fieldName] !== undefined) {
-                    const direct = Number(feature[fieldName]);
-                    if (Number.isFinite(direct)) return direct;
-                }
-                if (feature.properties && feature.properties[fieldName] !== undefined) {
-                    const propVal = Number(feature.properties[fieldName]);
-                    if (Number.isFinite(propVal)) return propVal;
-                }
-                return 0;
-            }
-
-            // --- state ---
-            let fullDataset = [];
-            let filteredDataset = [];
-            let activeFilters = new Map();
-            let topCategories = [];
-            let svg = null, chartGroup = null, barsGroup = null, xScale = null, yScale = null;
-            let selectedCategories = new Set();
-            let chartWidth = 0, chartHeight = 0;
-            const margin = { top: 10, right: 10, bottom: 120, left: 50 };
-
-            // UI handles
-            const loadingState = document.getElementById('loadingState');
-            const histogramSvg = document.getElementById('histogram');
-            const statusElement = document.getElementById('status');
-
-            // --- utils ---
-            function formatValue(val) { return (val >= 1000) ? `${(val/1000).toFixed(1)}k` : `${val.toFixed(0)}`; }
-
-            // --- Calculate top 10 categories ---
-            function getTop10Categories(data) {
-                if (!data || data.length === 0) return [];
-
-                const counts = {};
-                data.forEach(f => {
-                    const value = getFeatureValue(f);
-                    if (Number.isFinite(value) && value > 0) {
-                        counts[value] = (counts[value] || 0) + 1;
-                    }
-                });
-
-                const entries = Object.entries(counts).map(([id, count]) => ({
-                    id: parseInt(id),
-                    name: CROP_NAMES[parseInt(id)] || `Crop ${id}`,
-                    count: count
-                }));
-
-                entries.sort((a, b) => b.count - a.count);
-                return entries.slice(0, 10);
-            }
-
-            // --- Calculate most common crop value and map to name ---
-            function updateMostCommonCrop() {
-                const el = document.getElementById('mostCommonCrop');
-                if (!filteredDataset || filteredDataset.length === 0) {
-                    el.textContent = 'No data available';
-                    return;
-                }
-
-                const valueCounts = {};
-                filteredDataset.forEach(f => {
-                    const value = getFeatureValue(f);
-                    if (Number.isFinite(value) && value > 0) {
-                        valueCounts[value] = (valueCounts[value] || 0) + 1;
-                    }
-                });
-
-                const entries = Object.entries(valueCounts);
-                if (entries.length === 0) {
-                    el.textContent = 'No valid crop values';
-                    return;
-                }
-
-                entries.sort((a, b) => b[1] - a[1]);
-                const [mostCommonValue, count] = entries[0];
-
-                const cropId = parseInt(mostCommonValue);
-                const cropName = CROP_NAMES[cropId] || `Unknown Crop (ID: ${cropId})`;
-
-                el.textContent = `Most Common: ${cropName} (${formatValue(count)})`;
-            }
-
-            function processRawData(raw) {
-                if (Array.isArray(raw)) {
-                    return raw.map(item => {
-                        const valueCandidate = item[VALUE_FIELD] ?? item.value ?? item.count ?? item.count_mmsi ?? 0;
-                        const numericValue = Number(valueCandidate);
-                        const resolvedValue = Number.isFinite(numericValue) ? numericValue : 0;
-                        const copy = Object.assign({}, item);
-                        copy[VALUE_FIELD] = resolvedValue;
-                        return copy;
-                    });
-                }
-                return [];
-            }
-
-            // --- external filters application ---
-            function applyAllFilters() {
-                let filtered = [...fullDataset];
-                for (let [,f] of activeFilters.entries()) {
-                    const next = applyFilter(filtered, f);
-                    // The map's viewport is broadcast as a spatial filter on every pan/zoom,
-                    // but this dataset is a fixed snapshot, not a live re-fetch -- zooming
-                    // into any sub-area with no matching points would otherwise blank the
-                    // chart with no way back except re-running the UDF. Ignore a spatial
-                    // filter specifically when it would wipe out everything.
-                    if (f.type === 'spatial' && next.length === 0 && filtered.length > 0) continue;
-                    filtered = next;
-                }
-                filteredDataset = filtered;
-                topCategories = getTop10Categories(filteredDataset);
-                updateHistogram(false);
-                updateMostCommonCrop();
-                const summary = `${filtered.length}/${fullDataset.length} features (${activeFilters.size} filters)`;
-                statusElement.textContent = summary;
-            }
-
-            function applyFilter(data, filter) {
-                switch (filter.type) {
-                    case 'spatial': return applySpatialFilter(data, filter);
-                    case 'range':
-                    case 'multi-range': return applyRangeFilter(data, filter);
-                    case 'categorical': return applyCategoricalFilter(data, filter);
-                    default: return data;
-                }
-            }
-
-            function applySpatialFilter(data, filter) {
-                const b = filter.bounds; if (!b) return data;
-                return data.filter(f => f.lng>=b.sw.lng && f.lng<=b.ne.lng && f.lat>=b.sw.lat && f.lat<=b.ne.lat);
-            }
-
-            function applyRangeFilter(data, filter) {
-                const field = filter.field || VALUE_FIELD;
-                const [min,max] = filter.values || [0, Number.POSITIVE_INFINITY];
-                return data.filter(f => {
-                    const val = getFeatureValue(f, field);
-                    return val >= min && val <= max;
-                });
-            }
-
-            function applyCategoricalFilter(data, filter) {
-                const field = filter.field || VALUE_FIELD;
-                const values = filter.values || [];
-                return data.filter(f => {
-                    const val = getFeatureValue(f, field);
-                    return values.includes(val);
-                });
-            }
-
-            function clearAllFilters() {
-                activeFilters.clear();
-                selectedCategories.clear();
-                filteredDataset = [...fullDataset];
-                topCategories = getTop10Categories(fullDataset);
-                updateHistogram();
-                updateMostCommonCrop();
-                statusElement.textContent = `${fullDataset.length} features (no filters)`;
-                busSend({ type:'filter', fromComponent:componentId, timestamp:Date.now(), dataset:DATASET, filter:{ type:'clear', clearAll:true } });
-                busSend({ type:'filter_cleared', source:componentId, timestamp:Date.now() });
-            }
-
-            // --- UI state ---
-            function setUIState(state) {
-                loadingState.style.display = state === 'loading' ? 'flex' : 'none';
-                histogramSvg.style.display = state === 'chart' ? 'block' : 'none';
-            }
-
-            // --- chart ---
-            function initializeChart() {
-                d3.select('#histogram').selectAll('*').remove();
-                const container = document.getElementById('chartContainer');
-                const fullWidth = container.clientWidth;
-                const fullHeight = container.clientHeight;
-
-                chartWidth = fullWidth - margin.left - margin.right;
-                chartHeight = fullHeight - margin.top - margin.bottom;
-
-                svg = d3.select('#histogram')
-                    .attr('width', fullWidth)
-                    .attr('height', fullHeight);
-
-                chartGroup = svg.append('g')
-                    .attr('transform', `translate(${margin.left},${margin.top})`);
-
-                xScale = d3.scaleBand()
-                    .domain(topCategories.map(d => d.name))
-                    .range([0, chartWidth])
-                    .padding(0.2);
-
-                yScale = d3.scaleLinear()
-                    .domain([0, d3.max(topCategories, d => d.count) || 1])
-                    .range([chartHeight, 0])
-                    .nice();
-
-                // Add axes
-                chartGroup.append('g')
-                    .attr('class', 'x-axis')
-                    .attr('transform', `translate(0,${chartHeight})`)
-                    .call(d3.axisBottom(xScale))
-                    .selectAll("text")
-                    .style("text-anchor", "end")
-                    .style("fill", """ + repr(selected['accent']) + """)
-                    .style("font-weight", "600")
-                    .style("font-size", "10px")
-                    .attr("dx", "-.8em")
-                    .attr("dy", ".15em")
-                    .attr("transform", "rotate(-45)");
-
-                chartGroup.append('g')
-                    .attr('class', 'y-axis')
-                    .call(d3.axisLeft(yScale).ticks(5).tickFormat(d => formatValue(d)));
-
-                barsGroup = chartGroup.append('g').attr('class', 'bars-group');
-                createBars();
-            }
-
-            function createBars() {
-                const bars = barsGroup.selectAll('.bar')
-                    .data(topCategories)
-                    .enter()
-                    .append('rect')
-                    .attr('class', 'bar')
-                    .attr('x', d => xScale(d.name))
-                    .attr('y', d => yScale(d.count))
-                    .attr('width', xScale.bandwidth())
-                    .attr('height', d => chartHeight - yScale(d.count))
-                    .on('click', function(evt, d) {
-                        evt.stopPropagation();
-                        toggleCategorySelection(d.id);
-                    })
-                    .on('mouseover', function(evt, d) {
-                        if (!selectedCategories.has(d.id)) {
-                            d3.select(this).style('opacity', 0.8);
-                        }
-                        const t = document.getElementById('tooltip');
-                        t.innerHTML = `<div><strong>${d.name}</strong></div><div>Count: ${formatValue(d.count)}</div><div>ID: ${d.id}</div>`;
-                        t.style.display = 'block';
-                        t.style.left = (evt.pageX + 15) + 'px';
-                        t.style.top = (evt.pageY - 10) + 'px';
-                    })
-                    .on('mousemove', function(evt) {
-                        const t = document.getElementById('tooltip');
-                        t.style.left = (evt.pageX + 15) + 'px';
-                        t.style.top = (evt.pageY - 10) + 'px';
-                    })
-                    .on('mouseout', function(evt, d) {
-                        if (!selectedCategories.has(d.id)) {
-                            d3.select(this).style('opacity', 1);
-                        }
-                        document.getElementById('tooltip').style.display = 'none';
-                    });
-            }
-
-            function toggleCategorySelection(cropId) {
-                if (selectedCategories.has(cropId)) {
-                    selectedCategories.delete(cropId);
-                } else {
-                    selectedCategories.add(cropId);
-                }
-
-                updateBarSelection();
-                updateSelectionInfo();
-
-                if (selectedCategories.size > 0) {
-                    sendCategoricalFilter(Array.from(selectedCategories));
-                } else {
-                    clearCategoricalFilter();
-                }
-            }
-
-            function updateBarSelection() {
-                if (!barsGroup) return;
-                barsGroup.selectAll('.bar')
-                    .attr('class', d => {
-                        if (selectedCategories.size === 0) return 'bar';
-                        return selectedCategories.has(d.id) ? 'bar selected' : 'bar unselected';
-                    });
-            }
-
-            function updateHistogram(animate = false) {
-                const data = filteredDataset;
-                if (!data.length) {
-                    setUIState('loading');
-                    statusElement.textContent = 'No data matches current filters';
-                    return;
-                }
-
-                topCategories = getTop10Categories(data);
-
-                if (!svg) {
-                    initializeChart();
-                    setUIState('chart');
-                    return;
-                }
-
-                // Update scales
-                xScale.domain(topCategories.map(d => d.name));
-                yScale.domain([0, d3.max(topCategories, d => d.count) || 1]).nice();
-
-                // Update axes
-                chartGroup.select('.x-axis')
-                    .transition()
-                    .duration(animate ? 300 : 0)
-                    .call(d3.axisBottom(xScale))
-                    .selectAll("text")
-                    .style("text-anchor", "end")
-                    .style("fill", """ + repr(selected['accent']) + """)
-                    .style("font-weight", "600")
-                    .style("font-size", "10px")
-                    .attr("dx", "-.8em")
-                    .attr("dy", ".15em")
-                    .attr("transform", "rotate(-45)");
-
-                chartGroup.select('.y-axis')
-                    .transition()
-                    .duration(animate ? 300 : 0)
-                    .call(d3.axisLeft(yScale).ticks(5).tickFormat(d => formatValue(d)));
-
-                // Update bars
-                const bars = barsGroup.selectAll('.bar').data(topCategories, d => d.id);
-
-                // Remove old bars
-                bars.exit().remove();
-
-                // Add new bars
-                const newBars = bars.enter()
-                    .append('rect')
-                    .attr('class', 'bar')
-                    .attr('x', d => xScale(d.name))
-                    .attr('y', chartHeight)
-                    .attr('width', xScale.bandwidth())
-                    .attr('height', 0)
-                    .on('click', function(evt, d) {
-                        evt.stopPropagation();
-                        toggleCategorySelection(d.id);
-                    })
-                    .on('mouseover', function(evt, d) {
-                        if (!selectedCategories.has(d.id)) {
-                            d3.select(this).style('opacity', 0.8);
-                        }
-                        const t = document.getElementById('tooltip');
-                        t.innerHTML = `<div><strong>${d.name}</strong></div><div>Count: ${formatValue(d.count)}</div><div>ID: ${d.id}</div>`;
-                        t.style.display = 'block';
-                        t.style.left = (evt.pageX + 15) + 'px';
-                        t.style.top = (evt.pageY - 10) + 'px';
-                    })
-                    .on('mousemove', function(evt) {
-                        const t = document.getElementById('tooltip');
-                        t.style.left = (evt.pageX + 15) + 'px';
-                        t.style.top = (evt.pageY - 10) + 'px';
-                    })
-                    .on('mouseout', function(evt, d) {
-                        if (!selectedCategories.has(d.id)) {
-                            d3.select(this).style('opacity', 1);
-                        }
-                        document.getElementById('tooltip').style.display = 'none';
-                    });
-
-                // Update all bars
-                const allBars = bars.merge(newBars);
-
-                if (animate) {
-                    allBars.transition()
-                        .duration(300)
-                        .attr('x', d => xScale(d.name))
-                        .attr('y', d => yScale(d.count))
-                        .attr('width', xScale.bandwidth())
-                        .attr('height', d => chartHeight - yScale(d.count));
-                } else {
-                    allBars
-                        .attr('x', d => xScale(d.name))
-                        .attr('y', d => yScale(d.count))
-                        .attr('width', xScale.bandwidth())
-                        .attr('height', d => chartHeight - yScale(d.count));
-                }
-
-                updateBarSelection();
-                setUIState('chart');
-            }
-
-            function updateSelectionInfo() {
-                const el = document.getElementById('selectionInfo');
-                if (selectedCategories.size === 0) {
-                    el.textContent = '';
-                    return;
-                }
-
-                const selectedNames = topCategories
-                    .filter(d => selectedCategories.has(d.id))
-                    .map(d => d.name);
-
-                const total = topCategories
-                    .filter(d => selectedCategories.has(d.id))
-                    .reduce((sum, d) => sum + d.count, 0);
-
-                if (selectedNames.length === 1) {
-                    el.textContent = `Selected: ${selectedNames[0]} (${formatValue(total)} areas)`;
-                } else {
-                    el.textContent = `Selected: ${selectedNames.length} crops (${formatValue(total)} areas)`;
-                }
-            }
-
-            // --- selection actions -> send filters to others ---
-            function sendCategoricalFilter(cropIds) {
-                if (!cropIds || cropIds.length === 0) return;
-
-                const cropNames = cropIds.map(id => {
-                    const cat = topCategories.find(c => c.id === id);
-                    return cat ? cat.name : `Crop ${id}`;
-                }).join(', ');
-
-                statusElement.textContent = `Selected: ${cropNames}`;
-
-                // Send unified filter message
-                busSend({
-                    type: 'filter',
-                    fromComponent: componentId,
-                    timestamp: Date.now(),
-                    dataset: DATASET,
-                    filter: {
-                        type: 'categorical',
-                        field: VALUE_FIELD,
-                        values: cropIds
-                    }
-                });
-            }
-
-            function clearCategoricalFilter() {
-                selectedCategories.clear();
-                updateBarSelection();
-                updateSelectionInfo();
-                statusElement.textContent = 'Selection cleared';
-
-                // Send unified filter clear
-                busSend({
-                    type: 'filter',
-                    fromComponent: componentId,
-                    timestamp: Date.now(),
-                    dataset: DATASET,
-                    filter: {
-                        type: 'clear',
-                        field: VALUE_FIELD
-                    }
-                });
-            }
-
-            function clearSelection() {
-                clearCategoricalFilter();
-            }
-
-            // --- incoming messages ---
-            function onMessage(message) {
-                try {
-                    if (typeof message === 'string') {
-                        try { message = JSON.parse(message); } catch (_) {}
-                    }
-                    if (!message) return;
-
-                    // Ignore our own messages
-                    if (message.fromComponent && message.fromComponent === componentId) return;
-                    if (message.source && message.source === componentId) return;
-
-                    // Unified filter handling
-                    if (message.type === 'filter' && message.filter) {
-                        if (message.dataset && DATASET !== 'all' && message.dataset !== DATASET) return;
-                        const f = message.filter;
-
-                        if (f.type === 'clear') {
-                            if (f.clearAll) activeFilters.clear();
-                            else if (f.field) {
-                                for (const k of Array.from(activeFilters.keys())) {
-                                    if (k.includes(`_${f.field}`)) activeFilters.delete(k);
-                                }
-                            } else if (f.filterId) activeFilters.delete(f.filterId);
-                            applyAllFilters();
-                            return;
-                        }
-
-                        if (f.type === 'spatial' && Array.isArray(f.values)) {
-                            const [w, s, e, n] = f.values;
-                            activeFilters.set(`spatial_${message.fromComponent || 'unknown'}`, {
-                                type: 'spatial',
-                                bounds: { sw: { lng: w, lat: s }, ne: { lng: e, lat: n } }
-                            });
-                            applyAllFilters();
-                            return;
-                        }
-
-                        if (f.type === 'range' && Array.isArray(f.values)) {
-                            const field = f.field || VALUE_FIELD;
-                            activeFilters.set(`range_${message.fromComponent || 'unknown'}_${field}`, {
-                                type: 'range',
-                                field,
-                                values: f.values
-                            });
-                            applyAllFilters();
-                            return;
-                        }
-
-                        if (f.type === 'categorical' && Array.isArray(f.values)) {
-                            const field = f.field || VALUE_FIELD;
-                            activeFilters.set(`categorical_${message.fromComponent || 'unknown'}_${field}`, {
-                                type: 'categorical',
-                                field,
-                                values: f.values
-                            });
-                            applyAllFilters();
-                            return;
-                        }
-                    }
-
-                    // Legacy filter handling
-                    if (message.type === 'spatial_filter' && message.bounds) {
-                        activeFilters.set(`spatial_legacy_${message.source || 'unknown'}`, {
-                            type: 'spatial',
-                            bounds: message.bounds
-                        });
-                        applyAllFilters();
-                        return;
-                    }
-
-                    if (message.type === 'range_filter' && typeof message.min !== 'undefined' && typeof message.max !== 'undefined') {
-                        const field = message.field || VALUE_FIELD;
-                        activeFilters.set(`range_legacy_${message.source || 'unknown'}_${field}`, {
-                            type: 'range',
-                            field,
-                            values: [+message.min, +message.max]
-                        });
-                        applyAllFilters();
-                        return;
-                    }
-
-                    if (message.type === 'filter_cleared') {
-                        if (message.field) {
-                            for (const k of Array.from(activeFilters.keys())) {
-                                if (k.includes(`_${message.field}`)) activeFilters.delete(k);
-                            }
-                        } else if (message.source) {
-                            for (const k of Array.from(activeFilters.keys())) {
-                                if (k.includes(`_${message.source}`)) activeFilters.delete(k);
-                            }
-                        } else {
-                            activeFilters.clear();
-                        }
-                        applyAllFilters();
-                        return;
-                    }
-                } catch (e) {
-                    console.error('Error handling message:', e);
-                }
-            }
-
-            if (bc) bc.onmessage = (ev) => onMessage(ev.data);
-            window.addEventListener('message', (ev) => onMessage(ev.data));
-
-            // --- init: data is embedded, so this is synchronous, no network/WASM involved ---
-            try {
-                fullDataset = processRawData(RECORDS);
-                topCategories = getTop10Categories(fullDataset);
-                applyAllFilters();
-            } catch (e) {
-                console.error(e);
-                statusElement.textContent = `Init failed: ${e && e.message ? e.message : e}`;
-            }
-
-            setTimeout(() => {
-                busSend({
-                    type: 'component_ready',
-                    componentType: 'categorical_chart',
-                    componentId: componentId,
-                    capabilities: ['filter'],
-                    dataSource: 'independent',
-                    protocol: 'unified'
-                });
-            }, 300);
-        </script>
-    </body>
-    </html>
-    """
-
-    return common.html_to_obj(html_content)
-  ```
-
-</details>
-
-<details>
-  <summary>Map UDF</summary>
-
-  The Map UDF renders the geospatial hexagons and supports interactions with the histogram or bar chart to update map highlights in real time.
-
-  ```python
-  # doctest: skip
-common = fused.load("https://github.com/fusedio/udfs/tree/b6786d6/public/common/")
-
-DEFAULT_CONFIG = r"""{
-  "tileLayer": {
-    "@@type": "TileLayer",
-    "maxZoom": 12
+<summary>Code</summary>
+
+`nyc311_query`, the `h3-query` widget with a table:
+
+```json
+{
+  "type": "h3-query",
+  "props": {
+    "name": "nyc311",
+    "path": "s3://fused-asset/data/nyc311/",
+    "minLng": -74.02, "minLat": 40.70, "maxLng": -73.97, "maxLat": 40.73,
+    "timeMin": "2024-07-01", "timeMax": "2024-07-01T23:59:59",
+    "columns": ["hex", "complaint_type"]
   },
-  "hexLayer": {
-    "@@type": "H3HexagonLayer",
-    "filled": true,
-    "pickable": true,
-    "extruded": false,
-    "getHexagon": "@@=properties.hex",
-    "getFillColor": {
-      "@@function": "colorContinuous",
-      "attr": "elevation",
-      "domain": [0, 3000],
-      "steps": 20,
-      "colors": "OrYel"
+  "children": [
+    {
+      "type": "sql-table",
+      "props": {
+        "sql": "SELECT complaint_type, COUNT(*) AS calls FROM {{nyc311}} GROUP BY 1 ORDER BY 2 DESC"
+      }
     }
+  ]
+}
+```
+
+`nyc311_query_map`, with an edge from `nyc311_query`:
+
+```json
+{
+  "type": "fused-map",
+  "props": {
+    "basemap": "mapbox://styles/mapbox/dark-v11",
+    "centerLng": -73.995, "centerLat": 40.715, "zoom": 13.5,
+    "layers": [
+      {
+        "id": "nyc311_calls",
+        "name": "NYC 311 calls, July 1 2024",
+        "type": "h3",
+        "h3Column": "hex",
+        "data": "{{nyc311}}",
+        "sql": "SELECT hex, COUNT(*) AS calls FROM {{source}} GROUP BY 1",
+        "tooltip": ["hex", "calls"],
+        "style": {
+          "fillColor": {"type": "continuous", "attr": "calls", "palette": "Sunset", "domain": [0, 6]},
+          "opacity": 0.8
+        }
+      }
+    ]
   }
-}"""
+}
+```
 
-DEFAULT_STYLE_URL = "mapbox://styles/mapbox/dark-v11"
+</details>
 
-# Pairs with join_era5_cdl_elevation.py -- bump this note if that UDF's schema changes,
-# so this UDF's own cached result gets invalidated and re-executed too.
-@fused.udf
-def udf(
-    bounds: list = [-125.0, 32.0, -114.0, 42.0],
-    res: int = 5,
-    year: int = 2024,
-    month: str = "2024-05",
-    config_json: str = DEFAULT_CONFIG,
-    mapbox_token: str = "pk.eyJ1IjoiaXNhYWNmdXNlZGxhYnMiLCJhIjoiY2xicGdwdHljMHQ1bzN4cWhtNThvbzdqcSJ9.73fb6zHMeO_c8eAXpZVNrA",
-    center_lng: float = -119.4179,
-    center_lat: float = 36.7783,
-    zoom: float = 4,
-    tooltip_columns: list = ["crop_rank_1", "elevation", "daily_mean"],
-    min_elevation: float = 0,
-    map_style_url: str = DEFAULT_STYLE_URL,
-    channel: str = "fused-elevation-temp",
-    dataset: str = "all",
-):
-    from jinja2 import Template
+## Cross-filtering {#cross-filtering}
 
-    style_url = map_style_url or DEFAULT_STYLE_URL
+This [HTML template node](/widget-api/html) maps one hour of AIS ship positions in New York Harbor. Its `h3-query` fetches the positions in the map's view, and dragging over the speed histogram or clicking a vessel type filters the map.
 
-    # Compute the joined dataset server-side and embed it directly in the page as
-    # plain JSON -- canvas node iframes run with an opaque origin, so a client-side
-    # fetch() back to another node's URL is blocked by CORS with no way to allow it
-    # from here. The dataset is small (a few thousand rows), so there's no need for
-    # a client-side SQL engine either -- plain JS array filtering is enough and has
-    # far fewer moving parts (no WASM, no Worker, no CORS, no Parquet compatibility
-    # surface) to fail silently inside a sandboxed iframe.
-    join_era5_cdl_elevation = fused.load("join_era5_cdl_elevation")
-    df = join_era5_cdl_elevation(bounds=bounds, res=res, year=year, month=month)
-    df = df.copy()
-    df["hex"] = df["hex"].astype(str)  # preserve full 64-bit H3 id precision through JSON (JS numbers only hold 53 bits)
-    records_json = df.to_json(orient="records")
+[Open the canvas →](https://www.fused.io/canvas/fc_fused/H3_Data_Retrieval_Visualization)
 
-    html = Template(r"""
-<!DOCTYPE html>
+<iframe
+  src="https://www.fused.io/share/fc_fused%2FH3_Data_Retrieval_Visualization/ais_query_crossfilter"
+  width="100%"
+  height="700px"
+  frameBorder="0"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+<details>
+<summary>Code: <code>ais_query_crossfilter</code> HTML template</summary>
+
+```html
+<!doctype html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <title>H3 Hexagon Viewer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-  <link href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css" rel="stylesheet" />
-  <script src="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.js"></script>
-
-  <script src="https://unpkg.com/h3-js@4.1.0/dist/h3-js.umd.js"></script>
-  <script src="https://unpkg.com/deck.gl@9.1.3/dist.min.js"></script>
-  <script src="https://unpkg.com/@deck.gl/geo-layers@9.1.3/dist.min.js"></script>
-  <script src="https://unpkg.com/@deck.gl/carto@9.1.3/dist.min.js"></script>
-
-  <style>
-    :root {
-      --bg-panel: rgba(15,15,15,0.9);
-      --bg-panel-solid: #0f0f0f;
-      --text-primary: #ffffff;
-      --text-dim: #9e9e9e;
-      --radius-md: 6px;
-      --shadow-soft: 0 -4px 12px rgba(0,0,0,.7);
-    }
-
-    html, body {
-      margin:0; padding:0; height:100%;
-      background:#000;
-      color:var(--text-primary);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    }
-
-    #map { position:fixed; inset:0; }
-
-    #tooltip {
-      position: absolute;
-      pointer-events: none;
-      background: rgba(0,0,0,0.8);
-      color: var(--text-primary);
-      padding: 4px 8px;
-      border-radius: var(--radius-md);
-      font-size: 12px;
-      display: none;
-      z-index: 6;
-      white-space: nowrap;
-      border:1px solid #3a3a3a;
-    }
-
-    .status-pill {
-      position:absolute;
-      top:12px;
-      left:12px;
-      background:var(--bg-panel);
-      color:var(--text-primary);
-      padding:6px 10px;
-      border-radius:var(--radius-md);
-      border:1px solid #3a3a3a;
-      font-size:11px;
-      z-index:7;
-      pointer-events:none;
-      box-shadow:var(--shadow-soft);
-      min-width:120px;
-      text-align:center;
-    }
-  </style>
+<meta charset="utf-8" />
+<style>
+  :root {
+    --bg: #0d1117;
+    --fg: #e6edf3;
+    --muted: #8b949e;
+    --border: #30363d;
+    --surface: #161b22;
+    --bar: #3a4250;
+    --accent: #E8FF59;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    padding: 10px;
+    height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 10px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  .side { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px; }
+  .card h3 { margin: 0 0 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .kpi { font-size: 22px; font-weight: 600; }
+  .kpi small { font-size: 12px; font-weight: 400; color: var(--muted); }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  #hist { display: block; width: 100%; height: 140px; cursor: crosshair; user-select: none; }
+  #kinds .row { display: grid; grid-template-columns: 80px 1fr 48px; gap: 6px; align-items: center; padding: 2px 0; cursor: pointer; }
+  #kinds .row:hover .name { color: var(--accent); }
+  #kinds .track { position: relative; height: 12px; }
+  #kinds .track div { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; }
+  #kinds .num { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #kinds .row.on .name { color: var(--accent); font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 1px 8px; font-size: 12px; }
+  button { background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; padding: 3px 10px; font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  #detail { white-space: pre-wrap; margin: 0; font-size: 12px; }
+  #status { color: #ff7b72; font-size: 12px; white-space: pre-wrap; }
+</style>
 </head>
 <body>
-  <div id="map"></div>
+<fused-widget style="display:block;height:100%">
+  { "type": "fused-map",
+    "props": {
+      "style": "height:100%",
+      "centerLng": -74.02, "centerLat": 40.65, "zoom": 11, "minZoom": 11,
+      "param": "q_bounds", "autoSend": true, "autoSendDebounceMs": 0,
+      "clickParam": "q_click", "hoverParam": "q_hover",
+      "selectParam": "q_sel", "selectKey": "MMSI",
+      "sourceParam": "q_sources",
+      "layers": [{
+        "id": "ships_h3", "name": "AIS positions", "type": "h3", "h3Column": "hex", "data": "{{ais_q}}",
+        "sql": "SELECT *, LEAST(CAST(floor(COALESCE(SOG, 0)) AS INT), 25) AS kn, CASE WHEN VesselType BETWEEN 60 AND 69 THEN 'Passenger' WHEN VesselType BETWEEN 70 AND 79 THEN 'Cargo' WHEN VesselType BETWEEN 80 AND 89 THEN 'Tanker' WHEN VesselType IN (31, 32, 52) THEN 'Tug / tow' WHEN VesselType IN (36, 37) THEN 'Pleasure' WHEN VesselType = 30 THEN 'Fishing' WHEN VesselType BETWEEN 50 AND 59 THEN 'Service' ELSE 'Other' END AS kind FROM {{source}}",
+        "tooltip": ["VesselName", "MMSI", "SOG", "kind", "BaseDateTime"],
+        "filters": [
+          { "attr": "kn", "type": "range", "min": "$q_lo", "max": "$q_hi" },
+          { "attr": "kind", "type": "categories", "values": "$q_kinds" }
+        ],
+        "style": { "fillColor": { "type": "continuous", "attr": "kn", "palette": "Sunset" }, "opacity": 0.8 }
+      }] } }
+</fused-widget>
 
-  <div id="tooltip"></div>
+<div class="side">
+  <div class="card">
+    <h3>Source: /h3/query</h3>
+    <fused-widget style="display:block;height:40px">
+      { "type": "h3-query",
+        "props": {
+          "name": "ais_q",
+          "path": "s3://fused-asset/data/ais/ais_week_h3_v2/",
+          "minLng": "$q_w", "minLat": "$q_s", "maxLng": "$q_e", "maxLat": "$q_n",
+          "timeMin": "2024-07-03T12:00:00", "timeMax": "2024-07-03T12:59:59",
+          "columns": ["hex", "MMSI", "VesselName", "BaseDateTime", "LAT", "LON", "SOG", "COG", "VesselType", "Length"],
+          "maxPages": 4 } }
+    </fused-widget>
+    <div class="hint">An h3-query widget in this page fetches the map's view of AIS (12:00 to 13:00 UTC, July 3 2024) on every pan.</div>
+  </div>
+  <div class="card">
+    <h3>Positions</h3>
+    <div class="kpi" id="kpi">–</div>
+    <div class="hint">Pan to fetch a new view. Shift+drag on the map to box-select, shift+click a cell to pick that vessel.</div>
+  </div>
 
-  <div class="status-pill" id="statusPill">initializing…</div>
+  <div class="card">
+    <h3>Speed over ground (knots)</h3>
+    <svg id="hist"></svg>
+    <div class="hint">Drag to filter the map by speed. Click to clear.</div>
+  </div>
 
-  <script type="module">
-    // --- UDF PARAMS ---------------------------------------------------------
-    const RECORDS         = {{ records_json | safe }};
-    const MAPBOX_TOKEN    = {{ mapbox_token | tojson }};
-    const MAP_STYLE_URL   = {{ map_style_url | tojson }};
-    const DEFAULT_STYLE_URL = {{ default_style_url | tojson }};
-    const START_CENTER    = [{{ center_lng }}, {{ center_lat }}];
-    const START_ZOOM      = {{ zoom }};
-    const TOOLTIP_COLUMNS = {{ tooltip_columns | tojson }};
-    const MIN_ELEVATION   = {{ min_elevation }};
-    const CHANNEL         = {{ channel | tojson }};
-    const DATASET         = {{ dataset | tojson }};
-    const componentId     = 'duckmap-' + Math.random().toString(36).slice(2);
-    const INITIAL_CONFIG  = {{ config_json | tojson }};
+  <div class="card">
+    <h3>Vessel type</h3>
+    <div id="kinds"></div>
+    <div class="hint">Click a type to filter the map. Click again to remove it.</div>
+  </div>
 
-    // deck.gl bits
-    const { MapboxOverlay, PolygonLayer } = deck;
-    const H3HexagonLayer = deck.H3HexagonLayer || (deck.GeoLayers && deck.GeoLayers.H3HexagonLayer);
-    const { colorContinuous } = deck.carto;
+  <div class="card">
+    <h3>Active filters</h3>
+    <div class="chips" id="chips"></div>
+    <p style="margin:8px 0 0"><button id="select-view">Select view</button> <button id="reset">Reset all</button></p>
+  </div>
 
-    // state
-    let overlay;
-    let map;
-    let didInitialFit = false;
-    let currentConfObj = {};
-    let fullDataset = [];
-    let filteredDataset = [];
-    let activeFilters = new Map();
+  <div class="card">
+    <h3>Feature</h3>
+    <pre id="detail">Hover or click a cell</pre>
+  </div>
+  <div id="status"></div>
+</div>
 
-    function $(id){ return document.getElementById(id); }
+<script>
+  const P = "q_";
+  const LAYER = "ships_h3";
+  const SRC = "{".repeat(2) + LAYER + "}".repeat(2);
+  const KN = "LEAST(CAST(floor(COALESCE(SOG, 0)) AS INT), 25)";
+  const KIND = "CASE WHEN VesselType BETWEEN 60 AND 69 THEN 'Passenger' WHEN VesselType BETWEEN 70 AND 79 THEN 'Cargo' WHEN VesselType BETWEEN 80 AND 89 THEN 'Tanker' WHEN VesselType IN (31, 32, 52) THEN 'Tug / tow' WHEN VesselType IN (36, 37) THEN 'Pleasure' WHEN VesselType = 30 THEN 'Fishing' WHEN VesselType BETWEEN 50 AND 59 THEN 'Service' ELSE 'Other' END";
+  const BINS = 26;
+  const pv = (p, k) => p[P + k];
+  const q = (sql, opts) => fused.query(sql.replaceAll("@", "$").replaceAll("{src}", SRC), opts);
+  const span = (a, b) => ({ min: a ?? null, max: b ?? null });
+  const fmt = (n) => Number(n || 0).toLocaleString();
+  const el = (id) => document.getElementById(id);
+  const HINT = { not_ready: "layer still loading", not_allowed: "source not in reach", query_error: "query failed", invalid_args: "bad query params" };
+  const fail = (e) => { if (e && e.type !== "aborted") el("status").textContent = (HINT[e.type] || "error") + ": " + e.message; };
+  const kindList = (p) => (Array.isArray(pv(p, "kinds")) ? pv(p, "kinds") : []);
 
-    const statusPill = $("statusPill");
-    if (statusPill) {
-      statusPill.textContent = "initializing…";
+  function buildQuery(p) {
+    const conds = [], params = {};
+    const b = pv(p, "bounds");
+    if (Array.isArray(b) && b.length === 4) {
+      conds.push("LON BETWEEN @vx AND LAT BETWEEN @vy");
+      params.vx = span(b[0], b[2]); params.vy = span(b[1], b[3]);
     }
+    const sel = pv(p, "sel");
+    if (sel && Array.isArray(sel.bbox)) {
+      conds.push("LON BETWEEN @sx AND LAT BETWEEN @sy");
+      params.sx = span(sel.bbox[0], sel.bbox[2]); params.sy = span(sel.bbox[1], sel.bbox[3]);
+    } else if (sel && Array.isArray(sel.ids) && sel.ids.length) {
+      conds.push("MMSI IN @ids");
+      params.ids = sel.ids;
+    }
+    params.r = span(pv(p, "lo"), pv(p, "hi"));
+    const kinds = kindList(p);
+    let pass = KN + " BETWEEN @r";
+    if (kinds.length) { pass += " AND " + KIND + " IN @kinds"; params.kinds = kinds; }
+    const where = conds.length ? " WHERE " + conds.join(" AND ") : "";
+    return { where, pass, params };
+  }
 
-    let bc = null;
+  let hist = [], kinds = [], busy = false, again = false;
+  async function refresh() {
+    if (busy) { again = true; return; }
+    busy = true;
     try {
-      if ('BroadcastChannel' in window) bc = new BroadcastChannel(CHANNEL);
-    } catch (_) { /* ignore */ }
+      do {
+        again = false;
+        const { where, pass, params } = buildQuery(fused.params.getAll());
+        const agg = "COUNT(*) AS n, COUNT(*) FILTER (WHERE " + pass + ") AS hit FROM {src}" + where;
+        const rows = await q(
+          "SELECT 'h' AS d, CAST(" + KN + " AS VARCHAR) AS k, " + agg + " GROUP BY 2" +
+          " UNION ALL SELECT 'k' AS d, " + KIND + " AS k, " + agg + " GROUP BY 2",
+          { params, key: null });
+        const byBin = new Map(rows.filter((r) => r.d === "h").map((r) => [Number(r.k), r]));
+        hist = Array.from({ length: BINS }, (_, k) => ({ k, n: Number(byBin.get(k)?.n || 0), hit: Number(byBin.get(k)?.hit || 0) }));
+        kinds = rows.filter((r) => r.d === "k").map((r) => ({ k: r.k, n: Number(r.n), hit: Number(r.hit) })).sort((x, y) => y.n - x.n);
+        el("status").textContent = "";
+        paint();
+      } while (again);
+    } catch (e) { fail(e); } finally { busy = false; }
+  }
 
-    function updateStatus(text) {
-      if (statusPill) statusPill.textContent = text;
+  const svg = el("hist");
+  const AXIS = 16;
+  let brush = null;
+  function paintHist() {
+    const p = fused.params.getAll();
+    const W = svg.clientWidth, H = svg.clientHeight - AXIS, w = W / BINS;
+    const max = Math.max(1, ...hist.map((b) => b.n));
+    const lo = pv(p, "lo"), hi = pv(p, "hi");
+    const rect = (x, y, rw, rh, fill, extra) => '<rect x="' + x + '" y="' + y + '" width="' + rw + '" height="' + rh + '" fill="' + fill + '"' + (extra || "") + "/>";
+    let out = "";
+    if (lo != null || hi != null) {
+      const a = lo ?? 0, b = hi ?? BINS - 1;
+      out += rect(a * w, 0, (b - a + 1) * w, H, "rgba(232,255,89,0.08)");
     }
-
-    function busSend(obj) {
-      const payload = JSON.stringify(obj);
-      try { if (bc) bc.postMessage(obj); } catch (e) {}
-      try { window.parent.postMessage(payload, '*'); } catch (e) {}
-      try { if (window.top && window.top !== window.parent) window.top.postMessage(payload, '*'); } catch (e) {}
-      try {
-        if (window.top && window.top.frames) {
-          for (let i = 0; i < window.top.frames.length; i++) {
-            const frame = window.top.frames[i];
-            if (frame !== window) {
-              try { frame.postMessage(payload, '*'); } catch (e) {}
-            }
-          }
-        }
-      } catch (e) {}
-    }
-
-    function getFeatureValue(feature, fieldName) {
-      if (!feature) return 0;
-      const direct = Number(feature[fieldName]);
-      if (Number.isFinite(direct)) return direct;
-      return 0;
-    }
-
-    function cloneConfig(conf) {
-      if (!conf || typeof conf !== 'object') return {};
-      if (typeof structuredClone === 'function') {
-        try { return structuredClone(conf); } catch (_) {}
-      }
-      try {
-        return JSON.parse(JSON.stringify(conf));
-      } catch (err) {
-        console.error('config clone error', err);
-        return {};
-      }
-    }
-
-    function sanitizeFieldName(field) {
-      if (typeof field !== 'string') return null;
-      const trimmed = field.trim();
-      if (!trimmed) return null;
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) return null;
-      return trimmed;
-    }
-
-    function applyIncomingStyle(style) {
-      if (!style) return;
-      const attr = sanitizeFieldName(style.attr || 'metric');
-      if (!attr) return;
-
-      const domain = Array.isArray(style.domain) ? style.domain.map(Number) : [];
-      if (domain.length !== 2 || !domain.every(Number.isFinite)) return;
-
-      const steps = Number(style.steps);
-      const validSteps = Number.isInteger(steps) && steps > 0 ? steps : 20;
-      const colors = typeof style.colors === 'string' && style.colors.trim() ? style.colors.trim() : 'OrYel';
-
-      const rawConf = cloneConfig(currentConfObj);
-      rawConf.hexLayer = rawConf.hexLayer || {};
-      rawConf.hexLayer.getFillColor = {
-        "@@function": "colorContinuous",
-        "attr": attr,
-        "domain": [domain[0], domain[1]],
-        "steps": validSteps,
-        "colors": colors,
-        "nullColor": rawConf.hexLayer?.getFillColor?.nullColor || [184, 184, 184]
-      };
-
-      currentConfObj = rawConf;
-      updateStatus(`style ${attr} (${validSteps} steps)`);
-      renderLayer();
-    }
-
-    function rafThrottle(fn) {
-      let ticking = false;
-      let lastArgs = null;
-      return (...args) => {
-        lastArgs = args;
-        if (ticking) return;
-        ticking = true;
-        requestAnimationFrame(() => {
-          ticking = false;
-          fn(...(lastArgs || []));
-        });
-      };
-    }
-
-    let suppressSpatialEmits = 0;
-
-    // --- filtering (same model as the histogram/bar-chart panels) ----------
-
-    function applyFilter(data, filter) {
-      switch (filter.type) {
-        case 'spatial': return applySpatialFilter(data, filter);
-        case 'range':
-        case 'multi-range': return applyRangeFilter(data, filter);
-        case 'categorical': return applyCategoricalFilter(data, filter);
-        default: return data;
-      }
-    }
-
-    function applySpatialFilter(data, filter) {
-      const b = filter.bounds; if (!b) return data;
-      return data.filter(f => f.lng>=b.sw.lng && f.lng<=b.ne.lng && f.lat>=b.sw.lat && f.lat<=b.ne.lat);
-    }
-
-    function applyRangeFilter(data, filter) {
-      const field = filter.field;
-      const [min, max] = filter.values || [0, Number.POSITIVE_INFINITY];
-      return data.filter(f => {
-        const val = getFeatureValue(f, field);
-        return val >= min && val <= max;
-      });
-    }
-
-    function applyCategoricalFilter(data, filter) {
-      const field = filter.field;
-      const values = filter.values || [];
-      return data.filter(f => values.includes(getFeatureValue(f, field)));
-    }
-
-    function applyAllFilters() {
-      let filtered = fullDataset.filter(f => getFeatureValue(f, 'elevation') > MIN_ELEVATION);
-      for (const [, f] of activeFilters.entries()) filtered = applyFilter(filtered, f);
-      filteredDataset = filtered;
-      renderLayer();
-      updateStatus(`rendered ${filteredDataset.length.toLocaleString()} features`);
-    }
-
-    // --- tiny helpers -------------------------------------------------------
-
-    function evalExpression(expr, object) {
-      if (typeof expr === 'string' && expr.startsWith('@@=')) {
-        const code = expr.slice(3);
-        try {
-          const fn = new Function('object', `
-            const properties = object?.properties || object || {};
-            return (${code});
-          `);
-          return fn(object);
-        } catch (e) { console.error('@@= eval error:', expr, e); return null; }
-      }
-      return expr;
-    }
-
-    function hasProp({ property, present, absent }) {
-      return (object) => {
-        const props = object?.properties || object || {};
-        if (property in props && props[property] !== null && props[property] !== undefined) {
-          if (typeof present === 'function') return present(object);
-          if (typeof present === 'string' && present.startsWith('@@=')) return evalExpression(present, object);
-          return present;
-        }
-        return typeof absent === 'function' ? absent(object) : absent;
-      };
-    }
-
-    function processColorContinuous(cfg) {
-      let domain = cfg.domain;
-      if (domain && domain.length === 2) {
-        const start = Number(domain[0]);
-        const end = Number(domain[1]);
-        const steps = cfg.steps ?? 20;
-
-        if (Number.isFinite(start) && Number.isFinite(end)) {
-          if (steps > 1) {
-            const stepSize = (end - start) / (steps - 1);
-            domain = Array.from({ length: steps }, (_, i) => start + stepSize * i);
-          } else {
-            domain = [start];
-          }
-        } else {
-          domain = [domain[0], domain[1]];
-        }
-      }
-      return {
-        attr: cfg.attr,
-        domain: domain,
-        colors: cfg.colors || 'TealGrn',
-        nullColor: cfg.nullColor || [184,184,184]
-      };
-    }
-
-    function parseHexLayerConfig(config) {
-      const out = {};
-      for (const [k, v] of Object.entries(config || {})) {
-        if (k === '@@type') continue;
-        if (v && typeof v === 'object' && !Array.isArray(v)) {
-          if (v['@@function'] === 'colorContinuous') {
-            out[k] = colorContinuous(processColorContinuous(v));
-          } else if (v['@@function'] === 'hasProp') {
-            out[k] = hasProp(v);
-          } else {
-            out[k] = v;
-          }
-        } else if (typeof v === 'string' && v.startsWith('@@=')) {
-          out[k] = (obj) => evalExpression(v, obj);
-        } else {
-          out[k] = v;
-        }
-      }
-      return out;
-    }
-
-    function resolveStyleUrl(styleUrl, token) {
-      const trimmed = (styleUrl || '').trim();
-      if (!trimmed) return DEFAULT_STYLE_URL;
-      if (trimmed.startsWith('mapbox://')) {
-        if (!token) {
-          console.warn('Mapbox style requested but mapbox_token parameter is missing. Falling back to default style.');
-          return DEFAULT_STYLE_URL;
-        }
-        const stylePath = trimmed.replace('mapbox://styles/', '');
-        return `https://api.mapbox.com/styles/v1/${stylePath}?access_token=${token}`;
-      }
-      if (token && trimmed.includes('{token}')) {
-        return trimmed.replace('{token}', token);
-      }
-      return trimmed;
-    }
-
-    function rowsToFeatures(rows, confObj){
-      const colorAttr = confObj?.hexLayer?.getFillColor?.attr || "metric";
-
-      return rows.map(p => {
-        const hex = p.hex ?? p.h3 ?? p.index ?? p.id;
-        if (!hex || typeof hex !== 'string') return null;
-
-        const obj = { ...p };
-
-        if (obj[colorAttr] !== undefined) {
-          const n = Number(obj[colorAttr]);
-          obj[colorAttr] = Number.isFinite(n) ? n : null;
-        }
-
-        (TOOLTIP_COLUMNS || []).forEach(col => {
-          if (obj[col] !== undefined && typeof obj[col] !== "number") {
-            const nn = Number(obj[col]);
-            if (Number.isFinite(nn)) obj[col] = nn;
-          }
-        });
-
-        return {
-          ...obj,
-          hex,
-          properties: { ...obj, hex }
-        };
-      }).filter(Boolean);
-    }
-
-    function fitToDataOnce(data){
-      if (didInitialFit || !data.length) return;
-      let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
-      for (const d of data){
-        const [lat,lng] = h3.cellToLatLng(d.hex);
-        if (lng<minX)minX=lng;
-        if (lat<minY)minY=lat;
-        if (lng>maxX)maxX=lng;
-        if (lat>maxY)maxY=lat;
-      }
-      if (minX<Infinity) {
-        map.fitBounds([[minX,minY],[maxX,maxY]], {padding:20,duration:0});
-        didInitialFit = true;
-      }
-    }
-
-    function applyIncomingSpatial(bounds, options = {}) {
-      if (!map || !bounds) return;
-      const sw = bounds.sw || bounds.southWest;
-      const ne = bounds.ne || bounds.northEast;
-      if (!sw || !ne) return;
-      const west = Number(sw.lng ?? sw.lon ?? sw.longitude);
-      const south = Number(sw.lat ?? sw.latitude);
-      const east = Number(ne.lng ?? ne.lon ?? ne.longitude);
-      const north = Number(ne.lat ?? ne.latitude);
-      if (![west, south, east, north].every(Number.isFinite)) return;
-      suppressSpatialEmits = Math.max(suppressSpatialEmits, options.suppressEmits ?? 2);
-      try {
-        map.fitBounds([[west, south], [east, north]], {
-          padding: options.padding ?? 32,
-          duration: options.duration ?? 0
-        });
-        updateStatus('applied incoming spatial');
-      } catch (err) {
-        console.warn('applyIncomingSpatial error', err);
-      }
-    }
-
-    function postSpatial(){
-      if (!map) return;
-      if (suppressSpatialEmits > 0) {
-        suppressSpatialEmits -= 1;
-        return;
-      }
-      try {
-        const b = map.getBounds?.();
-        if (!b) return;
-        const west = b.getWest();
-        const south = b.getSouth();
-        const east = b.getEast();
-        const north = b.getNorth();
-        if (![west, south, east, north].every(Number.isFinite)) return;
-
-        const legacy = {
-          type: 'spatial_filter',
-          bounds: {
-            sw: { lng: west, lat: south },
-            ne: { lng: east, lat: north }
-          },
-          timestamp: Date.now(),
-          source: componentId
-        };
-
-        const unified = {
-          type: 'filter',
-          fromComponent: componentId,
-          timestamp: Date.now(),
-          dataset: DATASET,
-          filter: {
-            type: 'spatial',
-            fields: ['lng','lat'],
-            values: [west, south, east, north]
-          }
-        };
-
-        busSend(legacy);
-        busSend(unified);
-        updateStatus(`sent spatial (z=${map.getZoom().toFixed(1)})`);
-      } catch (err) {
-        console.error('postSpatial error', err);
-      }
-    }
-
-    function onMessage(msg) {
-      if (typeof msg === 'string') {
-        try {
-          msg = JSON.parse(msg);
-        } catch (_) {
-          // keep original string if not JSON
-        }
-      }
-      if (!msg || typeof msg !== 'object') return;
-
-      if ((msg.fromComponent && msg.fromComponent === componentId) || (msg.source && msg.source === componentId)) {
-        return;
-      }
-
-      const datasetOk = (!msg.dataset) || DATASET === 'all' || msg.dataset === DATASET;
-
-      if (msg.type === 'duckmap_style' && datasetOk && msg.style && msg.fromComponent !== componentId) {
-        applyIncomingStyle(msg.style);
-        return;
-      }
-
-      if (msg.type === 'filter' && msg.filter && datasetOk) {
-        const f = msg.filter;
-        if (f.type === 'clear') {
-          if (f.clearAll) activeFilters.clear();
-          else if (f.field) {
-            for (const k of Array.from(activeFilters.keys())) if (k.includes(`_${f.field}`)) activeFilters.delete(k);
-          } else if (f.filterId) activeFilters.delete(f.filterId);
-          applyAllFilters();
-          updateStatus('incoming filter cleared');
-          return;
-        }
-        if (f.type === 'spatial' && Array.isArray(f.values)) {
-          const [w, s, e, n] = f.values.map(Number);
-          if ([w, s, e, n].every(Number.isFinite)) {
-            applyIncomingSpatial({
-              sw: { lng: w, lat: s },
-              ne: { lng: e, lat: n }
-            }, { padding: 40, duration: 0, suppressEmits: 4 });
-          }
-          return;
-        }
-        if (f.type === 'range' && Array.isArray(f.values)) {
-          const field = sanitizeFieldName(f.field || 'value');
-          if (!field) return;
-          activeFilters.set(`range_${msg.fromComponent||'unknown'}_${field}`, { type: 'range', field, values: f.values });
-          applyAllFilters();
-          updateStatus(`incoming range ${field}`);
-          return;
-        }
-        if (f.type === 'categorical' && Array.isArray(f.values)) {
-          const field = sanitizeFieldName(f.field || 'value');
-          if (!field) return;
-          activeFilters.set(`categorical_${msg.fromComponent||'unknown'}_${field}`, { type: 'categorical', field, values: f.values });
-          applyAllFilters();
-          updateStatus(`incoming categorical ${field}`);
-          return;
-        }
-        return;
-      }
-
-      if (msg.type === 'spatial_filter' && msg.bounds) {
-        applyIncomingSpatial(msg.bounds, { padding: 40, duration: 0, suppressEmits: 4 });
-        return;
-      }
-
-      if (msg.type === 'filter_cleared' && datasetOk) {
-        activeFilters.clear();
-        applyAllFilters();
-        updateStatus('incoming filter cleared');
-      }
-    }
-
-    if (bc) bc.onmessage = (ev) => onMessage(ev.data);
-    window.addEventListener('message', (ev) => onMessage(ev.data));
-
-    function buildDeckLayer(data, confObj) {
-      const hexCfg = parseHexLayerConfig(confObj.hexLayer || {});
-      return H3HexagonLayer ? new H3HexagonLayer({
-        id: 'hex-layer',
-        data,
-        pickable: true,
-        stroked: false,
-        filled: true,
-        extruded: !!confObj.hexLayer?.extruded,
-        coverage: 0.9,
-        lineWidthMinPixels: 1,
-        getHexagon: d => d.hex,
-        ...hexCfg
-      }) : new PolygonLayer({
-        id: 'hex-layer-fallback',
-        data: data.map(d => {
-          const ring = h3.cellToBoundary(d.hex, true).map(([lat,lng]) => [lng, lat]);
-          return { ...d, polygon: ring };
-        }),
-        pickable: true,
-        stroked: true,
-        filled: true,
-        extruded: false,
-        getPolygon: d => d.polygon,
-        getFillColor: [184,184,184,220],
-        getLineColor: [200,200,200,255],
-        lineWidthMinPixels: 1
-      });
-    }
-
-    function handleHoverFactory(confObj){
-      const colorAttr = confObj?.hexLayer?.getFillColor?.attr || "metric";
-      return function handleHover(info){
-        const tooltipEl = $("tooltip");
-        if(info?.object){
-          map.getCanvas().style.cursor='pointer';
-          const p = info.object;
-
-          const vals = [];
-          if (TOOLTIP_COLUMNS && TOOLTIP_COLUMNS.length){
-            TOOLTIP_COLUMNS.forEach(col=>{
-              if (p[col] !== undefined){
-                const v = p[col];
-                if (typeof v === "number" && Number.isFinite(v)) {
-                  vals.push(col+": "+v.toFixed(2));
-                } else {
-                  vals.push(col+": "+v);
-                }
-              }
-            });
-          } else {
-            const v = p[colorAttr];
-            if (v != null) {
-              if (typeof v === "number" && Number.isFinite(v)) {
-                vals.push(colorAttr+": "+v.toFixed(2));
-              } else {
-                vals.push(colorAttr+": "+v);
-              }
-            }
-          }
-          vals.unshift("hex "+p.hex);
-
-          const text = vals.join(" • ");
-          tooltipEl.innerHTML = text;
-          tooltipEl.style.left = (info.x+10)+"px";
-          tooltipEl.style.top  = (info.y+10)+"px";
-          tooltipEl.style.display='block';
-        } else {
-          map.getCanvas().style.cursor='';
-          tooltipEl.style.display='none';
-        }
-      };
-    }
-
-    function updateOverlayLayers(data, confObj){
-      const layer = buildDeckLayer(data, confObj);
-      const onHover = handleHoverFactory(confObj);
-
-      if (!overlay) {
-        overlay = new MapboxOverlay({
-          interleaved: false,
-          layers: [layer],
-          onHover
-        });
-        map.addControl(overlay);
-      } else {
-        overlay.setProps({
-          layers: [layer],
-          onHover
-        });
-      }
-    }
-
-    function renderLayer() {
-      if (!map) return;
-      const data = rowsToFeatures(filteredDataset, currentConfObj);
-      fitToDataOnce(data);
-      updateOverlayLayers(data, currentConfObj);
-    }
-
-    // --- map init -------------------------------------------------------
-
-    async function initMap(){
-      updateStatus('initializing map…');
-      const style = resolveStyleUrl(MAP_STYLE_URL, MAPBOX_TOKEN);
-      mapboxgl.accessToken = MAPBOX_TOKEN;
-      map = new mapboxgl.Map({
-        container:'map',
-        style,
-        center: START_CENTER,
-        zoom: START_ZOOM,
-        projection: 'mercator',
-        dragRotate:false,
-        pitchWithRotate:false
-      });
-
-      await new Promise(resolve => {
-        map.once('load', () => {
-          updateStatus('map ready');
-          postSpatial();
-          resolve();
-        });
-      });
-
-      const sendSpatial = rafThrottle(postSpatial);
-      const spatialEvents = ['move','drag','zoom','moveend','zoomend','pitch','rotate'];
-      spatialEvents.forEach(ev => map.on(ev, sendSpatial));
-    }
-
-    // --- main boot ----------------------------------------------------------
-
-    async function main(){
-      try {
-        currentConfObj = JSON.parse(INITIAL_CONFIG || "{}");
-      } catch (_) {
-        currentConfObj = {};
-      }
-      if (!currentConfObj || typeof currentConfObj !== 'object') {
-        currentConfObj = {};
-      }
-
-      // data is embedded, so this is synchronous, no network/WASM involved
-      fullDataset = RECORDS;
-
-      await initMap();
-      applyAllFilters();
-    }
-
-    main().catch(e=>{
-      console.error("init error", e);
-      updateStatus('init error: ' + (e && e.message ? e.message : e));
+    hist.forEach((b, i) => {
+      const nh = (H * b.n) / max, hh = (H * b.hit) / max;
+      out += rect(i * w + 1, H - nh, Math.max(1, w - 2), nh, "var(--bar)");
+      out += rect(i * w + 1, H - hh, Math.max(1, w - 2), hh, "var(--accent)");
     });
+    [0, 5, 10, 15, 20, 25].forEach((k) => {
+      out += '<text x="' + (k * w + w / 2) + '" y="' + (H + 12) + '" fill="var(--muted)" font-size="10" text-anchor="middle">' + (k === 25 ? "25+" : k) + "</text>";
+    });
+    if (brush) {
+      const a = Math.min(brush.x0, brush.x1), b = Math.max(brush.x0, brush.x1);
+      out += rect(a, 0, b - a, H, "rgba(232,255,89,0.2)", ' stroke="var(--accent)"');
+    }
+    svg.innerHTML = out;
+  }
 
-    // block pinch-zoom/ctrl+wheel zoom
-    document.addEventListener('wheel', function(e){
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    }, { passive: false });
-    document.addEventListener('touchstart', function(e){
-      if (e.touches && e.touches.length > 1) {
-        e.preventDefault();
-      }
-    }, { passive: false });
-    document.addEventListener('touchmove', function(e){
-      if (e.touches && e.touches.length > 1) {
-        e.preventDefault();
-      }
-    }, { passive: false });
-  </script>
+  function paintKinds() {
+    const on = kindList(fused.params.getAll());
+    const max = Math.max(1, ...kinds.map((r) => r.n));
+    const box = el("kinds");
+    box.innerHTML = "";
+    if (!kinds.length) { box.innerHTML = '<div class="hint">No positions in view</div>'; return; }
+    for (const r of kinds) {
+      const row = document.createElement("div");
+      row.className = "row" + (on.includes(r.k) ? " on" : "");
+      row.innerHTML = '<span class="name"></span><div class="track"><div style="width:' + (100 * r.n) / max + '%;background:var(--bar)"></div><div style="width:' + (100 * r.hit) / max + '%;background:var(--accent)"></div></div><span class="num">' + fmt(r.hit) + "</span>";
+      row.querySelector(".name").textContent = r.k;
+      row.onclick = () => {
+        const cur = kindList(fused.params.getAll());
+        const next = cur.includes(r.k) ? cur.filter((x) => x !== r.k) : cur.concat([r.k]);
+        fused.params.set(P + "kinds", next.length ? next : null);
+      };
+      box.appendChild(row);
+    }
+  }
+
+  function paintChips() {
+    const p = fused.params.getAll(), chips = [];
+    if (pv(p, "lo") != null || pv(p, "hi") != null) chips.push("speed " + (pv(p, "lo") ?? 0) + "–" + (pv(p, "hi") ?? "25+") + " kn");
+    const ks = kindList(p);
+    if (ks.length) chips.push("type: " + ks.join(", "));
+    const sel = pv(p, "sel");
+    if (sel?.bbox) chips.push("map box selection");
+    else if (sel?.ids?.length) chips.push(sel.ids.length + " picked vessels");
+    el("chips").innerHTML = chips.length ? "" : '<span class="hint">None, showing everything in view</span>';
+    chips.forEach((c) => { const s = document.createElement("span"); s.className = "chip"; s.textContent = c; el("chips").appendChild(s); });
+  }
+
+  function paint() {
+    const total = hist.reduce((s, b) => s + b.n, 0), hit = hist.reduce((s, b) => s + b.hit, 0);
+    el("kpi").innerHTML = fmt(hit) + " <small>of " + fmt(total) + " in view</small>";
+    paintHist();
+    paintKinds();
+    paintChips();
+  }
+
+  const xOf = (e) => Math.max(0, Math.min(svg.clientWidth, e.clientX - svg.getBoundingClientRect().left));
+  const kAt = (x) => Math.min(BINS - 1, Math.max(0, Math.floor((x / svg.clientWidth) * BINS)));
+  svg.addEventListener("mousedown", (e) => { brush = { x0: xOf(e), x1: xOf(e) }; paintHist(); });
+  function sendBrush(final) {
+    const a = Math.min(brush.x0, brush.x1), b = Math.max(brush.x0, brush.x1);
+    if (b - a < 3) { if (final) fused.params.set({ [P + "lo"]: null, [P + "hi"]: null }); return; }
+    const lo = kAt(a), hi = kAt(b), p = fused.params.getAll();
+    if (lo !== pv(p, "lo") || hi !== pv(p, "hi")) fused.params.set({ [P + "lo"]: lo, [P + "hi"]: hi });
+  }
+  window.addEventListener("mousemove", (e) => { if (brush) { brush.x1 = xOf(e); paintHist(); sendBrush(false); } });
+  window.addEventListener("mouseup", () => {
+    if (!brush) return;
+    sendBrush(true);
+    brush = null;
+    paintHist();
+  });
+
+  el("select-view").onclick = () => { const b = fused.params.get(P + "bounds"); if (b) fused.params.set(P + "sel", { bbox: b }); };
+  el("reset").onclick = () => fused.params.set({ [P + "sel"]: null, [P + "lo"]: null, [P + "hi"]: null, [P + "kinds"]: null });
+
+  function showFeature(label, f) {
+    if (!f) return false;
+    el("detail").textContent = label + "\n" + Object.entries(f).map(([k, v]) => k + ": " + v).join("\n");
+    return true;
+  }
+
+  function splitBounds(p) {
+    const b = pv(p, "bounds")?.map((v) => +v.toFixed(4));
+    if (b && JSON.stringify(b) !== JSON.stringify([p.q_w, p.q_s, p.q_e, p.q_n])) fused.params.set({ q_w: b[0], q_s: b[1], q_e: b[2], q_n: b[3] });
+  }
+  fused.params.onChange(splitBounds);
+  splitBounds(fused.params.getAll());
+  let seen = "";
+  function onParams(p) {
+    if (!showFeature("Hover", pv(p, "hover"))) showFeature("Clicked", pv(p, "click"));
+    const src = pv(p, "sources")?.[LAYER];
+    if (src?.error) el("status").textContent = "layer error: " + src.error;
+    const version = src?.version;
+    const key = JSON.stringify([version, pv(p, "bounds"), pv(p, "lo"), pv(p, "hi"), pv(p, "kinds"), pv(p, "sel")?.bbox ?? pv(p, "sel")?.ids]);
+    if (version && key !== seen) {
+      seen = key;
+      refresh();
+    } else if (!version && !src?.error) {
+      el("kpi").innerHTML = "<small>Waiting for /h3/query…</small>";
+    }
+  }
+  fused.params.onChange(onParams);
+  onParams(fused.params.getAll());
+  window.addEventListener("resize", () => paint());
+</script>
 </body>
 </html>
-""").render(
-        records_json=records_json,
-        config_json=config_json,
-        mapbox_token=mapbox_token,
-        map_style_url=style_url,
-        default_style_url=DEFAULT_STYLE_URL,
-        center_lng=center_lng,
-        center_lat=center_lat,
-        zoom=zoom,
-        tooltip_columns=tooltip_columns,
-        min_elevation=min_elevation,
-        channel=channel,
-        dataset=dataset,
-    )
-
-    return common.html_to_obj(html)
-  ```
+```
 
 </details>
+
+## See also
+
+- [Partition, Index and Query](/guide/h3-analytics/data-retrieval-end-to-end): build an indexed dataset
+- [`GET /h3/query`](/rest-api/h3): every query parameter
+- [Fused Map](/widget-api/fused-map) and [H3 Query](/widget-api/h3-query) widget references
+- [HTML template](/widget-api/html): `fused.query` and `fused.params`
 
 ---
 

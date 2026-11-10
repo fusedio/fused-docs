@@ -8,7 +8,7 @@ description: Best practices for partition, index and query, with a worked exampl
 
 # Partition, Index and Query
 
-Fused's [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service) turns your data into an H3 dataset that returns the rows you ask for in seconds. It takes three steps: partition, index and query. This page gives the best practices for each step, then a worked example on Overture buildings.
+Fused's [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service) turns your data into an H3 dataset that returns the rows you ask for in seconds. It takes three steps: partition, index and query. This page gives the best practices for each step and the ways to visualize the result, then an end to end example on Overture buildings.
 
 ```mermaid
 %%{init: {"flowchart": {"htmlLabels": false}}}%%
@@ -47,16 +47,55 @@ Pass only one. If you have both a cell column and a geometry, use `hex_column`. 
 
 ## Partition
 
-[`fused.h3.partition`](/python-sdk/api-reference/h3#partition) runs as background jobs and returns a run at once. [`fused.h3.get_run(run_id)`](/python-sdk/api-reference/h3#get_run) gives its status, [`.tail()`](/python-sdk/api-reference/h3#tail) its logs, and [`.retry()`](/python-sdk/api-reference/h3#retry) runs the failed jobs again.
+[`fused.h3.partition`](/python-sdk/api-reference/h3#partition) writes your rows as H3 Parquet files. It runs as background jobs and returns a run at once:
 
-- **`h3_res` and `file_res`:** `h3_res` sets each row's cell, and `file_res` the larger cell each file covers. Set both: the defaults, 7 and 1, suit few datasets. A higher `file_res` makes more, smaller files, so a query reads less.
-- **`partition_by`:** one folder per value of the column your queries filter on. Values cannot be null or empty, contain a `/`, or start with `_`. Avoid a column where one value holds most rows. A column name takes the values from the data in one job. A dict such as `{"date": ["2024-07-04", "2024-07-05"]}` runs one job per combination of values, each bound to the source's input of that name: a UDF parameter, or a hive folder for `sources.parquet`.
-- **`engine`:** `"small"` (the default), `"medium"` and `"large"` run as [batch jobs](/guide/working-with-udfs/udf-best-practices/scaling-out#instance-types) with no time limit. `"realtime"` stops after 2 minutes, so it suits only small Parquet sources; a UDF source raises with it.
-- **Running again:** with column names, every run reads the source again and replaces the folders it writes; all other folders stay. With a dict, jobs already done are skipped and `redo=True` runs them again. Without `partition_by`, a run into an existing output raises. To change `h3_res`, `file_res`, `fill`, `sort_by` or the partition columns, write to a new output path.
+| To | Call |
+|---|---|
+| See the status | [`fused.h3.get_run(run_id)`](/python-sdk/api-reference/h3#get_run) |
+| Follow the logs | [`.tail()`](/python-sdk/api-reference/h3#tail) |
+| Run the failed jobs again | [`.retry()`](/python-sdk/api-reference/h3#retry) |
 
 :::warning
 In a UDF that starts a job, guard the call so it runs only when you ask: otherwise every re-run of the UDF starts the job again.
 :::
+
+### Resolutions
+
+| Parameter | Sets | Default |
+|---|---|---|
+| `h3_res` | The cell of each row | 7 |
+| `file_res` | The larger cell that each file covers | 1 |
+
+Set both: the defaults suit few datasets. Choose `h3_res` from the size of your features with the [Resolution Guide](/guide/h3-analytics/resolution-guide). A higher `file_res` makes more, smaller files, so a query reads less.
+
+### Partition columns
+
+`partition_by` writes one folder per value of a column, so a query that filters on that column reads only its folders. Choose the column your queries filter on.
+
+- Values cannot be null or empty, contain a `/`, or start with `_`.
+- Avoid a column where one value holds most rows.
+
+| `partition_by` | Example | Runs |
+|---|---|---|
+| Column names | `"building_type"` | One job, which takes the values from the data. |
+| A dict of values | `{"date": ["2024-07-04", "2024-07-05"]}` | One job per combination of values. Each job passes its value to the source's input of the same name: a UDF parameter, or a hive folder for `sources.parquet`. |
+
+### Engine
+
+| `engine` | Time limit | Use for |
+|---|---|---|
+| `"small"` (default), `"medium"`, `"large"` | None: they run as [batch jobs](/guide/working-with-udfs/udf-best-practices/scaling-out#instance-types) | Most sources |
+| `"realtime"` | 2 minutes | Small Parquet sources only. A UDF source raises. |
+
+### Running again
+
+| Partitioned by | A new run into the same output |
+|---|---|
+| Column names | Reads the source again and replaces the folders it writes. All other folders stay. |
+| A dict of values | Skips the jobs already done. `redo=True` runs them again. |
+| Nothing (no `partition_by`) | Raises if the output exists. `redo=True` replaces it. |
+
+To change `h3_res`, `file_res`, [`fill`, `sort_by`](/python-sdk/api-reference/h3#partition) or the partition columns, write to a new output path or delete the existing output folder. Otherwise the run raises.
 
 ## Index
 
@@ -91,7 +130,19 @@ curl -G "https://www.fused.io/server/v1/h3/query" \
 - **One response of rows holds one page:** at most `max_row_groups` row groups (default 1,024, at most 4,096) and at most 256 MiB of decoded rows, whichever comes first. The H3 cell column counts toward the 256 MiB even when you don't request it.
 - **`fused.h3.query` pages for you** and returns every row, so the 256 MiB limit applies to each page, not to the result. The whole result still has to fit in the UDF's memory.
 
-## Example: Overture buildings
+## Visualize
+
+A [Fused Map](/guide/data-input-outputs/import-connection/fused-map) draws an indexed dataset in three ways. Start with the `fused-hex` layer: it needs no code.
+
+| Method | How the map gets the rows | Use it to |
+|---|---|---|
+| [`fused-hex` layer](/guide/h3-analytics/visualization#fused-hex-layer) | The layer fetches the cells in view as you pan and zoom, with no UDF. | Browse the whole dataset. |
+| [From a UDF](/guide/h3-analytics/visualization#from-a-udf) | A UDF calls [`fused.h3.query`](/python-sdk/api-reference/h3#query) and an `h3` layer draws what it returns. | Join, aggregate or filter other columns in Python first. |
+| [`h3-query` widget and a map](/guide/h3-analytics/visualization#h3-query-widget) | An `h3-query` widget fetches the rows of one query as a SQL source, `{{name}}`, and a map layer draws them. | Run SQL, charts and tables on the rows, and [cross-filter](/guide/h3-analytics/visualization#cross-filtering) a map with a histogram. |
+
+[H3 Visualization](/guide/h3-analytics/visualization) has the code and a live canvas for each. Every prop is in the [Fused Map](/widget-api/fused-map) and [H3 Query](/widget-api/h3-query) widget references. The [example below](#end-to-end-example-with-overture-buildings) maps Overture buildings from a UDF and with a `fused-hex` layer.
+
+## End to End Example with Overture Buildings
 
 ![H3_End_to_End_Ingestion canvas: NYC 311 points, a Copernicus DEM raster, ERA5 weather and Overture buildings, each partitioned, indexed and queried into H3](/img/tutorials/geospatial/h3/h3_end_to_end_ingestion_canvas.png)
 
@@ -170,7 +221,7 @@ def udf():
 Two maps show the result:
 
 - **4a. Map from the UDF:** a [`fused-map`](/guide/data-input-outputs/import-connection/fused-map) layer runs `query_buildings` once per [map tile](/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile#tile-udf) from zoom 15, so panning queries the new area, and colours footprints by `building_type`.
-- **4b. Map from `/h3/query`:** a [`fused-hex` layer](/guide/h3-analytics/visualization#from-an-indexed-dataset) calls [`GET /h3/query`](/rest-api/h3) per tile with no UDF, from zoom 13, and colours each res-11 cell by its number of buildings. It cannot filter by `building_type`.
+- **4b. Map from `/h3/query`:** a [`fused-hex` layer](/guide/h3-analytics/visualization#fused-hex-layer) calls [`GET /h3/query`](/rest-api/h3) per tile with no UDF, from zoom 13, and colours each res-11 cell by its number of buildings. It cannot filter by `building_type`.
 
 ```json
 {
@@ -186,6 +237,7 @@ To use another area, change `bounds` in step 1, partition into a new output path
 ## Reference
 
 - [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service): the workflow at a glance
+- [H3 Visualization](/guide/h3-analytics/visualization): map an indexed dataset
 - [Large dataset examples](/guide/h3-analytics/hex-datasets)
 - [`fused.h3`](/python-sdk/api-reference/h3): the Python API
 - [`GET /h3/query`](/rest-api/h3): every parameter
