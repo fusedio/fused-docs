@@ -15,7 +15,7 @@ const config: Config = {
     fusedPyVersion: '1.20.1',
   },
 
-  trailingSlash: undefined,
+  trailingSlash: true,
 
   // Production URL configuration
   url: process.env.DEPLOYMENT_URL || "https://docs.fused.io",
@@ -81,6 +81,9 @@ const config: Config = {
           truncateMarker: /(<!--\s*truncate\s*-->)|({\/\*\s*truncate\s*\*\/})/,
           // Ensure consistent canonical URLs
           routeBasePath: "blog",
+        },
+        sitemap: {
+          ignorePatterns: ["**/search", "**/search/**"],
         },
         theme: {
           customCss: "./src/css/custom.css",
@@ -350,7 +353,6 @@ const config: Config = {
           { to: "/guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", from: ["/guide/working-with-udfs/udf-best-practices/geospatial/single-vs-tile"] },
 
           // API Reference flattening redirects
-          { to: "/python-sdk/overview", from: ["/python-sdk/top-level-functions"] },
           { to: "/guide/advanced-setup/local-installation", from: ["/python-sdk/index", "/python-sdk/authentication"] },
           { to: "/python-sdk/overview", from: ["/python-sdk"] },
 
