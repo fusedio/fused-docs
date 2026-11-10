@@ -11,7 +11,7 @@ description: Draw H3 cells on a Fused Map from a UDF or straight from an indexed
 A [Fused Map](/guide/data-input-outputs/import-connection/fused-map) draws H3 cells as hexagons. The map only needs rows with a cell column, so where those rows come from decides the method:
 
 - [From a UDF](#from-a-udf): a UDF returns the cells and an `h3` layer draws them.
-- [From an indexed dataset](#from-an-indexed-dataset): the map reads a dataset indexed with `fused.h3` with no UDF, through a [`fused-hex` layer](#fused-hex-layer) or an [`h3-query` widget](#h3-query-widget).
+- [From an indexed dataset](#from-an-indexed-dataset): a [`fused-hex` layer](#fused-hex-layer) draws a dataset indexed with `fused.h3`, with no UDF. Or an [`h3-query` widget](#h3-query-widget) fetches rows from it and a map draws them.
 - [Cross-filtering](#cross-filtering): a histogram and a category list filter the map, and the map's view filters the charts.
 
 The `fused-hex` layer is the easiest way to map an indexed dataset: one layer, no code.
@@ -98,16 +98,16 @@ To map an indexed dataset from a UDF, call [`fused.h3.query`](/python-sdk/api-re
 
 ## From an indexed dataset {#from-an-indexed-dataset}
 
-A dataset indexed with the [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service) can go on a map with no UDF. Both ways call [`GET /h3/query`](/rest-api/h3) from the browser. They differ in how much of the dataset they read and where the rows end up:
+A dataset indexed with the [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service) goes on a map with no UDF, in one of two ways:
 
-| Method | What it reads | Use it for |
+| Way | What you add | Use it for |
 |---|---|---|
-| [`fused-hex` layer](#fused-hex-layer) | Tiles of the whole dataset, at any zoom. The server reduces each cell's rows to one. | Browsing a large dataset. |
-| [`h3-query` widget](#h3-query-widget) | The rows of one query, held in the browser's DuckDB, up to `maxPages` pages. | SQL, charts and cross-filtering on the rows. |
+| [`fused-hex` layer](#fused-hex-layer) | One map layer that draws the dataset. | Browsing a whole dataset at any zoom. |
+| [`h3-query` widget and a map](#h3-query-widget) | An `h3-query` widget that fetches the rows of one query, and a map that draws them. | Running SQL, tables and charts on those rows as well as mapping them. |
 
-### `fused-hex` layer {#fused-hex-layer}
+### Draw a dataset with a `fused-hex` layer {#fused-hex-layer}
 
-A `fused-hex` layer reads an [indexed dataset](/guide/h3-analytics/hex-datasets#example-16-years-of-nyc-311-requests) from [`GET /h3/query`](/rest-api/h3), one request per map tile. The server collapses each cell to one row, so the map can show the whole dataset at any zoom.
+A `fused-hex` layer draws an [indexed dataset](/guide/h3-analytics/hex-datasets#example-16-years-of-nyc-311-requests) straight on the map. The browser fetches the cells in view as you pan and zoom, so you don't need a UDF or a server of your own.
 
 <iframe
   src="https://www.fused.io/share/fc_fused%2FH3_Converting_Examples/indexed_dataset_map"
@@ -133,7 +133,6 @@ A `fused-hex` layer reads an [indexed dataset](/guide/h3-analytics/hex-datasets#
         "type": "fused-hex",
         "h3Column": "hex",
         "source": {
-          "endpoint": "https://www.fused.io/server/v1/h3/query",
           "path": "s3://fused-asset/data/nyc311/",
           "timeColumn": "created_date",
           "dateMin": "2024-01-01",
@@ -177,29 +176,21 @@ A `fused-hex` layer reads an [indexed dataset](/guide/h3-analytics/hex-datasets#
 
 </details>
 
-The `source` keys you set most often:
+The layer needs only three settings:
 
-- `path`: the indexed dataset.
-- `variables`: the columns to fetch. Name one small column when the style only uses `count`, or every column is fetched.
-- `timeColumn`, `dateMin` and `dateMax`: the time window.
-- `overview`: draws a zoomed-out overview below the layer's zoom floor. Without it, nothing draws when you zoom out past the floor.
-- `reduce`: how each cell's rows in the window become one: `latest` (default), `first`, `mean`, `min`, `max` or `sum`. The aggregates add `count`, `date_min` and `date_max`.
+- `h3Column`: the cell column, `hex` for a dataset written by `fused.h3.partition`.
+- `source.path`: the indexed dataset.
+- `source.overview: {}`: draws an overview of the dataset when you zoom out.
 
-The layer never fits the map to its data, so set `centerLng`, `centerLat` and `zoom`.
+Everything else is optional, such as the time window in the example. The layer doesn't move the map to its data, so set `centerLng`, `centerLat` and `zoom`. For the other keys, see the [Fused Map widget reference](/widget-api/fused-map).
 
-The [H3 Data Retrieval Visualization canvas](https://www.fused.io/canvas/fc_fused/H3_Data_Retrieval_Visualization) has the same map in `nyc311_hex_map`, and `ais_hex_map` maps one day of AIS ship positions in New York Harbor with `"reduce": "mean"` on speed.
+The [H3 Data Retrieval Visualization canvas](https://www.fused.io/canvas/fc_fused/H3_Data_Retrieval_Visualization) has this map in `nyc311_hex_map`, and `ais_hex_map` maps one day of AIS ship positions in New York Harbor.
 
-:::tip
-Every key under `props`, and the rest of `source`, is documented in the [Fused Map widget reference](/widget-api/fused-map).
-:::
+### Map the rows of an `h3-query` widget {#h3-query-widget}
 
-### `h3-query` widget {#h3-query-widget}
+An [`h3-query`](/widget-api/h3-query) widget doesn't draw anything. It fetches the rows of one query on an indexed dataset and shares them as a SQL source, `{{name}}`, for tables, charts and maps. To map the rows, add a `fused-map` with an edge from the `h3-query` node and a layer with `"data": "{{name}}"`.
 
-An [`h3-query`](/widget-api/h3-query) widget loads the rows of one query into the browser as a SQL source, `{{name}}`. A `fused-map` layer draws it with `"data": "{{name}}"`.
-
-A map reads the source when it is a child of the `h3-query` widget, when an edge runs from the `h3-query` node to the map node, or when both widgets sit in one HTML page.
-
-This example uses two nodes and an edge between them. `nyc311_query` loads one day of NYC 311 calls in Lower Manhattan and lists them by complaint type in a table. `nyc311_query_map` draws the same rows. List `hex` in `columns` so the map can draw the rows. The query returns 341 calls in 252 cells, and the layer's `sql` counts the calls per cell, reading the rows as `{{source}}`, so each cell is drawn once.
+In this example, `nyc311_query` fetches one day of NYC 311 calls in Lower Manhattan and lists them by complaint type in a table. `nyc311_query_map` draws the same rows. List `hex` in `columns` so the map has the cells. The layer's `sql` counts the calls in each cell, so each cell is drawn once.
 
 <iframe
   src="https://www.fused.io/share/fc_fused%2FH3_Data_Retrieval_Visualization/nyc311_query_map"
