@@ -85,24 +85,17 @@ Set both: the defaults suit few datasets. Choose `h3_res` from the size of your 
 | `engine` | Time limit | Use for |
 |---|---|---|
 | `"small"` (default), `"medium"`, `"large"` | None: they run as [batch jobs](/guide/working-with-udfs/udf-best-practices/scaling-out#instance-types) | Most sources |
-| `"realtime"` | A few minutes | Small Parquet sources only. A UDF source raises. |
+| `"realtime"` | 2 minutes | Small Parquet sources only. A UDF source raises. |
 
 ### Running again
 
-Calling `fused.h3.partition` again with the same output adds to or updates what is there. What it rewrites depends on how `partition_by` split the first run:
-
-| To | Do |
+| `partition_by` | Running again into the same output |
 |---|---|
-| Update an output partitioned by a column, such as `partition_by="building_type"` | Run again. The run replaces each folder it writes. A folder the source no longer produces stays, so delete it yourself. A Parquet source is read again every time; a UDF source reuses the rows it cached on the first run, so pass `redo=True` to read it again. |
-| Add values to an output partitioned by a dict, such as a new month | Run again with the new values in `partition_by`. Each combination of values is its own job, and jobs already done are skipped. |
-| Rewrite some values of a dict-partitioned output | Pass only those values in `partition_by`, with `redo=True`. |
-| Replace an output with no `partition_by` | Pass `redo=True`. Without it, the run raises because the output exists. |
-| Run only the failed jobs again | [`run.retry()`](/python-sdk/api-reference/h3#retry) |
-| Change `h3_res`, `file_res`, [`fill`, `sort_by`](/python-sdk/api-reference/h3#partition) or the partition columns | Write to a new output path, or delete the output folder first. Otherwise the run raises. |
+| Column names | Replaces the folders it writes; the others stay. A UDF source reuses its cached rows unless you pass `redo=True`. |
+| A dict of values | Runs only the values not done yet. `redo=True` reruns the values you pass. |
+| Nothing | Raises. `redo=True` replaces the output. |
 
-Keep one style per output: a run with column names into an output written one job per value raises.
-
-After any of these, [index](#index) the output again.
+To change `h3_res`, `file_res`, [`fill`, `sort_by`](/python-sdk/api-reference/h3#partition) or the partition columns, write to a new path. [`run.retry()`](/python-sdk/api-reference/h3#retry) reruns failed jobs. Index again after every run.
 
 ## Index
 
@@ -110,7 +103,7 @@ After any of these, [index](#index) the output again.
 
 - **Re-run index after every partition,** and wait until `fused.h3.index_status` reports `ready`. A partition run that rewrites files makes the index stale even when the data is the same, and queries fail until you index again.
 - **New data: run index again.** It indexes only new, changed and removed files and skips unchanged folders. On a large dataset, also pass the new folders as `subset=`, such as `subset={"<partition column>": "<value>"}`, so index lists only those folders instead of the whole dataset. The keys must be the leading partition columns.
-- **Use a [batch engine](/guide/working-with-udfs/udf-best-practices/scaling-out#dedicated-instances) for more than 1,000 files:** `"small"`, `"medium"` or `"large"`. The default, `"realtime"`, stops after a few minutes, so Fused counts the files a realtime run still has to read before it starts. Over 1,000 per instance, the call fails at once, instead of timing out halfway, with an error that names the engine to use, or an `options={"instances": N}` that splits the files across enough realtime instances. An incremental run counts only new and changed files, so adding a few folders to a large dataset can stay on `"realtime"`.
+- **Use a [batch engine](/guide/working-with-udfs/udf-best-practices/scaling-out#dedicated-instances) for more than 1,000 files:** `"small"`, `"medium"` or `"large"`. On `"realtime"` (2 minutes), a run that would read more fails at launch with an error naming the engine or `options={"instances": N}` to use.
 
 ## Query
 
@@ -153,7 +146,7 @@ A [Fused Map](/guide/data-input-outputs/import-connection/fused-map) draws an in
 
 ![H3_End_to_End_Ingestion canvas: NYC 311 points, a Copernicus DEM raster, ERA5 weather and Overture buildings, each partitioned, indexed and queried into H3](/img/tutorials/geospatial/h3/h3_end_to_end_ingestion_canvas.png)
 
-_The [H3_End_to_End_Ingestion canvas](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion) runs four end-to-end examples: NYC 311 points, a Copernicus DEM raster, ERA5 weather and Overture buildings. Open it to run any of them, or copy one as a starting point for your own data._
+_The [H3_End_to_End_Ingestion canvas](https://www.fused.io/canvas/fc_fused/H3_End_to_End_Ingestion) has four examples: NYC 311, Copernicus DEM, ERA5 and Overture buildings. Open it to run any of them._
 
 This section walks through the **Polygons: Overture buildings → H3** group. In it, we download 955,857 Overture building footprints around Baltimore, Maryland, once, partition them into H3 files by building type, index them, then query them from a map: once through a UDF and once straight from [`GET /h3/query`](/rest-api/h3). The [UDFs](/python-sdk/api-reference/fused-udf) that start partition and index jobs are guarded by a `run` parameter, so they only start a job when it is turned on.
 
