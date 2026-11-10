@@ -296,6 +296,7 @@ const config: Config = {
           { to: "/guide/data-input-outputs/export-api/tokens-endpoints", from: ["/tutorials/Engineering%20&%20ETL/turn-your-data-into-an-api", "/tutorials/Engineering & ETL/turn-your-data-into-an-api"] },
 
           // Geospatial tutorials - H3
+          { to: "/guide/h3-analytics/h3-large-datasets", from: ["/guide/h3-analytics/hex-datasets"] },
           { to: "/guide/h3-analytics/aggregations", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling", "/tutorials/Geospatial with Fused/h3-tiling"] },
           { to: "/guide/h3-analytics/aggregations", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling/when-to-use-h3", "/tutorials/Geospatial with Fused/h3-tiling/when-to-use-h3"] },
           { to: "/guide/h3-analytics/converting", from: ["/tutorials/Geospatial%20with%20Fused/h3-tiling/file-to-h3", "/tutorials/Geospatial with Fused/h3-tiling/file-to-h3"] },
