@@ -75,7 +75,7 @@ index(
     options: dict[str, Any] | None = None,
     base_url: str | None = None,
     **deprecated: Any
-) -> TaskRun
+) -> TaskRun[Any] | Run
 ```
 
 Register a hive-partitioned parquet tree as a queryable H3 location.
@@ -96,43 +96,93 @@ off.
 - **path** (`str`) – Path to the parquet tree (e.g. `"s3://my-bucket/my-dataset/"`).
   Every `.parquet` file under it, at any depth, must carry an
   integer H3 cell column named `hex_column` at a single resolution.
+
 - **hex_column** (`str`) – Name of the H3 cell column present in every file.
   Defaults to `"hex"`, what `fused.h3.partition` writes.
-- **time_column** (`str | None`) – Optional. Names either an in-file timestamp/date column,
-  or a folder level written `key=value` whose value is a `YYYY`,
-  `YYYY-MM`, or `YYYY-MM-DD` period covering every row under that
-  folder, or an ISO timestamp (an instant). If None, the only `date`
-  partition column filters by time, and a location without one is
-  timeless.
-- **partition_columns** (`str | list[str] | None`) – The `key=value` folder levels (e.g.
-  `scenario=ssp245/date=2050-01/`) whose values `query` can filter
-  by, as a column name or a list of names in folder order. Defaults
-  to the `partition_by` columns in the tree's `_manifest.json`, else
-  none. Each leaf folder must have exactly one folder per column, in
-  that order.
+
+- **time_column** (`str | None`) – Optional. The column that time filters apply to. It can be:
+
+  - an in-file timestamp or date column; or
+  - a folder level written `key=value` whose value is a `YYYY`,
+    `YYYY-MM` or `YYYY-MM-DD` period (covering every row under that
+    folder) or an ISO timestamp (an instant).
+
+  If None, a partition column named `date` is used for time
+  filtering. If there is none either, the location has no time
+  column, and `query` rejects `time_min` and `time_max` on it.
+
+- **partition_columns** (`str | list[str] | None`) – The `key=value` folder levels whose values `query`
+  can filter by (e.g. `scenario` and `date` for a tree laid out as
+  `scenario=ssp245/date=2050-01/`). Give a single column name or a
+  list of names, in folder order.
+
+  - Defaults to the `partition_by` columns in the tree's
+    `_manifest.json`, else none.
+  - Each leaf folder must have exactly one folder per column, in
+    that order.
+
 - **subset** (`dict[str, Any] | None`) – Limit the run to some folders, as `{column: value or list of values}`. Unlike `query(partition=...)`, the keys must be the
   leading partition columns of the tree (a column cannot be skipped),
   in any order. Values are strings, numbers or booleans. Only those
   folders are listed and indexed, so adding one month to a large
   archive costs that month.
+
+  `"file"` is reserved: it filters files, not folders. Its value
+  is a file name or a list of them, relative to the folder that
+  holds the file (`"1.parquet"`), or glob patterns on that name
+  (`"1*.parquet"`). It combines with folder keys
+  (`{"month": "2026-11", "file": ["a*.parquet"]}`: those files
+  inside that month); on its own it applies to the whole tree, a
+  flat folder included, so a large flat folder can be indexed in
+  batches. Files outside the filter are neither read nor dropped.
+  Progress is kept per folder, not per file: the batch that leaves
+  every file of a folder indexed records the folder, and only then
+  does a later run skip it. Running a batch again in a folder
+  that was never fully recorded reads that batch's files again
+  (for example after a realtime timeout), so pick batches that
+  finish in one run, or use `engine="small"`. A pattern that
+  matches no file raises. A tree whose partition columns include
+  one named `file` cannot use this key.
+
 - **redo** (`bool`) – Read files again. With `subset`, every file in those folders
-  is read again and replaces what was indexed from it; nothing
-  else is touched. Without it, the whole tree is indexed from
-  scratch, which is also how to change the location's columns.
+  (or, with a `"file"` filter, every matching file) is read again
+  and replaces what was indexed from it; nothing else is touched.
+  Without it, the whole tree is indexed from scratch, which is also
+  how to change the location's columns.
+
 - **engine** (`InstanceType | Literal['realtime']`) – `"realtime"` (the default) starts at once but is limited to a
-  few minutes. A batch instance type or alias (`"small"`,
-  `"medium"`, `"large"`, ...) has no time limit; use it for a large
-  tree.
-- **visibility** (`str | None`) – `"team"` or `"public"` (Fused admins only); None keeps
-  the location's current visibility (`"team"` for a new one). A
-  public location's files must be publicly readable on S3.
+  few minutes, and is refused at launch when more than about 1,000
+  files per instance are still to be read; the error names the
+  engine or the `instances` count to use instead. A batch instance
+  type or alias (`"small"`, `"medium"`, `"large"`, ...) has no time
+  limit; use it for a large tree.
+
+- **visibility** (`str | None`) – Who can use the location:
+
+  - `"team"`: your team only.
+  - `"public"`: everyone (Fused admins only). The files must be
+    publicly readable on S3.
+  - None (the default): leave the visibility unchanged. If the
+    location is being indexed for the first time, it is `"team"`.
+
 - **options** (`dict[str, Any] | None`) – Tuning, as a dict. `"workers"`: how many files are read at
   once (default 32; a larger instance can take more).
+  `"instances"`: how many instances share the folders (default 1).
+  The server splits the folders into that many slices of similar
+  size in bytes (fewer when there are fewer folders), runs each
+  slice on its own instance, and the last slice to finish
+  finalizes the location. The run is a `Run` with one job per
+  slice; `run.retry()` runs the failed slices again. Works with
+  any engine.
+
 - **base_url** (`str | None`) – Base URL for the API. If None, uses the current environment.
 
 **Returns:**
 
-- `TaskRun` – The `TaskRun` of the indexing run. `run.tail()` prints its log lines
+- `TaskRun[Any] | Run` – The `TaskRun` of the indexing run, or with `options={"instances": N}`
+  (N above 1) a `Run` of one job per slice, which has the same
+  `tail()`, `status()` and `done()`, and both have `error()`, `errors()`
+  and `failed()`. `run.tail()` prints its log lines
   until it finishes, `run.status()` and `run.done()` poll it, and
   `index_status(path)` reports the index once it has succeeded. If only
   some files fail, everything else is indexed and queryable; the run's
@@ -152,6 +202,15 @@ fused.h3.index("s3://my-bucket/era5_h3/", subset={"month": "2026-11"})
 fused.h3.index(
     "s3://my-bucket/era5_h3/", subset={"month": "2026-11"}, redo=True
 )
+```
+
+Index a large flat folder in batches by file name:
+
+```py
+for digit in "0123456789":
+    fused.h3.index(
+        "s3://my-bucket/flat/", subset={"file": f"{digit}*.parquet"}
+    ).tail()
 ```
 
 Deprecated: `prefix=` (use `subset=`), `overwrite=True` and `force=True`
@@ -232,6 +291,7 @@ partition(
     sort_by: str | list[str] | None = None,
     redo: bool = False,
     chunk_res_offset: int | None = None,
+    on_null_point: Literal["raise", "drop"] = "raise",
     read_engine: InstanceType = "small",
     engine: InstanceType | Literal["realtime"] = "small",
     options: dict[str, Any] | None = None,
@@ -337,6 +397,12 @@ output raises and says so.
   fine chunks make many row groups (a bigger footer and more
   requests). `None` (the default) writes row groups of
   `row_group_size` rows and records no chunk resolution.
+- **on_null_point** (`Literal['raise', 'drop']`) – What to do with a row whose `point_column` is null
+  (a null or NaN latitude or longitude, or a null geometry).
+  `"raise"` (the default) fails the job on the first one;
+  `"drop"` skips those rows and reports how many in the job log and
+  in the manifest as `rows_dropped_null_point`. Out-of-range
+  values still raise.
 - **read_engine** (`InstanceType`) – Batch instance type of the read jobs of a `udf` or
   `era5` source (default `"small"`). `"realtime"` raises.
 - **engine** (`InstanceType | Literal['realtime']`) – `"small"` (default) runs the partition job as a batch job
@@ -347,8 +413,10 @@ output raises and says so.
   `chunk_res_offset`),
   `compression` ("zstd"), `compression_level` (5),
   `key_columns` (columns to dictionary-encode), `memory_budget`
-  and `workers` (both sized from the instance by default). An
-  unknown key raises.
+  and `workers` (both sized from the instance by default; the
+  writer threads are also cut so that each can hold the largest
+  output file in memory, and an explicit `workers` is used as
+  given). An unknown key raises.
 - **base_url** (`str | None`) – Fused API base URL; defaults to the configured one.
 
 **Returns:**
@@ -670,8 +738,9 @@ never change and are plain attributes.
 The rest is read live: `jobs()` (job id to status), `status()` (one answer
 for the run: `"failed"` if any job failed, else `"succeeded"` if all
 succeeded, else `"running"` if any is running, else `"pending"`), `done()`
-(every job has finished, some may have failed), `errors()` (job id to error
-for the failed jobs) and the job lists `failed()`, `succeeded()`,
+(every job has finished, some may have failed), `error()` (the failed jobs'
+errors in one string), `errors()` (job id to error for the failed jobs) and
+the job lists `failed()`, `succeeded()`,
 `skipped()` and `pending()`. A job is pending while it waits to start, for
 instance because the team has no quota left; the job starts by itself once
 it fits. A job of a `fused.h3.partition` run over a `udf` or `era5` source
@@ -686,6 +755,18 @@ done() -> bool
 ```
 
 Whether every job has finished, successfully or not.
+
+---
+
+### error
+
+```python
+error() -> str | None
+```
+
+`None` unless a job failed, otherwise the errors of the failed jobs,
+one `[job id] error` line each (`failed` where no error was
+recorded).
 
 ---
 
@@ -717,6 +798,17 @@ jobs() -> dict[str, str | None]
 
 Each job's status by job id: `"pending"`, `"running"`,
 `"succeeded"` or `"failed"`.
+
+---
+
+### label
+
+```python
+label: str
+```
+
+The run's id as messages show it: the group id (`grp:...`), which
+is not a job of its own.
 
 ---
 
@@ -817,13 +909,14 @@ tail(refresh_seconds: float = 2.0, timeout: float | None = None) -> Run
 Print every part's new log lines as `[job] message` until all
 jobs have finished, a line saying why a job is waiting, and a
 one-line summary whenever the counts change. Failed jobs' errors come
-last.
+last, and `tail` then raises.
 
 Logs are best effort: a failed log fetch warns once and polling goes
 on.
 
 **Raises:**
 
+- `RuntimeError` – A job failed (the message lists them).
 - `TimeoutError` – Jobs were still going after `timeout` seconds. They
   keep running on the server.
 
@@ -835,7 +928,8 @@ on.
 wait(refresh_seconds: float = 2.0, timeout: float | None = None) -> Run
 ```
 
-`tail()` without printing anything.
+`tail()` without printing anything: returns once every job has
+finished, and raises `RuntimeError` when a job failed.
 
 ---
 
@@ -961,6 +1055,9 @@ parquet(
     *,
     columns: Sequence[str] | None = None,
     batch_size: int | None = 65536,
+    schema: pa.Schema | str | None = None,
+    filter: Sequence[Any] | None = None,
+    read_threads: int = 1,
     **hive_keys: Any
 ) -> Source
 ```
@@ -977,14 +1074,39 @@ Remote schemes need their fsspec backend installed (s3fs, gcsfs, adlfs).
 - **columns** (`Sequence[str] | None`) – Read only these columns. Default is all columns.
 - **batch_size** (`int | None`) – Maximum rows per yielded batch. `None` yields each
   parquet row group as one batch, however large.
+- **schema** (`pa.Schema | str | None`) – The schema every batch is cast to (a `pyarrow.Schema`). By
+  default it is unified from the footers of all the files: a column
+  typed `null` in one file and `string` in another reads as
+  `string`, integers widen, and a column missing from a file is
+  filled with nulls. Types that cannot be unified (an integer in one
+  file, a string in another) raise and ask for `schema=`. A given
+  schema replaces the unification: it lists the columns read, and
+  values are cast to its types. It is stored in the spec as base64
+  of its IPC bytes.
+- **filter** (`Sequence[Any] | None`) – Keep only the rows matching pyarrow DNF filters: a list of
+  `(column, op, value)` tuples that must all hold, or a list of
+  such lists, any of which may hold (as `pq.read_table(filters=)`
+  takes). `op` is one of `==`, `!=`, `<`, `>`, `<=`,
+  `>=`, `in`, `not in`; values are plain scalars (lists for
+  `in`), since the filter travels in the spec. Row groups whose
+  footer statistics rule them out are not read. The columns may be
+  ones `columns=` leaves out. It is stored in the spec as a list
+  of lists of `[column, op, value]`.
+- **read_threads** (`int`) – Read this many files at once (default 1: one after
+  the other, in path order). With more, the batches of different
+  files interleave, so rows are not in path order; the batches of
+  one file stay in order. It speeds up many small files and
+  high-latency storage; each thread holds a few batches in memory.
 - \*\***hive_keys** (`Any`) – The subfolder to read, as hive keys: `year=2020` reads
   `<path>/year=2020/`, and several keys nest in the order given
   (`year=2020, month=1` reads `<path>/year=2020/month=1/`). Each
   key is added to every batch as a constant string column when the
   files lack it (hive writers leave it out of the files). With
   `fused.h3.partition(..., partition_by=[{"year": 2020}, ...])` each
-  dict is one part. `path`, `columns` and `batch_size` cannot
-  be hive keys.
+  dict is one part. `path`, `columns`, `batch_size`, `schema`,
+  `filter` and `read_threads` cannot be hive keys.
+
+Every batch has one schema, whichever file it came from.
 
 Nothing is listed or opened until the first batch is read, so a source
 over remote storage can be described (and sent to the Fused server) without
@@ -1025,7 +1147,7 @@ split them or pass lat/lng columns as `point_column=` for those rows.
 ## sources.udf
 
 ```python
-udf(udf: Any) -> Source
+udf(udf: Any, **fixed: Any) -> Source
 ```
 
 A source that runs your UDF on the engine, once per part.
@@ -1055,11 +1177,31 @@ fused.h3.partition(
   inside the body, and do not rely on files or variables that exist
   only on this machine. The UDF's parameters are the source's
   inputs: a parameter with no default is required. Pass them to
-  `Source.bind` or as one dict per part in `parts=`. With
-  `parts`, each dict's keys are output columns and become the
-  partition columns: the UDF must return those columns, with those
-  values, in every row. Without `parts` the UDF runs once, with
+  `Source.bind` or as one dict per job in `partition_by=`. With
+  `partition_by`, each dict's keys are output columns and become
+  the partition columns: the UDF must return those columns, with
+  those values, in every row. Without it the UDF runs once, with
   its defaults and any inputs given as `Source.bind`.
+
+- \*\***fixed** (`Any`) – Values that are the same for every job, given by name
+  (`sources.udf(read_month, bucket=bucket)`). Use them for values
+  from the caller's scope; a literal constant can stay in the UDF
+  body. They are stored in the UDF's parameters on a copy (yours is
+  untouched), so they are part of the source's spec: they are sent
+  with the code, shown in its `repr` and hashed into the parts'
+  output folders, so changing one writes the parts to new folders
+  (a different value is different input). They are not part of part
+  ids or partition values. A job's own inputs override them. A name
+  the UDF does not take raises, unless it takes `**kwargs`; a
+  name that is also a `partition_by` key raises in
+  `fused.h3.partition`. Values must be JSON-serializable. Do not
+  pass secrets: the spec stores them in plain text. Read a secret
+  inside the UDF with `fused.secrets` instead.
+
+  `partition_by` is for values that differ between jobs, such as
+  `partition_by={"ABC": ["a", "b"]}`. A value that is the same
+  for every job is not an input: write it in the UDF body
+  (`scale = 2.0`) and do not bind it as well.
 
 The UDF must return a pandas `DataFrame`, a `GeoDataFrame`, a pyarrow
 `Table` or a `RecordBatch`. Anything else, a generator included,
@@ -1072,6 +1214,7 @@ Iterating a `udf` source here runs the UDF in this process, which
 
 - `TypeError` – `udf` is not a `fused.models.udf.Udf` (a plain function
   or a string is not accepted).
+- `ValueError` – A keyword is not an input of the UDF.
 
 ---
 
