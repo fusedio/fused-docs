@@ -14,6 +14,10 @@ ROWS = [
     (["lat", "lng"], "A point. Give both."),
     (["cell"], "An H3 cell id as a hex string. Returns every row in that cell, or in its descendants when `cell` is coarser than the dataset."),
     (["hex_min", "hex_max"], "An inclusive range of raw H3 cell ids, each as a hex string"),
+    (["polygon"], "A GeoJSON `Polygon` or `MultiPolygon` geometry, or a `Feature` holding one, as a JSON string. At most 50,000 vertices. See [Query by polygon](#query-by-polygon)."),
+    (["polygon_wkt"], "The same polygon as WKT `POLYGON` or `MULTIPOLYGON`"),
+    (["contain"], "Which cells a bounding box or polygon selects: `center` (default) a cell whose center is inside or on the edge, `full` a cell wholly inside, `overlap` a cell sharing any point with it"),
+    (["k"], "Also return every cell within `k` grid steps of a selected cell, for a point, bounding box or polygon. From {minimum} to {maximum}. Default {default}."),
     (["time_min", "time_max"], "An inclusive ISO datetime window. Omitted, the whole time range is read."),
     (["partition"], "JSON object mapping a partition column to a value, or a list of values that any may match. See [Filter by partition](#filter-by-partition)."),
     (["partition_range"], "JSON object mapping a partition column to an inclusive `[min, max]`, with `null` for an open end"),
@@ -23,16 +27,17 @@ ROWS = [
     (["format"], {
         "parquet": None,
         "index": None,
-        "stats": "returns JSON with the min and max of each column listed in `columns` (required with `stats`), for each row group (block of rows in a file) the query matches. See [Stats format](#stats-format).",
+        "browser": None,
         "files": "returns JSON listing the files the query would read, with their row counts. See [Files format](#files-format).",
     }),
-    (["max_row_groups"], "Row groups per page, from {minimum} to {maximum}. At most 4,096 when returning rows. Default {default}."),
+    (["max_row_groups"], "Row groups (blocks of rows in a file) per page, from {minimum} to {maximum}. Default {default}."),
     (["cursor"], "The cursor from the previous page. See [Page through large results](#page-through-large-results)."),
+    (["client_id"], None),
 ]
 
 # Text before the per-value descriptions of an enum parameter.
 LEADS = {
-    "format": "What to return. Leave it out to get the matching rows. Use `stats` or `files` to inspect a query without downloading any rows:",
+    "format": "What to return. Leave it out to get the matching rows. Use `files` to inspect a query without downloading any rows:",
 }
 
 TABLE = re.compile(r"(\*\*Query parameters\*\*\n\n)(?:\|.*\n)+")
@@ -69,6 +74,8 @@ def render_table(spec):
 
     lines = ["| Parameter | Type | Required | Description |", "|---|---|---|---|"]
     for names, text in ROWS:
+        if text is None:
+            continue
         group = [params[name] for name in names]
         kinds = {schema_type(p["schema"]) for p in group}
         required = {p.get("required", False) for p in group}

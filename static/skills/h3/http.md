@@ -1,6 +1,6 @@
 # Query a dataset over HTTP: `GET /h3/query`
 
-Every indexed dataset is served by `GET https://www.fused.io/server/v1/h3/query`, the way to read it from outside a UDF. The response is Parquet. Every parameter and error: https://docs.fused.io/rest-api/h3. Partition and index: https://docs.fused.io/skills/H3.md.
+Every indexed dataset is served by `GET /h3/query` on its environment's server, the way to read it from outside a UDF. The base URL is `https://www.fused.io/server/v1` on production; in Python, `fused.options.base_url` gives the current environment's. The response is Parquet. Every parameter and error: https://docs.fused.io/rest-api/h3. Partition and index: https://docs.fused.io/skills/H3.md.
 
 ```bash
 curl -G "https://www.fused.io/server/v1/h3/query" \

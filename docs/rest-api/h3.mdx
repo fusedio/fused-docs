@@ -8,7 +8,7 @@ description: Query an indexed H3 dataset over HTTP by point, area, cell, time an
 
 # H3 datasets
 
-Once a dataset is [partitioned and indexed](/guide/h3-analytics/data-retrieval-service) with `fused.h3`, any HTTP client can read it with `GET /h3/query`: a point, a bounding box, an H3 cell or a time window comes back as a Parquet file, without running a UDF. [`fused.h3.query()`](/python-sdk/api-reference/h3#query) is a client of this endpoint.
+Once a dataset is [partitioned and indexed](/guide/h3-analytics/data-retrieval-service) with `fused.h3`, any HTTP client can read it with `GET /h3/query`: a point, a bounding box, a polygon, an H3 cell or a time window comes back as a Parquet file, without running a UDF. [`fused.h3.query()`](/python-sdk/api-reference/h3#query) is a client of this endpoint.
 
 A public dataset needs no credentials, so a browser page can call the endpoint directly. The [AIS map](/guide/h3-analytics/h3-large-datasets#example-four-months-of-ais-ship-positions) loads every ship position report on screen this way, one `/h3/query` request per map tile.
 
@@ -43,15 +43,38 @@ This reads the 6,214 position reports in New York Harbor between 12:00 and 13:00
 | `lat`, `lng` | number | No | A point. Give both. |
 | `cell` | string | No | An H3 cell id as a hex string. Returns every row in that cell, or in its descendants when `cell` is coarser than the dataset. |
 | `hex_min`, `hex_max` | string | No | An inclusive range of raw H3 cell ids, each as a hex string |
+| `polygon` | string | No | A GeoJSON `Polygon` or `MultiPolygon` geometry, or a `Feature` holding one, as a JSON string. At most 50,000 vertices. See [Query by polygon](#query-by-polygon). |
+| `polygon_wkt` | string | No | The same polygon as WKT `POLYGON` or `MULTIPOLYGON` |
+| `contain` | string | No | Which cells a bounding box or polygon selects: `center` (default) a cell whose center is inside or on the edge, `full` a cell wholly inside, `overlap` a cell sharing any point with it |
+| `k` | integer | No | Also return every cell within `k` grid steps of a selected cell, for a point, bounding box or polygon. From 0 to 25. Default 0. |
 | `time_min`, `time_max` | string | No | An inclusive ISO datetime window. Omitted, the whole time range is read. |
 | `partition` | string | No | JSON object mapping a partition column to a value, or a list of values that any may match. See [Filter by partition](#filter-by-partition). |
 | `partition_range` | string | No | JSON object mapping a partition column to an inclusive `[min, max]`, with `null` for an open end |
 | `columns` | string | No | A column to return. Repeat the parameter for several. Omitted, every column is returned. |
-| `format` | string | No | What to return. Leave it out to get the matching rows. Use `stats` or `files` to inspect a query without downloading any rows: `stats` returns JSON with the min and max of each column listed in `columns` (required with `stats`), for each row group (block of rows in a file) the query matches. See [Stats format](#stats-format). `files` returns JSON listing the files the query would read, with their row counts. See [Files format](#files-format). |
-| `max_row_groups` | integer | No | Row groups per page, from 1 to 16,384. At most 4,096 when returning rows. Default 1,024. |
+| `format` | string | No | What to return. Leave it out to get the matching rows. Use `files` to inspect a query without downloading any rows: `files` returns JSON listing the files the query would read, with their row counts. See [Files format](#files-format). |
+| `max_row_groups` | integer | No | Row groups (blocks of rows in a file) per page, from 1 to 4,096. Default 1,024. |
 | `cursor` | string | No | The cursor from the previous page. See [Page through large results](#page-through-large-results). |
 
-Pass at most one spatial selector: the bounding box, the point, `cell`, or `hex_min` and `hex_max`. With none, the query reads the whole dataset, narrowed only by time and partition.
+Pass at most one spatial selector: the bounding box, the point, `polygon`, `polygon_wkt`, `cell`, or `hex_min` and `hex_max`. With none, the query reads the whole dataset, narrowed only by time and partition.
+
+### Query by polygon
+
+`polygon` and `polygon_wkt` take longitude/latitude degrees on a flat plane, as in GeoJSON. Split a polygon that crosses the antimeridian into a `MultiPolygon` at ±180. A polygon too long for a URL can go in the JSON body of `POST /h3/query`, which takes the same parameters as fields and accepts `polygon`, `partition` and `partition_range` as JSON objects:
+
+```bash
+curl -X POST "https://www.fused.io/server/v1/h3/query" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "s3://fused-asset/data/ais/ais_week_h3_v2/",
+    "polygon": {"type": "Polygon", "coordinates": [[[-74.10, 40.55], [-73.90, 40.55], [-73.90, 40.72], [-74.10, 40.72], [-74.10, 40.55]]]},
+    "time_min": "2024-07-03T12:00:00",
+    "time_max": "2024-07-03T12:59:59",
+    "columns": ["MMSI", "VesselName", "BaseDateTime", "LAT", "LON", "SOG"]
+  }' \
+  -o harbor.parquet
+```
+
+This returns the same 6,214 reports as the bounding box example above. A field the GET form does not have is a `422`.
 
 ### Filter by partition
 
@@ -59,31 +82,26 @@ Pass at most one spatial selector: the bounding box, the point, `cell`, or `hex_
 
 ### Page through large results
 
-A large result comes back one page at a time. When more remain, the response carries a cursor: the `X-Fused-Next-Cursor` header when returning rows, or the `next_cursor` field of the body for `format=stats`. Send it back as `cursor`, with the same query, until a response has none. `format=files` always answers in one page.
-
-### Stats format
-
-`format=stats` returns JSON with min and max values per row group, without reading any rows. `columns` is required, and each column must be a number, date, timestamp or string column of the matched files, other than the H3 column. The body has `h3_resolution`, `partitions` (the folders of this page's row groups), `next_cursor`, and `row_groups`: parallel arrays `h3_min` and `h3_max` (hex strings), `partition` (an index into `partitions`) and `stats` (`{column: {min: [...], max: [...]}}`), one entry per row group.
+A large result comes back one page at a time. When more remain, the response carries a cursor: the `X-Fused-Next-Cursor` header. Send it back as `cursor`, with the same query, until a response has none. `format=files` always answers in one page.
 
 ### Files format
 
-`format=files` returns JSON describing the indexed files that overlap the query, without opening any. The body has `level` (`"file"`), `h3_resolution` (the resolution of the data cells), `cell_resolution` (the resolution of the H3 cells that name the files), `cells` (the H3 cell, in lowercase hex, that names each file) and `row_counts`: parallel arrays `total` (each file's rows in the matched folders) and `window` (only the rows in folders the time window overlaps). `columns`, `max_row_groups` and `cursor` are ignored. `time_min` and `time_max` narrow the answer only when the time column is a `date` partition column.
+`format=files` returns JSON describing the indexed files that overlap the query, without opening any. The body has `level` (`"file"`), `h3_resolution` (the resolution of the data cells), `cell_resolution` (the resolution of the H3 cells that name the files), `cells` (the H3 cell, in lowercase hex, that names each file) and `row_counts`: parallel arrays `total` (each file's rows in the matched folders) and `window` (only the rows in folders the time window overlaps). `max_row_groups` and `cursor` are ignored, and `columns` is not accepted. `time_min` and `time_max` narrow the answer only when the time column is a `date` partition column.
 
 ### Errors
 
 | Status | When |
 |---|---|
-| `400` | More than one spatial selector, an incomplete one (for example `lat` without `lng`), or an invalid cell id |
+| `400` | More than one spatial selector, an incomplete one (for example `lat` without `lng`), an invalid cell id, or an invalid polygon |
+| `400` | `k` with a selector other than a point, bounding box or polygon, `contain` with a selector other than a bounding box or polygon, or a `k` buffer too costly to compute |
 | `400` | `time_min` or `time_max` on a dataset with no time column |
 | `400` | `partition` or `partition_range` that is not a JSON object, names a column that is not a partition column, or holds a value of the wrong type |
-| `400` | `max_row_groups` above 4,096 when returning rows |
-| `400` | `format=stats` with no `columns`, with the H3 column, with a column that no matched file has, or with a column type it cannot summarize |
-| `400` | `format=files` selecting more than 2,048 folders |
+| `400` | `format=files` with `columns`, or selecting more than 2,048 folders |
 | `400` | A malformed `cursor`, or one from a different query |
 | `403` | No credentials, and `path` is not a public `s3://` dataset |
 | `404` | You can read no dataset at `path` |
 | `409` | The dataset has never finished indexing, or the `cursor` predates a re-index |
-| `422` | A name in `columns` is missing from the indexed files, `max_row_groups` is above 16,384, or (`format=files`) an indexed file is not named by an H3 cell |
+| `422` | A name in `columns` is missing from the indexed files, `max_row_groups` is above 4,096, `k` is outside 0 to 25, `format` is not a supported value, or (`format=files`) an indexed file is not named by an H3 cell |
 
 ## See also
 
