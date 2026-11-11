@@ -13,7 +13,6 @@ Expect `status` to be a dict: `status` `'ready'`, `visibility` `'team'`, `files`
 - `engine`: the default `"realtime"` stops after 2 minutes. When a run times out, pass a batch instance with no time limit: `"small"` (2 vCPUs, 2 GB), `"medium"` (16 vCPUs, 64 GB) or `"large"` (64 vCPUs, 512 GB).
 - New data: run index again. It indexes only new, changed and removed files and skips unchanged folders. On a large dataset, pass `subset={"date": "2024-07-06"}` (a value or a list of them) so index lists only those folders; the keys must be the leading partition columns.
 - `redo=True` reads files again: with `subset`, only the files in those folders; without it, the whole tree from scratch, which is also how to change the dataset's columns.
-- Parquet not written by partition: every file must have an integer H3 cell column at one resolution; name it with `hex_column` if it is not `hex`.
 - Old code: `prefix=` (use `subset=`), `overwrite=` and `force=` (use `redo=True`) and `workers=` (use `options={"workers": ...}`) still work and warn. `delete_index` and `indexed_files` still take `prefix=`, a folder.
 
 `index_status` also works on a public dataset you did not build. Expect `fused.h3.index_status("s3://fused-asset/data/nyc311/")` to give `files` 1923, `resolution` 11, `partition_columns` `[{'name': 'month', 'type': 'string', 'distinct': 192, 'min': '2010-01', 'max': '2025-12'}]`, `time_min` `'2010-01-01T00:00:00'`.
