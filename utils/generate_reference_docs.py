@@ -620,6 +620,7 @@ api_listing = sorted([
     "index",
     "index_status",
     "indexed_files",
+    "inspect",
     "partition",
     "query",
     "run_ingest_raster_to_h3",
@@ -652,6 +653,8 @@ for obj in api_listing:
     target = mod_api
     if obj in h3_catalog_names and "catalog" in mod_api.members:
         target = mod_api["catalog"]
+    if obj == "inspect" and "_inspect" in mod_api.members:
+        target = mod_api["_inspect"]
     if obj not in target.members:
         print(f"Warning: {obj} not found in fused.h3 module, skipping")
         continue
@@ -681,7 +684,7 @@ else:
 
 # `fused.h3.sources.*`: data sources for `partition`, headed `sources.<name>`
 if "sources" in mod_api.members:
-    for obj in ["era5", "parquet", "table", "udf"]:
+    for obj in ["era5", "parquet", "udf"]:
         if obj not in mod_api["sources"].members:
             print(f"Warning: sources.{obj} not found in fused.h3 module, skipping")
             continue

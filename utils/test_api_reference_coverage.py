@@ -116,6 +116,7 @@ H3_FUNCTIONS = sorted([
     "index",
     "index_status",
     "indexed_files",
+    "inspect",
     "partition",
     "query",
     "run_ingest_raster_to_h3",
