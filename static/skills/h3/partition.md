@@ -62,4 +62,4 @@ Expect `started run grp:... (2 jobs)`, with jobs `date=2024-07-04` and `date=202
 
 ## Old arguments
 
-Old code still works for one release and warns. `parts=` is now `partition_by`, `force=` and `refresh=` are `redo=True`, `append=` can go (a rerun merges), `only=` means passing only those values, and the one-by-one tuning arguments go in `options`. `overwrite=` has no replacement: write to a new output path, since `redo=True` never clears old folders.
+Old code still works for one release and warns. `parts=` is now `partition_by`, `force=` and `refresh=` are `redo=True` (use `redo=True` directly: `force=` raises a `ValueError` on a one-job run), `append=` can go (a rerun merges), `only=` means passing only those values, and the one-by-one tuning arguments go in `options`. `overwrite=` has no replacement: write to a new output path, since `redo=True` never clears old folders.
