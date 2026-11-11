@@ -160,8 +160,6 @@ off.
 - **visibility** (`str | None`) – Who can use the location:
 
   - `"team"`: your team only.
-  - `"public"`: everyone (Fused admins only). The files must be
-    publicly readable on S3.
   - None (the default): leave the visibility unchanged. If the
     location is being indexed for the first time, it is `"team"`.
 
@@ -270,6 +268,47 @@ Iterate the files indexed under `path`, in path order.
 **Yields:**
 
 - `str` – The full path of each indexed file.
+
+---
+
+## inspect
+
+```python
+inspect(
+    path: str | Path,
+    *,
+    point_column: str | tuple[str, str] | None = None,
+    columns: list[str] | None = None,
+    sample_files: int = 3
+) -> InspectReport
+```
+
+Report what partitioning a folder of parquet files would run into.
+
+Reads every file's footer and decodes `sample_files` files spread across
+the listing, then reports sizes, null points, schema differences and the
+heavy columns, with a `sources.parquet(...)` call that deals with them.
+Run it before `fused.h3.partition` on a large or messy folder.
+
+Unlike `fused.h3.partition`, **this runs on your machine** and reads
+with your local credentials: `fd://` paths resolve through your Fused
+login, `s3://` and `gs://` need local credentials.
+
+**Parameters:**
+
+- **path** (`str | Path`) – A parquet file or folder (as for `sources.parquet`).
+- **point_column** (`str | tuple[str, str] | None`) – `("lat", "lng")` or one geometry column, to count its
+  null rows from the footers.
+- **columns** (`list[str] | None`) – Look only at these columns (as `sources.parquet(columns=)`).
+- **sample_files** (`int`) – How many files to decode for the size estimates.
+
+**Returns:**
+
+- `InspectReport` – An `InspectReport`.
+
+**Raises:**
+
+- `ValueError` – No parquet files, or `sample_files` below 1.
 
 ---
 
@@ -1081,17 +1120,15 @@ Remote schemes need their fsspec backend installed (s3fs, gcsfs, adlfs).
   filled with nulls. Types that cannot be unified (an integer in one
   file, a string in another) raise and ask for `schema=`. A given
   schema replaces the unification: it lists the columns read, and
-  values are cast to its types. It is stored in the spec as base64
-  of its IPC bytes.
+  values are cast to its types.
 - **filter** (`Sequence[Any] | None`) – Keep only the rows matching pyarrow DNF filters: a list of
   `(column, op, value)` tuples that must all hold, or a list of
   such lists, any of which may hold (as `pq.read_table(filters=)`
   takes). `op` is one of `==`, `!=`, `<`, `>`, `<=`,
   `>=`, `in`, `not in`; values are plain scalars (lists for
-  `in`), since the filter travels in the spec. Row groups whose
+  `in`). Row groups whose
   footer statistics rule them out are not read. The columns may be
-  ones `columns=` leaves out. It is stored in the spec as a list
-  of lists of `[column, op, value]`.
+  ones `columns=` leaves out.
 - **read_threads** (`int`) – Read this many files at once (default 1: one after
   the other, in path order). With more, the batches of different
   files interleave, so rows are not in path order; the batches of
@@ -1117,30 +1154,6 @@ storage credentials.
 - `ValueError` – A hive key or value is not a plain name or scalar. Also
   raised on the first iteration, not at the call, when no parquet
   files were found.
-
----
-
-## sources.table
-
-```python
-table(data: Any) -> Iterator[pa.RecordBatch]
-```
-
-Yield the batches of a `pandas.DataFrame`, `pyarrow.Table` or
-`pyarrow.RecordBatch`.
-
-A DataFrame index becomes a column only when every level is named;
-otherwise (a `RangeIndex` or an unnamed index, such as after filtering)
-it is dropped. A `geopandas.GeoDataFrame`'s geometry columns arrive as
-WKB (`binary`), the form `fused.h3.partition(..., point_column=...)`
-expects; GeoParquet read with `parquet` is already WKB. The centroid
-is planar in the coordinates as stored (lon/lat degrees expected), so
-geometries that cross the antimeridian or wrap a pole are mis-hexed;
-split them or pass lat/lng columns as `point_column=` for those rows.
-
-**Raises:**
-
-- `TypeError` – `data` is none of those.
 
 ---
 
