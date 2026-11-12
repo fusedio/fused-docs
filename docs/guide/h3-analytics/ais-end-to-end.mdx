@@ -1,0 +1,151 @@
+---
+id: ais-end-to-end
+title: "End to End Example with AIS Ship Positions"
+sidebar_label: "Example: AIS Ship Positions"
+sidebar_position: 2.55
+description: A worked example that downloads four months of NOAA AIS ship positions, partitions them into H3 by day, indexes them and queries them from a UDF and from GET /h3/query.
+---
+
+# End to End Example with AIS Ship Positions
+
+This page walks through a full [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service) pipeline on a large dataset: **1.12 billion ship positions** in US waters, July to October 2024. We download NOAA's daily files, partition them into H3 files by day, index them, then query them from a UDF and straight from [`GET /h3/query`](/rest-api/h3). The UDFs that download, partition and index are [guarded](/guide/h3-analytics/data-retrieval-end-to-end#partition) with `mode="status"` by default, which only reports progress. To learn the steps on a small dataset first, see [Partition, Index and Query](/guide/h3-analytics/data-retrieval-end-to-end).
+
+![H3_AIS_Workflow canvas: download NOAA AIS zips, partition and index them into H3, query them from a UDF, map them from /h3/query, and replay ships in 3D](/img/tutorials/geospatial/h3/h3_ais_workflow_canvas.png)
+
+_The [H3_AIS_Workflow canvas](https://www.fused.io/canvas/fc_1HgBSCdgNIItDo9Y0OpZzz) has five sections: download, partition and index, a UDF query, two maps on `/h3/query` and a 3D ship replay. Open it to run any of them._
+
+- **Source:** [NOAA AIS](https://hub.marinecadastre.gov/pages/vesseltraffic) daily files, every vessel position report off US coasts
+- **Time range:** 2024-07-01 to 2024-10-31, 123 days. NOAA's files for October 18, 19 and 27 are corrupt, so 120 days are partitioned.
+- **Settings:** `h3_res=10`, `file_res=1`, `partition_by={"date": [...]}`, `BaseDateTime` as the time column; see [`fused.h3.partition`](/python-sdk/api-reference/h3#partition)
+- **Public copy:** the result is indexed at `s3://fused-asset/data/ais/ais_week_h3_v2/` and anyone can read it. To only query, skip to [step 4](#4-query-ais_reports_in_view_and_time_window).
+
+## 1. Download: `download_noaa_ais_daily_zips`
+
+NOAA publishes one zip per day, about 290 to 410 MB each, at `https://coast.noaa.gov/htdata/CMSP/AISDataHandler/2024/AIS_2024_07_01.zip`. With `mode="start"`, the UDF copies each zip as it is to [Fused storage](/python-sdk/api-reference/api#upload), all days at once, and skips the days already there.
+
+**Returns:** one row per day, 123 days, with its status and size.
+
+## 2. Partition: `partition_ais_zips_to_h3`
+
+Each zip holds a CSV, so partition reads it through a UDF with [`fused.h3.sources.udf`](/python-sdk/api-reference/h3#sourcesudf). The source UDF reads one day, drops rows without a valid position, and adds `date`, because each partition key must be a column of the output:
+
+```python showLineNumbers
+@fused.udf
+def read_day(date: str, raw: str = "fd://h3_examples/ais_raw/"):
+    import zipfile
+
+    import fsspec
+    import numpy as np
+    import pyarrow as pa
+    import pyarrow.compute as pc
+    import pyarrow.csv as pacsv
+
+    types = {
+        "MMSI": pa.int64(), "BaseDateTime": pa.timestamp("s"),
+        "LAT": pa.float64(), "LON": pa.float64(), "SOG": pa.float64(), "COG": pa.float64(), "Heading": pa.float64(),
+        "VesselName": pa.string(), "IMO": pa.string(), "CallSign": pa.string(),
+        "VesselType": pa.float64(), "Status": pa.float64(), "Length": pa.float64(), "Width": pa.float64(),
+        "Draft": pa.float64(), "Cargo": pa.float64(), "TransceiverClass": pa.string(),
+    }
+    y, m, d = date.split("-")
+    zip_path = f"{fused.api.resolve(raw).rstrip('/')}/AIS_{y}_{m}_{d}.zip"
+    with fsspec.open(zip_path, "rb") as f, zipfile.ZipFile(f) as z, z.open(z.namelist()[0]) as csv:
+        table = pacsv.read_csv(csv, convert_options=pacsv.ConvertOptions(column_types=types))
+    lat, lon = table["LAT"], table["LON"]
+    valid = pc.and_(
+        pc.and_(pc.is_valid(lat), pc.is_valid(lon)),
+        pc.and_(pc.and_(pc.greater_equal(lat, -90), pc.less_equal(lat, 90)), pc.and_(pc.greater_equal(lon, -180), pc.less_equal(lon, 180))),
+    )
+    table = table.filter(valid)
+    return table.append_column("date", pa.array(np.full(table.num_rows, np.datetime64(date, "D")), pa.date32()))
+
+
+run = fused.h3.partition(
+    fused.h3.sources.udf(read_day),
+    "fd://ais_h3/",
+    partition_by={"date": ["2024-07-01", "2024-07-02"]},
+    point_column=("LAT", "LON"),
+    h3_res=10,
+    file_res=1,
+    read_engine="m5.xlarge",
+    engine="m5.xlarge",
+)
+```
+
+Each date in `partition_by` is its own job: about 9 to 10 million rows, read in about a minute on `m5.xlarge`. Res 10 cells have an edge of about 76 m, small enough to tell ships apart in a harbor (see the [Resolution Guide](/guide/h3-analytics/resolution-guide)). Res 1 groups the files.
+
+The canvas UDF starts at most 10 missing days per call, so the call that starts them returns quickly; run it again for the next 10. Days already written are skipped, and `redo=True` rewrites the days you pass; see [Running again](/guide/h3-analytics/data-retrieval-end-to-end#running-again).
+
+**Writes:** one folder per day and one file per res-1 cell. Every row has `hex` at res 10 and the CSV's columns.
+
+```text
+ais_h3/
+├── date=2024-07-01/
+│   ├── 81033ffffffffff.parquet    one file per res-1 cell
+│   └── ...
+├── ...                            120 date folders, 6,880 files
+└── _manifest.json
+```
+
+## 3. Index: `index_ais_h3_dataset`
+
+The UDF runs [`fused.h3.index`](/python-sdk/api-reference/h3#index) with `BaseDateTime` as the time column, so queries can filter by time. `options={"instances": 12}` splits the 120 day folders into 12 slices that run at once. `mode="update"` indexes only new or changed days, and `mode="redo"` reads every day again.
+
+```python
+path = "fd://ais_h3/"
+fused.h3.index(path, time_column="BaseDateTime", options={"instances": 12}).tail()
+status = fused.h3.index_status(path)
+```
+
+**Returns:** for the public copy, `status` is a dict with `status` `'ready'`, `files` 6,880, `resolution` 10, `time_min` `2024-07-01T00:00:00`, `time_max` `2024-10-31T23:59:59` and `partition_columns` `date` (120 values).
+
+## 4. Query: `ais_reports_in_view_and_time_window`
+
+The UDF calls [`fused.h3.query`](/python-sdk/api-reference/h3#query) and returns every report inside the map view ([`bounds`](/python-sdk/api-reference/fused-types#bounds)) and a UTC time window. A widget next to it sends the view and the window as you pan.
+
+```python
+@fused.udf
+def udf():
+    return fused.h3.query(
+        "s3://fused-asset/data/ais/ais_week_h3_v2/",
+        bbox=(-74.10, 40.55, -73.90, 40.72),
+        time_min="2024-07-03T12:00:00",
+        time_max="2024-07-03T12:59:59",
+        columns=["MMSI", "BaseDateTime", "LAT", "LON", "SOG", "VesselName", "VesselType"],
+    )
+```
+
+**Returns:** 6,214 reports from 194 vessels in New York Harbor, in 0.1 seconds. The whole day, 2024-07-03, returns 126,828 reports from 422 vessels in 0.13 seconds.
+
+## 5. Map from `/h3/query`
+
+This map reads every report in view straight from [`GET /h3/query`](/rest-api/h3), one request per map tile, with no UDF and no sign-in. Pick a UTC time window and what to colour the reports by; panning loads only the new tiles.
+
+<iframe
+  src="https://www.fused.io/share/fc_1HgBSCdgNIItDo9Y0OpZzz/ais_points_map_by_variable_and_time"
+  width="100%"
+  height="700px"
+  frameBorder="0"
+  loading="lazy"
+  style={{borderRadius: '8px'}}
+></iframe>
+
+Each tile is one request like this one, which returns the same hour as step 4 as a Parquet file; see [Query a dataset](/rest-api/h3) for every parameter:
+
+```bash
+curl -G "https://www.fused.io/server/v1/h3/query" \
+  --data-urlencode "path=s3://fused-asset/data/ais/ais_week_h3_v2/" \
+  -d min_lng=-74.10 -d min_lat=40.55 -d max_lng=-73.90 -d max_lat=40.72 \
+  -d time_min=2024-07-03T12:00:00 -d time_max=2024-07-03T12:59:59 \
+  -d columns=MMSI -d columns=BaseDateTime -d columns=LAT -d columns=LON \
+  -o harbor.parquet
+```
+
+## Reference
+
+- [Partition, Index and Query](/guide/h3-analytics/data-retrieval-end-to-end): best practices for each step
+- [H3 Large Datasets](/guide/h3-analytics/h3-large-datasets)
+- [H3 Visualization](/guide/h3-analytics/visualization): map an indexed dataset
+- [`fused.h3`](/python-sdk/api-reference/h3): the Python API
+- [`GET /h3/query`](/rest-api/h3): every parameter
+- [H3_AIS_Workflow canvas](https://www.fused.io/canvas/fc_1HgBSCdgNIItDo9Y0OpZzz)
