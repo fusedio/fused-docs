@@ -8,7 +8,7 @@ description: A worked example that downloads four months of NOAA AIS ship positi
 
 # End to End Example with AIS Ship Positions
 
-This page walks through a full [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service) pipeline on a large dataset: **1.12 billion ship positions** in US waters, July to October 2024. We download NOAA's daily files, partition them into H3 files by day, index them, then query them from a UDF and straight from [`GET /h3/query`](/rest-api/h3). The UDFs that download, partition and index are [guarded](/guide/h3-analytics/data-retrieval-end-to-end#partition) with `mode="status"` by default, which only reports progress. To learn the steps on a small dataset first, see [Partition, Index and Query](/guide/h3-analytics/data-retrieval-end-to-end).
+This page walks through a full [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service) pipeline on a large dataset: **1.12 billion ship positions** in US waters, July to October 2024. We download NOAA's daily files, partition them into H3 files by day, index them, then query them from a UDF and straight from [`GET /h3/query`](/rest-api/h3). The canvas UDFs that start jobs are [guarded](/guide/h3-analytics/data-retrieval-end-to-end#partition), so opening the canvas never starts one. To learn the steps on a small dataset first, see [Partition, Index and Query](/guide/h3-analytics/data-retrieval-end-to-end).
 
 ![H3_AIS_Workflow canvas: download NOAA AIS zips, partition and index them into H3, query them from a UDF, map them from /h3/query, and replay ships in 3D](/img/tutorials/geospatial/h3/h3_ais_workflow_canvas.png)
 
@@ -16,18 +16,36 @@ _The [H3_AIS_Workflow canvas](https://www.fused.io/canvas/fc_1HgBSCdgNIItDo9Y0Op
 
 - **Source:** [NOAA AIS](https://hub.marinecadastre.gov/pages/vesseltraffic) daily files, every vessel position report off US coasts
 - **Time range:** 2024-07-01 to 2024-10-31, 123 days. NOAA's files for October 18, 19 and 27 are corrupt, so 120 days are partitioned.
-- **Settings:** `h3_res=10`, `file_res=1`, `partition_by={"date": [...]}`, `BaseDateTime` as the time column; see [`fused.h3.partition`](/python-sdk/api-reference/h3#partition)
-- **Public copy:** the result is indexed at `s3://fused-asset/data/ais/ais_week_h3_v2/` and anyone can read it. To only query, skip to [step 4](#4-query-ais_reports_in_view_and_time_window).
+- **H3 settings:** each report gets the H3 cell at resolution 10 that holds its position, and the data is partitioned by date, one folder per day
+- **Public copy:** the result is indexed at `s3://fused-asset/data/ais/ais_week_h3_v2/` and anyone can read it. To only query, skip to [step 4](#4-query).
 
-## 1. Download: `download_noaa_ais_daily_zips`
+## 1. Download
 
-NOAA publishes one zip per day, about 290 to 410 MB each, at `https://coast.noaa.gov/htdata/CMSP/AISDataHandler/2024/AIS_2024_07_01.zip`. With `mode="start"`, the UDF copies each zip as it is to [Fused storage](/python-sdk/api-reference/api#upload), all days at once, and skips the days already there.
+NOAA publishes one zip per day, about 290 to 410 MB each, at `https://coast.noaa.gov/htdata/CMSP/AISDataHandler/2024/AIS_2024_07_01.zip`. A UDF copies every zip as it is to [Fused storage](/python-sdk/api-reference/api#upload), all days at once, and skips the days already there.
 
 **Returns:** one row per day, 123 days, with its status and size.
 
-## 2. Partition: `partition_ais_zips_to_h3`
+## 2. Partition
 
-Each zip holds a CSV, so partition reads it through a UDF with [`fused.h3.sources.udf`](/python-sdk/api-reference/h3#sourcesudf). The source UDF reads one day, drops rows without a valid position, and adds `date`, because each partition key must be a column of the output:
+- **Source:** each zip holds a CSV, so a UDF reads one day and adds a `date` column. Partition runs it with [`fused.h3.sources.udf`](/python-sdk/api-reference/h3#sourcesudf).
+- **Resolution:** 10. Each cell has an edge of about 76 m, small enough to tell ships apart in a harbor (see the [Resolution Guide](/guide/h3-analytics/resolution-guide)).
+- **Partitioned by date:** one folder per day, and each day is its own job. A day is about 9 to 10 million rows and takes about a minute to read on `m5.xlarge`.
+- **Running again:** days already written are skipped, and `redo=True` rewrites the days you pass; see [Running again](/guide/h3-analytics/data-retrieval-end-to-end#running-again).
+
+**Writes:** one folder per day, with one Parquet file per large H3 cell inside it.
+
+```text
+ais_h3/
+├── date=2024-07-01/
+│   ├── 81033ffffffffff.parquet
+│   └── ...
+├── date=2024-07-02/
+│   └── ...
+└── _manifest.json
+```
+
+<details>
+<summary>Code</summary>
 
 ```python showLineNumbers
 @fused.udf
@@ -72,24 +90,27 @@ run = fused.h3.partition(
 )
 ```
 
-Each date in `partition_by` is its own job: about 9 to 10 million rows, read in about a minute on `m5.xlarge`. Res 10 cells have an edge of about 76 m, small enough to tell ships apart in a harbor (see the [Resolution Guide](/guide/h3-analytics/resolution-guide)). Res 1 groups the files.
+</details>
 
-The canvas UDF starts at most 10 missing days per call, so the call that starts them returns quickly; run it again for the next 10. Days already written are skipped, and `redo=True` rewrites the days you pass; see [Running again](/guide/h3-analytics/data-retrieval-end-to-end#running-again).
+## 3. Index
 
-**Writes:** one folder per day and one file per res-1 cell. Every row has `hex` at res 10 and the CSV's columns.
+- **What it records:** the cells, dates and time range each file covers, so a query reads only the files it needs.
+- **Columns:** `hex` for the H3 cell, `BaseDateTime` for time, `date` for the partition.
+- **Parallel:** the 120 day folders are split into 12 slices that index at once.
+- **Running again:** indexes only new or changed days; `redo=True` reads every day again. See [`fused.h3.index`](/python-sdk/api-reference/h3#index).
 
-```text
-ais_h3/
-├── date=2024-07-01/
-│   ├── 81033ffffffffff.parquet    one file per res-1 cell
-│   └── ...
-├── ...                            120 date folders, 6,880 files
-└── _manifest.json
-```
+**Returns:** the status of the public copy, from [`fused.h3.index_status`](/python-sdk/api-reference/h3#index_status):
 
-## 3. Index: `index_ais_h3_dataset`
+| Field | Value |
+|---|---|
+| Status | `ready` |
+| Files | 6,880 |
+| Resolution | 10 |
+| Time range | 2024-07-01 to 2024-10-31 |
+| `date` values | 120 |
 
-The UDF runs [`fused.h3.index`](/python-sdk/api-reference/h3#index) with `BaseDateTime` as the time column, so queries can filter by time. `options={"instances": 12}` splits the 120 day folders into 12 slices that run at once. `mode="update"` indexes only new or changed days, and `mode="redo"` reads every day again.
+<details>
+<summary>Code</summary>
 
 ```python
 path = "fd://ais_h3/"
@@ -97,11 +118,16 @@ fused.h3.index(path, time_column="BaseDateTime", options={"instances": 12}).tail
 status = fused.h3.index_status(path)
 ```
 
-**Returns:** for the public copy, `status` is a dict with `status` `'ready'`, `files` 6,880, `resolution` 10, `time_min` `2024-07-01T00:00:00`, `time_max` `2024-10-31T23:59:59` and `partition_columns` `date` (120 values).
+</details>
 
-## 4. Query: `ais_reports_in_view_and_time_window`
+## 4. Query
 
-The UDF calls [`fused.h3.query`](/python-sdk/api-reference/h3#query) and returns every report inside the map view ([`bounds`](/python-sdk/api-reference/fused-types#bounds)) and a UTC time window. A widget next to it sends the view and the window as you pan.
+A UDF calls [`fused.h3.query`](/python-sdk/api-reference/h3#query) with the map view ([`bounds`](/python-sdk/api-reference/fused-types#bounds)) and a UTC time window, and returns every report inside them. A widget next to it sends the view and the window as you pan.
+
+**Returns:** 6,214 reports from 194 vessels in New York Harbor for one hour, in 0.1 seconds. The whole day, 2024-07-03, returns 126,828 reports from 422 vessels in 0.13 seconds.
+
+<details>
+<summary>Code</summary>
 
 ```python
 @fused.udf
@@ -115,7 +141,7 @@ def udf():
     )
 ```
 
-**Returns:** 6,214 reports from 194 vessels in New York Harbor, in 0.1 seconds. The whole day, 2024-07-03, returns 126,828 reports from 422 vessels in 0.13 seconds.
+</details>
 
 ## 5. Map from `/h3/query`
 
