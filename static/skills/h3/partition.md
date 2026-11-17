@@ -21,14 +21,14 @@ Pass exactly one of `point_column` and `hex_column`. Data with both a cell colum
 - `h3_res` (default 7): the resolution of each row's cell, which queries select by. Set it from the size of your features: https://docs.fused.io/guide/h3-analytics/resolution-guide. Res 11, about 25 m across, fits buildings and street-level points.
 - `file_res` (default 1): the parent cell that groups rows into one file. Raise it for more, smaller files, so a query reads less.
 - `partition_by`: nonspatial columns such as `date` or `scenario`, never location. Each value becomes a `col=value` folder, so values must not be null or empty, contain `/` or start with `_`. Pick the column queries filter on, and avoid one where a single value holds most rows: a query for it still reads almost every file. A column name, or a list of them, takes the folders from the data in one job; a dict splits the run into one job per value (below).
-- `engine`: `"small"` (the default, 2 vCPUs, 2 GB), `"medium"` (16 vCPUs, 64 GB) or `"large"` (64 vCPUs, 512 GB), all batch jobs with no time limit. `"realtime"` starts at once but stops after 2 minutes, so it suits only small Parquet sources; a UDF source raises with it.
-- `read_engine="large"` for large reads.
+- `engine`: the machine the partition job runs on. **`"small"` (the default) is the smallest, 2 vCPUs and 2 GB, so a partition that needs a lot of memory should use `"medium"` (16 vCPUs, 64 GB) or `"large"` (64 vCPUs, 512 GB).** These are batch jobs with no time limit. `"realtime"` is the fastest, with no machine to start and about 10 GB, but stops after a few minutes; a dict `partition_by` runs one job per value in parallel, which keeps each job small enough to finish in time. It takes only a Parquet source: a UDF or ERA5 source raises with it, since a batch job reads that source first.
+- `read_engine`: the batch machine that reads a UDF or ERA5 source, `"small"` by default; `"large"` for large reads. `"realtime"` raises.
 - `options`: tuning as a dict, such as `{"row_group_size": 65536, "workers": 4}`. An unknown key raises. A partition running out of memory: `{"workers": 2}`; 2 to 4 works.
 - Hundreds of GB or tens of thousands of files: contact info@fused.io.
 
 ## Running again
 
-- With column names in `partition_by`, every run reads the source again and replaces the folders it writes; all other folders stay.
+- With column names in `partition_by`, a run replaces the folders it writes; all other folders stay. A UDF or ERA5 source reuses the rows it cached in `<output>/.fused-h3-source/` unless you pass `redo=True` or change its code or inputs; a Parquet source is read again.
 - With a dict `partition_by`, jobs already done are skipped.
 - Without `partition_by`, a run into an existing output raises, and `redo=True` replaces it.
 - To change `h3_res`, `file_res`, `fill`, `sort_by` or the partition columns, write to a new output path; a run whose settings differ from the existing output raises.

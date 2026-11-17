@@ -49,6 +49,28 @@ Expect the UDF to return 167 rows with columns `hex`, `count`, and the map to fl
 - `{{nyc311_hexes?month=$month}}` lets a `dropdown` with `"param": "month"` in the same widget change the month.
 - Add `"tile": true` and a `bounds` argument to the UDF to load cells per tile.
 
+`hex` comes back at the dataset's `h3_res` (11 here). For coarser hexagons, roll each row up to its res-9 parent before counting:
+
+```python
+import fused
+
+
+@fused.udf
+def udf(month: str = "2025-12"):
+    import h3.api.basic_int as h3
+
+    df = fused.h3.query(
+        "s3://fused-asset/data/nyc311/",
+        bbox=(-73.990, 40.750, -73.980, 40.758),
+        partition={"month": month},
+        columns=["hex"],
+    )
+    df["hex"] = df["hex"].map(lambda cell: h3.cell_to_parent(cell, 9)).astype("uint64")
+    return df.groupby("hex", as_index=False).size().rename(columns={"size": "count"})
+```
+
+Expect 12 rows with columns `hex` (uint64, res 9) and `count` (3 to 150, 752 in all). The `h3` layer reads uint64 cells as they are, so the widget above draws them; widen its `domain` to `[0, 150]`. A parent cell on the edge of the box counts only the rows inside it.
+
 ## Straight from the index: `fused-hex` layer
 
 A `fused-hex` layer draws a dataset indexed with `fused.h3` with no UDF: the map sends one `GET /h3/query` per tile. Set `"type": "fused-hex"`; it is never detected.
