@@ -98,7 +98,7 @@ import TabItem from '@theme/TabItem';
   </TabItem>
   <TabItem value="cli" label="CLI">
     ```bash
-    fused run ...
+    fused workbench run ...
     ```
   </TabItem>
 </Tabs>

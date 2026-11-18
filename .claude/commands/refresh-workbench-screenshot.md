@@ -7,7 +7,7 @@ argument-hint: <page> — a single doc page slug (e.g. "profile", "integrations/
 
 Primary tool: **Claude for Chrome** (`mcp__Claude_in_Chrome__*`) on the user's real,
 logged-in browser. Target: **$ARGUMENTS**. Setup (check once): `git`, `ffmpeg`, `curl`,
-Fused CLI (`fused whoami`). Repo root: `git rev-parse --show-toplevel`; assets live under
+Fused CLI (`fused workbench whoami`). Repo root: `git rev-parse --show-toplevel`; assets live under
 `<repo>/static`.
 
 ## Steps
@@ -43,6 +43,6 @@ Chrome over CDP for pixel-precise stills — only if set up.)
 Create in your team's `Engineering Tasks` data source (find via search); set `BUG`. Attach
 a workflow **GIF** as evidence: record with `gif_creator`, upload to Fused, reference the
 stable path (don't embed signed URLs — they expire):
-`fused files upload <gif> "fd://<handle>/claude/<name>.gif"` — put that `fd://` path in the
-ticket with `fused files download "fd://<handle>/claude/<name>.gif" .` (`<handle>` from
-`fused whoami`).
+`fused workbench files upload <gif> "fd://<handle>/claude/<name>.gif"` — put that `fd://` path in the
+ticket with `fused workbench files download "fd://<handle>/claude/<name>.gif" .` (`<handle>` from
+`fused workbench whoami`).
