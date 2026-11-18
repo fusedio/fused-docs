@@ -3,21 +3,21 @@ id: ais-end-to-end
 title: "End to End Example with AIS Ship Positions"
 sidebar_label: "Example: AIS Ship Positions"
 sidebar_position: 2.55
-description: A worked example that downloads four months of NOAA AIS ship positions, partitions them into H3 by day, indexes them and queries them from a UDF and from GET /h3/query.
+description: A worked example that downloads NOAA AIS ship positions day by day, partitions them into H3 by day, indexes them and queries them from a UDF and from GET /h3/query.
 ---
 
 # End to End Example with AIS Ship Positions
 
-This page walks through a full [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service) pipeline on a large dataset: **1.12 billion ship positions** in US waters, July to October 2024. We download NOAA's daily files, partition them into H3 files by day, index them, then query them from a UDF and straight from [`GET /h3/query`](/rest-api/h3). The canvas UDFs that start jobs are [guarded](/guide/h3-analytics/data-retrieval-end-to-end#partition), so opening the canvas never starts one. To learn the steps on a small dataset first, see [Partition, Index and Query](/guide/h3-analytics/data-retrieval-end-to-end).
+This page walks through a full [H3 Data Retrieval Service](/guide/h3-analytics/data-retrieval-service) pipeline on a large dataset: NOAA's ship positions in US waters, 7.3 to 10.5 million a day. The canvas has ingested **449 million positions** over 47 days of 2024 so far. We download NOAA's daily files, partition them into H3 files by day, index them, then query them from a UDF and straight from [`GET /h3/query`](/rest-api/h3). The canvas UDFs that start jobs are [guarded](/guide/h3-analytics/data-retrieval-end-to-end#partition), so opening the canvas never starts one. To learn the steps on a small dataset first, see [Partition, Index and Query](/guide/h3-analytics/data-retrieval-end-to-end).
 
 ![AIS_End_to_End_Workflow canvas: a read me, a Multi-day ingest folder that downloads, partitions and indexes the days you pick, a map of the ingested days, and an AIS pipeline page that runs every step](/img/tutorials/geospatial/h3/ais_end_to_end_canvas.png)
 
-_The [AIS_End_to_End_Workflow canvas](https://www.fused.io/canvas/fc_fused/AIS_End_to_End_Workflow) runs these steps for any date range you pick. The **Multi-day ingest** folder has one UDF per step and a list of the days available, **4. Map of the ingested days** draws them, and the **AIS pipeline** page at the top runs every step from one place. The UDFs below are short versions of the canvas UDFs._
+_The [AIS_End_to_End_Workflow canvas](https://www.fused.io/canvas/fc_fused/AIS_End_to_End_Workflow) runs these steps for any date range you pick. The **Multi-day ingest** folder has one UDF per step and a list of the days available, **4. Map of the ingested days** draws them, and the **AIS pipeline** page at the top runs every step from one place. The UDFs in steps 1 to 3 are short versions of the canvas UDFs._
 
 - **Source:** [NOAA AIS](https://hub.marinecadastre.gov/pages/vesseltraffic) daily files, every vessel position report off US coasts
-- **Time range:** 2024-07-01 to 2024-10-31, 123 days. NOAA's files for October 18, 19 and 27 are corrupt, so 120 days are partitioned.
+- **Days ingested:** 47 days between 2024-07-01 and 2024-12-06, picked in the canvas
 - **H3 settings:** each report gets the H3 cell at resolution 10 that holds its position, and the data is partitioned by date, one folder per day
-- **Public copy:** the result is indexed at `s3://fused-asset/data/ais/ais_week_h3_v2/` and anyone can read it. To only query, skip to [step 4](#4-query).
+- **Public copy:** the canvas writes to `s3://fused-asset/data/ais/ais_multiday_ingest_v1/h3/`, indexed and readable by anyone. To only query, skip to [step 4](#4-query).
 
 ## 1. Download
 
@@ -88,7 +88,7 @@ def download_day(date: str, raw: str):
 
 - **Source:** the Parquet from step 1, read with [`fused.h3.sources.parquet`](/python-sdk/api-reference/h3#sourcesparquet). `partition_by={"date": days}` reads one `date=` folder per job.
 - **Resolution:** 10. Each cell has an edge of about 76 m, small enough to tell ships apart in a harbor (see the [Resolution Guide](/guide/h3-analytics/resolution-guide)).
-- **Partitioned by date:** one folder per day, and each day is its own job, about 9 to 10 million rows. `on_null_point="drop"` skips the reports with no position.
+- **Partitioned by date:** one folder per day, and each day is its own job, 7.3 to 10.5 million rows. `on_null_point="drop"` skips the reports with no position.
 - **Running again:** days already written are skipped, and `redo=True` rewrites the days you pass; see [Running again](/guide/h3-analytics/data-retrieval-end-to-end#running-again).
 
 **Writes:** one folder per day, with one Parquet file per large H3 cell inside it. The UDF returns the run id at once; two days finish in about 30 seconds on `realtime`.
@@ -128,18 +128,18 @@ def udf(days: list = ["2024-07-01", "2024-07-02"], raw: str = "fd://ais_raw/", o
 
 - **What it records:** the cells, dates and time range each file covers, so a query reads only the files it needs.
 - **Columns:** `hex` for the H3 cell, `BaseDateTime` for time, `date` for the partition.
-- **Parallel:** the 120 day folders are split into 12 slices that index at once.
+- **Parallel:** the day folders are split into up to 12 slices that index at once.
 - **Running again:** indexes only new or changed days; `redo=True` reads every day again. See [`fused.h3.index`](/python-sdk/api-reference/h3#index).
 
-**Returns:** the run id at once. The status of the public copy, from [`fused.h3.index_status`](/python-sdk/api-reference/h3#index_status):
+**Returns:** the run id at once. The status of the canvas's copy, from [`fused.h3.index_status`](/python-sdk/api-reference/h3#index_status):
 
 | Field | Value |
 |---|---|
 | Status | `ready` |
-| Files | 6,880 |
+| Files | 2,816 |
 | Resolution | 10 |
-| Time range | 2024-07-01 to 2024-10-31 |
-| `date` values | 120 |
+| Time range | 2024-07-01 to 2024-12-06 |
+| `date` values | 47 |
 
 <details>
 <summary>Code</summary>
@@ -155,9 +155,9 @@ def udf(path: str = "fd://ais_h3/"):
 
 ## 4. Query
 
-A UDF calls [`fused.h3.query`](/python-sdk/api-reference/h3#query) with the map view ([`bounds`](/python-sdk/api-reference/fused-types#bounds)) and a UTC time window, and returns every report inside them. A widget next to it sends the view and the window as you pan.
+A UDF calls [`fused.h3.query`](/python-sdk/api-reference/h3#query) with an area and a UTC time window, and returns every report inside them.
 
-**Returns:** 6,214 reports from 194 vessels in New York Harbor for one hour, in 0.1 seconds. The whole day, 2024-07-03, returns 126,828 reports from 422 vessels in 0.13 seconds.
+**Returns:** 6,214 reports from 194 vessels in New York Harbor for one hour, in 0.14 seconds. The whole day, 2024-07-03, returns 126,828 reports from 422 vessels in 0.14 seconds.
 
 <details>
 <summary>Code</summary>
@@ -166,7 +166,7 @@ A UDF calls [`fused.h3.query`](/python-sdk/api-reference/h3#query) with the map 
 @fused.udf
 def udf():
     return fused.h3.query(
-        "s3://fused-asset/data/ais/ais_week_h3_v2/",
+        "s3://fused-asset/data/ais/ais_multiday_ingest_v1/h3/",
         bbox=(-74.10, 40.55, -73.90, 40.72),
         time_min="2024-07-03T12:00:00",
         time_max="2024-07-03T12:59:59",
@@ -192,51 +192,203 @@ The canvas's **4. Map of the ingested days** reads points straight from [`GET /h
 <details>
 <summary>Widget code</summary>
 
-This is the same map without the calendar, for New York Harbor and the hour from step 4. To run it, [add a widget node](/guide/data-input-outputs/import-connection/widgets#step-1-drop-a-widget-node) to any canvas and paste in this JSON. It reads the public 120-day copy straight from `GET /h3/query`, so it needs no UDF.
+This is the canvas's whole map widget, `ais_day_map_2`. Its calendar reads which days are ready from the `list_ais_days_available` UDF below, so to run it on another canvas, add that UDF under the same name and a [widget node](/guide/data-input-outputs/import-connection/widgets#step-1-drop-a-widget-node) with this JSON. The points come straight from `GET /h3/query`, with no UDF.
 
-```json title="ais_day_map.json"
+<div className="scroll-code">
+
+```json title="ais_day_map_2.json"
 {
   "type": "div",
-  "props": {"style": "width:100%;height:100%;display:flex;flex-direction:column"},
+  "props": {
+    "style": "width:100%;height:100%;display:flex;flex-direction:column"
+  },
   "children": [
     {
-      "type": "h3-query",
+      "type": "html",
       "props": {
-        "name": "ais_pts",
-        "path": "s3://fused-asset/data/ais/ais_week_h3_v2/",
-        "minLng": -74.10, "minLat": 40.55, "maxLng": -73.90, "maxLat": 40.72,
-        "timeMin": "2024-07-03T12:00:00", "timeMax": "2024-07-03T12:59:59",
-        "columns": ["LAT", "LON", "MMSI", "VesselName", "SOG", "BaseDateTime"],
-        "maxPages": 8
+        "style": "display:none",
+        "value": "<script>\n(function () {\n  var DEFAULT_FROM = \"2024-07-01T00:00\";\n  var DEFAULT_TO = \"2024-07-01T23:59\";\n  var MAX_MS = 24 * 3600 * 1000;\n  function minute(v, fallback) {\n    var s = String(v || \"\").trim();\n    return /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}/.test(s) ? s.slice(0, 16) : fallback;\n  }\n  function ms(s) { return Date.parse(s + \":00Z\"); }\n  function iso(t) { return new Date(t).toISOString().slice(0, 16); }\n  function sync() {\n    var p = window.fused.params.getAll() || {};\n    var from = minute(p.days_map_from, DEFAULT_FROM);\n    var to = minute(p.days_map_to, DEFAULT_TO);\n    if (from > to) { var t = from; from = to; to = t; }\n    var end = Math.min(ms(to), ms(from) + MAX_MS - 60000);\n    var next = { dm_tmin: from + \":00\", dm_tmax: iso(end) + \":59\", dm_capped: end < ms(to) };\n    var b = p.days_map_bounds;\n    if (Array.isArray(b) && b.length === 4 && +b[2] > +b[0] && +b[3] > +b[1]) {\n      next.dm_w = +(+b[0]).toFixed(4);\n      next.dm_s = +(+b[1]).toFixed(4);\n      next.dm_e = +(+b[2]).toFixed(4);\n      next.dm_n = +(+b[3]).toFixed(4);\n    }\n    var changed = {}, any = false;\n    Object.keys(next).forEach(function (k) {\n      if (p[k] !== next[k]) { changed[k] = next[k]; any = true; }\n    });\n    if (any) window.fused.params.set(changed);\n  }\n  sync();\n  window.fused.params.onChange(sync);\n})();\n</script>"
       }
     },
     {
-      "type": "fused-map",
+      "type": "div",
       "props": {
-        "style": "flex:1;min-height:0",
-        "basemap": "mapbox://styles/mapbox/dark-v11",
-        "centerLng": -74.03, "centerLat": 40.63, "zoom": 11.3,
-        "layers": [
-          {
-            "id": "ais_points",
-            "name": "AIS positions",
-            "type": "scatterplot",
-            "data": "{{ais_pts}}",
-            "latColumn": "LAT",
-            "lngColumn": "LON",
-            "tooltip": ["VesselName", "MMSI", "SOG", "BaseDateTime"],
-            "legend": {"title": "Speed over ground (kn)"},
-            "style": {
-              "fillColor": {"type": "continuous", "attr": "SOG", "palette": "Sunset", "domain": [0, 25], "steps": 10},
-              "pointRadius": 2,
-              "opacity": 0.85
+        "style": "display:flex;flex-direction:row;flex:1;min-height:0;gap:10px"
+      },
+      "children": [
+        {
+          "type": "div",
+          "props": {
+            "style": "flex:0 0 280px;width:280px;min-width:280px;display:flex;flex-direction:column;gap:10px;padding:8px 0 8px 10px;overflow-y:auto"
+          },
+          "children": [
+            {
+              "type": "html",
+              "props": {
+                "style": "width:100%;height:385px;flex:0 0 auto",
+                "value": "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<style>\n  :root { --bg: #2e2e2e; --fg: #e8e8e8; --muted: #8f8f8f; --btn: #3c3c3c; --ready: #E8FF59; --ready-fg: #1a1a1a; --part: #f2a33a; --down: #7d9be0; --win: #ffffff; }\n  * { box-sizing: border-box; }\n  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 12px/1.3 system-ui, -apple-system, sans-serif; }\n  body { padding: 8px 4px 4px 2px; }\n  .head { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }\n  .head b { flex: 1; text-align: center; font-size: 13px; }\n  button { background: var(--btn); color: var(--fg); border: 0; border-radius: 4px; height: 24px; min-width: 26px; padding: 0 6px; cursor: pointer; font: inherit; }\n  button:disabled { opacity: .3; cursor: default; }\n  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }\n  .dow { color: var(--muted); text-align: center; font-size: 10px; }\n  .day { height: 27px; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #5f5f5f; border: 2px solid transparent; user-select: none; }\n  .day.indexed { background: var(--ready); color: var(--ready-fg); font-weight: 600; cursor: pointer; }\n  .day.indexed:hover { filter: brightness(.85); }\n  .day.partitioned { border-color: var(--part); color: var(--fg); }\n  .day.downloaded { border-color: var(--down); border-style: dashed; color: var(--fg); }\n  .day.inwin { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--win); }\n  .legend { display: grid; gap: 4px; margin-top: 10px; color: var(--muted); }\n  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; }\n  #msg { margin-top: 8px; color: var(--muted); }\n  #win { margin-top: 6px; color: var(--fg); }\n  #win .cap { color: #f2c14e; }\n</style>\n</head>\n<body>\n  <div class=\"head\">\n    <button id=\"prev\" title=\"Previous month\">&lsaquo;</button>\n    <b id=\"title\">&nbsp;</b>\n    <button id=\"next\" title=\"Next month\">&rsaquo;</button>\n    <button id=\"reload\" title=\"Check the days again\">&#8635;</button>\n  </div>\n  <div class=\"grid\" id=\"grid\"></div>\n  <div class=\"legend\">\n    <div><span class=\"sw\" style=\"background:var(--ready)\"></span><span id=\"lg-indexed\"></span></div>\n    <div><span class=\"sw\" style=\"border:2px solid var(--part)\"></span><span id=\"lg-partitioned\"></span></div>\n    <div><span class=\"sw\" style=\"border:2px dashed var(--down)\"></span><span id=\"lg-downloaded\"></span></div>\n  </div>\n  <div id=\"msg\">Checking which days exist…</div>\n  <div id=\"win\"></div>\n\n<script>\n(function () {\n  var CFG = {\"source\": \"list_ais_days_available\", \"single\": false, \"fromParam\": \"days_map_from\", \"toParam\": \"days_map_to\", \"partitionedHint\": \"run index_ais_days\", \"downloadedHint\": \"run ingest_ais_days\"};\n  var MONTHS = [\"January\", \"February\", \"March\", \"April\", \"May\", \"June\", \"July\", \"August\", \"September\", \"October\", \"November\", \"December\"];\n  var LABEL = { indexed: \"indexed, click to view\", partitioned: \"partitioned, not indexed\", downloaded: \"downloaded, not partitioned\" };\n  var states = {};\n  var view = null;\n  var shownFrom = \"\";\n\n  function el(id) { return document.getElementById(id); }\n  function pad(n) { return (n < 10 ? \"0\" : \"\") + n; }\n  function key(y, m, d) { return y + \"-\" + pad(m + 1) + \"-\" + pad(d); }\n  function day(v) { var s = String(v || \"\"); return /^\\d{4}-\\d{2}-\\d{2}/.test(s) ? s.slice(0, 10) : \"\"; }\n  function monthOf(d) { return { y: +d.slice(0, 4), m: +d.slice(5, 7) - 1 }; }\n  function idx(v) { return v.y * 12 + v.m; }\n\n  el(\"lg-indexed\").textContent = CFG.single ? \"Indexed: click to view\" : \"Indexed: click to view, shift+click for a range\";\n  el(\"lg-partitioned\").textContent = \"Partitioned: \" + CFG.partitionedHint;\n  el(\"lg-downloaded\").textContent = \"Downloaded: \" + CFG.downloadedHint;\n\n  function windowDays() {\n    var p = fused.params.getAll() || {};\n    if (CFG.single) { var one = day(p[CFG.dayParam]); return { from: one, to: one }; }\n    var a = day(p[CFG.fromParam]), b = day(p[CFG.toParam]);\n    if (a && b && a > b) { var t = a; a = b; b = t; }\n    return { from: a, to: b };\n  }\n\n  function indexedDays() {\n    return Object.keys(states).filter(function (k) { return states[k] === \"indexed\"; }).sort();\n  }\n\n  function bounds() {\n    var ks = Object.keys(states).sort();\n    return ks.length ? { lo: idx(monthOf(ks[0])), hi: idx(monthOf(ks[ks.length - 1])) } : null;\n  }\n\n  function draw() {\n    if (!view) return;\n    var w = windowDays(), b = bounds();\n    var y = view.y, m = view.m;\n    el(\"title\").textContent = MONTHS[m] + \" \" + y;\n    el(\"prev\").disabled = !b || idx(view) <= b.lo;\n    el(\"next\").disabled = !b || idx(view) >= b.hi;\n    var html = [\"Mo\", \"Tu\", \"We\", \"Th\", \"Fr\", \"Sa\", \"Su\"].map(function (d) { return '<div class=\"dow\">' + d + \"</div>\"; }).join(\"\");\n    var lead = (new Date(Date.UTC(y, m, 1)).getUTCDay() + 6) % 7;\n    var n = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();\n    for (var i = 0; i < lead; i++) html += \"<div></div>\";\n    for (var d = 1; d <= n; d++) {\n      var k = key(y, m, d), s = states[k] || \"\";\n      var cls = \"day \" + s + (w.from && w.to && k >= w.from && k <= w.to ? \" inwin\" : \"\");\n      html += '<div class=\"' + cls + '\" data-day=\"' + k + '\" title=\"' + k + \": \" + (LABEL[s] || \"no data\") + '\">' + d + \"</div>\";\n    }\n    el(\"grid\").innerHTML = html;\n  }\n\n  function pickView() {\n    var w = windowDays();\n    if (w.from) { view = monthOf(w.from); return; }\n    var ks = indexedDays();\n    view = ks.length ? monthOf(ks[ks.length - 1]) : { y: 2024, m: 6 };\n  }\n\n  function step(n) {\n    var t = idx(view) + n;\n    view = { y: Math.floor(t / 12), m: t % 12 };\n    draw();\n  }\n\n  el(\"prev\").onclick = function () { step(-1); };\n  el(\"next\").onclick = function () { step(1); };\n  el(\"reload\").onclick = function () { load(true); };\n\n  el(\"grid\").addEventListener(\"click\", function (e) {\n    var cell = e.target.closest(\"[data-day]\");\n    if (!cell || states[cell.dataset.day] !== \"indexed\") return;\n    var k = cell.dataset.day;\n    if (CFG.single) { fused.params.set(CFG.dayParam, k); return; }\n    var a = k, b = k, w = windowDays();\n    if (e.shiftKey && w.from) {\n      a = w.from < k ? w.from : k;\n      b = w.from < k ? k : w.from;\n    }\n    var next = {};\n    next[CFG.fromParam] = a + \"T00:00\";\n    next[CFG.toParam] = b + \"T23:59\";\n    fused.params.set(next);\n  });\n\n  fused.params.onChange(function () {\n    var w = windowDays();\n    if (w.from && w.from !== shownFrom && view && idx(monthOf(w.from)) !== idx(view)) view = monthOf(w.from);\n    shownFrom = w.from;\n    draw();\n    note();\n  });\n\n  function note() {\n    var p = fused.params.getAll() || {};\n    var a = String(p.dm_tmin || \"\").slice(0, 16).replace(\"T\", \" \");\n    var b = String(p.dm_tmax || \"\").slice(0, 16).replace(\"T\", \" \");\n    if (!a || !b) { el(\"win\").textContent = \"\"; return; }\n    el(\"win\").innerHTML = \"\";\n    el(\"win\").appendChild(document.createTextNode(\"Points on the map: \" + a + \" to \" + b + \" UTC\"));\n    if (p.dm_capped) {\n      var c = document.createElement(\"div\");\n      c.className = \"cap\";\n      c.textContent = \"Only the first 24 h of a longer window are drawn: narrow From/To to see the rest.\";\n      el(\"win\").appendChild(c);\n    }\n  }\n\n  function timeout(ms) {\n    return new Promise(function (_, reject) {\n      setTimeout(function () { reject(Object.assign(new Error(\"no answer after \" + ms / 1000 + \" s\"), { type: \"timeout\" })); }, ms);\n    });\n  }\n\n  var gen = 0;\n  async function load(fresh) {\n    var my = ++gen;\n    el(\"msg\").textContent = fresh ? \"Running \" + CFG.source + \"…\" : \"Checking which days exist…\";\n    try {\n      var rows;\n      if (fresh) {\n        rows = await Promise.race([fused.runPython(CFG.source, {}), timeout(120000)]);\n      } else {\n        var source = \"{\".repeat(2) + CFG.source + \"}\".repeat(2);\n        rows = await Promise.race([fused.query('SELECT CAST(\"date\" AS VARCHAR) AS \"date\", state FROM ' + source), timeout(60000)]);\n      }\n      if (my !== gen) return;\n      if (!Array.isArray(rows)) throw new Error(\"unexpected result from \" + CFG.source);\n      states = {};\n      rows.forEach(function (r) { states[String(r.date).slice(0, 10)] = r.state; });\n      var ready = indexedDays();\n      el(\"msg\").textContent = rows.length ? ready.length + \" of \" + rows.length + \" days ready to view\" : \"No days ingested yet\";\n      if (CFG.single && !windowDays().from && ready.length) fused.params.set(CFG.dayParam, ready[ready.length - 1]);\n    } catch (e) {\n      if (e.type === \"aborted\" || my !== gen) return;\n      if (e.type === \"not_ready\" && !fresh) { load(true); return; }\n      el(\"msg\").textContent = \"Could not list days: \" + (e.type ? e.type + \": \" : \"\") + e.message;\n    }\n    if (!windowDays().from) pickView();\n    shownFrom = windowDays().from;\n    draw();\n  }\n\n  pickView();\n  draw();\n  note();\n  load();\n})();\n</script>\n</body>\n</html>\n"
+              }
+            },
+            {
+              "type": "datetime-input",
+              "props": {
+                "label": "From (UTC)",
+                "param": "days_map_from",
+                "mode": "datetime",
+                "defaultValue": "2024-07-01T00:00",
+                "style": "width:100%"
+              }
+            },
+            {
+              "type": "datetime-input",
+              "props": {
+                "label": "To (UTC)",
+                "param": "days_map_to",
+                "mode": "datetime",
+                "defaultValue": "2024-07-01T23:59",
+                "style": "width:100%"
+              }
+            },
+            {
+              "type": "text",
+              "props": {
+                "value": "Points load for the map view and the From/To window (24 h at most). Zoom 10 or closer.",
+                "variant": "muted"
+              }
+            },
+            {
+              "type": "h3-query",
+              "props": {
+                "name": "dm_pts",
+                "path": "s3://fused-asset/data/ais/ais_multiday_ingest_v1/h3/",
+                "minLng": "$dm_w",
+                "minLat": "$dm_s",
+                "maxLng": "$dm_e",
+                "maxLat": "$dm_n",
+                "timeMin": "$dm_tmin",
+                "timeMax": "$dm_tmax",
+                "columns": [
+                  "LAT",
+                  "LON",
+                  "MMSI",
+                  "VesselName",
+                  "SOG",
+                  "COG",
+                  "VesselType",
+                  "BaseDateTime"
+                ],
+                "maxPages": 8
+              }
             }
+          ]
+        },
+        {
+          "type": "fused-map",
+          "props": {
+            "style": "flex:1;min-width:0;height:100%",
+            "basemap": "mapbox://styles/mapbox/dark-v11",
+            "centerLng": -74.02,
+            "centerLat": 40.65,
+            "zoom": 10.5,
+            "minZoom": 10,
+            "autoFit": false,
+            "param": "days_map_bounds",
+            "autoSend": true,
+            "autoSendDebounceMs": 400,
+            "layers": [
+              {
+                "id": "dm_ships",
+                "name": "AIS positions",
+                "type": "scatterplot",
+                "visible": true,
+                "data": "{{dm_pts}}",
+                "latColumn": "LAT",
+                "lngColumn": "LON",
+                "tooltip": [
+                  "VesselName",
+                  "MMSI",
+                  "SOG",
+                  "BaseDateTime"
+                ],
+                "legend": {
+                  "title": "Speed over ground (kn)"
+                },
+                "style": {
+                  "fillColor": {
+                    "type": "continuous",
+                    "attr": "SOG",
+                    "palette": "Sunset",
+                    "domain": [
+                      0,
+                      25
+                    ],
+                    "steps": 10
+                  },
+                  "pointRadius": 2,
+                  "lineWidth": 0,
+                  "opacity": 0.85
+                }
+              }
+            ]
           }
-        ]
-      }
+        }
+      ]
     }
   ]
 }
+```
+
+</div>
+
+```python title="list_ais_days_available.py"
+import fused
+
+RAW = "s3://fused-asset/data/ais/ais_multiday_ingest_v1/raw/"
+H3_PATH = "s3://fused-asset/data/ais/ais_multiday_ingest_v1/h3/"
+
+
+@fused.udf(cache_max_age=0)
+def udf(raw_s3_folder: str = RAW, h3_s3_folder: str = H3_PATH):
+    """List every day an AIS ingest has touched and how far it got (the multi-day ingest by default).
+
+    One row per day: downloaded (Parquet in raw_s3_folder), partitioned (in h3_s3_folder's
+    manifest, with its row count) and indexed (readable by the map). `state` is the furthest
+    step reached: "indexed" days can be viewed, "partitioned" days still need indexing,
+    "downloaded" days still need partitioning. The calendar in the multi-day map reads this.
+    """
+    import json
+
+    import fsspec
+    import pandas as pd
+
+    raw = raw_s3_folder.rstrip("/") + "/"
+    h3_path = h3_s3_folder.rstrip("/") + "/"
+    fs = fsspec.filesystem("s3")
+    try:
+        downloaded = {p.rstrip("/").rsplit("date=", 1)[-1] for p in fs.ls(raw, refresh=True) if "date=" in p}
+    except FileNotFoundError:
+        downloaded = set()
+
+    try:
+        with fs.open(f"{h3_path}_manifest.json") as f:
+            folder_rows = json.load(f).get("folder_rows") or {}
+    except FileNotFoundError:
+        folder_rows = {}
+    rows = {k.replace("date=", ""): v for k, v in folder_rows.items()}
+
+    indexed = set()
+    if fused.h3.index_status(h3_path):
+        indexed = {p.split("date=", 1)[1].split("/", 1)[0] for p in fused.h3.indexed_files(h3_path) if "date=" in p}
+
+    days = sorted(downloaded | set(rows) | indexed)
+    return pd.DataFrame({
+        "date": days,
+        "state": ["indexed" if d in indexed else "partitioned" if d in rows else "downloaded" for d in days],
+        "downloaded": [d in downloaded for d in days],
+        "partitioned": [d in rows for d in days],
+        "indexed": [d in indexed for d in days],
+        "rows": pd.array([rows.get(d) for d in days], dtype="Int64"),
+    })
 ```
 
 </details>
@@ -245,41 +397,12 @@ The `h3-query` widget sends a request like this one, which returns the same hour
 
 ```bash
 curl -G "https://www.fused.io/server/v1/h3/query" \
-  --data-urlencode "path=s3://fused-asset/data/ais/ais_week_h3_v2/" \
+  --data-urlencode "path=s3://fused-asset/data/ais/ais_multiday_ingest_v1/h3/" \
   -d min_lng=-74.10 -d min_lat=40.55 -d max_lng=-73.90 -d max_lat=40.72 \
   -d time_min=2024-07-03T12:00:00 -d time_max=2024-07-03T12:59:59 \
   -d columns=MMSI -d columns=BaseDateTime -d columns=LAT -d columns=LON \
   -o harbor.parquet
 ```
-
-## 6. Map with a `fused-hex` layer
-
-A [`fused-hex` layer](/guide/h3-analytics/visualization#fused-hex-layer) on a [Fused Map](/guide/data-input-outputs/import-connection/fused-map) draws the dataset with no code: it calls `GET /h3/query` for each tile in view and colours each res-10 cell by its number of reports in the time window. Add this layer to a `fused-map` widget's `layers`.
-
-<details>
-<summary>Code</summary>
-
-```json
-{
-  "id": "ais",
-  "type": "fused-hex",
-  "h3Column": "hex",
-  "minZoom": 8,
-  "source": {
-    "path": "s3://fused-asset/data/ais/ais_week_h3_v2/",
-    "timeColumn": "BaseDateTime",
-    "dateMin": "2024-07-03T12:00:00",
-    "dateMax": "2024-07-03T12:59:59",
-    "reduce": "sum",
-    "variables": ["SOG"]
-  },
-  "style": {
-    "fillColor": {"type": "continuous", "attr": "count", "palette": "Teal", "domain": [0, 50]}
-  }
-}
-```
-
-</details>
 
 ## Reference
 
