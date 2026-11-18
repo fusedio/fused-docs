@@ -5,117 +5,60 @@ sidebar_label: Building for Agents
 sidebar_position: 8
 ---
 
-Once you've written a UDF, any AI agent can call it as a tool. To connect a canvas to Claude Code or another MCP client, see [Connect canvases to AI](/guide/data-input-outputs/import-connection/ai-data-connection). Then follow the checklist below so the agent picks the right UDF and gets a small, precise answer back.
+When you [connect a canvas to AI](/guide/data-input-outputs/import-connection/ai-data-connection), each visible UDF on it becomes a tool the agent can call. This page shows how Fused builds that tool from your UDF, so you can control what the agent sees.
 
-## Checklist
+## How a UDF becomes a tool
 
-| Do this | Why |
+| Tool | Comes from |
 |---|---|
-| Name the tool with a comment on the first line, like `# get_county_population`. The function stays `udf`. | Agents choose tools by name. |
-| Write a docstring that says what the UDF answers and when to use it. | The docstring is the tool description. |
-| Use descriptive parameter names (`region_fips`, not `r`) and give every parameter a default. | The agent doesn't have to guess. |
-| Return a small summary and add a `top_n` or `limit` parameter. | Large results flood the agent's context. |
-| Precompute and read from storage, and cache setup with [`@fused.cache`](/guide/working-with-udfs/udf-best-practices/caching). | Every call blocks the agent, and UDFs time out after [120s](/guide/working-with-udfs/udf-best-practices/realtime#limits). |
-| Take S3 or GCS paths as input, not file contents. | Keeps calls small. |
-| Add `output_path` and `save_to_file` parameters to UDFs that transform data. | The next UDF reads the saved path, so agents can chain calls. |
-| Name output columns after what they contain. | A count in a column called `latitude` misleads the agent. |
-| Hide helper UDFs, and keep agent-facing UDFs on their own canvas. | Only visible UDFs become tools, and the whole canvas shares one token. |
+| Name | The UDF's name on the canvas, like `nyc_meeting_routes`. The function is always `def udf`, so the canvas name is what the agent sees. |
+| Description | The UDF's description on the canvas (`description` in `canvas.toml`) if set, otherwise its docstring. With neither, the agent only sees a placeholder like `UDF: udf_1 (auto)`. |
+| Parameters | The typed arguments: `str`, `int`, `float`, `bool` and `list` become string, integer, number, boolean and array. A literal default is passed to the agent; a default read from a variable, like `table: str = TABLE_NAME`, is not. |
+| Listed or not | Only visible UDFs are listed. Hidden UDFs still run when another UDF calls them. |
 
-:::warning Don't block on long jobs
-A UDF that waits for a 5-minute job burns compute and hits the 120s timeout. Start the job, return a job ID, and add a separate status UDF. See [Scaling out UDFs](/guide/working-with-udfs/udf-best-practices/scaling-out).
-:::
+Every tool also takes `format` (the output format, like `json`) and `cache_max_age`.
 
-:::warning Treat every parameter as untrusted
-Never accept free-form SQL or table names, only read paths under a prefix you hardcode, never expose credentials as parameters, and constrain inputs with an allowlist. See [Write UDFs securely](/guide/working-with-udfs/udf-best-practices/security).
-:::
+To see the tools exactly as an agent does, open the canvas's OpenAPI spec at `https://udf.ai/<fc_token>.api.json`.
 
-## Examples
+## Make each tool easy to pick
+
+- **Name the UDF for what it answers**, like `get_county_population`, not `udf_1` or `test`.
+- **Describe what it does in the docstring**, including what each parameter means. Parameters don't get their own descriptions, so the docstring is the only place the agent learns them.
+- **Type every parameter and give it a literal default**, so the agent knows what to pass and can call the UDF without guessing.
 
 <details>
-<summary>Name and docstring</summary>
+<summary>Example</summary>
 
 ```python
-# search_census_demographics
-
-@fused.udf
-def udf(search_query: str = "counties near Los Angeles", year: int = 2023, top_n: int = 5):
-    """
-    Searches census demographic data using a natural language query.
-    Returns the top N matching counties with population and income data.
-
-    Use this when the user asks about population, demographics, or income
-    for a specific area or region.
-    """
-    ...
-```
-
-</details>
-
-<details>
-<summary>Return a summary</summary>
-
-```python
-# get_top_counties_by_population
-
 @fused.udf
 def udf(state: str = "CA", top_n: int = 10):
     """
-    Returns the top N counties by population for a given state.
+    Returns the top_n counties in a US state by population.
+
+    state: two-letter state code, like "CA" or "NY"
+    top_n: number of counties to return
     """
     import pandas as pd
-    df = pd.read_parquet("s3://my-bucket/census/raw.parquet")
-    return (
-        df[df["state"] == state]
-        .groupby("county")["population"]
-        .sum()
-        .nlargest(top_n)
-        .reset_index()
-    )
+    df = pd.read_parquet("s3://my-bucket/census/counties.parquet")
+    return df[df["state"] == state].nlargest(top_n, "population")
 ```
+
+Saved on the canvas as `get_top_counties`, this becomes a tool named `get_top_counties` with this docstring as its description and two optional parameters, `state` (string, default `"CA"`) and `top_n` (integer, default `10`).
 
 </details>
 
-<details>
-<summary>Start a long job</summary>
+:::warning Don't block on long jobs
+Each call has a [120s limit](/guide/working-with-udfs/udf-best-practices/realtime#limits) and the agent waits for it. For longer work, start the job, return a job ID and add a separate UDF that reports its status. See [Scaling out UDFs](/guide/working-with-udfs/udf-best-practices/scaling-out).
+:::
 
-```python
-# trigger_census_ingestion
-
-@fused.udf
-def udf(dataset: str = "census_2023", region: str = "CA"):
-    """
-    Starts a batch ingestion job for the dataset and region and returns its job ID.
-    Use check_ingestion_status with the job ID to monitor progress.
-    """
-    import uuid
-    job_id = str(uuid.uuid4())
-    enqueue_batch_job(dataset=dataset, region=region, job_id=job_id)
-    return {"job_id": job_id, "status": "queued"}
-```
-
-</details>
-
-<details>
-<summary>Chain through a saved file</summary>
-
-```python
-# transform_data
-
-@fused.udf
-def udf(path: str, output_path: str = "", save_to_file: bool = False):
-    """
-    Transforms the dataset at path. With save_to_file=true, writes the
-    result to output_path and returns the path for the next UDF.
-    """
-    gdf = process(path)
-    if save_to_file and output_path:
-        gdf.to_parquet(output_path)
-        return {"status": "success", "output_path": output_path, "rows": len(gdf)}
-    return gdf
-```
-
-</details>
+:::warning Treat every parameter as untrusted
+The agent decides what to pass. Never accept free-form SQL or table names, only read paths under a prefix you hardcode, and keep credentials out of parameters. See [Write UDFs securely](/guide/working-with-udfs/udf-best-practices/security).
+:::
 
 ## Expose your canvas to agents
 
-![Only visible UDFs appear in OpenAPI](/img/hidden-udfs-hidden-api.png)
+Hide the UDFs an agent shouldn't call directly. In the top canvas below, the first two steps, `gcal_today_events` and `gcal_events_geocode`, are hidden, so the OpenAPI spec lists only `nyc_meeting_routes`. In the bottom canvas all three are visible, and the agent sees all three as tools.
+
+![Two versions of the same canvas: with the first two UDFs hidden, the OpenAPI spec lists only nyc_meeting_routes; with all three visible, it lists all three](/img/hidden-udfs-hidden-api.png)
+
+All UDFs on a canvas share one token, so anyone with it can reach the UDFs on that canvas. Keep agent-facing UDFs on their own canvas, and heavy or destructive jobs on another.
