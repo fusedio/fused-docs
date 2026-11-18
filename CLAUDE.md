@@ -32,10 +32,10 @@ Every code block must be runnable. How to test depends on what you're documentin
 **UDF code** — run with the fused CLI:
 ```bash
 # Remote (default) — runs on Fused servers, results printed locally
-fused run "" udf.py
+fused workbench run "" udf.py
 
 # Local — runs in your environment, no network call
-fused run "" udf.py --engine local
+fused workbench run "" udf.py --engine local
 ```
 The `CANVAS` argument is required; `""` works for local files. Make sure `fused` is installed and on your PATH (`pip install fused`).
 
@@ -89,7 +89,7 @@ Two complementary, **non-blocking** checks surface broken links — neither fail
 
 Every `python` fence in the docs is syntax-checked automatically (pre-commit hook + CI). Keep code blocks valid Python:
 
-- **Shell commands** (`pip install`, `fused run`, etc.) must use a `bash` fence, not `python`.
+- **Shell commands** (`pip install`, `fused workbench run`, etc.) must use a `bash` fence, not `python`.
 - **Pseudocode blocks** (REPL output, type stubs, emoji annotations, partial signatures, HTML embedded in a python block, bare URLs or other non-Python illustrative content) must start with `# doctest: skip` as their first line. This suppresses both the syntax check and Tier 2 execution without hiding the block from readers.
 - **Reference files** (everything in `docs/python-sdk/api-reference/`, plus `docs/python-sdk/top-level-functions.mdx`) are excluded from the check automatically, so never add skip markers there.
 
