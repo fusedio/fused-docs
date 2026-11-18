@@ -61,8 +61,6 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/working-with-sentinel-2", label: "Working with Sentinel-2" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/geospatial-single-vs-tile", label: "Geospatial processing" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/agents", label: "Building for Agents" },
-        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/ai-coding-tools", label: "AI Coding Tools" },
-        { type: "doc", id: "guide/working-with-udfs/udf-best-practices/github-copilot", label: "GitHub Copilot" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/debugging-playbook", label: "Debugging playbook" },
         { type: "doc", id: "guide/working-with-udfs/udf-best-practices/unpythonic", label: "Un-pythonic aspects" },
       ],
@@ -80,7 +78,7 @@ const sidebars: SidebarsConfig = {
         { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/stac", label: "STAC catalogs" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/geospatial/gee", label: "Google Earth Engine" },
         { type: "doc", id: "guide/data-input-outputs/import-connection/using-ai-inside-udf", label: "Using AI inside a UDF" },
-        { type: "doc", id: "guide/data-input-outputs/import-connection/ai-data-connection", label: "Connecting AI to Data" },
+        { type: "doc", id: "guide/data-input-outputs/import-connection/ai-data-connection", label: "Connect canvases to AI" },
       ],
     },
 

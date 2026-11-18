@@ -11,7 +11,7 @@ description: Use when working with Sentinel-2 L2A imagery on Fused through `sent
 
 ```bash
 pip install "fused[raster,vector]" odc-stac rio-tiler h3 nest_asyncio
-fused login          # opens the browser; check with `fused whoami`
+fused workbench login          # opens the browser; check with `fused workbench whoami`
 ```
 
 ```python
