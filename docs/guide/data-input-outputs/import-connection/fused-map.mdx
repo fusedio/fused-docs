@@ -167,7 +167,12 @@ The [Fused Map example canvas](https://www.fused.io/canvas/fc_fused/map_widget_c
 
 A map can send its viewport bounds (`param`), the clicked feature (`clickParam`), the hovered feature (`hoverParam`), its box selection (`selectParam`), its camera (`stateParam`) and a per-layer row version (`sourceParam`) to canvas parameters. Other widgets and UDFs read them as `$<name>`. See the [Fused Map API reference](/widget-api/fused-map) for each one.
 
-In this widget the map sends its bounds to `$map_bounds` with `"param"` and `"autoSend": true`. The bar chart below it reads `$map_bounds[1]` to `$map_bounds[4]` in its SQL and counts the San Francisco Airbnb listings in view by room type, so the chart follows the map as you pan and zoom. Both read the `sf_listings` UDF from the example above.
+In this widget the map both reads and writes canvas parameters:
+
+- **Reads:** the **Room type** dropdown writes `$room_type`, and the map's layer SQL reads it to show that room type, or every listing for **All room types**.
+- **Writes:** the map sends its bounds to `$map_bounds` with `"param"` and `"autoSend": true`, and the last clicked listing to `$clicked_listing` with `"clickParam"`.
+
+The bar chart reads `$map_bounds[1]` to `$map_bounds[4]` in its SQL and counts the San Francisco Airbnb listings in view by room type, so it follows the map as you pan and zoom. The chart ignores `$room_type`, so it always compares every room type in view. The line under the chart shows `$clicked_listing`: the clicked listing's tooltip fields. The dropdown, map and chart read the `sf_listings` UDF from the example above.
 
 <iframe
   src="https://www.fused.io/share/fc_fused%2Fmap_widget_canvas/map_bounds_chart"
@@ -175,7 +180,7 @@ In this widget the map sends its bounds to `$map_bounds` with `"param"` and `"au
   height="600px"
   loading="lazy"
   style={{border: 'none', borderRadius: '8px'}}
-  title="A Fused Map that sends its bounds to a bar chart"
+  title="A Fused Map that reads a room type and sends its bounds and clicks to other widgets"
 />
 
 <details>
@@ -185,43 +190,84 @@ In this widget the map sends its bounds to `$map_bounds` with `"param"` and `"au
 {
   "type": "div",
   "props": {
-    "style": "display:flex;flex-direction:column;gap:8px;height:100%"
+    "style": "display:flex;flex-direction:row;gap:8px;height:100%"
   },
   "children": [
     {
-      "type": "fused-map",
+      "type": "div",
       "props": {
-        "style": "flex:1;min-height:0",
-        "basemap": "mapbox://styles/mapbox/dark-v11",
-        "centerLng": -122.43,
-        "centerLat": 37.76,
-        "zoom": 12,
-        "param": "map_bounds",
-        "autoSend": true,
-        "layers": [
-          {
-            "id": "listings",
-            "name": "SF Airbnb listings",
-            "type": "geojson",
-            "udf": "{{sf_listings}}",
-            "latColumn": "latitude",
-            "lngColumn": "longitude",
-            "tooltip": ["name", "room_type", "price_in_dollar"],
-            "style": {
-              "fillColor": { "type": "categorical", "attr": "room_type", "palette": "Bold" },
-              "pointRadius": 3
-            }
+        "style": "flex:1;min-width:0;display:flex;flex-direction:column;gap:8px"
+      },
+      "children": [
+        {
+          "type": "dropdown",
+          "props": {
+            "label": "Room type",
+            "param": "room_type",
+            "defaultValue": "All",
+            "sql": "SELECT value, label FROM (SELECT 'All' AS value, 'All room types' AS label, 0 AS o UNION ALL SELECT DISTINCT room_type, room_type, 1 FROM {{sf_listings}}) ORDER BY o, label"
           }
-        ]
-      }
+        },
+        {
+          "type": "fused-map",
+          "props": {
+            "style": "flex:1;min-height:0",
+            "basemap": "mapbox://styles/mapbox/dark-v11",
+            "centerLng": -122.43,
+            "centerLat": 37.76,
+            "zoom": 12,
+            "param": "map_bounds",
+            "autoSend": true,
+            "clickParam": "clicked_listing",
+            "layers": [
+              {
+                "id": "listings",
+                "name": "SF Airbnb listings",
+                "type": "geojson",
+                "sql": "SELECT * FROM {{sf_listings}} WHERE $room_type = 'All' OR room_type = $room_type",
+                "latColumn": "latitude",
+                "lngColumn": "longitude",
+                "tooltip": [
+                  "name",
+                  "room_type",
+                  "price_in_dollar"
+                ],
+                "style": {
+                  "fillColor": {
+                    "type": "categorical",
+                    "attr": "room_type",
+                    "palette": "Bold"
+                  },
+                  "pointRadius": 3
+                }
+              }
+            ]
+          }
+        }
+      ]
     },
     {
-      "type": "bar-chart",
+      "type": "div",
       "props": {
-        "title": "Listings in view by room type",
-        "sql": "SELECT room_type AS label, COUNT(*) AS value FROM {{sf_listings}} WHERE longitude BETWEEN $map_bounds[1] AND $map_bounds[3] AND latitude BETWEEN $map_bounds[2] AND $map_bounds[4] GROUP BY 1 ORDER BY 2 DESC",
-        "style": "height:200px"
-      }
+        "style": "width:320px;flex-shrink:0;display:flex;flex-direction:column;gap:8px"
+      },
+      "children": [
+        {
+          "type": "bar-chart",
+          "props": {
+            "title": "Listings in view by room type",
+            "sql": "SELECT room_type AS label, COUNT(*) AS value FROM {{sf_listings}} WHERE longitude BETWEEN $map_bounds[1] AND $map_bounds[3] AND latitude BETWEEN $map_bounds[2] AND $map_bounds[4] GROUP BY 1 ORDER BY 2 DESC",
+            "style": "flex:1;min-height:0"
+          }
+        },
+        {
+          "type": "text",
+          "props": {
+            "value": "Clicked: $clicked_listing",
+            "variant": "small"
+          }
+        }
+      ]
     }
   ]
 }
@@ -229,7 +275,7 @@ In this widget the map sends its bounds to `$map_bounds` with `"param"` and `"au
 
 </details>
 
-For maps that send their view and selections to charts, see [cross-filtering](/guide/h3-analytics/visualization#cross-filtering).
+The map filters with layer `sql`, so each `$room_type` change reruns that query. Layer `filters` bound to a `$param` are applied on the client instead (see the [Fused Map API reference](/widget-api/fused-map)). For a map linked to several charts, an [HTML template node](/widget-api/html) can draw the charts itself, as in [cross-filtering](/guide/h3-analytics/visualization#cross-filtering).
 
 ## The sidebar
 
