@@ -711,7 +711,6 @@ import click
 from fused.cli import cli as cli_group
 
 CLI_DIR = ROOT / "docs" / "cli"
-CLI = "fused workbench"
 
 # Every non-hidden top-level command gets its own page (sorted for stable
 # sidebar order). New commands appear automatically — nothing to maintain here.
@@ -858,18 +857,18 @@ def _cli_render_page(name: str) -> str:
     out = [
         "---",
         f"id: {name}",
-        f"title: {CLI} {name}",
-        f"sidebar_label: {CLI} {name}",
+        f"title: fused {name}",
+        f"sidebar_label: fused {name}",
         "---",
         "",
-        f"# `{CLI} {name}`",
+        f"# `fused {name}`",
         "",
     ]
     short = _cli_short(cmd)
     if short:
         out += [short, ""]
     if isinstance(cmd, click.Group):
-        out += ["```", f"{CLI} {name} [SUBCOMMAND] [OPTIONS]", "```", ""]
+        out += ["```", f"fused {name} [SUBCOMMAND] [OPTIONS]", "```", ""]
         subs = [
             (n, s)
             for n, s in sorted(cmd.commands.items())
@@ -879,10 +878,10 @@ def _cli_render_page(name: str) -> str:
         out += [f"| `{n}` | {_cli_short(s)} |" for n, s in subs]
         out.append("")
         for n, s in subs:
-            out.append(_cli_render_command(s, f"{CLI} {name} {n}", 2))
+            out.append(_cli_render_command(s, f"fused {name} {n}", 2))
             out.append("")
     else:
-        out += ["```", _cli_synopsis(cmd, f"{CLI} {name}"), "```", ""]
+        out += ["```", _cli_synopsis(cmd, f"fused {name}"), "```", ""]
         table = _cli_options_table(cmd)
         if table:
             out += ["## Options", "", table, ""]
@@ -911,7 +910,7 @@ for _name in sorted(cli_group.commands):
     _cmd = cli_group.commands[_name]
     if getattr(_cmd, "hidden", False):
         continue
-    _label = f"[`{CLI} {_name}`](/cli/{_name})" if _name in CLI_PAGES else f"`{CLI} {_name}`"
+    _label = f"[`fused {_name}`](/cli/{_name})" if _name in CLI_PAGES else f"`fused {_name}`"
     _command_rows.append(f"| {_label} | {_cli_short(_cmd)} |")
 
 _overview = f"""---
@@ -938,7 +937,7 @@ Or install it with pip in a Python 3.10+ environment:
 pip install --upgrade "fused>=2"
 ```
 
-Every command runs as `fused workbench <command>`. Run `fused workbench --help` to check the install. To upgrade later, run `uv tool upgrade fused` or rerun the pip command.
+Run `fused --help` to check the install. To upgrade later, run `uv tool upgrade fused` or rerun the pip command.
 
 :::warning
 On Python 3.9, `pip install fused` installs fused 1.x, which has no `fused` command, so your shell reports `command not found: fused`. The `"fused>=2"` pin makes pip fail with an error instead. Run `python3 --version` to check: the `python3` that ships with macOS is 3.9.
