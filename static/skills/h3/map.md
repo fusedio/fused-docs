@@ -1,6 +1,6 @@
 # Draw H3 cells on a `fused-map`
 
-A `fused-map` widget in a Workbench canvas draws H3 cells as hexagons. Widget basics, edges and other layers: https://docs.fused.io/skills/FUSED_MAP.md. Guide: https://docs.fused.io/guide/h3-analytics/visualization.
+A `fused-map` widget in a Workbench canvas draws H3 cells as hexagons. Widget basics, edges and other layers: https://docs.fused.io/skills/FUSED_MAP.md. Guide: https://docs.fused.io/guide/h3-analytics/visualization.md.
 
 ## From a UDF: `h3` layer
 
@@ -82,6 +82,6 @@ The layer needs a dataset built with `fused.h3.partition` (https://docs.fused.io
 }
 ```
 
-Expect hexagons over Midtown at zoom 14, coloured by request count, with a legend from 0 to 40. Tiles can take 30 seconds or more on the first load. `fused-hex` never auto-fits, so set the center and zoom on the data.
+Expect hexagons over Midtown at zoom 14, coloured by request count, with a legend from 0 to 40. Tiles can take 30 seconds or more on the first load. `fused-hex` never auto-fits, so set the center and zoom on the data. To check it drew, add a `metric` with `SELECT COUNT(*) FROM {{nyc311}}`: the rows in view.
 
 A `sql` on a `fused-hex` layer filters or computes columns over the tiles in view: https://docs.fused.io/skills/fused-map/tiles.md

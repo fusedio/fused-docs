@@ -23,4 +23,4 @@ def month_ndvi(start: str = "2024-07-01", end: str = "2024-07-31"):
 result = month_ndvi.map([{"start": "2024-06-01", "end": "2024-06-30"}, {"start": "2024-07-01", "end": "2024-07-31"}], engine="remote").df()
 ```
 
-Expect a DataFrame with 2 rows and columns `start`, `mean_ndvi`. Here: about 0.54 for June and 0.82 for July. `max_workers` and caching: https://docs.fused.io/python-sdk/api-reference/udf#map
+Expect a DataFrame with 2 rows and columns `start`, `mean_ndvi`. Here: about 0.54 for June and 0.82 for July. `max_workers` and caching: https://docs.fused.io/python-sdk/api-reference/udf.md#map
