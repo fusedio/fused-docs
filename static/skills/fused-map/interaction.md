@@ -45,7 +45,7 @@ Expect two night-light maps of India, 2010 and 2018. In Workbench, panning or zo
 
 ## Send the viewport and clicks to other UDFs
 
-The map writes `map_bounds` and `selected_site`. Another layer or widget reads them as `$map_bounds` and `$selected_site`, for example `"udf": "{{site_stats?bounds=$map_bounds}}"`. For now `$map_bounds` reaches the UDF as `w,s,e,n` text, which a `fused.types.Bounds` argument rejects with no error on the map. A tiled layer (`"tile": true`) gets each tile's `bounds` instead.
+The map writes `map_bounds` and `selected_site`. Another layer or widget reads them as `$map_bounds` and `$selected_site`, for example `"udf": "{{site_stats?bounds=$map_bounds}}"`.
 
 ```json
 {
