@@ -72,4 +72,4 @@ Pass `None` as the date. Expect a Dataset with variable `DEM` in metres and `dat
 
 - **H3 hexagons**: NDVI per H3 cell, from one composite or one per month → https://docs.fused.io/skills/sentinel2/h3.md
 - **Scale**: many requests in parallel, a large area, your own UDF over many dates → https://docs.fused.io/skills/sentinel2/scale.md
-- **Examples** (public canvases): indices, composites, hexagon time series and a JSON API https://docs.fused.io/examples/sentinel-2-explorer; a cloud-free composite for any map view https://docs.fused.io/examples/sentinel-2-composite; one composite per month https://docs.fused.io/examples/monthly-median-composite; NDVI time series for farm fields https://docs.fused.io/examples/temporal-pixel-analysis
+- **Examples** (public canvases): indices, composites, hexagon time series and a JSON API https://docs.fused.io/examples/sentinel-2-explorer; a cloud-free composite for any map view https://docs.fused.io/examples/sentinel-2-composite; one composite per month https://docs.fused.io/examples/monthly-median-composite; NDVI time series for farm fields https://docs.fused.io/examples/temporal-pixel-analysis.md
