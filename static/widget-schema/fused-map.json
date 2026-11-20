@@ -59,7 +59,7 @@
               "type": "string"
             },
             "type": {
-              "description": "Layer type. Omit it to detect from the data: an image → raster (tiles from a tile UDF, else one image placed at the bounds the run returned or was sent), an H3 cell column → h3, start/end lat-lng pairs → arc, one lat-lng pair → scatterplot, a geometry column → geojson. The detected type and columns are written into this config once known. All types render through deck.gl. geojson: polygons/lines/points from inline data, sql or udf rows (deck-geojson is an alias of geojson; prefer geojson). h3: hexagons from h3Column. scatterplot: point circles. heatmap: point density. arc: source→target arcs. raster: tiles from tileUrl or a udf with tile: true, else a single image from a udf. mvt: tiles from tileUrl, or from udf with tile: true. fused-hex: H3 tiles queried from a Fused server's ERA5, gridMET or /h3/query endpoints (see source); it is never detected, so set it explicitly. For your own data: partition it with fused.h3.partition, register it with fused.h3.index, then set source {path, overview: {}} and h3Column. Row tiles load from the layer's zoom floor (default zoom 7) and a zoomed-out overview of the whole dataset draws below it. fused-bbox: features of a dataset indexed by bounding box (fused.bbox.index, for tables written by fused.ingest or GeoParquet with a bbox covering), queried per tile from /bbox/query; never detected either. Set source {path, overview: {}}; its rows draw as geojson from the zoom floor (minZoom, default 8) and the boxes of its chunks draw below it.",
+              "description": "Layer type. Omit it to detect from the data: an image → raster (tiles from a tile UDF, else one image placed at the bounds the run returned or was sent), an H3 cell column → h3, start/end lat-lng pairs → arc, one lat-lng pair → scatterplot, a geometry column → geojson. The detected type and columns are written into this config once known. geojson: polygons/lines/points from inline data, sql or udf rows (deck-geojson is an alias of geojson; prefer geojson). h3: hexagons from h3Column. scatterplot: point circles. heatmap: point density. arc: source→target arcs. raster: tiles from tileUrl or a udf with tile: true, else a single image from a udf. mvt: tiles from tileUrl, or from udf with tile: true. fused-hex: H3 tiles queried from a Fused server's ERA5, gridMET or /h3/query endpoints (see source); it is never detected, so set it explicitly. For your own data: partition it with fused.h3.partition, register it with fused.h3.index, then set source {path, overview: {}} and h3Column. Row tiles load from the layer's zoom floor (default zoom 7) and a zoomed-out overview of the whole dataset draws below it. fused-bbox: features of a dataset indexed by bounding box (fused.bbox.index, for tables written by fused.ingest or GeoParquet with a bbox covering), queried per tile from /bbox/query; never detected either. Set source {path, overview: {}}; its rows draw as geojson from the zoom floor (minZoom, default 8) and the boxes of its chunks draw below it.",
               "type": "string",
               "enum": [
                 "mvt",
@@ -83,19 +83,31 @@
               "type": "string"
             },
             "minZoom": {
-              "description": "Minimum zoom for tiled layers (mvt, raster, tiled h3)",
+              "description": "Tiled layers only (tileUrl, a udf with tile: true, fused-hex, fused-bbox): the lowest zoom of the layer's data. While the tile zoom is below it no tiles are requested or drawn, so a wide view does not fire thousands of requests. Ignored by non-tiled layers. To hide a layer by zoom without changing what it loads, use visibleMinZoom.",
               "type": "number"
             },
             "maxZoom": {
-              "description": "Maximum zoom for tiled layers (mvt, raster, tiled h3)",
+              "description": "Tiled layers only: the highest zoom of the layer's data. Zoomed in past it, no deeper tiles are requested and the maxZoom tiles keep drawing, enlarged (over-zoomed); the layer does not disappear. Set it to the deepest zoom your tiles differ at to save requests. To hide a layer past a zoom, use visibleMaxZoom.",
               "type": "number"
             },
+            "visibleMinZoom": {
+              "description": "Hides the layer while the map zoom is below this; it shows at exactly this zoom and above. Any layer type. Only the drawing stops: the layer's data, loaded tiles and runs are kept, so it reappears without a refetch. Not the same as minZoom, which is the lowest zoom a tiled layer's data exists at. Omit for no lower limit. Example: 10 shows a detailed layer only once the viewer zooms in to 10.",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 24
+            },
+            "visibleMaxZoom": {
+              "description": "Hides the layer while the map zoom is above this; it shows at exactly this zoom and below. Any layer type. Only the drawing stops: the layer's data, loaded tiles and runs are kept, so it reappears without a refetch. Not the same as maxZoom, past which a tiled layer keeps drawing its maxZoom tiles enlarged. Omit for no upper limit. Example: 12 hides a zoomed-out summary layer once the viewer zooms past 12.",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 24
+            },
             "zoomOffset": {
-              "description": "Zoom offset for tiled layers (useful for hex tile generalization)",
+              "description": "Tiled layers only: an integer added to the zoom tiles are requested at. 1 requests tiles one level finer than the map zoom (four times as many, more detail); -1 one level coarser (a quarter as many, useful to generalize H3 tiles). minZoom and maxZoom bound the offset zoom.",
               "type": "number"
             },
             "maxRequests": {
-              "description": "Maximum parallel tile requests for tiled layers",
+              "description": "Maximum parallel tile requests for tiled layers. 0 means no limit.",
               "type": "number"
             },
             "autoRetry": {
@@ -119,7 +131,7 @@
               "description": "Inline GeoJSON FeatureCollection, or one {{name}} placeholder naming a canvas SQL source: an h3-query or sql-runner widget's name (offered by Add layer and wired by an edge automatically), or another map's layer id (draw the edge from that map yourself). The source's rows are read from DuckDB as they are (no UDF runs; its loading and errors show on the layer; it re-queries when the widget fetches again), and the edge from that node to this one grants access, as for a UDF. Add sql to query them ({{source}} or {{name}} reads the rows). Row layers only (geojson, h3, scatterplot, heatmap, arc, or type omitted to detect from the rows): not with tile, udf or tileUrl, nor on raster, mvt or fused-hex. Example: \"{{h3_rows}}\" with h3Column \"hex\"."
             },
             "udf": {
-              "description": "UDF placeholder, e.g. {{my_udf}}, {{my_udf?param=value}} or {{my_udf?param=$param_name}}. The UDF is run directly (no share token needed) and re-run when it or a referenced $param_name changes: the whole result as rows for geojson/deck layers, or per tile when tile is true (a sql then queries the tiles in view). An input in the same widget (slider, number-input, with a defaultValue) can drive it; only the UDF → widget edge is needed. Combine with sql to query the result (the tiles in view when tile is true). Mutually exclusive with tileUrl.",
+              "description": "UDF placeholder, e.g. {{my_udf}}, {{my_udf?param=value}} or {{my_udf?param=$param_name}}. The UDF is run directly (no share token needed) and re-run when it or a referenced $param_name changes: the whole result as rows for geojson and deck-geojson layers, or per tile when tile is true (a sql then queries the tiles in view). An input in the same widget (slider, number-input, with a defaultValue) can drive it; only the UDF → widget edge is needed. Combine with sql to query the result (the tiles in view when tile is true). Mutually exclusive with tileUrl.",
               "type": "string"
             },
             "tile": {
@@ -618,6 +630,11 @@
       "showCoordinates": {
         "default": false,
         "description": "Show the map centre's latitude, longitude and zoom under the scale bar; a click copies them",
+        "type": "boolean"
+      },
+      "showSearch": {
+        "default": false,
+        "description": "Show a geocoder search in the top-right corner, which accepts place names, \"lat, lng\" pairs, H3 cell IDs.",
         "type": "boolean"
       },
       "showBasemapSwitcher": {
