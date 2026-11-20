@@ -490,6 +490,9 @@ query(
     lng: float | None = None,
     bbox: tuple[float, float, float, float] | None = None,
     hex_range: tuple[str, str] | None = None,
+    polygon: Any = None,
+    k: int | None = None,
+    contain: Literal["center", "full", "overlap"] | None = None,
     time_min: str | None = None,
     time_max: str | None = None,
     partition: dict[str, Any] | None = None,
@@ -514,9 +517,9 @@ At most one spatial selector may be given: `cell` (an H3 cell id, as a
 hex string -- matches every row filed under a descendant of `cell`, or
 under `cell` itself if it is already at the location's resolution),
 `lat`+`lng` (a point), `bbox` (a `(min_lng, min_lat, max_lng, max_lat)`
-tuple), or `hex_range` (an inclusive raw H3 cell-id range, as a
-`(hex_min, hex_max)` tuple of hex strings). Omitting all of them returns
-every row at the location.
+tuple), `polygon` (a polygon or multipolygon, see below), or `hex_range`
+(an inclusive raw H3 cell-id range, as a `(hex_min, hex_max)` tuple of
+hex strings). Omitting all of them returns every row at the location.
 
 Only space, time and partition values are filtered. Filter other columns
 (a vessel type, a LiDAR class) on the returned DataFrame. A result too
@@ -526,34 +529,88 @@ into smaller queries.
 **Parameters:**
 
 - **path** (`str`) – The location an earlier `fused.h3.index` call registered.
+
 - **cell** (`str | None`) – An H3 cell id (as a hex string, e.g. `"8928308280fffff"`).
+
 - **lat** (`float | None`) – Latitude of a point selector. Requires `lng`.
+
 - **lng** (`float | None`) – Longitude of a point selector. Requires `lat`.
+
 - **bbox** (`tuple[float, float, float, float] | None`) – `(min_lng, min_lat, max_lng, max_lat)` bounding box selector.
-  A row is kept when the centre of its cell lies inside the box, so
+  Which cells on the edge are kept is set by `contain`; by default
+  a row is kept when the centre of its cell lies inside the box, so
   the edge is accurate to one cell at the location's resolution. For
-  an exact edge, pad the box by one cell and filter the point columns.
+  an exact edge, pad the box by one cell (or use `k=1`) and filter
+  the point columns.
+
 - **hex_range** (`tuple[str, str] | None`) – `(hex_min, hex_max)` inclusive raw H3 cell-id range.
+
+- **polygon** (`Any`) – A geometry to select by, in longitude/latitude (EPSG:4326):
+  a point selects the cell holding it, a line every cell it passes
+  through, and a polygon cells by `contain`. It can be:
+
+  - a shapely point, line or polygon (or a multi-part one), or a
+    `GeometryCollection` of them;
+  - a GeoPandas `GeoDataFrame` or `GeoSeries`: the union of its
+    geometries is selected. One with a CRS other than EPSG:4326 is
+    reprojected to it first;
+  - a WKT string (`"POINT (...)"`, `"LINESTRING (...)"`,
+    `"POLYGON ((...))"`, their `MULTI` forms, or
+    `"GEOMETRYCOLLECTION (...)"`);
+  - WKB or EWKB, as `bytes` or a hex string (what
+    `shapely.to_wkb(geom, hex=True)` or PostGIS `ST_AsHEXEWKB`
+    produce); an EWKB SRID must be 0 or 4326;
+  - GeoJSON, as a dict or a JSON string: a `Point`, `LineString`
+    or `Polygon` (or a `Multi` form), a `GeometryCollection`, a
+    `Feature` or a `FeatureCollection`;
+  - any other object with a `__geo_interface__`.
+
+  As with `bbox`, which cells on a polygon's edge are kept is set by
+  `contain`, which does not apply to points and lines. Several
+  geometries select everything each of them selects, and polygons
+  may overlap. Lines run straight between their vertices on the
+  longitude/latitude plane. More than 50,000 vertices in all is
+  rejected. A line or polygon crossing the antimeridian must be
+  split at +/-180.
+
+- **k** (`int | None`) – Also keep every cell within `k` grid steps of a selected cell
+  (at most 25), a buffer around the selection. Only valid with
+  `lat`+`lng`, `bbox` or `polygon`. A buffer around a large box or
+  polygon that is too costly to compute is a 400; use a smaller
+  `k` or a smaller area. None or 0 adds no buffer.
+
+- **contain** (`Literal['center', 'full', 'overlap'] | None`) – Which cells a `bbox` or a polygon selects: `"center"` (the
+  default) a cell whose centre lies inside the shape or on its
+  edge, `"full"` a cell lying wholly inside it, and `"overlap"` a
+  cell sharing any point with it. Only valid with `bbox`, or a
+  `polygon` that holds a polygon.
+
 - **time_min** (`str | None`) – Inclusive lower bound (ISO datetime). Only valid against a
   location with a time column (a `time_column`, or a single `date`
   partition column).
+
 - **time_max** (`str | None`) – Inclusive upper bound (ISO datetime). Only valid against a
   location with a time column.
+
 - **partition** (`dict[str, Any] | None`) – Keep only the folders whose partition values match, as
   `{column: value}`. A list or tuple of values matches any of them:
   `{"scenario": ["ssp245", "ssp585"], "date": "2050-01"}`. A folder
   must match every column named. A `date` column matches by
   overlap: `"2050-01"` matches a folder holding January 2050.
+
 - **partition_range** (`dict[str, Any] | None`) – Keep only the folders whose partition value lies in
   an inclusive `(min, max)` range, as `{column: (min, max)}`; `None`
   leaves an end open: `{"date": ("2050-01", None)}`. Works for
   string, number and date columns. A range on the location's time
   column also narrows the time window.
+
 - **columns** (`list[str] | None`) – Which columns to read. Defaults to all columns.
+
 - **max_row_groups** (`int | None`) – How much of the dataset one page of the result may
   read. It sets the page size, not a limit on the result: the
   query follows the pages until every row is read. If None (the
   default), a default page size applies.
+
 - **base_url** (`str | None`) – Base URL for the API. If None, uses the current environment.
 
 **Returns:**
@@ -568,7 +625,8 @@ into smaller queries.
   been indexed, 409 if it is not yet `"ready"`, if a data file changed
   after it was indexed (re-run `fused.h3.index`), or if it was
   re-indexed while the pages were being read (run the query again),
-  400 for an invalid or conflicting selector, against time bounds
+  400 for an invalid or conflicting selector, for `k` or `contain`
+  with a selector they do not apply to, against time bounds
   on a timeless location, or for a `partition` or `partition_range`
   naming a column that is not a partition column or holding a value
   that does not fit it).
@@ -588,6 +646,12 @@ df = fused.h3.query(
     bbox=(-122.5, 37.7, -122.4, 37.8),
     partition={"scenario": "ssp245"},
     partition_range={"date": ("2050-01", "2050-06")},
+)
+
+counties = gpd.read_file("counties.geojson")
+df = fused.h3.query(
+    path="s3://my-bucket/climate_h3/",
+    polygon=counties[counties.state == "CA"],
 )
 ```
 

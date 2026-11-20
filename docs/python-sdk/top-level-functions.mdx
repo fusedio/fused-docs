@@ -933,6 +933,304 @@ if not isinstance(udf, Udf):
 
 ---
 
+## fused.query_chunks
+
+```python
+query_chunks(
+    data: Iterable[Tuple[str, Any]],
+    sql: str,
+    footers: Optional[Mapping[str, Any]] = None,
+) -> pd.DataFrame
+```
+
+Run a DuckDB SQL query over chosen parts of parquet files in S3.
+
+Only the row groups or byte ranges you select are read. The selected rows
+of all the files are stacked into one table named `data`, which the query
+reads. Only files you can read are accepted, and a request is limited in
+how many files and bytes it may select. A result too large for the
+service's memory or temporary disk is refused with a message saying
+which; aggregate or filter in the SQL for more. Requires a signed-in
+user.
+
+Every selected file must have the same columns with the same types.
+
+**Parameters:**
+
+- **data** (`Iterable[Tuple[str, Any]]`) – A list of `(path, selector)` pairs. `path` is an `s3://` parquet
+  file. `selector` is one of:
+
+  - a list of row group numbers, such as `[0, 3]`, which reads every
+    column of those row groups;
+  - a string of byte ranges as in an HTTP `Range` header, such as
+    `"bytes=4-63648,1179600-1250000"` (the end is included);
+  - a list of `(offset, length)` pairs.
+
+  With byte ranges, a column of a row group is read when it lies
+  entirely inside one range. A range that cuts through a column, or
+  that contains no whole column, is refused.
+
+- **sql** (`str`) – The DuckDB SQL query, over the table `data`.
+
+- **footers** (`Optional[Mapping[str, Any]]`) – Footers of files in `data` that you already hold, by path, so
+  the files are planned from them instead of being looked up. Each
+  is one of: the footer `bytes` exactly as at the end of the file; a
+  `pyarrow.parquet.FileMetaData`; or a `fused.Footer`
+  from `fused.read_footer`, whose ETag makes the
+  read fail if the file has changed. A footer applies to this call
+  only, and `data` paths without one are looked up as usual.
+
+**Returns:**
+
+- `DataFrame` – A GeoDataFrame when the result carries geometry metadata, otherwise a
+  DataFrame. Empty when the query returns no row.
+
+**Examples:**
+
+```py
+df = fused.query_chunks(
+    [("s3://my-bucket/a.parquet", [0, 1]), ("s3://my-bucket/b.parquet", [2])],
+    "SELECT count(*) AS n FROM data",
+)
+df = fused.query_chunks(
+    [("s3://my-bucket/a.parquet", "bytes=4-63648,1179600-1250000")],
+    "SELECT * FROM data LIMIT 10",
+)
+path = "s3://my-bucket/a.parquet"
+df = fused.query_chunks(
+    [(path, [0])],
+    "SELECT count(*) AS n FROM data",
+    footers={path: fused.read_footer(path)},
+)
+```
+
+---
+
+## fused.query_sql
+
+```python
+query_sql(sql: str) -> pd.DataFrame
+```
+
+Run a DuckDB SQL query, over parquet files in S3 if it names any.
+
+Name each source as a quoted `s3://` literal in the query. A literal is
+one parquet object (`s3://bucket/data/a.parquet`), a single-level glob
+(`s3://bucket/data/*.parquet`), a recursive glob
+(`s3://bucket/data/**/*.parquet`) or a folder ending in `/`, which reads
+every parquet file beneath it. Hive-style partition folders (`year=2024/`)
+become columns. Only files you can read are accepted, and a query is
+limited in how many files it may name and how many bytes they total. A
+query that names no source, such as `SELECT 1`, runs without reading files.
+A quoted `http://` or `https://` URL is read directly from that URL, so it
+must be publicly readable. Requires a signed-in user.
+
+DuckDB's spatial functions (`ST_*`, such as `ST_Intersects` and
+`ST_Transform`) and the H3 functions are available. Coordinates are
+x = longitude, y = latitude. Geometry in parquet is stored as WKB, so wrap
+such a column in `ST_GeomFromWKB(...)`. A geometry column in the result
+comes back as one, in a GeoDataFrame.
+
+**Parameters:**
+
+- **sql** (`str`) – The DuckDB SQL query.
+
+**Returns:**
+
+- `DataFrame` – A GeoDataFrame when the result carries geometry metadata, otherwise a
+  DataFrame. Empty when the query returns no row.
+
+**Examples:**
+
+```py
+df = fused.query_sql(
+    "SELECT year, count(*) AS n FROM 's3://my-bucket/my-table/**/*.parquet' GROUP BY year"
+)
+```
+
+---
+
+## fused.query_table
+
+```python
+query_table(
+    path: str,
+    bbox: Union[Tuple[float, float, float, float], Any, None] = None,
+    *,
+    filters: Optional[Iterable[Sequence[Any]]] = None,
+    columns: Optional[Iterable[str]] = None,
+    sql: Optional[str] = None,
+    clip: bool = False,
+    index: Optional[str] = None,
+    return_timings: bool = False
+) -> Union[pd.DataFrame, Tuple[pd.DataFrame, dict[str, int]]]
+```
+
+Read the rows of a table that fall inside a bounding box and meet filters.
+`fused.query_table` is the same function under its older name.
+
+The table must have been indexed with `fused.table.index`. A row is
+returned when its bounding box intersects `bbox`, and its geometry is
+returned whole, even where it extends past the box. Without `bbox`, every
+row that meets `filters` is returned.
+
+**Parameters:**
+
+- **path** (`str`) – URL of the table, e.g. `s3://my-bucket/my-table/`.
+- **bbox** (`Union[Tuple[float, float, float, float], Any, None]`) – `(min_lng, min_lat, max_lng, max_lat)` in EPSG:4326, or any
+  object with `bounds` or `total_bounds`, such as a shapely geometry, a
+  GeoSeries or a GeoDataFrame. Optional.
+- **filters** (`Optional[Iterable[Sequence[Any]]]`) – Conditions every returned row meets, as `[column, op, value]`
+  lists, where `op` is one of `==`, `=`, `!=`, `<`, `<=`, `>`, `>=`,
+  `in` or `not in` (which take a list). A column may be a dotted
+  path into a struct column. Filter columns need not be in `columns`.
+- **columns** (`Optional[Iterable[str]]`) – Read only these columns. The geometry column is returned only
+  if listed. A dotted path returns its whole top-level column.
+- **sql** (`Optional[str]`) – A DuckDB SQL query to run over the matching rows, which are
+  available as the table `df`. The geometry column is a WKB blob.
+- **clip** (`bool`) – Cut geometries that cross the box at its edge, like
+  `geopandas.clip`, and drop rows left without geometry. Requires
+  `bbox` and a geometry column.
+- **index** (`Optional[str]`) – Location of an index you keep yourself, such as a folder in your
+  own bucket, to read instead of the one `fused.table.index` builds.
+- **return_timings** (`bool`) – Also return how long each step of the query took.
+
+**Returns:**
+
+- `Union[DataFrame, Tuple[DataFrame, dict[str, int]]]` – A GeoDataFrame in EPSG:4326 when the result has a geometry column,
+  otherwise a DataFrame. Empty when no row is inside the box. With
+  `return_timings`, a tuple of that frame and a dict mapping each step
+  to its milliseconds (`cold` is 0 or 1).
+
+**Examples:**
+
+```py
+gdf = fused.table.query("s3://my-bucket/my-table/", (-122.5, 37.5, -122, 38))
+n = fused.table.query(
+    "s3://my-bucket/my-table/",
+    (-122.5, 37.5, -122, 38),
+    sql="SELECT count(*) AS n FROM df",
+)
+```
+
+---
+
+## fused.read_blocks
+
+```python
+read_blocks(blocks: Iterable[dict[str, Any]]) -> pd.DataFrame
+```
+
+Fetch and decode tiles of cloud-optimised GeoTIFFs.
+
+**Parameters:**
+
+- **blocks** (`Iterable[dict[str, Any]]`) – A list of dicts, one per tile, with `url` (an `https` link
+  that is public or already signed), `offset` and `length` (the
+  byte range of the compressed tile; a length of 0 is a sparse
+  tile), `comp` (the TIFF compression code), `pred` (the predictor),
+  `dtype` (such as `"int16"`), `tw` and `th` (the tile width and
+  height) and, optionally, `byte_order` and `nodata`. A NaN `nodata`
+  is sent as null. A call is refused, before any tile is read, if the
+  decoded tiles would not fit the service's memory.
+
+**Returns:**
+
+- `DataFrame` – A DataFrame with a row per block: `i` (its position in `blocks`), `h`,
+  `w`, `dtype` and `data`, a numpy array shaped `(h, w)`.
+
+**Examples:**
+
+```py
+df = fused.read_blocks(
+    [
+        {
+            "url": "https://my-host.example/scene.tif",
+            "offset": 4096,
+            "length": 20480,
+            "comp": 8,
+            "pred": 2,
+            "dtype": "int16",
+            "tw": 256,
+            "th": 256,
+        }
+    ]
+)
+```
+
+---
+
+## fused.read_footer
+
+```python
+read_footer(path: str) -> Footer
+```
+
+Read the footer of a parquet file, to pass to `fused.query_chunks`.
+
+Reads only the end of the file, with your own storage credentials.
+
+**Parameters:**
+
+- **path** (`str`) – The path of the parquet file, such as `s3://my-bucket/a.parquet`.
+
+**Returns:**
+
+- `Footer` – The file's footer and ETag.
+
+**Examples:**
+
+```py
+path = "s3://my-bucket/a.parquet"
+df = fused.query_chunks(
+    [(path, [0, 1])],
+    "SELECT count(*) AS n FROM data",
+    footers={path: fused.read_footer(path)},
+)
+```
+
+---
+
+## fused.read_window
+
+```python
+read_window(
+    rows: Any, bounds: Iterable[float], bounds_crs: str = "EPSG:4326"
+) -> pd.DataFrame
+```
+
+Read the pixels inside a bounding box from cloud-optimised GeoTIFFs.
+
+Only the tiles under the box are fetched. The window stays in each
+image's own grid; pixels are not reprojected.
+
+**Parameters:**
+
+- **rows** (`Any`) – The images to read, one row per image band, as a DataFrame, a
+  list of dicts or a list of URLs. A row that gives only an `href`
+  (an `https` link that is public or already signed), with optional
+  `id`, `datetime` and `band`, has its layout read from the file's
+  header: the file must be a tiled, single-band GeoTIFF in a UTM
+  zone. Without an `id`, the `href` without its query string is the
+  id. A row that already carries the layout skips that read, and
+  both kinds can be mixed. The layout is `epsg`, `w`, `h`, `tw`,
+  `th`, `nbx`, `nby`, `comp`, `pred`, `dtype`, `nodata`, `x0`, `y0`,
+  `dx`, `dy`, and the tile `offsets` and `lengths`. A NaN `nodata`
+  is sent as null. A call is refused, before any tile is read,
+  if the window's pixels would not fit the service's memory.
+- **bounds** (`Iterable[float]`) – `(minx, miny, maxx, maxy)`.
+- **bounds_crs** (`str`) – `"EPSG:4326"` for longitude and latitude, or `"native"`
+  when `bounds` are in each image's own coordinates.
+
+**Returns:**
+
+- `DataFrame` – A DataFrame with a row per image: `id`, `band`, `datetime`, `epsg`,
+  the window `c0`, `r0`, `h`, `w`, the window origin `x0`, `y0`, the
+  pixel size `dx`, `dy`, `dtype` and `data`, a numpy array shaped
+  `(h, w)`. Empty when no row is read.
+
+---
+
 ## fused.register_dataset
 
 ```python
