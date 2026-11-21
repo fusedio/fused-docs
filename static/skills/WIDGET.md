@@ -81,4 +81,4 @@ SELECT name AS label, score AS value FROM {{my_udf}} WHERE score >= $score_min O
 - `text-input`: free-text field
 - `button`: each click increments its `param`
 
-Every component and prop: https://docs.fused.io/widget-api/overview. Maps: https://docs.fused.io/skills/FUSED_MAP.md
+Every component and prop: https://docs.fused.io/widget-api/overview. Maps: https://docs.fused.io/skills/FUSED_MAP.md. Charts saved in a canvas, or custom HTML charts: https://docs.fused.io/skills/CHARTS.md
