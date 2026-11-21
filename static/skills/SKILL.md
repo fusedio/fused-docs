@@ -34,6 +34,7 @@ GET https://udf.ai/fc_<TOKEN>/<udf_name>.json?param1=value1&param2=value2
 - **UDF calls in depth**: formats, response shapes, error codes, parameter types, chaining, tile URLs → https://docs.fused.io/skills/udf-http.md
 - **H3 hex datasets**: partition, index and query data with `fused.h3`, over HTTP or on a map → https://docs.fused.io/skills/H3.md
 - **Maps in a canvas**: add or edit a `fused-map` widget → https://docs.fused.io/skills/FUSED_MAP.md
+- **Charts in a canvas**: a chart widget over a UDF, or a UDF that returns its own HTML chart → https://docs.fused.io/skills/CHARTS.md
 - **Charts, tables and inputs from a share URL**: a widget over UDF output, no canvas edit → https://docs.fused.io/skills/WIDGET.md
 - **Sentinel-2 imagery**: scenes, composites, indices, time series → https://docs.fused.io/skills/SENTINEL2.md
 - **Canvas files** (`canvas.toml`, UDF files, widget JSON): the Workbench skills → https://github.com/fusedio/skills
